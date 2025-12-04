@@ -1,0 +1,14 @@
+# Глобально: все PR должны видеть ядро команды
+*            @maintainers
+
+# Фронт
+/frontend/   @frontend-lead
+
+# Бэкенд
+/backend/    @backend-lead
+
+# Research
+/research/   @research-lead
+
+# Documentation
+/docs/       @docs-lead
