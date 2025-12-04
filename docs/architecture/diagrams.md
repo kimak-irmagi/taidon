@@ -7,11 +7,11 @@
 ```mermaid
 flowchart LR
   subgraph Client
-    UI[Frontend (SPA)]
+    UI["Frontend (SPA)"]
   end
 
   subgraph Edge
-    GW[gateway (BFF/API)]
+    GW["gateway (BFF/API)"]
   end
 
   subgraph ControlPlane
@@ -28,7 +28,7 @@ flowchart LR
     SC[snapshot-cache]
     EM[env-manager]
     PG[(PostgreSQL sandboxes)]
-    SNAP[Snapshot store (CoW layers)]
+    SNAP["Snapshot store (CoW layers)"]
   end
 
   UI -->|HTTPS| GW
@@ -83,9 +83,9 @@ flowchart TD
 ```mermaid
 flowchart TD
   API[API/GRPC]
-  Index[Metadata index (control DB)]
-  Storage[Storage driver (CoW layers)]
-  Policy[Eviction policy: cost/freq/size]
+  Index["Metadata index (control DB)"]
+  Storage["Storage driver (CoW layers)"]
+  Policy["Eviction policy: cost/freq/size"]
   GC[GC/compaction]
 
   API --> Index
