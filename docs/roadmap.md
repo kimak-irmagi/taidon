@@ -98,8 +98,8 @@ gantt
 - Local runtime (containers) with sandbox lifecycle
 - Liquibase adapter (apply changelog)
 - CLI:
-  - `taidon up`, `taidon apply`, `taidon run`, `taidon destroy`
-  - `taidon status`, `taidon logs`
+  - `sqlrs up`, `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
+  - `sqlrs status`, `sqlrs logs`
 - Cache v1:
   - cache key: `db_engine + base_image + changelog_hash + seed_hash`
   - reuse by snapshot/clone strategy (implementation-dependent)
@@ -294,3 +294,4 @@ gantt
 - `state-cache-design.md` (snapshotting, hashing, retention)
 - `cli-spec.md` (commands and exit codes)
 - `security-model.md` (cloud-hardening, redaction, audit)
+- `runtime-snapshotting.md` (details of the snapshot mechanics)

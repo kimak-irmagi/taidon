@@ -36,6 +36,13 @@ All **persistent DB state** (e.g., `PGDATA`) is:
 
 Containers are **stateless executors**.
 
+### 3.2 Host Storage Strategy (by platform)
+
+- **Linux (primary):** host-managed store on btrfs subvolumes (preferred).
+- **Windows / WSL2:** host-managed VHDX; use btrfs inside if available, otherwise `copy/link-dest` fallback.
+
+Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
+
 ---
 
 ## 4. Container Model
@@ -91,7 +98,7 @@ Base states are stored as **CoW-capable filesystem datasets** and treated like a
 
 ### 6.1 Primary Backend (MVP)
 
-- **btrfs subvolume snapshots**
+- **btrfs subvolume snapshots** (Linux hosts; WSL2 if btrfs is available inside VHDX)
 
 Rationale:
 - fast clone/snapshot
@@ -100,7 +107,8 @@ Rationale:
 
 ### 6.2 Fallback Backend
 
-- recursive copy / rsync-based snapshotting
+- Windows/WSL2 without btrfs: VHDX + `copy/link-dest` snapshotting
+- Any host without CoW FS: recursive copy / rsync-based snapshotting
 
 Used when CoW FS is unavailable.
 
@@ -147,6 +155,7 @@ state-store/
 - Filesystem snapshot without stopping the DB.
 - Relies on DB crash recovery on next start.
 - Fastest and acceptable for most workflows.
+- Default for interactive development and education sandboxes.
 
 ### 8.2 Clean Snapshot (Optional)
 
@@ -157,6 +166,7 @@ state-store/
 Used for:
 - CI/CD
 - strict reproducibility
+- Can be requested by policy or per-run flag.
 
 ---
 
@@ -198,6 +208,11 @@ The following rules apply:
 - All paths and images are resolved via engine adapters.
 
 This prevents accidental coupling to a single engine or layout.
+
+### 10.1 Engine Process Model
+
+- CLI is thin; it auto-spawns/communicates with the engine process (local daemon) that owns state store, snapshotting, and container lifecycle.
+- Engine adapter hides filesystem layout (`PGDATA` roots, state store paths) and provides mount specs to the runtime; callers never touch raw paths.
 
 ---
 
