@@ -13,15 +13,15 @@ Scope: how the `sqlrs` engine operates as a shared service in Team (A2) and Clou
 ## 2. High-Level Topology
 
 ```mermaid
-flowchart LR
+flowchart TD
   subgraph Edge
     GW[API Gateway]
-    AUTH[Auth / OIDC / JWT]
+    AUTH["Auth / OIDC / JWT"]
   end
 
   subgraph ControlPlane
-    ORCH[Orchestrator (queue/prio/quotas)]
-    RUN[Runner Service (sqlrs engine instances)]
+    ORCH["Orchestrator (queue/prio/quotas)"]
+    RUN["Runner Service (sqlrs engine instances)"]
     CACHE[state-cache service/index]
     ART[Artifact Store API]
     OBS[Telemetry/Audit]
@@ -29,8 +29,8 @@ flowchart LR
   end
 
   subgraph DataPlane
-    ENV[env-manager (k8s executor)]
-    SNAP[snapshot store (PVC/S3)]
+    ENV["env-manager (k8s executor)"]
+    SNAP["snapshot store (PVC/S3)"]
     PG[(DB sandboxes)]
   end
 
