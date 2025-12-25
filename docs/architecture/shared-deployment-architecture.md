@@ -1,0 +1,101 @@
+# Shared Deployment Architecture (Team / Cloud)
+
+Scope: how the `sqlrs` engine operates as a shared service in Team (A2) and Cloud (B3/C4) deployments. Focus on what changes from local: process model, ingress/auth, orchestration, storage, scaling, and isolation.
+
+## 1. Goals
+
+- Multi-tenant, authenticated access to the same engine logic (planner/cache/snapshotter/runner).
+- Horizontal scalability and high availability.
+- Strong isolation between tenants (namespaces/policies/quotas).
+- Shared state/cache and artifact storage with retention controls.
+- Centralised observability and audit.
+
+## 2. High-Level Topology
+
+```mermaid
+flowchart LR
+  subgraph Edge
+    GW[API Gateway]
+    AUTH[Auth / OIDC / JWT]
+  end
+
+  subgraph ControlPlane
+    ORCH[Orchestrator (queue/prio/quotas)]
+    RUN[Runner Service (sqlrs engine instances)]
+    CACHE[state-cache service/index]
+    ART[Artifact Store API]
+    OBS[Telemetry/Audit]
+    META[(Control DB)]
+  end
+
+  subgraph DataPlane
+    ENV[env-manager (k8s executor)]
+    SNAP[snapshot store (PVC/S3)]
+    PG[(DB sandboxes)]
+  end
+
+  Client --> GW --> AUTH --> ORCH
+  ORCH --> RUN
+  RUN --> ENV
+  RUN --> CACHE
+  RUN --> ART
+  RUN --> OBS
+  ENV --> PG
+  ENV --> SNAP
+  CACHE --> SNAP
+  CACHE --> META
+  ORCH --> META
+  GW --> OBS
+```
+
+## 3. Process and Request Flow
+
+- Clients (CLI/IDE/UI) call Gateway with authenticated REST/gRPC.
+- Gateway enforces authN/authZ, rate limits, org quotas; forwards to Orchestrator.
+- Orchestrator enqueues jobs with priority/quotas; dispatches to Runner instances.
+- Runner (stateless engine) pulls job, performs planning/cache lookup, asks env-manager to bind sandbox, executes, snapshots, stores artefacts, updates status back to Orchestrator.
+- Status/events streamed via Gateway (SSE/WS) for watch-mode clients.
+
+## 4. Engine Changes vs Local
+
+- **Lifecycle**: long-running service (Deployment) with HPA; no CLI-spawned processes.
+- **Ingress**: behind Gateway; no loopback/UDS; auth required.
+- **State store**: shared store (PVC/S3) + metadata in Control DB or dedicated SQLite per shard synced to Control DB; per-tenant separation via namespaces/prefixes.
+- **Cache service**: may run as separate service backing the engine’s cache client.
+- **Liquibase**: runs inside controlled runner pods/containers; secrets from K8s Secrets/Vault.
+- **Snapshotter**: uses cluster storage (CSI snapshots/PVC + CoW if available); path resolution per tenant namespace.
+- **Artifacts**: logs/reports exported to artifact store (S3/PVC) with retention tags.
+
+## 5. Isolation and Security
+
+- Auth: OIDC/JWT via Gateway; runner receives principal/org in token.
+- Network: Namespace/NetworkPolicy to isolate sandboxes; restrict egress.
+- Storage: per-tenant prefixes in snapshot/artifact stores; ACLs enforced by service and backend IAM where applicable.
+- Quotas/limits: enforced by Orchestrator and env-manager (CPU/RAM/TTL/concurrency).
+- Secrets: managed by K8s Secrets or Vault/KMS; mounted/injected per job; never logged.
+
+## 6. Scaling and Availability
+
+- Runner service: HPA on queue backlog/latency metrics; multiple replicas; readiness/liveness probes.
+- env-manager: scales sandboxes; may use warm pools for fast start.
+- Cache builders/GC: scale via autoscaling controller.
+- Cluster autoscaler (Cloud): allowed with guard rails; Team may be ops-managed.
+
+## 7. Persistence and Stores
+
+- **State cache**: shared store with index; eviction policy respects org pins/retention.
+- **Control DB**: metadata for jobs, states, artefacts, audit.
+- **Artifact store**: S3/PVC; immutable bundles for sharing.
+- **Snapshot store**: CoW-friendly volumes or CSI snapshots; send/receive for remote copies when available.
+
+## 8. Observability and Audit
+
+- Metrics: queue length/age, runner latency, cache hit ratio, sandbox bind/start latency, snapshot sizes/time, errors.
+- Logs: structured, centralised (Loki/ELK); correlated by job/run_id/org.
+- Audit: runs, snapshots, sharing actions, scale events.
+
+## 9. Evolution Notes
+
+- Same API contract as local `sqlrs` for `/runs` etc., but always async; watch via stream.
+- Can shard cache/store by org or region; runner instances stateless except per-job sandbox.
+- Future: pluggable executors beyond k8s; multi-region replication of cache/artifacts.

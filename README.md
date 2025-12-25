@@ -110,6 +110,12 @@ Each service includes its own documentation and tooling.
 ### **Documentation**
 
 Architecture, specifications, ADRs, and design notes live in `docs/`.
+Start from:
+
+- `docs/README.md` — doc index
+- `docs/architecture/README.md` — architecture overview and per-service docs
+- `docs/requirements/requirements_architecture.md` — core requirements
+- `docs/roadmap.md` — roadmap and milestones
 
 ---
 

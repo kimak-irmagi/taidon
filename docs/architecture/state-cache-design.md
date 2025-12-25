@@ -17,7 +17,8 @@ This document specifies how Taidon creates, identifies, reuses, and evicts datab
 - [9. Liquibase Integration for Predictive Cache Hits](#9-liquibase-integration-for-predictive-cache-hits)
 - [10. Failure Semantics](#10-failure-semantics)
 - [11. Data Model](#11-data-model)
-- [12. Observability](#12-observability)
+- [12. Local Deployment Layout and Scope](#12-local-deployment-layout-and-scope)
+- [13. Observability](#13-observability)
 
 ---
 
@@ -25,7 +26,7 @@ This document specifies how Taidon creates, identifies, reuses, and evicts datab
 
 - Create snapshots as frequently as possible without breaking database semantics.
 - Maximise cache hit rate for common migration and test workflows.
-- Support predictive reuse (cache lookup *before* applying a planned change block).
+- Support predictive reuse (cache lookup _before_ applying a planned change block).
 - Provide user controls for discoverability and retention (tags, names, pinning).
 - Keep the design compatible with multiple DBMS backends and deployment profiles.
 - Prefer delegating changelog parsing, filtering, and planning to Liquibase (MVP).
@@ -34,7 +35,7 @@ This document specifies how Taidon creates, identifies, reuses, and evicts datab
 
 ## 2. Non-Goals
 
-- Restoring and continuing an *open* transaction (mid-transaction snapshot/restore).
+- Restoring and continuing an _open_ transaction (mid-transaction snapshot/restore).
 - Reconstructing DB session state (locks, temporary objects, connection context).
 - Re-implementing Liquibase changelog parsing/filtering (XML/YAML/JSON/SQL) in Taidon.
 
@@ -57,7 +58,7 @@ This document specifies how Taidon creates, identifies, reuses, and evicts datab
 
 A snapshotable point must satisfy all of the following:
 
-- There is no *open* transaction that Taidon is expected to continue.
+- There is no _open_ transaction that Taidon is expected to continue.
 - The database is in a state observable by a new session without relying on prior session context.
 - The DBMS is not being snapshotted in a way that would require restoring process memory.
 
@@ -91,11 +92,11 @@ Taidon aims to snapshot "as often as possible" at safe boundaries.
 
 ### 5.2 Trigger sources
 
-| Source | Trigger granularity | Notes |
-|---|---|---|
-| Liquibase (master or wrapper) | Changeset boundary | Best for predictive caching |
-| Taidon CLI script runner | Step boundary | User-provided steps |
-| Drop-in DB proxy | Commit boundary | Predictive caching limited |
+| Source                        | Trigger granularity | Notes                       |
+| ----------------------------- | ------------------- | --------------------------- |
+| Liquibase (master or wrapper) | Changeset boundary  | Best for predictive caching |
+| Taidon CLI script runner      | Step boundary       | User-provided steps         |
+| Drop-in DB proxy              | Commit boundary     | Predictive caching limited  |
 
 ---
 
@@ -115,7 +116,7 @@ A State is uniquely identified by:
 
 Canonical key (MVP):
 
-```
+```code
 key = H(
   engine_id,
   engine_version,
@@ -128,7 +129,7 @@ key = H(
 Notes:
 
 - `block_hash` is the primary identifier of the change block (see [9](#9-liquibase-integration-for-predictive-cache-hits)).
-- Changeset *identity* (author/id/path) is used for tracking and diagnostics, but is not required for the cache key if `base_state_id` and `block_hash` are present.
+- Changeset _identity_ (author/id/path) is used for tracking and diagnostics, but is not required for the cache key if `base_state_id` and `block_hash` are present.
 - `execution_params` must include inputs that change the outcome.
 
 ### 6.3 Layering model
@@ -192,7 +193,7 @@ A State has a **value score** computed from:
 
 ## 9. Liquibase Integration for Predictive Cache Hits
 
-Predictive caching requires knowing the *planned* change blocks before execution.
+Predictive caching requires knowing the _planned_ change blocks before execution.
 
 ### 9.1 Recommended integration mode
 
@@ -267,7 +268,7 @@ Notes:
 
 Taidon can operate in two compatibility modes when Liquibase fails:
 
-- **Conservative (last-success)**: set `current_base_id` to the most recent *successful* State and continue from there, treating failed non-transactional steps as if they did not persist.
+- **Conservative (last-success)**: set `current_base_id` to the most recent _successful_ State and continue from there, treating failed non-transactional steps as if they did not persist.
 - **Investigative (failed-base)**: set `current_base_id` to a diagnostic failed State and allow users to reproduce and attempt repair from the failed condition.
 
 The default for automation (CI/CD) should be **Conservative**.
@@ -327,7 +328,32 @@ To keep keys meaningful:
 
 ---
 
-## 12. Observability
+## 12. Local Deployment Layout and Scope
+
+### 12.1 Scope (where cache lives)
+
+- **Default**: per-user, shared across all workspaces on the machine (reuses states between projects). Location can be overridden via `SQLRS_STATE_STORE`.
+- **Workspace-only (opt-in)**: set `SQLRS_STATE_STORE` to a workspace path to isolate cache for experiments/CI.
+- **System-wide**: not used; avoids permissions and multi-user contention.
+
+### 12.2 Storage topology
+
+- **Metadata**: SQLite DB (`state.db`) under the state store root.
+- **Data**: filesystem tree of states/base snapshots (same layout as runtime snapshotting: `engines/<engine>/<version>/base|states/<uuid>`), CoW-friendly when available.
+
+### 12.3 Platform specifics
+
+- **Linux/macOS**: `~/.cache/sqlrs/state-store` (or `$XDG_CACHE_HOME/sqlrs/state-store`), using native filesystem; btrfs/zfs if present, otherwise copy/rsync fallback. macOS uses the same path for consistency with XDG; acceptable to add a symlink from `~/Library/Caches/sqlrs` if needed.
+- **Windows (WSL2)**: state store inside the WSL filesystem (`$HOME/.cache/sqlrs/state-store`) to keep POSIX perms and CoW performance; host Windows path only holds a pointer/config. If WSL kernel lacks btrfs, fall back to VHDX + copy/link-dest as per runtime snapshotting.
+
+### 12.4 Access and locking
+
+- Single-writer (engine process) with SQLite WAL; concurrent readers allowed.
+- Per-store lock file to prevent multiple engine daemons from mutating the same store concurrently.
+
+---
+
+## 13. Observability
 
 ### 12.1 Structured logs (MVP)
 
@@ -350,4 +376,3 @@ Taidon should emit:
 - Liquibase step events (changeset start/applied/failed)
 
 Suggested client streaming mechanism: SSE or WebSocket from the API gateway.
-
