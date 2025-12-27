@@ -64,11 +64,12 @@ Images **do not contain data**.
 
 ### 4.3 Supported Engines (MVP)
 
-| Engine | Versions | Notes |
-|------|----------|-------|
-| Postgres | 15, 17 | Same engine family, different majors |
+| Engine   | Versions | Notes                                |
+| -------- | -------- | ------------------------------------ |
+| Postgres | 15, 17   | Same engine family, different majors |
 
 This validates:
+
 - engine/version selection logic,
 - absence of hardcoded assumptions.
 
@@ -83,6 +84,7 @@ MySQL is explicitly deferred.
 A **base state** is an immutable filesystem representation of an initialised DB cluster.
 
 For Postgres:
+
 - created via `initdb`;
 - contains default databases (`postgres`, templates).
 
@@ -101,6 +103,7 @@ Base states are stored as **CoW-capable filesystem datasets** and treated like a
 - **btrfs subvolume snapshots** (Linux hosts; WSL2 if btrfs is available inside VHDX)
 
 Rationale:
+
 - fast clone/snapshot
 - cheap branching
 - good local Linux support
@@ -121,6 +124,7 @@ Destroy(state_or_sandbox)
 ```
 
 Implementation variants:
+
 - `BtrfsSnapshotter`
 - `CopySnapshotter`
 - (future) `ZfsSnapshotter`, `CsiSnapshotter`
@@ -164,6 +168,7 @@ state-store/
 - Container may be restarted if needed.
 
 Used for:
+
 - CI/CD
 - strict reproducibility
 - Can be requested by policy or per-run flag.
@@ -243,4 +248,3 @@ This prevents accidental coupling to a single engine or layout.
 - Minimum viable abstraction for volume handles across snapshotters?
 - How aggressively to snapshot large seed steps?
 - Default cooldown policy for sandboxes?
-
