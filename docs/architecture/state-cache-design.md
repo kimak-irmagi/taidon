@@ -29,7 +29,7 @@ This document specifies how Taidon creates, identifies, reuses, and evicts datab
 - Support predictive reuse (cache lookup _before_ applying a planned change block).
 - Provide user controls for discoverability and retention (tags, names, pinning).
 - Keep the design compatible with multiple DBMS backends and deployment profiles.
-- Prefer delegating changelog parsing, filtering, and planning to Liquibase (MVP).
+- Prefer delegating changelog parsing, filtering, and planning to Liquibase when available; fallback to generic SQL planning when not.
 
 ---
 
@@ -95,7 +95,7 @@ Taidon aims to snapshot "as often as possible" at safe boundaries.
 | Source                        | Trigger granularity | Notes                       |
 | ----------------------------- | ------------------- | --------------------------- |
 | Liquibase (master or wrapper) | Changeset boundary  | Best for predictive caching |
-| Taidon CLI script runner      | Step boundary       | User-provided steps         |
+| Runner (generic SQL plan)     | Step boundary       | User-provided steps         |
 | Drop-in DB proxy              | Commit boundary     | Predictive caching limited  |
 
 ---
@@ -206,6 +206,8 @@ Taidon should support a Liquibase-aware mode where it can:
 
 This is easiest when Taidon acts as the caller of Liquibase ("Liquibase master") or provides a wrapper around Liquibase CLI.
 
+Note: the same cache model is used in local and shared deployments. The difference is _where_ the Runner lives (local engine process vs shared service). See `docs/architecture/sql-runner-api.md`.
+
 ### 9.2 Change block definition
 
 - **Block**: one Liquibase changeset (preferred)
@@ -224,41 +226,51 @@ Taidon must record metadata on the resulting State:
 - `run_in_transaction: true|false`
 - `status: success|failed`
 
-### 9.4 Planning and apply algorithm
+### 9.4 Planning and apply algorithm (Liquibase-aware)
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant T as Taidon CLI
+  participant C as Client
+  participant R as Runner
   participant L as Liquibase
   participant C as Cache
   participant D as Sandbox DB
 
-  U->>T: taidon migrate
-  T->>L: plan (pending changesets)
-  L-->>T: list(block_id, block_hash, attrs)
+  C->>R: start run (migrate/apply)
+  R->>L: plan (pending changesets)
+  L-->>R: list(block_id, block_hash, attrs)
 
   loop for each changeset
-    T->>C: lookup(key(base_state, block))
+    R->>C: lookup(key(base_state, block))
     alt cache hit
-      C-->>T: state_id
-      T->>D: recreate sandbox from state_id
+      C-->>R: state_id
+      R->>D: recreate sandbox from state_id
     else cache miss
-      C-->>T: miss
-      T->>L: apply(changeset)
-      L-->>T: applied
-      T->>D: snapshot (new state)
-      T->>C: store(key -> state_id)
+      C-->>R: miss
+      R->>L: apply(changeset)
+      L-->>R: applied
+      R->>D: snapshot (new state)
+      R->>C: store(key -> state_id)
     end
   end
 
-  T-->>U: final state_id + DSN
+  R-->>C: final state_id + DSN
 ```
 
 Notes:
 
 - Cache hits may require switching sandboxes: recreate from the cached State and continue.
 - The user experiences a logically continuous migration run.
+
+### 9.5 Generic SQL mode (no Liquibase)
+
+When Liquibase is unavailable, the Runner uses an explicit step plan:
+
+- The client provides an ordered script list and boundaries.
+- The Runner hashes script contents + parameters to form `block_hash`.
+- Snapshotting and cache lookups still occur at step boundaries.
+
+This preserves cache reuse and determinism without requiring Liquibase.
 
 ---
 

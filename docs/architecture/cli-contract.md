@@ -247,7 +247,25 @@ Designed for CI/CD usage.
 
 ---
 
-## 10. Compatibility and Extensibility
+## 10. Input Sources (Local Paths, URLs, Remote Uploads)
+
+Wherever the CLI expects a file or directory, it accepts:
+
+- local path (file or directory)
+- public URL (HTTP/HTTPS)
+- server-side `source_id` (previous upload)
+
+Behavior depends on target:
+
+- local engine + local path: pass path directly
+- remote engine + public URL: pass URL directly
+- remote engine + local path: upload to source storage (chunked) and pass `source_id`
+
+This keeps `POST /runs` small and enables resumable uploads for large projects.
+
+---
+
+## 11. Compatibility and Extensibility
 
 - Liquibase is treated as an external planner/executor
 - CLI does not expose Liquibase internals directly
@@ -255,7 +273,7 @@ Designed for CI/CD usage.
 
 ---
 
-## 11. Non-Goals (for this CLI contract)
+## 12. Non-Goals (for this CLI contract)
 
 - Full parity with Liquibase CLI options
 - Interactive TUI
@@ -263,7 +281,7 @@ Designed for CI/CD usage.
 
 ---
 
-## 12. Open Questions
+## 13. Open Questions
 
 - Should `run` implicitly snapshot or require an explicit flag?
 - Should `plan` be implicit in `migrate` or always explicit?
@@ -272,7 +290,7 @@ Designed for CI/CD usage.
 
 ---
 
-## 13. Philosophy
+## 14. Philosophy
 
 `sqrls` (sic) is not a database.
 
