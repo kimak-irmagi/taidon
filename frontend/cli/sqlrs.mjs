@@ -375,6 +375,7 @@ Options:
   --workspace      Workspace root (default: ./sqlrs-work)
   --storage        plain|btrfs|zfs (default: plain)
   --client         container|host (default: container)
+  --snapshots      on|off (default: on)
   --pgUser         Postgres user (default: postgres)
   --pgPassword     Postgres password (default: postgres)
   --pgDb           Postgres database (default: postgres)
@@ -388,6 +389,7 @@ function parseGlobalArgs(argv) {
     workspace: path.resolve(process.cwd(), "sqlrs-work"),
     storage: "plain",
     client: "container",
+    snapshots: "on",
     pgUser: "postgres",
     pgPassword: "postgres",
     pgDb: "postgres"
@@ -399,6 +401,7 @@ function parseGlobalArgs(argv) {
     ["--workspace", "workspace"],
     ["--storage", "storage"],
     ["--client", "client"],
+    ["--snapshots", "snapshots"],
     ["--pgUser", "pgUser"],
     ["--pgPassword", "pgPassword"],
     ["--pgDb", "pgDb"]
@@ -438,6 +441,9 @@ function parseGlobalArgs(argv) {
   }
   if (!["container", "host"].includes(opts.client)) {
     throw new Error(`Invalid --client: ${opts.client}`);
+  }
+  if (!["on", "off"].includes(opts.snapshots)) {
+    throw new Error(`Invalid --snapshots: ${opts.snapshots}`);
   }
 
   return opts;
@@ -521,19 +527,21 @@ async function main() {
 
   const from = parseFrom(args.from);
   const runId = randomId();
+  const useSnapshots = args.snapshots !== "off";
 
   const ws = path.resolve(args.workspace);
   const runDir = path.join(ws, "runs", runId);
   const logsDir = path.join(runDir, "logs");
   ensureDir(logsDir);
 
-  const prepareState = prepareCmd ? computePrepareState(prepareCmd) : null;
+  const prepareState = useSnapshots && prepareCmd ? computePrepareState(prepareCmd) : null;
   const stateDir = prepareState ? path.join(ws, "states", prepareState.stateId) : null;
 
   const metrics = {
     run_id: runId,
     storage: args.storage,
     image: from.image,
+    snapshots: args.snapshots,
     times_ms: {},
     sizes: {}
   };
@@ -651,60 +659,62 @@ async function main() {
   if (prepareCmd && !reusedState) {
     await runStep("prepare", prepareCmd, "prepare.log", prepareState?.files || null);
 
-    const tStop = nowMs();
-    const stopLog = path.join(logsDir, "pg_stop.log");
-    let stopError = null;
-    try {
-      await docker.execToFile(
-        pgName,
-        stopLog,
-        ["pg_ctl", "-D", "/var/lib/postgresql/data", "-m", "fast", "-w", "stop"],
-        { user: "postgres" }
-      );
-    } catch (err) {
-      stopError = err;
-      fs.appendFileSync(stopLog, `\n-- Error during pg_ctl stop: ${err?.stack || String(err)}\n`);
-    }
-
-    const stillReady = await docker.isPgReady({ container: pgName, user: args.pgUser });
-    if (stillReady) {
-      throw stopError || new Error("Postgres did not stop");
-    }
-    if (stopError) {
-      console.warn("[warn] pg_ctl stop returned error, but server is down.");
-    }
-    metrics.times_ms.pg_stop = nowMs() - tStop;
-
-    const tSnap = nowMs();
-    const snap = await snapshotVolume({
-      workspace: ws,
-      volume: vol,
-      runId,
-      storage: args.storage,
-      image: from.image,
-      stateId: prepareState ? prepareState.stateId : `${runId}-prepare`,
-      prepareCmd
-    });
-    metrics.times_ms.snapshot = nowMs() - tSnap;
-    metrics.snapshot = { state_id: snap.stateId, path: snap.stateDir };
-
-    if (runCmd) {
-      const tStartPg = nowMs();
-      const startLog = path.join(logsDir, "pg_start.log");
+    if (useSnapshots) {
+      const tStop = nowMs();
+      const stopLog = path.join(logsDir, "pg_stop.log");
+      let stopError = null;
       try {
-        const running = await docker.isRunning(pgName);
-        if (!running) await docker.start(pgName);
         await docker.execToFile(
           pgName,
-          startLog,
-          ["pg_ctl", "-D", "/var/lib/postgresql/data", "-w", "start"],
+          stopLog,
+          ["pg_ctl", "-D", "/var/lib/postgresql/data", "-m", "fast", "-w", "stop"],
           { user: "postgres" }
         );
-        await docker.waitPgReady({ container: pgName, user: args.pgUser });
-        metrics.times_ms.pg_restart = nowMs() - tStartPg;
-      } catch(err) {
-        fs.appendFileSync(startLog, `\n-- Error during pg_ctl start: ${err?.stack || String(err)}\n`);
-        throw err;
+      } catch (err) {
+        stopError = err;
+        fs.appendFileSync(stopLog, `\n-- Error during pg_ctl stop: ${err?.stack || String(err)}\n`);
+      }
+
+      const stillReady = await docker.isPgReady({ container: pgName, user: args.pgUser });
+      if (stillReady) {
+        throw stopError || new Error("Postgres did not stop");
+      }
+      if (stopError) {
+        console.warn("[warn] pg_ctl stop returned error, but server is down.");
+      }
+      metrics.times_ms.pg_stop = nowMs() - tStop;
+
+      const tSnap = nowMs();
+      const snap = await snapshotVolume({
+        workspace: ws,
+        volume: vol,
+        runId,
+        storage: args.storage,
+        image: from.image,
+        stateId: prepareState ? prepareState.stateId : `${runId}-prepare`,
+        prepareCmd
+      });
+      metrics.times_ms.snapshot = nowMs() - tSnap;
+      metrics.snapshot = { state_id: snap.stateId, path: snap.stateDir };
+
+      if (runCmd) {
+        const tStartPg = nowMs();
+        const startLog = path.join(logsDir, "pg_start.log");
+        try {
+          const running = await docker.isRunning(pgName);
+          if (!running) await docker.start(pgName);
+          await docker.execToFile(
+            pgName,
+            startLog,
+            ["pg_ctl", "-D", "/var/lib/postgresql/data", "-w", "start"],
+            { user: "postgres" }
+          );
+          await docker.waitPgReady({ container: pgName, user: args.pgUser });
+          metrics.times_ms.pg_restart = nowMs() - tStartPg;
+        } catch(err) {
+          fs.appendFileSync(startLog, `\n-- Error during pg_ctl start: ${err?.stack || String(err)}\n`);
+          throw err;
+        }
       }
     }
   }

@@ -24,6 +24,7 @@ async function main() {
     .option("example", { type: "string", demandOption: true, choices: ["chinook", "sakila", "flights"] })
     .option("storage", { type: "string", demandOption: true, choices: ["plain", "btrfs", "zfs"] })
     .option("image", { type: "string", default: "postgres:17" })
+    .option("snapshots", { type: "string", default: "on", choices: ["on", "off"] })
     .option("sqlrsWorkspace", { type: "string", default: "./sqlrs-work" })
     .parse();
 
@@ -47,6 +48,7 @@ async function main() {
     sqlrs,
     "--from", args.image,
     "--storage", args.storage,
+    "--snapshots", args.snapshots,
     "--prepare", "--",
     "psql", "-f", prepare,
     "--run", "--",
