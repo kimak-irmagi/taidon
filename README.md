@@ -42,46 +42,55 @@ taidon/
   CONTRIBUTING.md
   CODE_OF_CONDUCT.md
   LICENSE
+  core.ru.md
+  vision.ru.md
+  package.json
+  pnpm-lock.yaml
 
   docs/                # Architecture, design docs, ADR, user guides
   research/            # LaTeX papers, benchmarks, datasets, experiments
 
   frontend/
+    cli/               # sqlrs CLI
     main/              # Main SPA application (React)
     editor/            # Query editor component
-    result-viewer/     # Result table component
     plan-viewer/       # Query plan visualization
-    ...                # Other UI modules and shared libs
 
   backend/
     gateway/           # API gateway (BFF) for the frontend
     services/
-      vcs-sync/        # Integration with VCS / local FS
-      sql-runner/      # Fast execution of SQL chains
+      audit-log/       # Action/event logging
+      autoscaler/      # Autoscaling workers
       env-manager/     # Database container orchestration + snapshots
       snapshot-cache/  # Snapshot lifecycle and warm cache
-      user-profile/    # Users, orgs, roles, quotas
-      idp/             # Authentication / identity provider
-      audit-log/       # Action/event logging
+      sql-runner/      # Fast execution of SQL chains
       telemetry/       # Metrics and usage data
-      scheduler/       # Background tasks (cleanup, prewarm, etc.)
-      # billing/       # (optional) billing and quota enforcement
+      user-profile/    # Users, orgs, roles, quotas
+      vsc-sync/        # Integration with VCS / local FS
     libs/              # Shared backend libraries (types, utils, clients)
 
   infra/
     docker/            # Dockerfiles for services and DBs
     k8s/               # Kubernetes manifests / Helm charts
-    terraform/         # Cloud infrastructure
     local-dev/         # docker-compose for local development
 
   scripts/
     dev/               # Development helpers
+    external/          # External assets and manifests
     maintenance/       # Database migrations, cleanup tools
 
   examples/
-    sql/
-    api/
-    scenarios/
+    chinook/
+    flights/
+    pgbench/
+    sakila/
+    README.md
+
+  tools/               # One-off tooling (fetchers, utilities)
+  dist/                # Generated CLI bundles
+  results/             # Generated experiment artifacts
+  sqlrs-work/          # Generated runtime workspace
+  node_modules/        # Installed dependencies
 ```
 
 ---
@@ -91,7 +100,7 @@ taidon/
 ### **Frontend**
 
 Located under `frontend/`.  
-The main application lives in `frontend/main`, while individual components (editor, viewers, widgets) reside in sibling directories.
+The main application lives in `frontend/main`, with `frontend/editor` and `frontend/plan-viewer` as UI components, and `frontend/cli` hosting the sqlrs CLI.
 
 Each subproject contains its own `README.md` with setup instructions.
 
@@ -114,7 +123,7 @@ Start from:
 
 - `docs/README.md` — doc index
 - `docs/architecture/README.md` — architecture overview and per-service docs
-- `docs/requirements/requirements_architecture.md` — core requirements
+- `docs/requirements-architecture.md` - core requirements
 - `docs/roadmap.md` — roadmap and milestones
 
 ---
@@ -133,7 +142,7 @@ We welcome contributions from students, volunteers, and professionals.
 
 Please read the contribution guidelines:
 
-👉 **[CONTRIBUTING.md](./CONTRIBUTING.md)**
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)**
 
 ---
 
@@ -143,7 +152,7 @@ We are committed to providing a welcoming and inclusive environment.
 
 Please review our Code of Conduct:
 
-👉 **[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)**
+- **[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)**
 
 ---
 
@@ -152,6 +161,6 @@ Please review our Code of Conduct:
 This project is distributed under the **Apache License 2.0**.
 
 Full text:  
-👉 **[LICENSE](./LICENSE)**
+- **[LICENSE](./LICENSE)**
 
 ---

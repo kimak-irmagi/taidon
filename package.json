@@ -1,0 +1,19 @@
+{
+  "name": "taidon",
+  "private": true,
+  "packageManager": "pnpm@10.26.2",
+  "type": "module",
+
+  "scripts": {
+    "build:cli": "node scripts/build-cli.mjs",
+    "run:one": "node scripts/run-one.mjs",
+    "bench": "node scripts/bench.mjs",
+    "fetch:sql": "node tools/fetch-sql-scripts.mjs"
+  },
+  "devDependencies": {
+    "yaml": "^2.8.0"
+  },
+  "dependencies": {
+    "yargs": "^17.7.2"
+  }
+}

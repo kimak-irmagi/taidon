@@ -131,25 +131,30 @@ Important flags:
 
 ---
 
-### 3.4 `sqlrs run`
+### 3.4 `sqlrs run` (PoC form)
 
-Run an arbitrary command or script against a sandbox.
+Run an arbitrary command or script against a sandbox. In the PoC we use a single
+invocation with step flags.
 
 ```bash
-sqlrs run -- <command>
+sqlrs --run -- <command>
+sqlrs --prepare -- <command> --run -- <command>
 ```
 
 Examples:
 
 ```bash
-sqlrs run -- psql -c "SELECT count(*) FROM users"
-sqlrs run -- pytest
+sqlrs --run -- psql -c "SELECT count(*) FROM users"
+sqlrs --prepare -- psql -f ./schema.sql --run -- pytest
 ```
 
 Behavior:
-- creates a sandbox from the current state
-- executes the command
-- optionally snapshots the result
+- starts one sandbox per invocation
+- executes `prepare` (if provided) then `run`
+- snapshots after successful `prepare` into `workspace/states/<state-id>`
+- stops on the first error with a non-zero exit code
+- `--prepare` and `--run` are reserved and cannot appear inside commands
+- only one `prepare` and one `run` per invocation
 
 ---
 
@@ -283,7 +288,7 @@ This keeps `POST /runs` small and enables resumable uploads for large projects.
 
 ## 13. Open Questions
 
-- Should `run` implicitly snapshot or require an explicit flag?
+- Should we allow multiple prepare/run steps per invocation?
 - Should `plan` be implicit in `migrate` or always explicit?
 - How much state history should be shown by default?
 - Should destructive operations require confirmation flags?
