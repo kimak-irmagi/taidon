@@ -1,0 +1,57 @@
+version: 1
+sources:
+  chinook-postgres:
+    kind: single-file
+    url: https://raw.githubusercontent.com/lerocha/chinook-database/master/ChinookDatabase/DataSources/Chinook_PostgreSql.sql
+    sha256: e3fde5c1a5b51a2a91429a702c9ca6e69ba56e6c7f5e112724d70c3d03db695e
+    out:
+      path: examples/chinook/Chinook_PostgreSql.sql
+    license:
+      note: See upstream repo for license details
+      url: https://github.com/lerocha/chinook-database/blob/master/LICENSE.md
+  sakila-postgres-setup:
+    kind: single-file
+    url: https://raw.githubusercontent.com/sakiladb/postgres/master/0-postgres-sakila-setup.sql
+    sha256: f82f08585f362883a7b627044d795c561ab21566449db955c82ec4f332746c73
+    out:
+      path: examples/sakila/0-postgres-sakila-setup.sql
+    license:
+      spdx: BSD-2-Clause
+      upstream: https://github.com/sakiladb/postgres
+  sakila-postgres-schema:
+    kind: single-file
+    url: https://raw.githubusercontent.com/sakiladb/postgres/master/1-postgres-sakila-schema.sql
+    sha256: 4c82eaf8c8fee22f35bb067f996028325546844184d0412cecd7c42cd19c21dd
+    out:
+      path: examples/sakila/1-postgres-sakila-schema.sql
+    license:
+      spdx: BSD-2-Clause
+      upstream: https://github.com/sakiladb/postgres
+  sakila-postgres-data:
+    kind: single-file
+    url: https://raw.githubusercontent.com/sakiladb/postgres/master/2-postgres-sakila-insert-data.sql
+    sha256: 5abfb27721f56443dcd67b0fe4313c66c2ceca5e552fc1e31b2fb289157ff2e9
+    out:
+      path: examples/sakila/2-postgres-sakila-insert-data.sql
+    license:
+      spdx: BSD-2-Clause
+      upstream: https://github.com/sakiladb/postgres
+  sakila-postgres-user:
+    kind: single-file
+    url: https://raw.githubusercontent.com/sakiladb/postgres/master/3-postgres-sakila-user.sql
+    sha256: dbe46ab6a1ecfcf15af929907c927545f495b733ce454e4b56d83ec0728b5307
+    out:
+      path: examples/sakila/3-postgres-sakila-user.sql
+    license:
+      spdx: BSD-2-Clause
+      upstream: https://github.com/sakiladb/postgres
+  flights-postgrespro-small:
+    kind: zip
+    url: https://edu.postgrespro.com/demo-small-en.zip
+    sha256: ea70bc6382a91345ac3b91de3ed92934853495653374ebf60589a19453030c00
+    include:
+      - demo-small-en-20170815.sql
+    out:
+      dir: examples/flights/
+    license:
+      note: Distributed under PostgreSQL License; see PostgresPro demo DB page

@@ -15,10 +15,10 @@ Scope: core service that executes SQL projects deterministically, with cache-awa
 
 The Gateway/BFF fronts these calls; shape is stable across REST/gRPC. Identifiers are opaque UUIDs.
 
-- `POST /runs` — start run. Body: project ref (repo/path+rev), entry script(s), parameters, limits (timeout, row limit, byte limit), cache hints. Response: `run_id`, status URL, stream URL.
-- `GET /runs/{run_id}/stream` — server-sent events / WebSocket for rows, progress, logs, state changes.
-- `POST /runs/{run_id}/cancel` — best-effort cancel; guarantees no further writes to the sandbox.
-- `GET /runs/{run_id}` — status, timings, cache hit/miss, tail hash, sandbox binding, summary artefacts.
+- `POST /runs` - start run. Body: project ref (repo/path+rev) or `source_id`, entry script(s), parameters, limits (timeout, row limit, byte limit), cache hints. Response: `run_id`, status URL, stream URL.
+- `GET /runs/{run_id}/stream` - server-sent events / WebSocket for rows, progress, logs, state changes.
+- `POST /runs/{run_id}/cancel` - best-effort cancel; guarantees no further writes to the sandbox.
+- `GET /runs/{run_id}` - status, timings, cache hit/miss, tail hash, sandbox binding, summary artefacts.
 
 Timeouts are multi-layer:
 
@@ -95,3 +95,76 @@ All exits (success/fail/cancel/timeout) write a terminal status, duration, cache
 - Logs: structured per run_id; include cache decision, env binding, errors.
 - Audit: who ran what project/ref, outcome, resources consumed.
 - Limits: row count and payload size caps; reject oversized result sets; redact secrets in logs/streams.
+
+## 7. Deployment Profiles and Evolution
+
+### 7.1 Local (MVP)
+
+- **Process**: engine runs locally (ephemeral), REST over loopback; CLI can watch or detach.
+- **Runtime**: Docker executor; single-node sandbox pool; per-user state store on disk.
+- **Cache**: local snapshot store + SQLite index; no shared cache service.
+- **Auth**: none; rely on local loopback and filesystem permissions.
+- **Scaling**: limited parallelism on the workstation; no autoscaling.
+
+### 7.2 Team / Cloud
+
+- **Process**: stateless runner service behind Gateway/Orchestrator; multi-replica with HPA.
+- **Runtime**: env-manager (k8s executor), namespace isolation, quotas/TTL policies.
+- **Cache**: shared cache service and snapshot store (PVC/S3) with Control DB metadata.
+- **Auth**: OIDC/JWT via Gateway; per-org access and rate limits.
+- **Scaling**: autoscaling for runners and cache builders; warm pools for sandboxes.
+
+The API surface and run model are kept stable across profiles to allow the CLI to target local or shared deployments without behavioral drift.
+
+## 8. Liquibase Integration and Fallback
+
+The runner must provide value with and without Liquibase.
+
+### 8.1 Liquibase-aware mode (preferred)
+
+- Planner queries Liquibase for pending changesets and checksums.
+- Cache keys are derived from changeset hashes; predictive cache hits before apply.
+- Runner executes changesets step-by-step and snapshots after each step.
+
+### 8.2 Generic SQL mode (no Liquibase)
+
+- CLI provides an explicit execution plan (ordered script list and boundaries).
+- Runner hashes script contents and parameters to form cache keys.
+- Snapshots are taken after each script/step boundary; cache reuse still works within and across projects when hashes match.
+- Streaming, timeouts, cancellation, and artifact capture are identical to Liquibase mode.
+
+This ensures the runner still accelerates repeated runs and enforces deterministic execution even when Liquibase is not installed.
+
+## 9. Content Delivery and Project Sources
+
+Remote execution needs two modes of supplying SQL sources:
+
+### 9.1 Server-side sources (zero deployment)
+
+- SQL project lives on the service (workspace, shared repo mirror, or imported artifact).
+- `POST /runs` references `project_ref` (repo/path+rev) or a server-side project ID.
+- Runner fetches content from the service store; no large payloads in the run request.
+
+### 9.2 Client-side sources (local files, remote runner)
+
+- CLI uploads sources as a content-addressed bundle and then starts a run by `source_id`.
+- Large scripts are chunked on the CLI, not on the runner, to avoid timeouts on a single request body.
+
+Suggested API shape (logical):
+
+- `POST /sources` - create upload session, returns `source_id` and chunk size.
+- `PUT /sources/{source_id}/chunks/{n}` - upload chunk (resumable).
+- `POST /sources/{source_id}/finalize` - commit manifest (file list + hashes) and make source ready.
+- `POST /runs` - reference `source_id` instead of `project_ref`.
+
+Chunking and sync:
+
+- CLI splits files into fixed-size chunks, computes hashes, and uploads only missing chunks.
+- A manifest maps file paths to chunk hashes; this enables rsync-style delta updates.
+- The service stores chunks in the artifact store; runner accesses content via `source_id`.
+
+Rationale:
+
+- Avoids very large request bodies on `POST /runs`.
+- Supports resume/retry and dedup across projects.
+- Allows the service to keep a local copy for cache reuse and reproducibility.

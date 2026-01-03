@@ -13,4 +13,5 @@ Entry points for Taidon architecture and service design.
 - `liquibase-integration.md` — Liquibase provider strategy and structured logs.
 - `autoscaling.md` — autoscaling controller (team/cloud) for sandboxes/cache.
 - `cli_contract.md` — CLI contract and commands.
+- `cli-architecture.md` — CLI flows for local vs remote and source uploads.
 - `query-analysis-workflow-review.md` — notes on query analysis workflow.
