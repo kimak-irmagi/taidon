@@ -4,7 +4,8 @@ This document defines a **preliminary user-facing CLI contract** for `sqlrs`.
 It is intentionally incomplete and iterative, similar in spirit to early `git` or `docker` CLI designs.
 
 The goal is to:
-- establish a stable *mental model* for users,
+
+- establish a stable _mental model_ for users,
 - define command namespaces and responsibilities,
 - guide internal API and UX decisions.
 
@@ -68,6 +69,7 @@ sqlrs init
 ```
 
 Creates:
+
 - `.sqlrs/` directory
 - default config
 - links to migration sources (e.g., Liquibase changelog)
@@ -83,6 +85,7 @@ sqlrs plan [options]
 ```
 
 Purpose:
+
 - show pending changes
 - compute hash horizon
 - display potential cache hits
@@ -116,6 +119,7 @@ sqlrs migrate [options]
 ```
 
 Behavior:
+
 - uses `plan`
 - rewinds via cache where possible
 - materializes sandboxes as needed
@@ -149,6 +153,7 @@ sqlrs --prepare -- psql -f ./schema.sql --run -- pytest
 ```
 
 Behavior:
+
 - starts one sandbox per invocation
 - executes `prepare` (if provided) then `run`
 - snapshots after successful `prepare` into `workspace/states/<state-id>`
@@ -196,6 +201,7 @@ sqlrs tag list
 ```
 
 Tags:
+
 - do not change state identity
 - influence cache eviction
 
@@ -302,4 +308,3 @@ This keeps `POST /runs` small and enables resumable uploads for large projects.
 It is a **state management and execution engine** for databases.
 
 The CLI should make state transitions explicit, inspectable, and reproducible.
-
