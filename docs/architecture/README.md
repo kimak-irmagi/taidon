@@ -11,7 +11,11 @@ Entry points for Taidon architecture and service design.
 - `state-cache-design.md` — cache keys, triggers, retention, local store layout.
 - `sql-runner-api.md` — runner API surface, timeouts, cancel, streaming.
 - `liquibase-integration.md` — Liquibase provider strategy and structured logs.
-- `autoscaling.md` — autoscaling controller (team/cloud) for sandboxes/cache.
+- `k8s-architecture.md` — Kubernetes architecture with a single gateway entry point.
 - `cli_contract.md` — CLI contract and commands.
 - `cli-architecture.md` — CLI flows for local vs remote and source uploads.
 - `query-analysis-workflow-review.md` — notes on query analysis workflow.
+- 'git-aware-passive.md' — notes on the `git` interaction scenarios, initiated
+  by user via the local CLI commands
+- 'git-aware-active.md' — notes on the github interaction scenarios that require
+  a running service/API endpoint

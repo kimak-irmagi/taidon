@@ -38,9 +38,11 @@ gantt
     Drop-in connection (proxy/adapter)         :b1, after a2, 45d
     CLI UX + deterministic runs                :b2, after a2, 45d
     State cache v1 (reuse states)              :b3, after a3, 45d
+    Git-aware CLI (ref/diff/provenance)        :b4, after b3, 30d
 
     section Team (On-Prem)
     Orchestrator + quotas + TTL                :c1, after b2, 45d
+    K8s gateway + controller topology          :c6, after c1, 30d
     Artifact store (S3/fs) + audit log         :c2, after c1, 45d
     CI/CD integration templates                :c3, after c1, 30d
     Auth (OIDC) + RBAC (basic)                 :c4, after c1, 45d
@@ -53,6 +55,7 @@ gantt
 
     section Research / Optional
     Cloud Git repo integration (VCS sync)      :o1, after d2, 45d
+    GitHub PR automation (warmup/diff checks)  :o2, after o1, 45d
 
     section Education
     Course/Assignment/Submission model         :e1, after d2, 45d
@@ -135,6 +138,8 @@ gantt
 - Config conventions:
   - discover migrations from repo layout
   - profiles (dev/test) and secrets handling
+- Git-aware CLI (passive):
+  - `--ref` (blob/worktree), `diff`, provenance, cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - open SQL editor (via existing VS Code DB tooling)
@@ -161,6 +166,9 @@ gantt
   - job queue
   - quotas
   - TTL policies
+- K8s shared deployment baseline:
+  - single entrypoint Gateway (TCP)
+  - Controller-managed DB runner pods
 - Artifact store:
   - logs, reports, exports
   - retention policies
@@ -224,6 +232,30 @@ gantt
 
 - User can attach a Git repo and start a sandbox from a chosen branch/commit
 - Repo updates are available in the sandbox without manual re-import
+
+---
+
+### R2. GitHub PR Automation (Optional / Research)
+
+**Purpose**: automate warmup and diffs around PRs without leaking secrets.
+
+**Deliverables**:
+
+- GitHub App / webhook receiver
+- PR slash commands:
+  - `/taidon warmup --prepare <path>`
+  - `/taidon diff --from-ref base --to-ref head --prepare <path>`
+  - `/taidon compare --from-ref base --from-prepare <path> --to-ref head --to-prepare <path> --run "..."`
+- Check Runs:
+  - warmup status
+  - Taidon-aware diff summary
+- Warmup via `sqlrs run` in prepare-only mode (no DSN in PR)
+- Eviction hints from Git events (merge/tag/PR closed)
+
+**Exit criteria**:
+
+- PR label or slash command triggers warmup in a controlled runner
+- Check Run shows diff/warmup summary without exposing secrets
 
 ---
 
@@ -295,3 +327,6 @@ gantt
 - `cli-spec.md` (commands and exit codes)
 - `security-model.md` (cloud-hardening, redaction, audit)
 - `runtime-snapshotting.md` (details of the snapshot mechanics)
+- `git-aware-passive.md` (CLI by ref, zero-copy, provenance)
+- `git-aware-active.md` (PR automation, warmup/diff checks)
+- `k8s-architecture.md` (single entry gateway in k8s)
