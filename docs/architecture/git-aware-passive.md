@@ -1,6 +1,6 @@
 # Git-aware semantics: passive features (CLI)
 
-Goal: add git-aware capabilities **without changing the user's привычный процесс работы**. All functions in this document are activated **only by explicit user commands/flags** and do not require repository setup "for Taidon".
+Goal: add git-aware capabilities **without changing the user's work habits**. All functions in this document are activated **only by explicit user commands/flags** and do not require repository setup "for Taidon".
 
 ## Design principles
 
