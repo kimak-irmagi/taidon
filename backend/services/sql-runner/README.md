@@ -1,95 +1,95 @@
 # sql-runner
 
-Сервис детерминированного исполнения цепочек SQL. Вычисляет head/tail, ищет готовый снимок состояния в `snapshot-cache`, поднимает или переиспользует песочницу через `env-manager`, выполняет head и возвращает результат вместе с метаданными слоя.
+Service for deterministic execution of SQL chains. Computes head/tail, looks up a ready state snapshot in `snapshot-cache`, boots or reuses a sandbox via `env-manager`, executes head, and returns the result with layer metadata.
 
-## Статус
+## Status
 
-MVP проектируется; README фиксирует целевое поведение и интерфейсы до появления кода.
+MVP is under design; this README captures target behavior and interfaces ahead of code.
 
-## Роль в платформе
+## Role in the platform
 
-- детерминированно воспроизводит цепочки SQL как функцию от содержимого проекта;
-- рассчитывает хэш tail и запрашивает соответствующий слой в `snapshot-cache`;
-- поднимает/рестартует песочницу PostgreSQL через `env-manager` и выполняет head;
-- возвращает результат запроса, ошибки компиляции/выполнения и метаданные слоёв;
-- публикует аудит и телеметрию для мониторинга и расследований.
+- deterministically replays SQL chains as a function of project content;
+- computes tail hash and requests the matching layer from `snapshot-cache`;
+- boots/restarts a PostgreSQL sandbox via `env-manager` and executes head;
+- returns query results, compile/runtime errors, and layer metadata;
+- emits audit and telemetry for monitoring and investigations.
 
-## Ключевой поток исполнения
+## Key execution flow
 
-1. `gateway` проксирует запрос от фронтенда с деревом SQL-проекта и указателем на head.
-2. Planner строит цепочку, делит её на tail/head и считает хэш tail.
-3. Клиент `snapshot-cache` ищет готовый слой; при miss запрашивает прогон tail и создание слоя.
-4. `env-manager` поднимает песочницу из найденного/созданного слоя либо из базового образа.
-5. Executor подключается к PostgreSQL песочницы, выполняет head, фиксирует ошибки/результат.
-6. При необходимости публикуется новый слой в `snapshot-cache`.
-7. Ответ уходит в `gateway` с данными о слое, логами и метриками.
+1. `gateway` proxies a request from the frontend with the SQL project tree and head pointer.
+2. Planner builds the chain, splits it into tail/head, and computes tail hash.
+3. `snapshot-cache` client looks up an existing layer; on miss it requests tail replay and layer creation.
+4. `env-manager` brings up a sandbox from the found/created layer or from a base image.
+5. Executor connects to sandbox PostgreSQL, runs head, captures errors/results.
+6. If needed, a new layer is published to `snapshot-cache`.
+7. Response goes to `gateway` with layer data, logs, and metrics.
 
-## Модульная структура (MVP)
+## Module structure (MVP)
 
-- API handler - HTTP/GRPC точка, интегрированная через `gateway`.
-- Planner - парсинг дерева, разбиение на tail/head, расчёт хэша tail.
-- Snapshot-cache client - поиск/публикация слоёв, учёт версий движка и настроек.
-- Env binding - работа с `env-manager`, контроль TTL/лимитов песочниц.
-- Executor - подключение к PostgreSQL и выполнение head с учётом параметров пользователя.
-- Observability hooks - метрики, аудит, трассировки, корреляция по `request_id`.
+- API handler - HTTP/GRPC entry, integrated through `gateway`.
+- Planner - tree parsing, tail/head split, tail hash calculation.
+- Snapshot-cache client - lookup/publish layers, account for engine version and settings.
+- Env binding - interaction with `env-manager`, sandbox TTL/limit control.
+- Executor - connects to PostgreSQL and runs head with user parameters.
+- Observability hooks - metrics, audit, traces, correlation by `request_id`.
 
-## SQL-проект и хеширование
+## SQL project and hashing
 
-- Проект - дерево SQL-скриптов (`init/`, `seed/`, `test/`, `bench/` и т.д.).
-- Head - конкретный файл, который выполняется и отдаёт результат пользователю.
-- Tail - все предшествующие файлы/шаги; именно его хэш используется как ключ кэша.
-- Tail хэшируется по содержимому, путям, версии движка/расширений и настройкам окружения.
-- Ветвление цепочек поддерживается естественно: общий prefix даёт общий слой.
+- Project is a tree of SQL scripts (`init/`, `seed/`, `test/`, `bench/`, etc.).
+- Head is the specific file executed to return user results.
+- Tail is all preceding files/steps; its hash is used as the cache key.
+- Tail is hashed by content, paths, engine/extension version, and environment settings.
+- Branching is supported naturally: common prefix yields shared layers.
 
-## Модель заданий
+## Job model
 
-- Каждая цепочка исполняется как задание. Задание создаётся, исполняется асинхронно, поддерживает прогресс, отмену и сборку GC.
-- Задания бывают:
-  - **короткие** - создаются и исполняются одним запросом (fire-and-forget + быстрый polling).
-  - **длинные** - формируются из нескольких частей (append к уже созданному заданию), чтобы не передавать большие тела и показывать прогресс по мере сборки цепочки.
-- Прогресс: статус (`pending` → `preparing` → `running` → `publishing` → `completed`/`failed`/`canceled`), этапы (парсинг, поиск снапшота, поднятие песочницы, выполнение head), промежуточные логи.
-- Время жизни задания: `job_ttl` задаётся при создании; продвинутое управление TTL/пролонгацией доступно на премиальных планах. GC периодически удаляет просроченные задания и артефакты.
+- Each chain runs as a job. Jobs are created, executed asynchronously, support progress, cancellation, and GC.
+- Job types:
+  - **short** - created and executed in one request (fire-and-forget + quick polling).
+  - **long** - built in multiple parts (append to an existing job) to avoid large request bodies and to stream progress as the chain is built.
+- Progress: status (`pending` -> `preparing` -> `running` -> `publishing` -> `completed`/`failed`/`canceled`), stages (parsing, snapshot lookup, sandbox boot, head execution), intermediate logs.
+- Job TTL: `job_ttl` set at creation; advanced TTL/extension available in premium plans. GC periodically removes expired jobs and artifacts.
 
-## API (черновик)
+## API (draft)
 
-- `POST /v1/jobs` — создать задание.
-  - Вход: `request_id`, `user_id`, `project_tree` (путь → содержимое/etag), `head_path`, `variables`, `snapshot_ttl`, `job_ttl`, `timeout_ms`, `telemetry_context`.
-  - Используется и для коротких цепочек: можно сразу отправить весь проект и получить `job_id` + быстрый ответ о старте.
-- `POST /v1/jobs/{job_id}/append` — добавить часть проекта/цепочки к уже созданному заданию (для длинных сценариев).
-- `POST /v1/jobs/{job_id}/run` — начать исполнение, если задание собиралось частями.
-- `GET /v1/jobs/{job_id}` — статус, прогресс, текущий этап, tail_hash, ссылки на логи/результат.
-- `GET /v1/jobs/{job_id}/logs` — инкрементальные логи (polling) или SSE/WS (если добавим).
-- `POST /v1/jobs/{job_id}/cancel` — отменить выполнение и зачистить песочницу.
-- Webhooks (опционально): уведомления о `completed`/`failed`/`canceled` для внешних интеграций.
-- Ответ успешного выполнения:
-  - `status` (`completed`), `rows` или описание ошибки/отмены;
+- `POST /v1/jobs` - create job.
+  - Input: `request_id`, `user_id`, `project_tree` (path -> content/etag), `head_path`, `variables`, `snapshot_ttl`, `job_ttl`, `timeout_ms`, `telemetry_context`.
+  - Used for short chains: send the whole project and get `job_id` + immediate start response.
+- `POST /v1/jobs/{job_id}/append` - append a part of the project/chain to an existing job (long scenarios).
+- `POST /v1/jobs/{job_id}/run` - start execution if the job was assembled in parts.
+- `GET /v1/jobs/{job_id}` - status, progress, current stage, tail_hash, links to logs/results.
+- `GET /v1/jobs/{job_id}/logs` - incremental logs (polling) or SSE/WS (if added).
+- `POST /v1/jobs/{job_id}/cancel` - cancel execution and clean up sandbox.
+- Webhooks (optional): notifications on `completed`/`failed`/`canceled` for external integrations.
+- Success response:
+  - `status` (`completed`), `rows` or error/cancel description;
   - `snapshot` (tail_hash, layer_id, hit/miss);
-  - `progress` (финальный этап, длительность), `logs` (последний срез) или ссылка;
+  - `progress` (final stage, duration), `logs` (last chunk) or link;
   - `metrics` (latency, cache_hit, retries).
 
-## Интеграции
+## Integrations
 
-- `snapshot-cache` - поиск и публикация слоёв по `tail_hash`.
-- `env-manager` - создание/рестарт песочниц, сетевые policy (PostgreSQL доступен только `sql-runner`).
-- `audit-log` - запись действий и ошибок пользователя.
-- `telemetry/exporter` - метрики Prometheus и трассировки.
+- `snapshot-cache` - lookup/publish layers by `tail_hash`.
+- `env-manager` - sandbox create/restart, network policy (PostgreSQL accessible only to `sql-runner`).
+- `audit-log` - user actions and errors.
+- `telemetry/exporter` - Prometheus metrics and traces.
 
-## Наблюдаемость и безопасность
+## Observability and safety
 
-- Метрики: время холодного/тёплого старта песочницы, длительность head, доля cache hit, ошибки подключения/SQL, прогресс заданий, доля отмен/таймаутов, загрузка GC.
-- Логи: структурированные, без пользовательских данных; корреляция через `request_id` и `job_id`.
-- Аудит: кто/что/когда выполнил и с каким результатом/отменой.
-- Сетевые границы: доступ к PostgreSQL песочницам ограничен `sql-runner`; внешние вызовы идут только через `gateway`.
+- Metrics: cold/warm sandbox start time, head duration, cache hit rate, connection/SQL errors, job progress, cancel/timeout rates, GC load.
+- Logs: structured, no user data; correlated via `request_id` and `job_id`.
+- Audit: who/what/when with result/cancel status.
+- Network boundaries: access to PostgreSQL sandboxes is limited to `sql-runner`; external calls go through `gateway` only.
 
-## Локальная разработка (набросок)
+## Local development (sketch)
 
-- Код сервиса пока не добавлен; запуск описывается после появления реализации.
-- План: использовать `infra/local-dev/` для docker-compose/minikube, подготовить профили окружений и набор переменных (`POSTGRES_DSN`, `SNAPSHOT_CACHE_URL`, `ENV_MANAGER_URL` и т.п.).
-- После появления кода сюда попадут команды для сборки, запуска, тестов и линтеров.
+- Service code not added yet; launch details will be provided when it appears.
+- Plan: use `infra/local-dev/` for docker-compose/minikube, prepare env profiles and variables (`POSTGRES_DSN`, `SNAPSHOT_CACHE_URL`, `ENV_MANAGER_URL`, etc.).
+- Commands for build/run/tests/linters will be added once code exists.
 
 ## Backlog README
 
-- Уточнить формат `project_tree`, правила построения tail/head и контракт по append.
-- Добавить схемы ошибок и коды ответов.
-- Описать политику дедупликации/GC слоёв, TTL песочниц и TTL заданий (с правилами премиум-планов).
-- Обновить раздел локального запуска после добавления кода и инфраструктурных манифестов.
+- Clarify `project_tree` format, tail/head rules, and append contract.
+- Add error schemas and response codes.
+- Describe layer dedup/GC policy, sandbox TTL, and job TTL (including premium plan rules).
+- Update local run section after code and infra manifests land.

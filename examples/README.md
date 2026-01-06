@@ -18,7 +18,7 @@ Currently supported example datasets:
   Realistic airline booking dataset from Postgres Professional.
 
 All sources are listed with licenses and upstream links in  
-`scripts/external/NOTICE.md`.
+[`scripts/external/NOTICE.md`](scripts/external/NOTICE.md).
 
 ---
 
@@ -138,4 +138,4 @@ sqlrs \
 ## Licenses
 
 Each dataset is distributed under its original license.
-See `scripts/external/NOTICE.md` for details and attribution.
+See [`scripts/external/NOTICE.md`](scripts/external/NOTICE.md) for details and attribution.

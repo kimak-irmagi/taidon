@@ -5,7 +5,7 @@ labels: bug
 ---
 
 # Description
-<!-- Что не работает? -->
+<!-- What is not working? -->
 
 ## Steps to reproduce
 
@@ -14,7 +14,7 @@ labels: bug
 3. ...
 
 ## Expected behavior
-<!-- Что должно было произойти -->
+<!-- What should have happened? -->
 
 ## Environment
 

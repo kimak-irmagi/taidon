@@ -5,10 +5,12 @@
 In Taidon, a database state is treated as a **versioned artifact**, similar to commits in a version control system. Each database version is implemented as a snapshot on top of a Copy-on-Write (CoW) filesystem (e.g. ZFS).
 
 Snapshots form a **directed acyclic graph (DAG)**:
+
 - nodes represent database snapshots,
 - edges represent parent → child relationships created by snapshot/clone operations.
 
 Typical CI/CD workloads generate snapshots at high frequency. These snapshots:
+
 - are created and destroyed in large numbers,
 - differ significantly in reuse frequency and value,
 - compete for limited storage capacity.
@@ -22,14 +24,17 @@ This document describes a practical approach to **automatic cache size managemen
 ### 2.1 Architectural Constraints
 
 1. **CoW Filesystem Backend**
+
    - Storage relies on block sharing provided by a CoW filesystem.
    - Space efficiency is achieved by sharing unchanged blocks between snapshots.
 
 2. **Correctness Guarantees**
+
    - Snapshot removal must not break access to remaining snapshots.
    - Only **leaf snapshots** in the DAG are eligible for eviction.
 
 3. **Pinning Mechanism**
+
    - Snapshots may be excluded from eviction via pinning:
      - manual pin (user or policy),
      - active usage (mounted or running environment),
@@ -44,12 +49,15 @@ This document describes a practical approach to **automatic cache size managemen
 ### 2.2 Operational Requirements
 
 1. **Stability**
+
    - The system must avoid thrashing (rapid creation followed by immediate deletion).
 
 2. **Predictability**
+
    - Freed storage should correlate with eviction decisions in an explainable way.
 
 3. **Local Decision-Making**
+
    - Eviction decisions must rely on locally available metrics,
      without global recomputation of the entire snapshot graph.
 
@@ -73,6 +81,7 @@ A **high watermark / low watermark (HWM/LWM)** model is used:
 ### 4.1 Definition
 
 An **eviction operation** consists of:
+
 1. selecting an eviction candidate snapshot,
 2. physically deleting it from the CoW filesystem,
 3. recording the outcome (freed space, time, side effects).
@@ -82,6 +91,7 @@ An **eviction operation** consists of:
 ### 4.2 Candidate Set
 
 A snapshot may be considered for eviction if all of the following hold:
+
 - it is a **leaf** in the snapshot DAG,
 - it is **not pinned**,
 - it is **not actively used**,
@@ -109,6 +119,7 @@ Intuitively:
 `freed_space(snapshot)`
 
 Estimated using CoW filesystem statistics:
+
 - for ZFS, the `used` value of a leaf snapshot;
 - analogous metrics for other CoW filesystems.
 
@@ -121,6 +132,7 @@ For leaf snapshots, this value is a good approximation of their true storage con
 `access_frequency(snapshot)`
 
 Derived from:
+
 - direct accesses to the snapshot,
 - optionally, accesses to its descendants,
 - with time decay applied.
@@ -134,6 +146,7 @@ This metric estimates the probability that the snapshot will be needed again.
 An estimate of the cost incurred if the snapshot must be recreated after eviction.
 
 Initially modeled using:
+
 - historical creation cost,
 - access frequency,
 - coarse heuristics of rebuild complexity.
@@ -145,6 +158,7 @@ For leaf snapshots, restoration cost is treated as **local**, independent of oth
 ### 5.3 Composite Scoring
 
 Candidates are ranked using a composite heuristic that balances:
+
 - expected storage benefit,
 - probability of reuse,
 - expected restoration cost.
@@ -162,9 +176,11 @@ The exact scoring function is subject to tuning and experimentation.
 3. Evict snapshots with the best score until LWM is reached.
 
 Pros:
+
 - simple and transparent.
 
 Cons:
+
 - sensitive to metric noise.
 
 ---
@@ -175,6 +191,7 @@ Cons:
 - Scores are recomputed only between batches.
 
 Pros:
+
 - lower overhead,
 - more stable behavior.
 
@@ -187,6 +204,7 @@ Pros:
 - Scoring is applied within each tier.
 
 Pros:
+
 - protects recent snapshots from premature eviction.
 
 ---
@@ -200,6 +218,7 @@ Pros:
 - Eviction is restricted within classes.
 
 Pros:
+
 - easier to reason about product behavior,
 - reduces risk of removing critical snapshots.
 
@@ -213,4 +232,3 @@ Pros:
 - Excessive pinning may prevent sufficient space reclamation.
 
 These limitations are considered acceptable for an initial production implementation.
-

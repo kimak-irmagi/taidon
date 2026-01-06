@@ -206,7 +206,7 @@ Taidon should support a Liquibase-aware mode where it can:
 
 This is easiest when Taidon acts as the caller of Liquibase ("Liquibase master") or provides a wrapper around Liquibase CLI.
 
-Note: the same cache model is used in local and shared deployments. The difference is _where_ the Runner lives (local engine process vs shared service). See `docs/architecture/sql-runner-api.md`.
+Note: the same cache model is used in local and shared deployments. The difference is _where_ the Runner lives (local engine process vs shared service). See [`docs/architecture/sql-runner-api.md`](docs/architecture/sql-runner-api.md).
 
 ### 9.2 Change block definition
 
