@@ -1,7 +1,7 @@
 # Архитектура Taidon (MVP под обучение)
 
 Цель: запустить минимально жизнеспособную платформу для учебных сценариев SQL с изолированными песочницами, развёрнутую on-prem в Kubernetes (минимум — minikube для локальной отладки).
-Диаграммы взаимодействий и внутренних компонентов: [`docs/architecture/diagrams.md`](docs/architecture/diagrams.md).
+Диаграммы взаимодействий и внутренних компонентов: [`docs/architecture/diagrams.md`](docs/architecture/diagrams.RU.md).
 
 ## 1. Пользователи и изоляция
 

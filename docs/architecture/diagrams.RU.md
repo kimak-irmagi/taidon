@@ -1,8 +1,8 @@
-# Architecture Diagrams (MVP)
+# Диаграммы архитектуры (MVP)
 
-> Format: mermaid. Open in Markdown with mermaid support or via an online viewer.
+> Формат: mermaid. Открывать в Markdown с поддержкой mermaid или через онлайн-viewer.
 
-## 1. Service topology and communications (k8s)
+## 1. Топология сервисов и коммуникаций (k8s)
 
 ```mermaid
 flowchart LR
@@ -58,17 +58,17 @@ flowchart LR
   Prometheus --> Grafana
 ```
 
-## 2. Internal architecture of key services
+## 2. Внутренняя архитектура ключевых сервисов
 
 ### 2.1 sql-runner
 
 ```mermaid
 flowchart TD
   API[API handler]
-  Plan[Planner: parses project, splits tail/head, computes tail hash]
+  Plan[Planner: парсит проект, делит tail/head, считает хэш tail]
   CacheClient[Snapshot-cache client]
-  EnvBind[Env binding: request/bring up sandbox via env-manager]
-  Exec[Executor: connect to Postgres, execute head]
+  EnvBind[Env binding: запрос/поднятие песочницы через env-manager]
+  Exec[Executor: подключение к Postgres, выполнение head]
   Tele[Telemetry/log hooks]
 
   API --> Plan --> CacheClient

@@ -12,7 +12,7 @@ Entry points for Taidon architecture and service design.
 - [`sql-runner-api.md`](sql-runner-api.md) — runner API surface, timeouts, cancel, streaming.
 - [`liquibase-integration.md`](liquibase-integration.md) — Liquibase provider strategy and structured logs.
 - `[k8s-architecture.md](k8s-architecture.md)` — Kubernetes architecture with a single gateway entry point.
-- `[cli_contract.md](cli_contract.md)` — CLI contract and commands.
+- [`cli-contract.md`](cli-contract.md) - CLI contract and commands.
 - [`cli-architecture.md`](cli-architecture.md) — CLI flows for local vs remote and source uploads.
 - [`query-analysis-workflow-review.md`](query-analysis-workflow-review.md) — notes on query analysis workflow.
 - '[git-aware-passive.md](git-aware-passive.md)' — notes on the `git` interaction scenarios, initiated

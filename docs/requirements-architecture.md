@@ -218,15 +218,15 @@ flowchart TB
 
 ##### VCS / Git Connector (optional, cloud-first)
 
-- Подключение и синхронизация Git-репозиториев с SQL-проектами
-- Доступ к приватным репозиториям через токены/SSO (в облаке)
-- Триггеры запуска/обновления песочниц по веткам/коммитам
+- Connect and sync Git repositories with SQL projects
+- Access to private repositories via tokens/SSO (cloud)
+- Triggers to start/refresh sandboxes by branch/commit
 
 ##### Autoscaling Controller (team/cloud)
 
-- Управляет пулами песочниц и воркеров кэша (HPA/VPA/Cluster Autoscaler)
-- Основан на метриках: очередь оркестрации, активные песочницы, CPU/IO узлов хранилища, cache hit/latency
-- Теплый пул для снижения cold-start; graceful drain при scale-in
+- Manages pools of sandboxes and cache workers (HPA/VPA/Cluster Autoscaler)
+- Based on metrics: orchestration queue, active sandboxes, storage node CPU/IO, cache hit/latency
+- Warm pool to reduce cold-start; graceful drain on scale-in
 
 ##### Sandbox Runtime
 

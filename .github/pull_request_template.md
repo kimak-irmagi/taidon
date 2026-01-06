@@ -1,12 +1,12 @@
 # Summary
-<!-- Кратко: что сделано и зачем -->
+<!-- Briefly: what was done and why -->
 
 ## Changes
 
 - ...
 
 ## Testing
-<!-- Как проверяли: какие команды, какие кейсы -->
+<!-- How was it tested: commands, cases -->
 
 - [ ] `frontend/main` tests
 - [ ] `backend/*` tests

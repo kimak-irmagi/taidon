@@ -1,11 +1,11 @@
 ---
 name: Feature request
-about: Request a featutre in Taidon
+about: Request a feature in Taidon
 labels: feature
 ---
 
 # Description
-<!-- Описание фичи -->
+<!-- Describe the feature -->
 
 ## Target Audience
 

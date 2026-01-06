@@ -102,7 +102,7 @@ taidon/
 Located under `frontend/`.  
 The main application lives in `frontend/main`, with `frontend/editor` and `frontend/plan-viewer` as UI components, and `frontend/cli` hosting the sqlrs CLI.
 
-Each subproject contains its own [`README.md`](README.md) with setup instructions.
+Each subproject contains its own `README.md` with setup instructions.
 
 ---
 
