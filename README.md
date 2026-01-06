@@ -102,7 +102,7 @@ taidon/
 Located under `frontend/`.  
 The main application lives in `frontend/main`, with `frontend/editor` and `frontend/plan-viewer` as UI components, and `frontend/cli` hosting the sqlrs CLI.
 
-Each subproject contains its own `README.md` with setup instructions.
+Each subproject contains its own [`README.md`](README.md) with setup instructions.
 
 ---
 
@@ -121,10 +121,10 @@ Each service includes its own documentation and tooling.
 Architecture, specifications, ADRs, and design notes live in `docs/`.
 Start from:
 
-- `docs/README.md` — doc index
-- `docs/architecture/README.md` — architecture overview and per-service docs
-- `docs/requirements-architecture.md` - core requirements
-- `docs/roadmap.md` — roadmap and milestones
+- [`docs/README.md`](docs/README.md) — doc index
+- [`docs/architecture/README.md`](docs/architecture/README.md) — architecture overview and per-service docs
+- [`docs/requirements-architecture.md`](docs/requirements-architecture.md) - core requirements
+- [`docs/roadmap.md`](docs/roadmap.md) — roadmap and milestones
 
 ---
 
@@ -160,7 +160,8 @@ Please review our Code of Conduct:
 
 This project is distributed under the **Apache License 2.0**.
 
-Full text:  
+Full text:
+
 - **[LICENSE](./LICENSE)**
 
 ---

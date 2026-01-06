@@ -8,9 +8,9 @@ It focuses on:
 - ephemeral engine process
 - interaction with Docker and Liquibase
 
-This document intentionally avoids repeating Liquibase-specific details; those are covered in `liquibase-integration.md`.
-Engine internals are detailed in `engine-internals.md`.
-Team/Cloud variant is covered in `shared-deployment-architecture.md`.
+This document intentionally avoids repeating Liquibase-specific details; those are covered in [`liquibase-integration.md`](liquibase-integration.md).
+Engine internals are detailed in [`engine-internals.md`](engine-internals.md).
+Team/Cloud variant is covered in [`shared-deployment-architecture.md`](shared-deployment-architecture.md).
 
 ---
 
@@ -130,7 +130,7 @@ The engine delegates Liquibase execution to a _Liquibase provider_:
 - system-installed Liquibase
 - Docker-based Liquibase runner
 
-Provider selection and compatibility checks are defined in `liquibase-integration.md`.
+Provider selection and compatibility checks are defined in [`liquibase-integration.md`](liquibase-integration.md).
 
 The engine consumes **structured logs** from Liquibase for observability and control.
 

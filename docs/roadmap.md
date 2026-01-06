@@ -78,9 +78,9 @@ gantt
 
 **Key documents to produce next**:
 
-- `api-contract.md`
-- `sandbox-lifecycle.md`
-- `state-cache-design.md`
+- [`api-contract.md`](api-contract.md)
+- [`sandbox-lifecycle.md`](sandbox-lifecycle.md)
+- [`state-cache-design.md`](state-cache-design.md)
 
 ---
 
@@ -319,14 +319,14 @@ gantt
 
 ## Next Documents to Detail
 
-- `api-contract.md` (REST/gRPC + events)
-- `sql-runner-api.md` (timeouts, cancel, streaming, cache-aware planning)
-- `runtime-and-isolation.md` (local + k8s)
-- `liquibase-integration.md` (modes, config discovery)
-- `state-cache-design.md` (snapshotting, hashing, retention)
-- `cli-spec.md` (commands and exit codes)
-- `security-model.md` (cloud-hardening, redaction, audit)
-- `runtime-snapshotting.md` (details of the snapshot mechanics)
-- `git-aware-passive.md` (CLI by ref, zero-copy, provenance)
-- `git-aware-active.md` (PR automation, warmup/diff checks)
-- `k8s-architecture.md` (single entry gateway in k8s)
+- [`api-contract.md`](api-contract.md) (REST/gRPC + events)
+- [`sql-runner-api.md`](sql-runner-api.md) (timeouts, cancel, streaming, cache-aware planning)
+- [`runtime-and-isolation.md`](runtime-and-isolation.md) (local + k8s)
+- [`liquibase-integration.md`](liquibase-integration.md) (modes, config discovery)
+- [`state-cache-design.md`](state-cache-design.md) (snapshotting, hashing, retention)
+- [`cli-spec.md`](cli-spec.md) (commands and exit codes)
+- [`security-model.md`](security-model.md) (cloud-hardening, redaction, audit)
+- [`runtime-snapshotting.md`](runtime-snapshotting.md) (details of the snapshot mechanics)
+- [`git-aware-passive.md`](git-aware-passive.md) (CLI by ref, zero-copy, provenance)
+- [`git-aware-active.md`](git-aware-active.md) (PR automation, warmup/diff checks)
+- `[k8s-architecture.md](k8s-architecture.md)` (single entry gateway in k8s)

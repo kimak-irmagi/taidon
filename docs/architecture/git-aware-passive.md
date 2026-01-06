@@ -8,7 +8,7 @@ Goal: add git-aware capabilities **without changing the user's work habits**. Al
 - **Minimum side effects.** By default we do not run `git checkout`, do not touch the working tree, and avoid extra temp files. `worktree` mode is an explicit opt-in and leaves minimal traces under `.git/worktrees` that can be cleaned up.
 - **Fast path first.** Try to find a ready state in the Taidon cache by hashes of the involved files. If not found, build it.
 - **Everything is reproducible.** Any execution can save a manifest (provenance) to reproduce the same state 1:1.
-- **Remote mode requires repo access.** For `--ref` on a remote runner, the service must have a server-side mirror or VCS secrets; otherwise the CLI uploads sources to `source storage` and passes `source_id` (see `sql-runner-api.md`).
+- **Remote mode requires repo access.** For `--ref` on a remote runner, the service must have a server-side mirror or VCS secrets; otherwise the CLI uploads sources to `source storage` and passes `source_id` (see [`sql-runner-api.md`](sql-runner-api.md)).
 
 ---
 
@@ -32,7 +32,7 @@ sqlrs run --dbms postgres:17 \
 
 Where `<git-ref>` can be: `HEAD`, `origin/main`, `abc1234`, `v1.2.3`, `refs/pull/123/head` (if available locally).
 
-Important for remote runner: `--ref` works only if the service has access to the repo (server-side mirror or VCS secrets for clone/read). Otherwise the CLI must upload sources to `source storage` and pass `source_id` (see `sql-runner-api.md`).
+Important for remote runner: `--ref` works only if the service has access to the repo (server-side mirror or VCS secrets for clone/read). Otherwise the CLI must upload sources to `source storage` and pass `source_id` (see [`sql-runner-api.md`](sql-runner-api.md)).
 
 Behavior options:
 
