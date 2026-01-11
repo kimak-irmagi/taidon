@@ -70,7 +70,7 @@ flowchart LR
 
 - Разрешает корень хранилища (`~/.cache/sqlrs/state-store` или override).
 - Владеет metadata DB (SQLite WAL) и layout путей (`engines/<engine>/<version>/base|states/<uuid>`).
-- Пишет `engine.json` (endpoint + PID + lock) для discovery со стороны CLI.
+- Пишет `engine.json` в state directory (endpoint + PID + auth token + lock) для discovery со стороны CLI.
 
 ### 1.9 Telemetry/Audit
 
@@ -123,7 +123,7 @@ sequenceDiagram
 
 ## 4. Персистентность и discovery
 
-- `engine.json` в корне state store: `{ pid, endpoint, socket_path|port, started_at, lockfile }`.
+- `engine.json` в state directory: `{ pid, endpoint, socket_path|port, startedAt, lockfile, instanceId, authToken, version }`.
 - Cache metadata и реестр states живут в SQLite под корнем state store.
 - Другой персистентности нет; engine в остальном disposable.
 
@@ -136,5 +136,5 @@ sequenceDiagram
 ## 6. Точки эволюции
 
 - Заменить Runtime на k8s executor без изменения формы API.
-- Добавить auth для IPC при multi-user (не-MVP).
+- Усилить локальный auth для multi-user/shared host (не-MVP).
 - Подключить remote/shared cache client за тем же интерфейсом.

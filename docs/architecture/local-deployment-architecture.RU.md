@@ -34,15 +34,16 @@ flowchart LR
   DOCKER[Docker Engine]
   DB[(DB Container)]
   LB[Liquibase]
-  CACHE[state store]
+  STATE[State dir (engine.json)]
+  STORE[state store]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
   ENG --> DOCKER
   ENG --> LB
   DOCKER --> DB
-  ENG --> CACHE
-  CLI -. discovery .-> CACHE
+  ENG --> STORE
+  CLI -. discovery .-> STATE
 ```
 
 ---
@@ -91,7 +92,7 @@ CLI намеренно **тонкий** и без состояния.
 - Спавнится по требованию
 - Может жить короткий TTL после последнего запроса
 - Автоматически завершается в простое
-- Пишет endpoint/lock в корень state store, чтобы последующие CLI могли переиспользовать процесс
+- Пишет endpoint/lock и auth token в `<StateDir>/engine.json`, чтобы последующие CLI могли переиспользовать процесс
 
 Это избегает постоянных background-сервисов в MVP.
 
@@ -102,9 +103,9 @@ CLI намеренно **тонкий** и без состояния.
 - **Транспорт/протокол**: REST по HTTP; только loopback. Unix domain socket на Linux/macOS; TCP loopback на Windows хосте с WSL forwarding. В локальном режиме TLS нет.
 - **Discovery endpoint**:
   - CLI проверяет env var `TAIDON_ENGINE_ADDR`.
-  - Иначе читает `state-store/engine.json` (содержит socket path / TCP port и PID).
-  - Если не найден или устарел, CLI запускает новый engine и пишет `engine.json`.
-- **Security**: запрет bind на не-loopback; нет auth в локальном режиме; опора на права файлов (UDS) или loopback firewall; engine отказывает в соединениях с нелокальных адресов.
+  - Иначе читает `<StateDir>/engine.json` (endpoint, socket path / TCP port, PID, instanceId, auth token).
+  - Если не найден или устарел, CLI запускает новый engine; engine пишет `engine.json` при готовности.
+- **Security**: запрет bind на не-loopback; auth token обязателен для non-health endpoint-ов; опора на права файлов (UDS) или loopback firewall; engine отказывает в соединениях с нелокальных адресов.
 - **Versioning**: CLI отправляет свою версию; engine отклоняет несовместимую major; CLI может предложить апгрейд.
 
 Ключевые endpoint-ы engine (логически):
@@ -155,7 +156,7 @@ Engine потребляет **структурированные логи** Liqu
 - Engine и snapshotter работают внутри WSL2
 - CLI может работать на Windows host или внутри WSL2
 - Коммуникация через localhost forwarding
-- Engine пишет `engine.json` внутри WSL state store; Windows CLI читает его через `wslpath`/interop, чтобы подключиться через проброшенный TCP порт
+- Engine пишет `engine.json` внутри WSL state directory; Windows CLI читает его через `wslpath`/interop, чтобы подключиться через проброшенный TCP порт
 - Snapshot backend может откатываться на copy-based стратегию
 
 ---

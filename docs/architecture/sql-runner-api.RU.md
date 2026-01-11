@@ -16,7 +16,7 @@
 Gateway/BFF фронтит эти вызовы; форма стабильна для REST/gRPC. Идентификаторы — непрозрачные UUID.
 
 - `POST /runs` - старт run. Тело: ref проекта (repo/path+rev) или `source_id`, entry script(s), параметры, лимиты (timeout, row limit, byte limit), cache hints. Ответ: `run_id`, статус URL, stream URL.
-- `GET /runs/{run_id}/stream` - server-sent events / WebSocket для строк, прогресса, логов, смены состояния.
+- `GET /runs/{run_id}/stream` - server-sent events / WebSocket для строк, прогресса, логов, смены состояния. NDJSON поддерживается через `Accept: application/x-ndjson` (один JSON-объект на строку).
 - `POST /runs/{run_id}/cancel` - best-effort cancel; гарантирует отсутствие дальнейших записей в песочницу.
 - `GET /runs/{run_id}` - статус, тайминги, cache hit/miss, tail hash, sandbox binding, summary artefacts.
 
@@ -71,7 +71,7 @@ sequenceDiagram
   SR->>EM: bind sandbox (resource policy, TTL)
   EM-->>SR: endpoint/credentials
   SR->>DB: set statement_timeout, run head
-  SR-->>GW: stream rows/logs/progress (SSE/WS)
+  SR-->>GW: stream rows/logs/progress (SSE/WS/NDJSON)
   DB-->>SR: completion
   SR->>SC: optionally publish new snapshot layer
   SR->>AUD: append run audit
@@ -79,7 +79,7 @@ sequenceDiagram
   GW-->>C: stream complete + summary
 ```
 
-Стриминговый канал несет небольшие структурированные сообщения (прогресс, наборы строк чанками, stderr/логи, смены состояний). Backpressure обрабатывается bounded channel + drop/close на медленном потребителе с явным кодом.
+Стриминговый канал несет небольшие структурированные сообщения (прогресс, наборы строк чанками, stderr/логи, смены состояний). Backpressure обрабатывается bounded channel + drop/close на медленном потребителе с явным кодом. NDJSON - line-delimited JSON представление тех же событий.
 
 ## 5. Отмена и таймауты
 
@@ -103,7 +103,7 @@ sequenceDiagram
 - **Процесс**: engine работает локально (эфемерный), REST по loopback; CLI может watch или detach.
 - **Runtime**: Docker executor; single-node pool песочниц; per-user state store на диске.
 - **Cache**: локальный snapshot store + SQLite index; нет shared cache сервиса.
-- **Auth**: нет; опора на loopback и права файловой системы.
+- **Auth**: loopback-only плюс auth token из `engine.json` для endpoint-ов, кроме health.
 - **Scaling**: ограниченный параллелизм на рабочей станции; нет autoscaling.
 
 ### 7.2 Team / Cloud

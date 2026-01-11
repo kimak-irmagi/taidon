@@ -16,7 +16,7 @@ Scope: core service that executes SQL projects deterministically, with cache-awa
 The Gateway/BFF fronts these calls; shape is stable across REST/gRPC. Identifiers are opaque UUIDs.
 
 - `POST /runs` - start run. Body: project ref (repo/path+rev) or `source_id`, entry script(s), parameters, limits (timeout, row limit, byte limit), cache hints. Response: `run_id`, status URL, stream URL.
-- `GET /runs/{run_id}/stream` - server-sent events / WebSocket for rows, progress, logs, state changes.
+- `GET /runs/{run_id}/stream` - server-sent events / WebSocket for rows, progress, logs, state changes. NDJSON is supported via `Accept: application/x-ndjson` (one JSON object per line).
 - `POST /runs/{run_id}/cancel` - best-effort cancel; guarantees no further writes to the sandbox.
 - `GET /runs/{run_id}` - status, timings, cache hit/miss, tail hash, sandbox binding, summary artefacts.
 
@@ -71,7 +71,7 @@ sequenceDiagram
   SR->>EM: bind sandbox (resource policy, TTL)
   EM-->>SR: endpoint/credentials
   SR->>DB: set statement_timeout, run head
-  SR-->>GW: stream rows/logs/progress (SSE/WS)
+  SR-->>GW: stream rows/logs/progress (SSE/WS/NDJSON)
   DB-->>SR: completion
   SR->>SC: optionally publish new snapshot layer
   SR->>AUD: append run audit
@@ -79,7 +79,7 @@ sequenceDiagram
   GW-->>C: stream complete + summary
 ```
 
-Streaming channel carries small structured messages (progress, result sets in chunks, stderr/log lines, state changes). Backpressure handled by bounded channel + drop/close on slow consumer with explicit code.
+Streaming channel carries small structured messages (progress, result sets in chunks, stderr/log lines, state changes). Backpressure handled by bounded channel + drop/close on slow consumer with explicit code. NDJSON is a line-delimited JSON encoding of the same events.
 
 ## 5. Cancellation and Timeouts
 
@@ -103,7 +103,7 @@ All exits (success/fail/cancel/timeout) write a terminal status, duration, cache
 - **Process**: engine runs locally (ephemeral), REST over loopback; CLI can watch or detach.
 - **Runtime**: Docker executor; single-node sandbox pool; per-user state store on disk.
 - **Cache**: local snapshot store + SQLite index; no shared cache service.
-- **Auth**: none; rely on local loopback and filesystem permissions.
+- **Auth**: loopback-only plus auth token from `engine.json` for non-health endpoints.
 - **Scaling**: limited parallelism on the workstation; no autoscaling.
 
 ### 7.2 Team / Cloud

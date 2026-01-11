@@ -101,7 +101,7 @@ gantt
 - Локальный runtime (контейнеры) с lifecycle песочницы
 - Liquibase адаптер (apply changelog)
 - CLI:
-  - `sqlrs up`, `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
+  - `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
   - `sqlrs status`, `sqlrs logs`
 - Cache v1:
   - cache key: `db_engine + base_image + changelog_hash + seed_hash`

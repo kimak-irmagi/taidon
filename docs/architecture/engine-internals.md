@@ -70,7 +70,7 @@ flowchart LR
 
 - Resolves storage root (`~/.cache/sqlrs/state-store` or overridden).
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
-- Writes `engine.json` (endpoint + PID + lock) for CLI discovery.
+- Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
 
 ### 1.9 Telemetry/Audit
 
@@ -123,7 +123,7 @@ sequenceDiagram
 
 ## 4. Persistence and Discovery
 
-- `engine.json` in state store root: `{ pid, endpoint, socket_path|port, started_at, lockfile }`.
+- `engine.json` in the state directory: `{ pid, endpoint, socket_path|port, startedAt, lockfile, instanceId, authToken, version }`.
 - Cache metadata and state registry live in SQLite under the state store root.
 - No other persistent state outside the store; engine is otherwise disposable.
 
@@ -136,5 +136,5 @@ sequenceDiagram
 ## 6. Evolution Hooks
 
 - Swap Runtime to k8s executor without changing API shape.
-- Add auth for IPC if running multi-user (non-MVP).
+- Harden local auth for multi-user or shared hosts (non-MVP).
 - Plug remote/shared cache client behind the same cache interface.

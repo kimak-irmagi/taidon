@@ -34,15 +34,16 @@ flowchart LR
   DOCKER[Docker Engine]
   DB[(DB Container)]
   LB[Liquibase]
-  CACHE[state store]
+  STATE[State dir (engine.json)]
+  STORE[state store]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
   ENG --> DOCKER
   ENG --> LB
   DOCKER --> DB
-  ENG --> CACHE
-  CLI -. discovery .-> CACHE
+  ENG --> STORE
+  CLI -. discovery .-> STATE
 ```
 
 ---
@@ -91,7 +92,7 @@ The CLI is intentionally **thin** and stateless.
 - Spawned when required
 - May persist for a short TTL after last request
 - Terminates automatically when idle
-- Writes its endpoint/lock into the state store root to allow subsequent CLI invocations to reuse the same process
+- Writes its endpoint/lock and auth token into `<StateDir>/engine.json` to allow subsequent CLI invocations to reuse the same process
 
 This avoids permanent background services in MVP.
 
@@ -102,9 +103,9 @@ This avoids permanent background services in MVP.
 - **Transport/Protocol**: REST over HTTP; loopback-only. Unix domain socket on Linux/macOS; TCP loopback on Windows host with WSL forwarding. No TLS in local mode.
 - **Endpoint discovery**:
   - CLI checks `TAIDON_ENGINE_ADDR` env var.
-  - Else reads `state-store/engine.json` (contains socket path / TCP port and PID).
-  - If not found or stale, CLI spawns a new engine and writes `engine.json`.
-- **Security**: deny non-loopback binds; no auth in local mode; rely on file perms (UDS) or loopback firewall; engine refuses connections from non-local addresses.
+  - Else reads `<StateDir>/engine.json` (contains endpoint, socket path / TCP port, PID, instanceId, auth token).
+  - If not found or stale, CLI spawns a new engine; the engine writes `engine.json` when ready.
+- **Security**: deny non-loopback binds; require auth token for non-health endpoints; rely on file perms (UDS) or loopback firewall; engine refuses connections from non-local addresses.
 - **Versioning**: CLI sends its version; engine rejects incompatible major; CLI may suggest upgrade.
 
 Key engine endpoints (logical):
@@ -155,7 +156,7 @@ On Windows:
 - Engine and snapshotter run inside WSL2
 - CLI may run on Windows host or inside WSL2
 - Communication via localhost forwarding
-- Engine writes `engine.json` inside WSL state store; Windows CLI reads it via `wslpath`/interop to connect through forwarded TCP port
+- Engine writes `engine.json` inside the WSL state directory; Windows CLI reads it via `wslpath`/interop to connect through forwarded TCP port
 - Snapshot backend may fall back to copy-based strategy
 
 ---
