@@ -34,6 +34,29 @@ jobs:
         working-directory: frontend/cli-go
         run: go test ./...
 
+  lint-openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Use pnpm
+        run: corepack prepare pnpm@10.26.2 --activate
+
+      - name: Lint OpenAPI
+        run: pnpm run lint:openapi
+
+      - name: Generate OpenAPI docs (markdown)
+        run: pnpm run docs:openapi:md
+
   test-engine:
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -55,7 +78,7 @@ jobs:
 
   build:
     runs-on: ${{ matrix.runner }}
-    needs: [test-cli, test-engine]
+    needs: [test-cli, test-engine, lint-openapi]
     env:
       VERSION: ${{ inputs.version || github.ref_name }}
       ENGINE_DIR: ${{ inputs.engine_dir || 'dist/engine' }}

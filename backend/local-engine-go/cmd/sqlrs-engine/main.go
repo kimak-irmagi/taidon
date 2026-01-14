@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"strings"
 )
 
 type EngineState struct {
@@ -34,6 +35,36 @@ type HealthResponse struct {
 	Version    string `json:"version"`
 	InstanceID string `json:"instanceId"`
 	PID        int    `json:"pid"`
+}
+
+type NameEntry struct {
+	Name             string  `json:"name"`
+	InstanceID       *string `json:"instance_id,omitempty"`
+	ImageID          string  `json:"image_id"`
+	StateID          string  `json:"state_id"`
+	StateFingerprint string  `json:"state_fingerprint,omitempty"`
+	Status           string  `json:"status"`
+	LastUsedAt       *string `json:"last_used_at,omitempty"`
+}
+
+type InstanceEntry struct {
+	InstanceID string  `json:"instance_id"`
+	ImageID    string  `json:"image_id"`
+	StateID    string  `json:"state_id"`
+	Name       *string `json:"name,omitempty"`
+	CreatedAt  string  `json:"created_at"`
+	ExpiresAt  *string `json:"expires_at,omitempty"`
+	Status     string  `json:"status"`
+}
+
+type StateEntry struct {
+	StateID             string `json:"state_id"`
+	ImageID             string `json:"image_id"`
+	PrepareKind         string `json:"prepare_kind"`
+	PrepareArgs         string `json:"prepare_args_normalized"`
+	CreatedAt           string `json:"created_at"`
+	SizeBytes           *int64 `json:"size_bytes,omitempty"`
+	RefCount            int    `json:"refcount"`
 }
 
 type activityTracker struct {
@@ -124,6 +155,69 @@ func main() {
 		}
 		_ = json.NewEncoder(w).Encode(resp)
 	})
+	mux.HandleFunc("/v1/names", func(w http.ResponseWriter, r *http.Request) {
+		tracker.Touch()
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, []NameEntry{})
+	})
+	mux.HandleFunc("/v1/names/", func(w http.ResponseWriter, r *http.Request) {
+		tracker.Touch()
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/v1/names/")
+		if name == "" {
+			http.NotFound(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/v1/instances", func(w http.ResponseWriter, r *http.Request) {
+		tracker.Touch()
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, []InstanceEntry{})
+	})
+	mux.HandleFunc("/v1/instances/", func(w http.ResponseWriter, r *http.Request) {
+		tracker.Touch()
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		instanceID := strings.TrimPrefix(r.URL.Path, "/v1/instances/")
+		if instanceID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
+	mux.HandleFunc("/v1/states", func(w http.ResponseWriter, r *http.Request) {
+		tracker.Touch()
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, []StateEntry{})
+	})
+	mux.HandleFunc("/v1/states/", func(w http.ResponseWriter, r *http.Request) {
+		tracker.Touch()
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		stateID := strings.TrimPrefix(r.URL.Path, "/v1/states/")
+		if stateID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
 
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -183,6 +277,11 @@ func randomHex(bytes int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+func writeJSON(w http.ResponseWriter, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func writeEngineState(path string, state EngineState) error {

@@ -1,0 +1,123 @@
+package app
+
+import (
+	"context"
+	"flag"
+	"io"
+	"strings"
+
+	"sqlrs/cli/internal/cli"
+)
+
+type lsOptions struct {
+	IncludeNames     bool
+	IncludeInstances bool
+	IncludeStates    bool
+
+	FilterName     string
+	FilterInstance string
+	FilterState    string
+	FilterKind     string
+	FilterImage    string
+
+	Quiet    bool
+	NoHeader bool
+}
+
+func parseLsFlags(args []string) (lsOptions, bool, error) {
+	var opts lsOptions
+
+	fs := flag.NewFlagSet("sqlrs ls", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	names := fs.Bool("names", false, "list names")
+	namesShort := fs.Bool("n", false, "list names")
+	instances := fs.Bool("instances", false, "list instances")
+	instancesShort := fs.Bool("i", false, "list instances")
+	states := fs.Bool("states", false, "list states")
+	statesShort := fs.Bool("s", false, "list states")
+	all := fs.Bool("all", false, "list all object types")
+
+	quiet := fs.Bool("quiet", false, "suppress headers and explanatory text")
+	noHeader := fs.Bool("no-header", false, "do not print table header")
+
+	name := fs.String("name", "", "filter by name")
+	instance := fs.String("instance", "", "filter by instance id")
+	state := fs.String("state", "", "filter by state id")
+	kind := fs.String("kind", "", "filter by prepare kind")
+	image := fs.String("image", "", "filter by base image")
+
+	help := fs.Bool("help", false, "show help")
+	helpShort := fs.Bool("h", false, "show help")
+
+	if err := fs.Parse(args); err != nil {
+		return opts, false, ExitErrorf(2, "Invalid arguments: %v", err)
+	}
+
+	if *help || *helpShort {
+		return opts, true, nil
+	}
+
+	if fs.NArg() > 0 {
+		return opts, false, ExitErrorf(2, "Invalid arguments")
+	}
+
+	opts.IncludeNames = *names || *namesShort
+	opts.IncludeInstances = *instances || *instancesShort
+	opts.IncludeStates = *states || *statesShort
+	if *all {
+		opts.IncludeNames = true
+		opts.IncludeInstances = true
+		opts.IncludeStates = true
+	}
+	if !opts.IncludeNames && !opts.IncludeInstances && !opts.IncludeStates {
+		opts.IncludeNames = true
+		opts.IncludeInstances = true
+	}
+
+	opts.FilterName = strings.TrimSpace(*name)
+	opts.FilterInstance = strings.TrimSpace(*instance)
+	opts.FilterState = strings.TrimSpace(*state)
+	opts.FilterKind = strings.TrimSpace(*kind)
+	opts.FilterImage = strings.TrimSpace(*image)
+	opts.Quiet = *quiet
+	opts.NoHeader = *noHeader
+	return opts, false, nil
+}
+
+func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) error {
+	opts, showHelp, err := parseLsFlags(args)
+	if err != nil {
+		return err
+	}
+	if showHelp {
+		cli.PrintLsUsage(w)
+		return nil
+	}
+
+	runOpts.IncludeNames = opts.IncludeNames
+	runOpts.IncludeInstances = opts.IncludeInstances
+	runOpts.IncludeStates = opts.IncludeStates
+	runOpts.FilterName = opts.FilterName
+	runOpts.FilterInstance = opts.FilterInstance
+	runOpts.FilterState = opts.FilterState
+	runOpts.FilterKind = opts.FilterKind
+	runOpts.FilterImage = opts.FilterImage
+	runOpts.Quiet = opts.Quiet
+	runOpts.NoHeader = opts.NoHeader
+
+	result, err := cli.RunLs(context.Background(), runOpts)
+	if err != nil {
+		return err
+	}
+
+	if output == "json" {
+		return writeJSON(w, result)
+	}
+
+	cli.PrintLs(w, result, cli.LsPrintOptions{
+		Quiet:    opts.Quiet,
+		NoHeader: opts.NoHeader,
+	})
+	return nil
+}

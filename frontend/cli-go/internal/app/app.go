@@ -115,6 +115,20 @@ func Run(args []string) error {
 	}
 
 	switch cmd.Name {
+	case "ls":
+		runOpts := cli.LsOptions{
+			ProfileName:    profileName,
+			Mode:           mode,
+			Endpoint:       profile.Endpoint,
+			Autostart:      profile.Autostart,
+			DaemonPath:     daemonPath,
+			RunDir:         runDir,
+			StateDir:       dirs.StateDir,
+			Timeout:        timeout,
+			StartupTimeout: startupTimeout,
+			Verbose:        opts.Verbose,
+		}
+		return runLs(os.Stdout, runOpts, cmd.Args, output)
 	case "status":
 		if len(cmd.Args) > 0 {
 			return fmt.Errorf("status does not accept arguments")

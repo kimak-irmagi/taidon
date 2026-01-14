@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -39,6 +40,44 @@ func (c *Client) Health(ctx context.Context) (HealthResponse, error) {
 	var out HealthResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/v1/health", false, &out); err != nil {
 		return out, err
+	}
+	return out, nil
+}
+
+func (c *Client) ListNames(ctx context.Context, filters ListFilters) ([]NameEntry, error) {
+	var out []NameEntry
+	query := url.Values{}
+	addFilter(query, "name", filters.Name)
+	addFilter(query, "instance", filters.Instance)
+	addFilter(query, "state", filters.State)
+	addFilter(query, "image", filters.Image)
+	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/names", query), true, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) ListInstances(ctx context.Context, filters ListFilters) ([]InstanceEntry, error) {
+	var out []InstanceEntry
+	query := url.Values{}
+	addFilter(query, "instance", filters.Instance)
+	addFilter(query, "state", filters.State)
+	addFilter(query, "name", filters.Name)
+	addFilter(query, "image", filters.Image)
+	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/instances", query), true, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) ListStates(ctx context.Context, filters ListFilters) ([]StateEntry, error) {
+	var out []StateEntry
+	query := url.Values{}
+	addFilter(query, "state", filters.State)
+	addFilter(query, "kind", filters.Kind)
+	addFilter(query, "image", filters.Image)
+	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/states", query), true, &out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -79,4 +118,19 @@ func normalizeBaseURL(raw string) string {
 		value = "http://" + value
 	}
 	return strings.TrimRight(value, "/")
+}
+
+func addFilter(values url.Values, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	values.Set(key, value)
+}
+
+func appendQuery(path string, values url.Values) string {
+	if len(values) == 0 {
+		return path
+	}
+	return path + "?" + values.Encode()
 }

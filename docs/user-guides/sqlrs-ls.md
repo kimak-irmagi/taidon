@@ -71,6 +71,7 @@ By default, `sqlrs ls` prints a table per selected object type, in this order:
 3. States
 
 Each section begins with a one-line title (suppressed by `--quiet`).
+When `--quiet` is set and multiple sections are printed, sections are separated by a blank line.
 
 ### Names table
 
@@ -120,7 +121,7 @@ Columns:
 
 ## Output (JSON)
 
-With the global `--output:json` option, `sqlrs ls` prints a single JSON object:
+With the global `--output json` option, `sqlrs ls` prints a single JSON object:
 
 ```json
 {
@@ -210,7 +211,7 @@ sqlrs ls -n --name devdb
 Machine-readable output for CI:
 
 ```bash
-sqlrs ls --all --json
+sqlrs ls --all --output json
 ```
 
 ---
