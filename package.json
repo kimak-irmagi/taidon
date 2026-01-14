@@ -11,6 +11,7 @@
     "build:local-mvp": "node scripts/build-engine-go.mjs && node scripts/build-cli-go.mjs",
     "lint:openapi": "pnpm dlx @redocly/cli lint docs/api-guides/sqlrs-engine.openapi.yaml",
     "docs:openapi:md": "pnpm dlx widdershins docs/api-guides/sqlrs-engine.openapi.yaml -o docs/api-guides/sqlrs-engine.md",
+    "docs:schemas": "node scripts/docs-sync-schemas.mjs",
     "release:local": "node scripts/release-local.mjs",
     "run:engine": "node scripts/dev/run-local-engine.mjs",
     "status:local": "node scripts/dev/local-status.mjs",

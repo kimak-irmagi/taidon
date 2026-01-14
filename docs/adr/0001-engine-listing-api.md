@@ -2,8 +2,20 @@
 
 Status: Accepted
 Date: 2026-01-14
-User: @evilguest
-Agent: GPT-5.2-Codex
+
+## Decision Record
+
+- Timestamp: 2026-01-14T17:08:02+07:00
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: What REST shape and auth/format rules should the engine listing API use for `sqlrs ls`?
+- Alternatives:
+  - Use non-REST list endpoints or `/by-name` paths.
+  - Allow list filters on unique attributes instead of item endpoints.
+  - Require JSON-only responses (no NDJSON) or pick output via query params.
+  - Require auth on `/v1/health` as well.
+- Decision: Use REST resource lists/items with `Accept`-driven JSON/NDJSON formats and auth required except `/v1/health`, and redirect name-based instance lookups.
+- Rationale: Aligns with REST conventions, keeps list filters meaningful, supports streaming, and preserves simple health checks.
 
 ## Context
 

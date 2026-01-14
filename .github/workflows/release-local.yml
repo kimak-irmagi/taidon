@@ -57,6 +57,9 @@ jobs:
       - name: Generate OpenAPI docs (markdown)
         run: pnpm run docs:openapi:md
 
+      - name: Generate schema docs (markdown)
+        run: pnpm run docs:schemas
+
   test-engine:
     runs-on: ${{ matrix.runner }}
     strategy:

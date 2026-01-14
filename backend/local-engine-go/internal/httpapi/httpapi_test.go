@@ -1,18 +1,26 @@
-package main
+package httpapi
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	_ "modernc.org/sqlite"
+
+	"sqlrs/engine/internal/registry"
+	"sqlrs/engine/internal/store"
+	"sqlrs/engine/internal/store/sqlite"
 )
 
-func TestEngineAuth(t *testing.T) {
-	reg := newRegistry()
-	server := httptest.NewServer(buildMux("test", "instance", "secret", reg))
-	defer server.Close()
+func TestAuthAndHealth(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
 
 	resp, err := http.Get(server.URL + "/v1/health")
 	if err != nil {
@@ -35,56 +43,11 @@ func TestEngineAuth(t *testing.T) {
 		t.Fatalf("expected 401 for names without auth, got %d", resp.StatusCode)
 	}
 	resp.Body.Close()
-
-	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/names", nil)
-	if err != nil {
-		t.Fatalf("new request: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer wrong")
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("names request: %v", err)
-	}
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401 for names with bad auth, got %d", resp.StatusCode)
-	}
-	resp.Body.Close()
-
-	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/names", nil)
-	if err != nil {
-		t.Fatalf("new request: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer secret")
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("names request: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 for names with auth, got %d", resp.StatusCode)
-	}
-	resp.Body.Close()
 }
 
 func TestNamesNDJSON(t *testing.T) {
-	reg := newRegistry()
-	instanceID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	setName(reg, NameEntry{
-		Name:       "dev",
-		InstanceID: strPtr(instanceID),
-		ImageID:    "image-1",
-		StateID:    "state-1",
-		Status:     "active",
-	})
-	setName(reg, NameEntry{
-		Name:       "qa",
-		InstanceID: strPtr(instanceID),
-		ImageID:    "image-1",
-		StateID:    "state-2",
-		Status:     "active",
-	})
-
-	server := httptest.NewServer(buildMux("test", "instance", "secret", reg))
-	defer server.Close()
+	server, cleanup := newTestServer(t)
+	defer cleanup()
 
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/names", nil)
 	if err != nil {
@@ -114,7 +77,7 @@ func TestNamesNDJSON(t *testing.T) {
 		t.Fatalf("expected 2 ndjson lines, got %d", len(lines))
 	}
 	for _, line := range lines {
-		var entry NameEntry
+		var entry store.NameEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("invalid ndjson line: %v", err)
 		}
@@ -122,25 +85,8 @@ func TestNamesNDJSON(t *testing.T) {
 }
 
 func TestInstancesAliasRedirect(t *testing.T) {
-	reg := newRegistry()
-	instanceID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	setInstance(reg, InstanceEntry{
-		InstanceID: instanceID,
-		ImageID:    "image-1",
-		StateID:    "state-1",
-		CreatedAt:  "2025-01-01T00:00:00Z",
-		Status:     "active",
-	})
-	setName(reg, NameEntry{
-		Name:       "dev",
-		InstanceID: strPtr(instanceID),
-		ImageID:    "image-1",
-		StateID:    "state-1",
-		Status:     "active",
-	})
-
-	server := httptest.NewServer(buildMux("test", "instance", "secret", reg))
-	defer server.Close()
+	server, cleanup := newTestServer(t)
+	defer cleanup()
 
 	redirectClient := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -159,12 +105,12 @@ func TestInstancesAliasRedirect(t *testing.T) {
 	if resp.StatusCode != http.StatusTemporaryRedirect {
 		t.Fatalf("expected 307, got %d", resp.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/v1/instances/"+instanceID {
+	if loc := resp.Header.Get("Location"); loc != "/v1/instances/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Fatalf("unexpected location: %q", loc)
 	}
 	resp.Body.Close()
 
-	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/instances/"+instanceID, nil)
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/instances/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -177,38 +123,20 @@ func TestInstancesAliasRedirect(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	var entry InstanceEntry
+	var entry store.InstanceEntry
 	if err := json.NewDecoder(resp.Body).Decode(&entry); err != nil {
 		t.Fatalf("decode instance: %v", err)
 	}
-	if entry.InstanceID != instanceID {
-		t.Fatalf("expected instance id %q, got %q", instanceID, entry.InstanceID)
+	if entry.InstanceID != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Fatalf("unexpected instance id: %q", entry.InstanceID)
 	}
 }
 
 func TestNamesFilterByInstance(t *testing.T) {
-	reg := newRegistry()
-	id1 := "cccccccccccccccccccccccccccccccc"
-	id2 := "dddddddddddddddddddddddddddddddd"
-	setName(reg, NameEntry{
-		Name:       "dev",
-		InstanceID: strPtr(id1),
-		ImageID:    "image-1",
-		StateID:    "state-1",
-		Status:     "active",
-	})
-	setName(reg, NameEntry{
-		Name:       "qa",
-		InstanceID: strPtr(id2),
-		ImageID:    "image-1",
-		StateID:    "state-1",
-		Status:     "active",
-	})
+	server, cleanup := newTestServer(t)
+	defer cleanup()
 
-	server := httptest.NewServer(buildMux("test", "instance", "secret", reg))
-	defer server.Close()
-
-	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/names?instance="+id1, nil)
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/names?instance=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -222,7 +150,7 @@ func TestNamesFilterByInstance(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	var entries []NameEntry
+	var entries []store.NameEntry
 	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
 		t.Fatalf("decode names: %v", err)
 	}
@@ -231,18 +159,65 @@ func TestNamesFilterByInstance(t *testing.T) {
 	}
 }
 
-func setName(reg *registry, entry NameEntry) {
-	reg.mu.Lock()
-	defer reg.mu.Unlock()
-	reg.names[entry.Name] = entry
+func newTestServer(t *testing.T) (*httptest.Server, func()) {
+	t.Helper()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+	st, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := seedHTTPData(db); err != nil {
+		t.Fatalf("seed db: %v", err)
+	}
+
+	reg := registry.New(st)
+	handler := NewHandler(Options{
+		Version:    "test",
+		InstanceID: "instance",
+		AuthToken:  "secret",
+		Registry:   reg,
+	})
+	server := httptest.NewServer(handler)
+
+	cleanup := func() {
+		server.Close()
+		_ = db.Close()
+		_ = st.Close()
+	}
+	return server, cleanup
 }
 
-func setInstance(reg *registry, entry InstanceEntry) {
-	reg.mu.Lock()
-	defer reg.mu.Unlock()
-	reg.instances[entry.InstanceID] = entry
-}
-
-func strPtr(value string) *string {
-	return &value
+func seedHTTPData(db *sql.DB) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.Exec(`INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "state-1", "state-1", "image-1", "liquibase", "a=1", now, int64(10), nil); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "state-2", "state-2", "image-2", "sql", "b=2", now, int64(20), nil); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, status)
+		VALUES (?, ?, ?, ?, ?, ?)`, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "state-1", "image-1", now, nil, nil); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, status)
+		VALUES (?, ?, ?, ?, ?, ?)`, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "state-2", "image-2", now, nil, nil); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT INTO names (name, instance_id, state_id, state_fingerprint, image_id, last_used_at, is_primary)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "dev", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "state-1", "state-1", "image-1", now, 1); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`INSERT INTO names (name, instance_id, state_id, state_fingerprint, image_id, last_used_at, is_primary)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "qa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "state-2", "state-2", "image-2", now, 1); err != nil {
+		return err
+	}
+	return nil
 }

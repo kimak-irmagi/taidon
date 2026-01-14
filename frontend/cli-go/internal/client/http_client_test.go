@@ -76,3 +76,33 @@ func TestListNamesAddsFilters(t *testing.T) {
 		t.Fatalf("expected Authorization header, got %q", gotAuth)
 	}
 }
+
+func TestGetInstanceFollowsRedirectWithAuth(t *testing.T) {
+	var gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/instances/dev":
+			w.Header().Set("Location", "/v1/instances/abc")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		case "/v1/instances/abc":
+			gotAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"instance_id":"abc","image_id":"img","state_id":"state","created_at":"2025-01-01T00:00:00Z","status":"active"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second, AuthToken: "token"})
+	entry, found, err := cli.GetInstance(context.Background(), "dev")
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if !found || entry.InstanceID != "abc" {
+		t.Fatalf("unexpected instance entry: %+v", entry)
+	}
+	if gotAuth != "Bearer token" {
+		t.Fatalf("expected Authorization on redirected request, got %q", gotAuth)
+	}
+}
