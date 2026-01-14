@@ -51,13 +51,15 @@ taidon/
   research/            # LaTeX papers, benchmarks, datasets, experiments
 
   frontend/
-    cli/               # sqlrs CLI
+    cli-go/            # sqlrs CLI (Go)
+    cli/               # legacy CLI
     main/              # Main SPA application (React)
     editor/            # Query editor component
     plan-viewer/       # Query plan visualization
 
   backend/
     gateway/           # API gateway (BFF) for the frontend
+    local-engine-go/   # Local sqlrs-engine (Go, MVP)
     services/
       audit-log/       # Action/event logging
       autoscaler/      # Autoscaling workers
@@ -100,7 +102,7 @@ taidon/
 ### **Frontend**
 
 Located under `frontend/`.  
-The main application lives in `frontend/main`, with `frontend/editor` and `frontend/plan-viewer` as UI components, and `frontend/cli` hosting the sqlrs CLI.
+The main application lives in `frontend/main`, with `frontend/editor` and `frontend/plan-viewer` as UI components, and `frontend/cli-go` hosting the sqlrs CLI.
 
 Each subproject contains its own `README.md` with setup instructions.
 
@@ -113,6 +115,43 @@ Backend services are split into microservices under `backend/services/`, with a 
 Common libraries, API contracts, and utilities live in `backend/libs/`.
 
 Each service includes its own documentation and tooling.
+
+---
+
+## Local CLI + Engine (MVP)
+
+Build binaries from the repository root:
+
+```bash
+go build -o dist/bin/sqlrs-engine ./backend/local-engine-go/cmd/sqlrs-engine
+go build -o dist/bin/sqlrs ./frontend/cli-go/cmd/sqlrs
+```
+
+Run the engine and check health via the CLI:
+
+```bash
+XDG_CONFIG_HOME=./sqlrs-work/config \
+XDG_STATE_HOME=./sqlrs-work/state \
+XDG_CACHE_HOME=./sqlrs-work/cache \
+./dist/bin/sqlrs-engine \
+  --listen 127.0.0.1:0 \
+  --run-dir ./sqlrs-work/state/sqlrs/run \
+  --write-engine-json ./sqlrs-work/state/sqlrs/engine.json \
+  --idle-timeout 30s
+
+SQLRS_DAEMON_PATH=./dist/bin/sqlrs-engine \
+XDG_CONFIG_HOME=./sqlrs-work/config \
+XDG_STATE_HOME=./sqlrs-work/state \
+XDG_CACHE_HOME=./sqlrs-work/cache \
+./dist/bin/sqlrs status
+```
+
+Scripts for typical scenarios:
+
+```bash
+node scripts/dev/local-status.mjs
+node scripts/dev/run-local-engine.mjs
+```
 
 ---
 

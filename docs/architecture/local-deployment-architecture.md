@@ -34,15 +34,16 @@ flowchart LR
   DOCKER[Docker Engine]
   DB[(DB Container)]
   LB[Liquibase]
-  CACHE[state store]
+  STATE[State dir (engine.json)]
+  STORE[state store]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
   ENG --> DOCKER
   ENG --> LB
   DOCKER --> DB
-  ENG --> CACHE
-  CLI -. discovery .-> CACHE
+  ENG --> STORE
+  CLI -. discovery .-> STATE
 ```
 
 ---
@@ -55,6 +56,7 @@ flowchart LR
 - Interact with local filesystem (project config, paths)
 - Discover or spawn a local engine process
 - Communicate with engine via HTTP over loopback or Unix socket
+- Execute `run` commands locally against a prepared instance/instance
 - Exit immediately after command completion
 - Optional: pre-flight checks (Docker reachable, state store writable), show engine endpoint/version for diagnostics
 
@@ -85,13 +87,15 @@ The CLI is intentionally **thin** and stateless.
 - Liquibase orchestration (via providers)
 - Connection / proxy layer (when needed)
 - IPC/API for CLI and future IDE integrations
+- Prepare planning/execution; does not execute `run` commands
+- Instance creation/binding for prepare (ephemeral vs named)
 
 ### 4.3 Lifecycle
 
 - Spawned when required
 - May persist for a short TTL after last request
 - Terminates automatically when idle
-- Writes its endpoint/lock into the state store root to allow subsequent CLI invocations to reuse the same process
+- Writes its endpoint/lock and auth token into `<StateDir>/engine.json` to allow subsequent CLI invocations to reuse the same process
 
 This avoids permanent background services in MVP.
 
@@ -102,23 +106,25 @@ This avoids permanent background services in MVP.
 - **Transport/Protocol**: REST over HTTP; loopback-only. Unix domain socket on Linux/macOS; TCP loopback on Windows host with WSL forwarding. No TLS in local mode.
 - **Endpoint discovery**:
   - CLI checks `TAIDON_ENGINE_ADDR` env var.
-  - Else reads `state-store/engine.json` (contains socket path / TCP port and PID).
-  - If not found or stale, CLI spawns a new engine and writes `engine.json`.
-- **Security**: deny non-loopback binds; no auth in local mode; rely on file perms (UDS) or loopback firewall; engine refuses connections from non-local addresses.
+  - Else reads `<StateDir>/engine.json` (contains endpoint, socket path / TCP port, PID, instanceId, auth token).
+  - If not found or stale, CLI spawns a new engine; the engine writes `engine.json` when ready.
+- **Security**: deny non-loopback binds; require auth token for non-health endpoints; rely on file perms (UDS) or loopback firewall; engine refuses connections from non-local addresses.
 - **Versioning**: CLI sends its version; engine rejects incompatible major; CLI may suggest upgrade.
 
 Key engine endpoints (logical):
 
-- `POST /runs` — start run (migrate/apply/run scripts)
-- `POST /snapshots` — manual snapshot
-- `GET /cache/{key}` — cache lookup
-- `POST /engine/shutdown` — optional graceful stop
+- start prepare job (plan/execute steps, snapshot states, bind/select instance)
+- status/stream for a prepare job
+- instance lookup/binding (by name or id)
+- `POST /snapshots` - manual snapshot
+- `GET /cache/{key}` - cache lookup
+- `POST /engine/shutdown` - optional graceful stop
 
 ### 5.1 Long-running operations: sync vs async CLI modes
 
-- **Async (fire-and-forget)**: CLI sends the request, receives `run_id` and status URL, prints it, exits. User can poll or stream later.
+- **Async (fire-and-forget)**: CLI sends the request, receives `prepare_id` and status URL, prints it, exits. User can poll or stream later.
 - **Sync (watch)**: CLI sends the request, then polls/streams status/events until terminal state; prints progress/logs; exits with engine result code.
-- Engine side: all long ops are asynchronous; even sync mode is just CLI-side watch on top of the same REST endpoints (`GET /runs/{id}`, `GET /runs/{id}/stream`).
+- Engine side: all long ops are asynchronous; even sync mode is just CLI-side watch on top of the same REST endpoints (status + stream for a prepare job).
 - Flags: e.g., `--watch/--no-watch` to switch mode; default can be `--watch` for interactive, `--no-watch` for scripted/CI.
 
 ---
@@ -131,6 +137,8 @@ The engine delegates Liquibase execution to a _Liquibase provider_:
 - Docker-based Liquibase runner
 
 Provider selection and compatibility checks are defined in [`liquibase-integration.md`](liquibase-integration.md).
+
+Liquibase is invoked as an external process (host binary or container); overhead is measured and optimized if needed.
 
 The engine consumes **structured logs** from Liquibase for observability and control.
 
@@ -155,7 +163,7 @@ On Windows:
 - Engine and snapshotter run inside WSL2
 - CLI may run on Windows host or inside WSL2
 - Communication via localhost forwarding
-- Engine writes `engine.json` inside WSL state store; Windows CLI reads it via `wslpath`/interop to connect through forwarded TCP port
+- Engine writes `engine.json` inside the WSL state directory; Windows CLI reads it via `wslpath`/interop to connect through forwarded TCP port
 - Snapshot backend may fall back to copy-based strategy
 
 ---
@@ -171,7 +179,7 @@ On Windows:
 ### Phase 2
 
 - Optional persistent local daemon (`sqlrsd`)
-- Warm sandbox reuse
+- Warm instance reuse
 - IDE integrations
 
 ### Phase 3

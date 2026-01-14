@@ -4,7 +4,7 @@
 
 ## 1. Цели
 
-- Multi-tenant, аутентифицированный доступ к той же логике engine (planner/cache/snapshotter/runner).
+- Multi-tenant, аутентифицированный доступ к той же логике engine (prepare planner/executor, cache, snapshotter).
 - Горизонтальное масштабирование и высокая доступность.
 - Сильная изоляция между tenants (namespaces/policies/quotas).
 - Общие state/cache и хранилища артефактов с контролем retention.
@@ -31,7 +31,7 @@ flowchart TD
   subgraph DataPlane
     ENV["env-manager (k8s executor)"]
     SNAP["snapshot store (PVC/S3)"]
-    PG[(DB sandboxes)]
+    PG[(DB instances)]
   end
 
   Client --> GW --> AUTH --> ORCH
@@ -50,11 +50,13 @@ flowchart TD
 
 ## 3. Процесс и поток запросов
 
-- Клиенты (CLI/IDE/UI) вызывают Gateway по аутентифицированному REST/gRPC.
+- Клиенты (CLI/IDE/UI) вызывают Gateway по аутентифицированному REST/gRPC для prepare jobs и cache/snapshot операций.
 - Gateway проверяет authN/authZ, rate limits, org quotas; форвардит в Orchestrator.
-- Orchestrator ставит job в очередь с учетом приоритетов/квот; dispatch в Runner-инстансы.
-- Runner (stateless engine) забирает job, делает plan/cache lookup, запрашивает у env-manager sandbox, выполняет, снапшотит, сохраняет артефакты, обновляет статус в Orchestrator.
+- Orchestrator ставит job в очередь с учетом приоритетов/квот; dispatch в Runner-экземпляры.
+- Runner (stateless engine) забирает job, делает prepare planning/cache lookup, запрашивает у env-manager instance, выполняет prepare шаги, снапшотит, делает bind/select instance, сохраняет артефакты, обновляет статус в Orchestrator.
 - Статусы/события стримятся через Gateway (SSE/WS) для watch-mode клиентов.
+- `run` команды выполняются локально через CLI против подготовленного/общего экземпляра; shared сервис не исполняет локальные команды.
+- Script sources передаются как server-side project ref или загруженный `source_id` bundle.
 
 ## 4. Изменения engine по сравнению с локальным режимом
 
@@ -62,14 +64,14 @@ flowchart TD
 - **Ingress**: за Gateway; нет loopback/UDS; нужна auth.
 - **State store**: общий store (PVC/S3) + metadata в Control DB или отдельный SQLite на шарде с синком в Control DB; per-tenant разделение через namespaces/prefixes.
 - **Cache service**: может быть отдельным сервисом, стоящим за cache client engine.
-- **Liquibase**: выполняется в контролируемых runner pods/containers; секреты из K8s Secrets/Vault.
+- **Liquibase**: выполняется как внешний CLI в контролируемых runner pods/containers; секреты из K8s Secrets/Vault. Накладные расходы измеряются и оптимизируются при необходимости.
 - **Snapshotter**: использует кластерные хранилища (CSI snapshots/PVC + CoW при наличии); резолвинг путей по namespace.
 - **Artifacts**: логи/отчеты в artifact store (S3/PVC) с retention tags.
 
 ## 5. Изоляция и безопасность
 
 - Auth: OIDC/JWT через Gateway; runner получает principal/org из токена.
-- Сеть: Namespace/NetworkPolicy для изоляции песочниц; ограничение egress.
+- Сеть: Namespace/NetworkPolicy для изоляции экземпляров; ограничение egress.
 - Хранилища: per-tenant prefixes в snapshot/artifact stores; ACL на уровне сервиса и backend IAM, где применимо.
 - Quotas/limits: enforced Orchestrator и env-manager (CPU/RAM/TTL/concurrency).
 - Secrets: K8s Secrets или Vault/KMS; монтируются/инжектируются per job; не логируются.
@@ -77,7 +79,7 @@ flowchart TD
 ## 6. Масштабирование и доступность
 
 - Runner service: HPA по метрикам очереди/латентности; несколько реплик; readiness/liveness probes.
-- env-manager: масштабирует песочницы; может использовать warm pools для быстрого старта.
+- env-manager: масштабирует экземпляры; может использовать warm pools для быстрого старта.
 - Cache builders/GC: масштабируются через autoscaling controller.
 - Cluster autoscaler (Cloud): разрешен с guard rails; Team может управляться ops-ами.
 
@@ -90,12 +92,12 @@ flowchart TD
 
 ## 8. Observability и audit
 
-- Метрики: длина/возраст очереди, латентность runner, cache hit ratio, латентность bind/start песочницы, размеры/время снапшотов, ошибки.
-- Логи: структурированные, централизованные (Loki/ELK); коррелированы по job/run_id/org.
-- Audit: runs, snapshots, действия по шарингу, события масштабирования.
+- Метрики: длина/возраст очереди, латентность runner, cache hit ratio, латентность bind/start экземпляра, размеры/время снапшотов, ошибки.
+- Логи: структурированные, централизованные (Loki/ELK); коррелированы по job/prepare_id/org.
+- Audit: prepare jobs, snapshots, действия по шарингу, события масштабирования.
 
 ## 9. Примечания об эволюции
 
-- Тот же API контракт, что и в локальном `sqlrs` для `/runs` и т.п., но всегда async; watch через stream.
-- Можно шардировать cache/store по org или region; runner stateless, кроме per-job sandbox.
+- Тот же API контракт, что и в локальном `sqlrs` для prepare jobs (endpoint-ы уточняются), но всегда async; watch через stream.
+- Можно шардировать cache/store по org или region; runner stateless, кроме per-job instance.
 - Будущее: pluggable executors помимо k8s; multi-region репликация cache/artifacts.

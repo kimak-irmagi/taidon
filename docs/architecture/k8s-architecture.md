@@ -222,7 +222,7 @@ Autoscaler decisions depend on constraints:
 - **CPU/RAM** on nodes (how many DB pods can stay Hot).
 - **I/O and throughput of snapshot store** (how many restores/builds in parallel).
 - **Snapshot store capacity** (how many Warm states can be stored).
-- **Restore speed** (latency SLO for `sqlrs up/run`).
+- **Restore speed** (latency SLO for `sqlrs run`).
 
 ### 5.3 Metadata required by the autoscaler
 

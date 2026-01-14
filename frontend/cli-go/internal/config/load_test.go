@@ -1,0 +1,90 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"sqlrs/cli/internal/paths"
+)
+
+func TestLoadConfigMergeAndExpand(t *testing.T) {
+	temp := t.TempDir()
+	dirs := paths.Dirs{
+		ConfigDir: filepath.Join(temp, "config"),
+		StateDir:  filepath.Join(temp, "state"),
+		CacheDir:  filepath.Join(temp, "cache"),
+	}
+
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+
+	globalConfig := []byte("defaultProfile: local\nclient:\n  timeout: 10s\norchestrator:\n  runDir: \"${StateDir}/run\"\nprofiles:\n  local:\n    mode: local\n    endpoint: auto\n    autostart: false\n")
+	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), globalConfig, 0o600); err != nil {
+		t.Fatalf("write global config: %v", err)
+	}
+
+	projectDir := filepath.Join(temp, "project", "sub")
+	if err := os.MkdirAll(filepath.Join(projectDir, ".sqlrs"), 0o700); err != nil {
+		t.Fatalf("mkdir project config: %v", err)
+	}
+
+	projectConfig := []byte("client:\n  timeout: 5s\nprofiles:\n  local:\n    autostart: true\n")
+	if err := os.WriteFile(filepath.Join(projectDir, ".sqlrs", "config.yaml"), projectConfig, 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	result, err := Load(LoadOptions{WorkingDir: projectDir, Dirs: &dirs})
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if result.Config.Client.Timeout != "5s" {
+		t.Fatalf("expected project override timeout, got %q", result.Config.Client.Timeout)
+	}
+
+	expectedRunDir := filepath.Join(dirs.StateDir, "run")
+	if result.Config.Orchestrator.RunDir != expectedRunDir {
+		t.Fatalf("expected runDir %q, got %q", expectedRunDir, result.Config.Orchestrator.RunDir)
+	}
+
+	profile := result.Config.Profiles["local"]
+	if !profile.Autostart {
+		t.Fatalf("expected autostart true from project override")
+	}
+}
+
+func TestLoadResolvesDaemonPathRelativeToProjectConfig(t *testing.T) {
+	temp := t.TempDir()
+	dirs := paths.Dirs{
+		ConfigDir: filepath.Join(temp, "config"),
+		StateDir:  filepath.Join(temp, "state"),
+		CacheDir:  filepath.Join(temp, "cache"),
+	}
+
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+
+	projectDir := filepath.Join(temp, "project")
+	projectConfigDir := filepath.Join(projectDir, ".sqlrs")
+	if err := os.MkdirAll(projectConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir project config: %v", err)
+	}
+
+	projectConfig := []byte("orchestrator:\n  daemonPath: \"../bin/sqlrs-engine\"\n")
+	if err := os.WriteFile(filepath.Join(projectConfigDir, "config.yaml"), projectConfig, 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	result, err := Load(LoadOptions{WorkingDir: projectDir, Dirs: &dirs})
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	expected := filepath.Clean(filepath.Join(projectConfigDir, "..", "bin", "sqlrs-engine"))
+	if result.Config.Orchestrator.DaemonPath != expected {
+		t.Fatalf("expected daemonPath %q, got %q", expected, result.Config.Orchestrator.DaemonPath)
+	}
+}

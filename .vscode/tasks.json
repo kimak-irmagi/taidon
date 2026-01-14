@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build sqlrs-engine (Go)",
+      "type": "process",
+      "command": "node",
+      "args": ["scripts/build-engine-go.mjs"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Build sqlrs CLI (Go)",
+      "type": "process",
+      "command": "node",
+      "args": ["scripts/build-cli-go.mjs"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Build local MVP (Go)",
+      "type": "process",
+      "command": "node",
+      "args": ["scripts/build-engine-go.mjs"],
+      "dependsOn": ["Build sqlrs CLI (Go)"],
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Run local engine (Go)",
+      "type": "process",
+      "command": "node",
+      "args": ["scripts/dev/run-local-engine.mjs"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Local status (CLI)",
+      "type": "process",
+      "command": "node",
+      "args": ["scripts/dev/local-status.mjs"],
+      "problemMatcher": []
+    }
+  ]
+}

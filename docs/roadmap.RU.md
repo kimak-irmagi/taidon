@@ -8,7 +8,7 @@
 
 ### Цели
 
-- Дать быстрый, воспроизводимый database sandbox для разработчиков (local-first)
+- Дать быстрый, воспроизводимый database instance для разработчиков (local-first)
 - Обеспечить единое инвариантное ядро (Engine + API) для всех профилей деплоймента
 - Дать CI/CD интеграцию для team adoption
 - Сохранить чистый путь апгрейда к public cloud sharing и образовательным сценариям
@@ -31,7 +31,7 @@ gantt
 
     section Основы
     Каркас Core API + Engine                  :a1, 2026-01-01, 30d
-    Локальный runtime + lifecycle песочницы   :a2, after a1, 45d
+    Локальный runtime + lifecycle экземпляра   :a2, after a1, 45d
     Адаптер Liquibase (применение миграций)   :a3, after a2, 30d
 
     section Продуктовый MVP (локальный)
@@ -46,7 +46,7 @@ gantt
     Хранилище артефактов (S3/fs) + audit log  :c2, after c1, 45d
     Шаблоны интеграции CI/CD                  :c3, after c1, 30d
     Auth (OIDC) + RBAC (basic)                :c4, after c1, 45d
-    Автомасштабирование (sandboxes + cache)   :c5, after c2, 30d
+    Автомасштабирование (instances + cache)   :c5, after c2, 30d
 
     section Облако (Sharing)
     Шаринг артефактов (immutable runs)        :d1, after c2, 45d
@@ -72,14 +72,14 @@ gantt
 
 **Результат**: стабильные концепты и контракты до тяжелой реализации.
 
-- Зафиксировать канонические сущности: project, sandbox, run, artefact, share
+- Зафиксировать канонические сущности: project, instance, run, artefact, share
 - Зафиксировать core API surface (create/apply/run/destroy + status/events)
 - Принять подход к runtime изоляции для MVP (локальные контейнеры vs альтернативы)
 
 **Ключевые документы, которые нужно подготовить дальше**:
 
 - [`api-contract.md`](api-contract.md)
-- [`sandbox-lifecycle.md`](sandbox-lifecycle.md)
+- [`instance-lifecycle.md`](instance-lifecycle.md)
 - [`state-cache-design.md`](architecture/state-cache-design.RU.md)
 
 ---
@@ -90,7 +90,7 @@ gantt
 
 **Целевые use cases**:
 
-- UC-1 Поднять изолированную песочницу БД
+- UC-1 Поднять изолированный экземпляр БД
 - UC-2 Применить миграции (Liquibase / SQL)
 - UC-3 Запустить тесты / запросы / скрипты
 - UC-4 Кэшировать и переиспользовать состояния БД
@@ -98,10 +98,10 @@ gantt
 **Deliverables**:
 
 - Taidon Engine + API (локальный режим)
-- Локальный runtime (контейнеры) с lifecycle песочницы
+- Локальный runtime (контейнеры) с lifecycle экземпляра
 - Liquibase адаптер (apply changelog)
 - CLI:
-  - `sqlrs up`, `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
+  - `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
   - `sqlrs status`, `sqlrs logs`
 - Cache v1:
   - cache key: `db_engine + base_image + changelog_hash + seed_hash`
@@ -110,13 +110,13 @@ gantt
 **Опционально (nice-to-have)**:
 
 - VS Code extension v0:
-  - list sandboxes
+  - list instances
   - apply migrations
   - show logs and run results
 
 **Exit criteria**:
 
-- Cold start создает рабочую песочницу
+- Cold start создает рабочий экземпляр
 - Warm start переиспользует кэшированное состояние и значительно быстрее
 - Миграции детерминированы и воспроизводимы
 
@@ -177,15 +177,15 @@ gantt
   - organisation/team scopes
 - CI шаблоны:
   - GitHub Actions / GitLab CI примеры
-- Autoscaling controller (sandboxes + cache workers):
+- Autoscaling controller (instances + cache workers):
   - HPA/VPA профили по backlog/cache метрикам
   - warm pool для быстрого старта; graceful drain на scale-in
 
 **Exit criteria**:
 
-- Несколько разработчиков могут параллельно запускать изолированные песочницы
+- Несколько разработчиков могут параллельно запускать изолированные экземпляры
 - Квоты предотвращают истощение ресурсов
-- CI пайплайны стабильно поднимают и уничтожают песочницы
+- CI пайплайны стабильно поднимают и уничтожают экземпляры
 
 ---
 
@@ -207,7 +207,7 @@ gantt
   - кнопка reproduce (clone в workspace пользователя)
 - Anti-abuse controls:
   - rate limiting
-  - лимиты песочниц
+  - лимиты экземпляров
   - enforcement TTL
 
 **Exit criteria**:
@@ -219,19 +219,19 @@ gantt
 
 ### R1. Cloud Git Integration (Optional / Research)
 
-**Цель**: связать облачную песочницу с Git-репозиториями.
+**Цель**: связать облачный экземпляр с Git-репозиториями.
 
 **Deliverables**:
 
 - VCS/Git connector (API) с поддержкой private repo
-- Привязка проекта к ветке/коммиту; запуск песочницы из выбранной ревизии
+- Привязка проекта к ветке/коммиту; запуск экземпляра из выбранной ревизии
 - One-time tokens/SSO для Git (секреты хранятся в облаке)
-- Опциональный auto-sync/pull для обновления состояния песочницы
+- Опциональный auto-sync/pull для обновления состояния экземпляра
 
 **Exit criteria**:
 
-- Пользователь может привязать Git репозиторий и запустить песочницу из выбранной ветки/коммита
-- Обновления репозитория доступны в песочнице без ручного ре-импорта
+- Пользователь может привязать Git репозиторий и запустить экземпляр из выбранной ветки/коммита
+- Обновления репозитория доступны в экземпляре без ручного ре-импорта
 
 ---
 

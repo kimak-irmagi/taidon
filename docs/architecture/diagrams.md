@@ -27,7 +27,7 @@ flowchart LR
     SR[sql-runner]
     SC[snapshot-cache]
     EM[env-manager]
-    PG[(PostgreSQL sandboxes)]
+    PG[(PostgreSQL instances)]
     SNAP["Snapshot store (CoW layers)"]
   end
 
@@ -67,7 +67,7 @@ flowchart TD
   API[API handler]
   Plan[Planner: parses project, splits tail/head, computes tail hash]
   CacheClient[Snapshot-cache client]
-  EnvBind[Env binding: request/bring up sandbox via env-manager]
+  EnvBind[Env binding: request/bring up instance via env-manager]
   Exec[Executor: connect to Postgres, execute head]
   Tele[Telemetry/log hooks]
 

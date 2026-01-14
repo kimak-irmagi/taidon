@@ -148,7 +148,7 @@ flowchart TD
   A[Start: original_base_id] --> B[Plan pending changesets via Liquibase]
   B --> C[Compute hashes until horizon]
   C --> D[Rewind: walk cache forward by hashes]
-  D -->|miss or horizon end| E[Materialize sandbox from last cached state]
+  D -->|miss or horizon end| E[Materialize instance from last cached state]
   E --> F[Execute steps (update-count 1) + snapshot]
   F --> G[Try to extend horizon and rewind again]
   G -->|no pending| H[Done: final_state_id]
@@ -170,7 +170,7 @@ Rewind loop:
 3. Else:
    - stop. The next step must be executed.
 
-No sandbox is created during rewind.
+No instance is created during rewind.
 
 ---
 
@@ -178,7 +178,7 @@ No sandbox is created during rewind.
 
 ### 7.1 Materialisation rule
 
-When rewind stops (cache miss or horizon end), Taidon materialises a sandbox from the last known `base_id`.
+When rewind stops (cache miss or horizon end), Taidon materialises a instance from the last known `base_id`.
 
 ### 7.2 Step-wise execution
 
@@ -196,12 +196,12 @@ After each successful `update-count 1`:
 - store `key(base_id, block_hash, exec_params) -> new_state_id`
 - update `current_base_id = new_state_id`
 
-### 7.4 Sandbox switching on cache hit
+### 7.4 Instance switching on cache hit
 
 If a cache hit is discovered for upcoming steps:
 
-- stop using current sandbox
-- create a new sandbox from the cached State
+- stop using current instance
+- create a new instance from the cached State
 - resume Liquibase execution
 
 This keeps the user experience logically continuous while physically switching bases.
@@ -224,7 +224,7 @@ After materialisation, Taidon must confirm that Liquibase is applying the expect
 
 ### 8.2 Diagnostic snapshot (optional)
 
-On failure, Taidon may snapshot the failed sandbox state for investigation.
+On failure, Taidon may snapshot the failed instance state for investigation.
 
 - `status=failed`
 - excluded from automatic cache lookup
@@ -289,7 +289,7 @@ JSON structured logs can become very large for big SQL payloads.
 
 ### 10.2 Concurrency
 
-- Each sandbox is isolated; Liquibase runs should not share a DB instance.
+- Each instance is isolated; Liquibase runs should not share a DB instance.
 - Cache index must be concurrency-safe (atomic insert for key->state).
 
 ### 10.3 Security

@@ -6,6 +6,12 @@
 
   "scripts": {
     "build:cli": "node scripts/build-cli.mjs",
+    "build:cli-go": "node scripts/build-cli-go.mjs",
+    "build:engine-go": "node scripts/build-engine-go.mjs",
+    "build:local-mvp": "node scripts/build-engine-go.mjs && node scripts/build-cli-go.mjs",
+    "release:local": "node scripts/release-local.mjs",
+    "run:engine": "node scripts/dev/run-local-engine.mjs",
+    "status:local": "node scripts/dev/local-status.mjs",
     "run:one": "node scripts/run-one.mjs",
     "bench": "node scripts/bench.mjs",
     "fetch:sql": "node tools/fetch-sql-scripts.mjs"

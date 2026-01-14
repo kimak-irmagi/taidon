@@ -26,27 +26,27 @@ The goal is to:
 
 From the user’s point of view, `sqlrs` manages:
 
-- **states**: immutable database snapshots
-- **sandboxes**: live, temporary databases created from states
+- **states**: immutable database states produced by a deterministic preparation process
+- **instances**: mutable copies of states; all database modifications happen here
 - **plans**: ordered sets of changes to apply (e.g., Liquibase changesets)
 - **runs**: executions of plans, scripts, or commands
 
-```
-state  --(materialize)-->  sandbox  --(run/apply)-->  new state
+```text
+state  --(materialize)-->  instance  --(run/apply)-->  new state
 ```
 
 ---
 
 ## 2. Command Groups (Namespaces)
 
-```
+```text
 sqlrs
  ├─ init
  ├─ plan
  ├─ migrate
  ├─ run
  ├─ state
- ├─ sandbox
+ ├─ instance
  ├─ cache
  ├─ inspect
  ├─ tag
@@ -62,17 +62,9 @@ Not all groups are required in MVP.
 
 ### 3.1 `sqlrs init`
 
-Initialize a sqlrs project in the current directory.
+See the user guide for the authoritative, up-to-date command semantics:
 
-```bash
-sqlrs init
-```
-
-Creates:
-
-- `.sqlrs/` directory
-- default config
-- links to migration sources (e.g., Liquibase changelog)
+- [`docs/user-guides/sqlrs-init.md`](../user-guides/sqlrs-init.md)
 
 ---
 
@@ -92,7 +84,7 @@ Purpose:
 
 Common flags:
 
-```
+```bash
 --format=json|table
 --contexts=<ctx>
 --labels=<expr>
@@ -101,7 +93,7 @@ Common flags:
 
 Example output (table):
 
-```
+```text
 STEP  TYPE        HASH        CACHED  NOTE
 0     changeset  ab12…cd     yes     snapshot found
 1     changeset  ef34…56     no      requires execution
@@ -122,12 +114,12 @@ Behavior:
 
 - uses `plan`
 - rewinds via cache where possible
-- materializes sandboxes as needed
+- materializes instances as needed
 - snapshots after each successful step
 
 Important flags:
 
-```
+```bash
 --mode=conservative|investigative
 --dry-run
 --max-steps=N
@@ -135,35 +127,16 @@ Important flags:
 
 ---
 
-### 3.4 `sqlrs run` (PoC form)
+### 3.4 `sqlrs prepare` and `sqlrs run`
 
-Run an arbitrary command or script against a sandbox. In the PoC we use a single
-invocation with step flags.
+See the user guides for the authoritative, up-to-date command semantics:
 
-```bash
-sqlrs --run -- <command>
-sqlrs --prepare -- <command> --run -- <command>
-```
-
-Examples:
-
-```bash
-sqlrs --run -- psql -c "SELECT count(*) FROM users"
-sqlrs --prepare -- psql -f ./schema.sql --run -- pytest
-```
-
-Behavior:
-
-- starts one sandbox per invocation
-- executes `prepare` (if provided) then `run`
-- snapshots after successful `prepare` into `workspace/states/<state-id>`
-- stops on the first error with a non-zero exit code
-- `--prepare` and `--run` are reserved and cannot appear inside commands
-- only one `prepare` and one `run` per invocation
+- [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
+- [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
 
 ---
 
-## 4. State and Sandbox Management
+## 4. State and Instance Management
 
 ### 4.1 `sqlrs state`
 
@@ -176,14 +149,14 @@ sqlrs state show <state-id>
 
 ---
 
-### 4.2 `sqlrs sandbox`
+### 4.2 `sqlrs instance`
 
-Manage live sandboxes.
+Manage live instances.
 
 ```bash
-sqlrs sandbox list
-sqlrs sandbox open <id>
-sqlrs sandbox destroy <id>
+sqlrs instance list
+sqlrs instance open <id>
+sqlrs instance destroy <id>
 ```
 
 ---
@@ -294,7 +267,7 @@ This keeps `POST /runs` small and enables resumable uploads for large projects.
 
 ## 13. Open Questions
 
-- Should we allow multiple prepare/run steps per invocation?
+- Should we allow multiple prepare/run steps per invocation? (see user guides)
 - Should `plan` be implicit in `migrate` or always explicit?
 - How much state history should be shown by default?
 - Should destructive operations require confirmation flags?

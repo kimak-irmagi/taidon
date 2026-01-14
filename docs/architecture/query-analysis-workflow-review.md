@@ -201,7 +201,7 @@ Semantics:
 
 - sqlrs resolves this StateSpec to a concrete immutable state (cache hit or build).
 
-- An ephemeral sandbox is created from that state.
+- An ephemeral instance is created from that state.
 
 - The wrapped command receives a normal database connection via env/DSN.
 
@@ -236,7 +236,7 @@ This preserves compatibility with existing scripts and interactive workflows.
 - Treat preparation parameters as the **true identity** of a database state.
 - Avoid global human-readable tags unless explicitly needed; prefer inline StateSpec.
 
-- Use ephemeral sandboxes for measurements to avoid cross-run contamination.
+- Use ephemeral instances for measurements to avoid cross-run contamination.
 - Keep the same DB engine/version and relevant settings across comparisons.
 - For large seeds, rely on cache pinning rather than manual tagging.
 

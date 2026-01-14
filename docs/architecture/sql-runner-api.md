@@ -6,7 +6,7 @@ Scope: core service that executes SQL projects deterministically, with cache-awa
 
 - Parse project layout (init/seed/test/bench) and compute tail/head split with deterministic hashes.
 - Query snapshot-cache for a reusable state; request build on cache miss.
-- Bind to a sandbox via env-manager and enforce resource/TTL policies.
+- Bind to a instance via env-manager and enforce resource/TTL policies.
 - Execute head fragment with DB-level protections (statement timeout, limiters).
 - Stream results/logs to clients; persist final artefacts/metadata.
 - Expose cancellation and deadline enforcement; emit audit/telemetry events.
@@ -16,15 +16,15 @@ Scope: core service that executes SQL projects deterministically, with cache-awa
 The Gateway/BFF fronts these calls; shape is stable across REST/gRPC. Identifiers are opaque UUIDs.
 
 - `POST /runs` - start run. Body: project ref (repo/path+rev) or `source_id`, entry script(s), parameters, limits (timeout, row limit, byte limit), cache hints. Response: `run_id`, status URL, stream URL.
-- `GET /runs/{run_id}/stream` - server-sent events / WebSocket for rows, progress, logs, state changes.
-- `POST /runs/{run_id}/cancel` - best-effort cancel; guarantees no further writes to the sandbox.
-- `GET /runs/{run_id}` - status, timings, cache hit/miss, tail hash, sandbox binding, summary artefacts.
+- `GET /runs/{run_id}/stream` - server-sent events / WebSocket for rows, progress, logs, state changes. NDJSON is supported via `Accept: application/x-ndjson` (one JSON object per line).
+- `POST /runs/{run_id}/cancel` - best-effort cancel; guarantees no further writes to the instance.
+- `GET /runs/{run_id}` - status, timings, cache hit/miss, tail hash, instance binding, summary artefacts.
 
 Timeouts are multi-layer:
 
 - Request deadline (Gateway) -> cancels connection and propagates to runner.
 - Runner deadline -> sets DB `statement_timeout` and internal wall-clock guard.
-- Sandbox TTL (env-manager) -> tears down idle/long-lived sandboxes.
+- Instance TTL (env-manager) -> tears down idle/long-lived instances.
 
 ## 3. Component Context
 
@@ -35,7 +35,7 @@ flowchart LR
   SR --> PLAN[Planner]
   SR --> CACHE[snapshot-cache]
   SR --> ENV[env-manager]
-  ENV --> PG[(PostgreSQL sandbox)]
+  ENV --> PG[(PostgreSQL instance)]
   CACHE <-->|metadata| META[(Control DB)]
   SR --> AUD[audit-log]
   SR --> TELE[telemetry]
@@ -55,7 +55,7 @@ sequenceDiagram
   participant SR as SQL Runner
   participant SC as snapshot-cache
   participant EM as env-manager
-  participant DB as PG sandbox
+  participant DB as PG instance
 
   C->>GW: POST /runs (project ref, limits)
   GW->>SR: start run (deadline)
@@ -68,10 +68,10 @@ sequenceDiagram
     EM-->>SC: snapshot ready
     SC-->>SR: snapshot ref
   end
-  SR->>EM: bind sandbox (resource policy, TTL)
+  SR->>EM: bind instance (resource policy, TTL)
   EM-->>SR: endpoint/credentials
   SR->>DB: set statement_timeout, run head
-  SR-->>GW: stream rows/logs/progress (SSE/WS)
+  SR-->>GW: stream rows/logs/progress (SSE/WS/NDJSON)
   DB-->>SR: completion
   SR->>SC: optionally publish new snapshot layer
   SR->>AUD: append run audit
@@ -79,19 +79,19 @@ sequenceDiagram
   GW-->>C: stream complete + summary
 ```
 
-Streaming channel carries small structured messages (progress, result sets in chunks, stderr/log lines, state changes). Backpressure handled by bounded channel + drop/close on slow consumer with explicit code.
+Streaming channel carries small structured messages (progress, result sets in chunks, stderr/log lines, state changes). Backpressure handled by bounded channel + drop/close on slow consumer with explicit code. NDJSON is a line-delimited JSON encoding of the same events.
 
 ## 5. Cancellation and Timeouts
 
 - **Client cancel**: `POST /runs/{id}/cancel` triggers runner to send `pg_cancel_backend` and close the stream; run ends in `cancelled`.
 - **Deadline**: runner enforces wall-clock deadline; also sets DB `statement_timeout` per head fragment and aggregate budget.
-- **Sandbox TTL**: enforced by env-manager; idle sandboxes may be reaped, forcing fresh binding on next run.
+- **Instance TTL**: enforced by env-manager; idle instances may be reaped, forcing fresh binding on next run.
 
 All exits (success/fail/cancel/timeout) write a terminal status, duration, cache hit flag, and optional artefact pointers.
 
 ## 6. Observability and Safety
 
-- Metrics: cache hit ratio, planning latency, sandbox bind latency, head execution latency, rows/bytes streamed, cancellations, timeouts.
+- Metrics: cache hit ratio, planning latency, instance bind latency, head execution latency, rows/bytes streamed, cancellations, timeouts.
 - Logs: structured per run_id; include cache decision, env binding, errors.
 - Audit: who ran what project/ref, outcome, resources consumed.
 - Limits: row count and payload size caps; reject oversized result sets; redact secrets in logs/streams.
@@ -101,9 +101,9 @@ All exits (success/fail/cancel/timeout) write a terminal status, duration, cache
 ### 7.1 Local (MVP)
 
 - **Process**: engine runs locally (ephemeral), REST over loopback; CLI can watch or detach.
-- **Runtime**: Docker executor; single-node sandbox pool; per-user state store on disk.
+- **Runtime**: Docker executor; single-node instance pool; per-user state store on disk.
 - **Cache**: local snapshot store + SQLite index; no shared cache service.
-- **Auth**: none; rely on local loopback and filesystem permissions.
+- **Auth**: loopback-only plus auth token from `engine.json` for non-health endpoints.
 - **Scaling**: limited parallelism on the workstation; no autoscaling.
 
 ### 7.2 Team / Cloud
@@ -112,7 +112,7 @@ All exits (success/fail/cancel/timeout) write a terminal status, duration, cache
 - **Runtime**: env-manager (k8s executor), namespace isolation, quotas/TTL policies.
 - **Cache**: shared cache service and snapshot store (PVC/S3) with Control DB metadata.
 - **Auth**: OIDC/JWT via Gateway; per-org access and rate limits.
-- **Scaling**: autoscaling for runners and cache builders; warm pools for sandboxes.
+- **Scaling**: autoscaling for runners and cache builders; warm pools for instances.
 
 The API surface and run model are kept stable across profiles to allow the CLI to target local or shared deployments without behavioral drift.
 

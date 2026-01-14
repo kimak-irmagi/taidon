@@ -8,7 +8,7 @@ This roadmap prioritises scenarios, use cases, and components to maximise early 
 
 ### Goals
 
-- Deliver a fast, reproducible database sandbox for developers (local-first)
+- Deliver a fast, reproducible database instance for developers (local-first)
 - Provide a single invariant core (Engine + API) across all deployment profiles
 - Enable CI/CD integration for team adoption
 - Preserve a clean upgrade path to public cloud sharing and education workflows
@@ -31,7 +31,7 @@ gantt
 
     section Foundation
     Core API + Engine skeleton                 :a1, 2026-01-01, 30d
-    Local runtime + sandbox lifecycle          :a2, after a1, 45d
+    Local runtime + instance lifecycle          :a2, after a1, 45d
     Liquibase adapter (apply migrations)       :a3, after a2, 30d
 
     section Product MVP (Local)
@@ -46,7 +46,7 @@ gantt
     Artifact store (S3/fs) + audit log         :c2, after c1, 45d
     CI/CD integration templates                :c3, after c1, 30d
     Auth (OIDC) + RBAC (basic)                 :c4, after c1, 45d
-    Autoscaling (sandboxes + cache workers)    :c5, after c2, 30d
+    Autoscaling (instances + cache workers)    :c5, after c2, 30d
 
     section Cloud (Sharing)
     Sharing artefacts (immutable runs)         :d1, after c2, 45d
@@ -72,14 +72,14 @@ gantt
 
 **Outcome**: stable concepts and contracts before heavy implementation.
 
-- Freeze canonical entities: project, sandbox, run, artefact, share
+- Freeze canonical entities: project, instance, run, artefact, share
 - Freeze core API surface (create/apply/run/destroy + status/events)
 - Decide runtime isolation approach for MVP (local containers vs other)
 
 **Key documents to produce next**:
 
 - [`api-contract.md`](api-contract.md)
-- [`sandbox-lifecycle.md`](sandbox-lifecycle.md)
+- [`instance-lifecycle.md`](instance-lifecycle.md)
 - [`state-cache-design.md`](architecture/state-cache-design.md)
 
 ---
@@ -90,7 +90,7 @@ gantt
 
 **Target use cases**:
 
-- UC-1 Provision isolated database sandbox
+- UC-1 Provision isolated database instance
 - UC-2 Apply migrations (Liquibase / SQL)
 - UC-3 Run tests / queries / scripts
 - UC-4 Cache and reuse database states
@@ -98,10 +98,10 @@ gantt
 **Deliverables**:
 
 - Taidon Engine + API (local mode)
-- Local runtime (containers) with sandbox lifecycle
+- Local runtime (containers) with instance lifecycle
 - Liquibase adapter (apply changelog)
 - CLI:
-  - `sqlrs up`, `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
+  - `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
   - `sqlrs status`, `sqlrs logs`
 - Cache v1:
   - cache key: `db_engine + base_image + changelog_hash + seed_hash`
@@ -110,13 +110,13 @@ gantt
 **Optional (nice-to-have)**:
 
 - VS Code extension v0:
-  - list sandboxes
+  - list instances
   - apply migrations
   - show logs and run results
 
 **Exit criteria**:
 
-- A cold start produces a working sandbox
+- A cold start produces a working instance
 - A warm start reuses cached state and is significantly faster
 - Migrations are deterministic and reproducible
 
@@ -177,15 +177,15 @@ gantt
   - organisation/team scopes
 - CI templates:
   - GitHub Actions / GitLab CI examples
-- Autoscaling controller (sandboxes + cache workers):
+- Autoscaling controller (instances + cache workers):
   - HPA/VPA profiles using backlog/cache metrics
   - Warm pool for fast start; graceful drain on scale-in
 
 **Exit criteria**:
 
-- Multiple developers can run isolated sandboxes concurrently
+- Multiple developers can run isolated instances concurrently
 - Quotas prevent resource exhaustion
-- CI pipelines can provision and teardown sandboxes reliably
+- CI pipelines can provision and teardown instances reliably
 
 ---
 
@@ -207,7 +207,7 @@ gantt
   - reproduce button (clone into user workspace)
 - Anti-abuse controls:
   - rate limiting
-  - sandbox limits
+  - instance limits
   - TTL enforcement
 
 **Exit criteria**:
@@ -219,19 +219,19 @@ gantt
 
 ### R1. Cloud Git Integration (Optional / Research)
 
-**Purpose**: connect the cloud sandbox with Git repositories.
+**Purpose**: connect the cloud instance with Git repositories.
 
 **Deliverables**:
 
 - VCS/Git connector (API) with private-repo support
-- Bind project to branch/commit; start sandbox from the selected revision
+- Bind project to branch/commit; start instance from the selected revision
 - One-time tokens/SSO for Git (secrets managed in cloud)
-- Optional auto-sync/pull to refresh sandbox state
+- Optional auto-sync/pull to refresh instance state
 
 **Exit criteria**:
 
-- User can attach a Git repo and start a sandbox from a chosen branch/commit
-- Repo updates are available in the sandbox without manual re-import
+- User can attach a Git repo and start a instance from a chosen branch/commit
+- Repo updates are available in the instance without manual re-import
 
 ---
 

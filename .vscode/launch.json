@@ -1,0 +1,51 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Engine: Run local (Go)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/backend/local-engine-go/cmd/sqlrs-engine",
+      "args": [
+        "--listen",
+        "127.0.0.1:0",
+        "--run-dir",
+        "${workspaceFolder}/sqlrs-work/state/sqlrs/run",
+        "--write-engine-json",
+        "${workspaceFolder}/sqlrs-work/state/sqlrs/engine.json",
+        "--idle-timeout",
+        "30s"
+      ],
+      "env": {
+        "XDG_CONFIG_HOME": "${workspaceFolder}/sqlrs-work/config",
+        "XDG_STATE_HOME": "${workspaceFolder}/sqlrs-work/state",
+        "XDG_CACHE_HOME": "${workspaceFolder}/sqlrs-work/cache",
+        "APPDATA": "${workspaceFolder}/sqlrs-work/config",
+        "LOCALAPPDATA": "${workspaceFolder}/sqlrs-work/state"
+      }
+    },
+    {
+      "name": "CLI: status (Go)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/frontend/cli-go/cmd/sqlrs",
+      "args": ["status"],
+      "env": {
+        "SQLRS_DAEMON_PATH": "${workspaceFolder}/dist/bin/sqlrs-engine",
+        "XDG_CONFIG_HOME": "${workspaceFolder}/sqlrs-work/config",
+        "XDG_STATE_HOME": "${workspaceFolder}/sqlrs-work/state",
+        "XDG_CACHE_HOME": "${workspaceFolder}/sqlrs-work/cache",
+        "APPDATA": "${workspaceFolder}/sqlrs-work/config",
+        "LOCALAPPDATA": "${workspaceFolder}/sqlrs-work/state"
+      },
+      "windows": {
+        "env": {
+          "SQLRS_DAEMON_PATH": "${workspaceFolder}/dist/bin/sqlrs-engine.exe"
+        }
+      },
+      "preLaunchTask": "Build sqlrs-engine (Go)"
+    }
+  ]
+}
