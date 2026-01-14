@@ -18,6 +18,10 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"sqlrs/engine/internal/httpapi"
+	"sqlrs/engine/internal/registry"
+	"sqlrs/engine/internal/store/sqlite"
 )
 
 type EngineState struct {
@@ -27,13 +31,6 @@ type EngineState struct {
 	AuthToken  string `json:"authToken"`
 	Version    string `json:"version"`
 	InstanceID string `json:"instanceId"`
-}
-
-type HealthResponse struct {
-	Ok         bool   `json:"ok"`
-	Version    string `json:"version"`
-	InstanceID string `json:"instanceId"`
-	PID        int    `json:"pid"`
 }
 
 type activityTracker struct {
@@ -95,6 +92,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	stateDir := filepath.Dir(*statePath)
+	store, err := sqlite.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open state db: %v\n", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
 	state := EngineState{
 		Endpoint:   listener.Addr().String(),
 		PID:        os.Getpid(),
@@ -111,18 +116,13 @@ func main() {
 
 	tracker := newActivityTracker()
 	tracker.Touch()
+	reg := registry.New(store)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		tracker.Touch()
-		w.Header().Set("Content-Type", "application/json")
-		resp := HealthResponse{
-			Ok:         true,
-			Version:    *version,
-			InstanceID: instanceID,
-			PID:        os.Getpid(),
-		}
-		_ = json.NewEncoder(w).Encode(resp)
+	mux := httpapi.NewHandler(httpapi.Options{
+		Version:    *version,
+		InstanceID: instanceID,
+		AuthToken:  authToken,
+		Registry:   reg,
 	})
 
 	server := &http.Server{

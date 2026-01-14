@@ -37,21 +37,31 @@ state  --(materialize)-->  instance  --(run/apply)-->  new state
 
 ---
 
+## Конвенция формы команд
+
+Во всех командах sqlrs используется следующая форма:
+
+```text
+sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
+```
+
+- `<verb>` - основная команда (`prepare`, `run`, `ls`, ...).
+- `:<kind>` - опциональный селектор исполнителя/адаптера (например, `prepare:psql`, `run:pgbench`).
+- `subject` - опциональный аргумент, зависит от команды (например, id инстанса, имя и т.п.).
+- `-- <command>...` используется только для команд, выполняющих внешнюю команду (в основном `run`).
+
+`sqlrs ls` не использует `:<kind>` и не принимает `-- <command>...`.
+
 ## 2. Группы команд (неймспейсы)
 
 ```text
 sqlrs
-|-- init
-|-- plan
-|-- migrate
-|-- run
-|-- state
-|-- instance
-|-- cache
-|-- inspect
-|-- tag
-|-- config
-`-- system
+  init
+  status
+  ls
+  prepare
+  plan
+  run
 ```
 
 Не все группы требуются в MVP.
@@ -68,7 +78,33 @@ sqlrs
 
 ---
 
-### 3.2 `sqlrs plan`
+### 3.2 `sqlrs status`
+
+Проверяет здоровье локального или удаленного engine и выводит детали статуса.
+
+```bash
+sqlrs status [options]
+```
+
+---
+
+### 3.3 `sqlrs ls`
+
+Актуальная семантика команды описана в user guide:
+
+- [`docs/user-guides/sqlrs-ls.md`](../user-guides/sqlrs-ls.md)
+
+---
+
+### 3.4 `sqlrs prepare`
+
+Актуальная семантика команды описана в user guide:
+
+- [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
+
+---
+
+### 3.5 `sqlrs plan`
 
 Вычисляет план выполнения без применения изменений.
 
@@ -102,126 +138,15 @@ STEP  TYPE       HASH        CACHED  NOTE
 
 ---
 
-### 3.3 `sqlrs migrate`
+### 3.6 `sqlrs run`
 
-Применяет миграции пошагово с snapshotting и кэшированием.
+Актуальная семантика команды описана в user guide:
 
-```bash
-sqlrs migrate [options]
-```
-
-Поведение:
-
-- использует `plan`
-- откатывается через cache там, где возможно
-- материализует instances по мере необходимости
-- делает снимок после каждого успешного шага
-
-Важные флаги:
-
-```bash
---mode=conservative|investigative
---dry-run
---max-steps=N
-```
-
----
-
-### 3.4 `sqlrs prepare` и `sqlrs run`
-
-Актуальная семантика команд описана в user guides:
-
-- [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
 
 ---
 
-## 4. Управление состояниями и экземплярами
-
-### 4.1 `sqlrs state`
-
-Просмотр и управление неизменяемыми состояниями.
-
-```bash
-sqlrs state list
-sqlrs state show <state-id>
-```
-
----
-
-### 4.2 `sqlrs instance`
-
-Управление живыми экземплярами.
-
-```bash
-sqlrs instance list
-sqlrs instance open <id>
-sqlrs instance destroy <id>
-```
-
----
-
-## 5. Теги и обнаружение
-
-### 5.1 `sqlrs tag`
-
-Прикрепляет человеко-читаемые метаданные к состояниям.
-
-```bash
-sqlrs tag add <state-id> --name v1-seed
-sqlrs tag add --nearest --name after-schema
-sqlrs tag list
-```
-
-Теги:
-
-- не меняют идентичность состояния
-- влияют на eviction
-
----
-
-## 6. Управление кэшем (advanced)
-
-### 6.1 `sqlrs cache`
-
-Просмотр и влияние на поведение кэша.
-
-```bash
-sqlrs cache stats
-sqlrs cache prune
-sqlrs cache pin <state-id>
-```
-
----
-
-## 7. Инспекция и отладка
-
-### 7.1 `sqlrs inspect`
-
-Инспекция планов, запусков и ошибок.
-
-```bash
-sqlrs inspect plan
-sqlrs inspect run <run-id>
-sqlrs inspect failure <state-id>
-```
-
----
-
-## 8. Конфигурация
-
-### 8.1 `sqlrs config`
-
-Просмотр и изменение конфигурации.
-
-```bash
-sqlrs config get
-sqlrs config set key=value
-```
-
----
-
-## 9. Вывод и скриптинг
+## 4. Вывод и скриптинг
 
 - Вывод по умолчанию: человеко-читаемый
 - `--json`: машинно-читаемый
@@ -231,7 +156,7 @@ sqlrs config set key=value
 
 ---
 
-## 10. Источники входа (локальные пути, URL, удаленные загрузки)
+## 5. Источники входа (локальные пути, URL, удаленные загрузки)
 
 Везде, где CLI ожидает файл или директорию, он принимает:
 
@@ -249,7 +174,7 @@ sqlrs config set key=value
 
 ---
 
-## 11. Совместимость и расширяемость
+## 6. Совместимость и расширяемость
 
 - Liquibase рассматривается как внешний планировщик/исполнитель
 - CLI не раскрывает Liquibase internals напрямую
@@ -257,7 +182,7 @@ sqlrs config set key=value
 
 ---
 
-## 12. Не-цели (для этого CLI контракта)
+## 7. Не-цели (для этого CLI контракта)
 
 - Полный паритет с опциями Liquibase CLI
 - Интерактивный TUI
@@ -265,7 +190,7 @@ sqlrs config set key=value
 
 ---
 
-## 13. Открытые вопросы
+## 8. Открытые вопросы
 
 - Разрешать ли несколько prepare/run шагов на invocation? (см. user guides)
 - Должен ли `plan` быть неявным в `migrate` или всегда явным?
@@ -274,7 +199,7 @@ sqlrs config set key=value
 
 ---
 
-## 14. Философия
+## 9. Философия
 
 `sqrls` (sic) — это не база данных.
 

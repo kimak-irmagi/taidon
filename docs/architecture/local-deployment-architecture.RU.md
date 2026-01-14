@@ -29,13 +29,13 @@ Team/Cloud вариант описан в [`shared-deployment-architecture.RU.md
 ```mermaid
 flowchart LR
   U[User]
-  CLI[sqlrs CLI]
-  ENG[sqlrs engine process]
-  DOCKER[Docker Engine]
-  DB[(DB Container)]
+  CLI["sqlrs CLI"]
+  ENG["sqlrs engine process"]
+  DOCKER["Docker Engine"]
+  DB["DB Container"]
   LB[Liquibase]
-  STATE[State dir (engine.json)]
-  STORE[state store]
+  STATE["State dir (engine.json)"]
+  STORE["state store"]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
@@ -115,7 +115,10 @@ CLI намеренно **тонкий** и без состояния.
 
 - старт prepare job (plan/execute steps, snapshot states, bind/select instance)
 - статус/стрим для prepare job
-- операции с экземплярами (lookup/bind по name или id)
+- список names/instances/states (JSON array или NDJSON через `Accept`)
+- `GET /v1/names/{name}` - чтение name binding
+- `GET /v1/instances/{instanceId}` - чтение экземпляра (если найдено по имени, engine отвечает 307 redirect на канонический URL по id)
+- `GET /v1/states/{stateId}` - чтение state
 - `POST /snapshots` - ручной snapshot
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - опциональная мягкая остановка

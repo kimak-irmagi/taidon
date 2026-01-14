@@ -8,6 +8,7 @@
 - ADR: `docs/adr/` (архитектурные решения)
 - Дизайн‑заметки: `docs/design-notes/`
 - User guides: `docs/user-guides/`
+- API guides: `docs/api-guides/`
 
 - Эксперименты: [`docs/experiments.md`](docs/experiments.RU.md)
 - Windows‑специфика: [`docs/windows.md`](docs/windows.RU.md)

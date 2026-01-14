@@ -29,13 +29,13 @@ Team/Cloud variant is covered in [`shared-deployment-architecture.md`](shared-de
 ```mermaid
 flowchart LR
   U[User]
-  CLI[sqlrs CLI]
-  ENG[sqlrs engine process]
-  DOCKER[Docker Engine]
-  DB[(DB Container)]
+  CLI["sqlrs CLI"]
+  ENG["sqlrs engine process"]
+  DOCKER["Docker Engine"]
+  DB["DB Container"]
   LB[Liquibase]
-  STATE[State dir (engine.json)]
-  STORE[state store]
+  STATE["State dir (engine.json)"]
+  STORE["state store"]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
@@ -115,7 +115,10 @@ Key engine endpoints (logical):
 
 - start prepare job (plan/execute steps, snapshot states, bind/select instance)
 - status/stream for a prepare job
-- instance lookup/binding (by name or id)
+- list names/instances/states (JSON array or NDJSON via `Accept`)
+- `GET /v1/names/{name}` - read name binding
+- `GET /v1/instances/{instanceId}` - read instance (supports name alias with 307 redirect to the canonical id URL when resolved by name)
+- `GET /v1/states/{stateId}` - read state
 - `POST /snapshots` - manual snapshot
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - optional graceful stop

@@ -41,6 +41,11 @@ function isWindowsTarget(goos) {
   return goos === "windows";
 }
 
+function copyDir(src, dest) {
+  if (!fs.existsSync(src)) return;
+  fs.cpSync(src, dest, { recursive: true });
+}
+
 const args = parseArgs(process.argv.slice(2));
 const version = args.version || process.env.SQLRS_VERSION;
 const goos = args.os || process.env.GOOS;
@@ -91,6 +96,11 @@ fs.copyFileSync(cliPath, path.join(stagingDir, `sqlrs${exeSuffix}`));
 fs.copyFileSync(engineOut, path.join(stagingDir, `sqlrs-engine${exeSuffix}`));
 fs.copyFileSync(path.join(repoRoot, "LICENSE"), path.join(stagingDir, "LICENSE"));
 fs.copyFileSync(path.join(repoRoot, "README.md"), path.join(stagingDir, "README.md"));
+
+const docsRoot = path.join(stagingDir, "docs");
+ensureDir(docsRoot);
+copyDir(path.join(repoRoot, "docs", "user-guides"), path.join(docsRoot, "user-guides"));
+copyDir(path.join(repoRoot, "docs", "api-guides"), path.join(docsRoot, "api-guides"));
 
 let archivePath = "";
 if (isWindowsTarget(goos)) {

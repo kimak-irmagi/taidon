@@ -1,0 +1,331 @@
+openapi: 3.1.0
+info:
+  title: The sqlrs engine API
+  version: 0.1.0
+  description: |
+    Local sqlrs engine HTTP API (MVP).
+    Only the implemented endpoints are documented here.
+    Do not edit the file directly; it is generated from the codebase.
+security:
+  - bearerAuth: []
+servers:
+  - url: http://127.0.0.1:{port}
+    description: Local engine endpoint (from engine.json)
+    variables:
+      port:
+        default: "8080"
+paths:
+  /v1/health:
+    get:
+      summary: Engine health check
+      description: Returns engine status. No auth required.
+      tags:
+        - health
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/names:
+    get:
+      summary: List names
+      description: Returns name bindings.
+      tags:
+        - names
+      parameters:
+        - in: query
+          name: instance
+          schema:
+            type: string
+          description: Filter by instance id.
+        - in: query
+          name: state
+          schema:
+            type: string
+          description: Filter by state id.
+        - in: query
+          name: image
+          schema:
+            type: string
+          description: Filter by base image id.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NameEntry"
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON stream of NameEntry objects.
+        "401":
+          description: Unauthorized
+  /v1/names/{name}:
+    get:
+      summary: Get a name binding
+      description: Returns a single name binding.
+      tags:
+        - names
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NameEntry"
+        "404":
+          description: Not found
+        "401":
+          description: Unauthorized
+  /v1/instances:
+    get:
+      summary: List instances
+      description: Returns instances.
+      tags:
+        - instances
+      parameters:
+        - in: query
+          name: state
+          schema:
+            type: string
+          description: Filter by state id.
+        - in: query
+          name: image
+          schema:
+            type: string
+          description: Filter by base image id.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InstanceEntry"
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON stream of InstanceEntry objects.
+        "401":
+          description: Unauthorized
+  /v1/instances/{instanceId}:
+    get:
+      summary: Get an instance
+      description: |
+        Returns a single instance by id. If the path segment does not match the
+        instance id format, it is treated as a name alias. If it matches the id
+        format, the engine first attempts id lookup, then falls back to name.
+        When resolved by name, the response is a temporary redirect to the
+        canonical id-based URL.
+      tags:
+        - instances
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstanceEntry"
+        "307":
+          description: Temporary redirect to canonical instance id URL
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Canonical instance URL.
+        "404":
+          description: Not found
+        "401":
+          description: Unauthorized
+  /v1/states:
+    get:
+      summary: List states
+      description: Returns states.
+      tags:
+        - states
+      parameters:
+        - in: query
+          name: kind
+          schema:
+            type: string
+          description: Filter by prepare kind.
+        - in: query
+          name: image
+          schema:
+            type: string
+          description: Filter by base image id.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StateEntry"
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON stream of StateEntry objects.
+        "401":
+          description: Unauthorized
+  /v1/states/{stateId}:
+    get:
+      summary: Get a state
+      description: Returns a single state.
+      tags:
+        - states
+      parameters:
+        - in: path
+          name: stateId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateEntry"
+        "404":
+          description: Not found
+        "401":
+          description: Unauthorized
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - version
+        - instanceId
+        - pid
+      properties:
+        ok:
+          type: boolean
+          description: True if the engine is healthy.
+        version:
+          type: string
+          description: Engine version string.
+        instanceId:
+          type: string
+          description: Unique engine instance identifier.
+        pid:
+          type: integer
+          format: int32
+          description: Engine process id.
+      examples:
+        - ok: true
+          version: dev
+          instanceId: 9f4d2d4b6c1a4a4ea2d39d1f7b0d8a21
+          pid: 12345
+    NameEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - image_id
+        - state_id
+        - status
+      properties:
+        name:
+          type: string
+        instance_id:
+          type: string
+          nullable: true
+        image_id:
+          type: string
+        state_id:
+          type: string
+        state_fingerprint:
+          type: string
+        status:
+          type: string
+          enum: [active, missing, expired]
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+    InstanceEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - instance_id
+        - image_id
+        - state_id
+        - created_at
+        - status
+      properties:
+        instance_id:
+          type: string
+        image_id:
+          type: string
+        state_id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [active, expired, orphaned]
+    StateEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - state_id
+        - image_id
+        - prepare_kind
+        - prepare_args_normalized
+        - created_at
+        - refcount
+      properties:
+        state_id:
+          type: string
+        image_id:
+          type: string
+        prepare_kind:
+          type: string
+        prepare_args_normalized:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        size_bytes:
+          type: integer
+          format: int64
+        refcount:
+          type: integer
+          format: int32

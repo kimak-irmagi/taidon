@@ -14,6 +14,10 @@
 - [`k8s-architecture.RU.md`](k8s-architecture.RU.md) - Kubernetes архитектура с единой точкой входа через gateway.
 - [`cli-contract.RU.md`](cli-contract.RU.md) - CLI контракт и команды.
 - [`cli-architecture.RU.md`](cli-architecture.RU.md) - CLI флоу для local vs remote и загрузки исходников.
+- [`cli-component-structure.RU.md`](cli-component-structure.RU.md) - внутренняя структура CLI.
+- [`local-engine-component-structure.RU.md`](local-engine-component-structure.RU.md) - внутренняя структура локального engine.
+- [`local-engine-storage-schema.RU.md`](local-engine-storage-schema.RU.md) - схема SQLite для локального engine.
+- [`../api-guides/sqlrs-engine.openapi.yaml`](../api-guides/sqlrs-engine.openapi.yaml) - спецификация OpenAPI 3.1 для локального engine (MVP).
 - [`query-analysis-workflow-review.RU.md`](query-analysis-workflow-review.RU.md) - заметки по workflow анализа запросов.
 - [`git-aware-passive.RU.md`](git-aware-passive.RU.md) - сценарии работы с git, инициируемые локальным CLI.
 - [`git-aware-active.RU.md`](git-aware-active.RU.md) - сценарии github-интеграции, требующие сервисного API.

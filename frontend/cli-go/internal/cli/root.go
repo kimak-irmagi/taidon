@@ -79,6 +79,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  init     Initialize a workspace")
+	fmt.Fprintln(w, "  ls       List names, instances, or states")
 	fmt.Fprintln(w, "  status   Check service health")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Global flags:")
