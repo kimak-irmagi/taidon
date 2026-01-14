@@ -124,6 +124,26 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Build engine (unix)
+        if: runner.os != 'Windows'
+        working-directory: backend/local-engine-go
+        run: |
+          mkdir -p "${{ github.workspace }}/${{ env.ENGINE_DIR }}/${{ matrix.goos }}_${{ matrix.goarch }}"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -o "${{ github.workspace }}/${{ env.ENGINE_DIR }}/${{ matrix.goos }}_${{ matrix.goarch }}/sqlrs-engine${{ matrix.exe }}" \
+            ./cmd/sqlrs-engine
+
+      - name: Build engine (windows)
+        if: runner.os == 'Windows'
+        working-directory: backend/local-engine-go
+        run: |
+          $outDir = "${{ github.workspace }}\\${{ env.ENGINE_DIR }}\\${{ matrix.goos }}_${{ matrix.goarch }}"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $env:GOOS = "${{ matrix.goos }}"
+          $env:GOARCH = "${{ matrix.goarch }}"
+          $env:CGO_ENABLED = "0"
+          go build -o "$outDir\\sqlrs-engine${{ matrix.exe }}" ./cmd/sqlrs-engine
+
       - name: Build local release
         run: >
           node scripts/release-local.mjs
