@@ -1,0 +1,92 @@
+name: ci
+
+on:
+  pull_request:
+
+jobs:
+  test-cli:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: frontend/cli-go/go.mod
+
+      - name: Run CLI tests
+        working-directory: frontend/cli-go
+        run: go test ./...
+
+  test-engine:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/local-engine-go/go.mod
+
+      - name: Run engine tests
+        working-directory: backend/local-engine-go
+        run: go test ./...
+
+  docs-sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Use pnpm
+        run: corepack prepare pnpm@10.26.2 --activate
+
+      - name: Lint OpenAPI
+        run: pnpm run lint:openapi
+
+      - name: Generate OpenAPI docs (markdown)
+        run: pnpm run docs:openapi:md
+
+      - name: Generate schema docs (markdown)
+        run: pnpm run docs:schemas
+
+      - name: Commit regenerated docs
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if git diff --quiet; then
+            echo "Docs are up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs
+          git commit -m "chore(docs): regenerate api docs"
+          git push
+
+      - name: Fail if docs are out of date (forks)
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: git diff --exit-code

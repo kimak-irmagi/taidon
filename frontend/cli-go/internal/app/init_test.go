@@ -204,8 +204,24 @@ func TestInitRelativeEnginePathOutsideWorkspace(t *testing.T) {
 		t.Fatalf("expected orchestrator map")
 	}
 
-	expected := filepath.Clean(filepath.Join(outside, relEngine))
-	if orchestrator["daemonPath"] != expected {
+	actual, ok := orchestrator["daemonPath"].(string)
+	if !ok {
+		t.Fatalf("expected daemonPath string, got %T", orchestrator["daemonPath"])
+	}
+
+	outsideAbs := resolveExistingPath(outside)
+	expected := filepath.Clean(filepath.Join(outsideAbs, relEngine))
+	if !pathsEquivalent(expected, actual) {
 		t.Fatalf("expected daemonPath %q, got %v", expected, orchestrator["daemonPath"])
 	}
+}
+
+func pathsEquivalent(expected, actual string) bool {
+	normalize := func(value string) string {
+		dir := filepath.Dir(value)
+		base := filepath.Base(value)
+		resolvedDir := resolveExistingPath(dir)
+		return filepath.Clean(filepath.Join(resolvedDir, base))
+	}
+	return normalize(expected) == normalize(actual)
 }
