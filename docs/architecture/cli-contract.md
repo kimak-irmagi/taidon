@@ -37,21 +37,31 @@ state  --(materialize)-->  instance  --(run/apply)-->  new state
 
 ---
 
+## Command Shape Convention
+
+Across sqlrs, commands generally follow this shape:
+
+```text
+sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
+```
+
+- `<verb>` is the main command (`prepare`, `run`, `ls`, ...).
+- `:<kind>` is an optional executor/adaptor selector (e.g., `prepare:psql`, `run:pgbench`).
+- `subject` is optional and verb-specific (e.g., an instance id, a name, etc.).
+- `-- <command>...` appears only for verbs that execute an external command (primarily `run`).
+
+`sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
+
 ## 2. Command Groups (Namespaces)
 
 ```text
 sqlrs
- ├─ init
- ├─ plan
- ├─ migrate
- ├─ run
- ├─ state
- ├─ instance
- ├─ cache
- ├─ inspect
- ├─ tag
- ├─ config
- └─ system
+  init
+  status
+  ls
+  prepare
+  plan
+  run
 ```
 
 Not all groups are required in MVP.
@@ -68,7 +78,33 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 ---
 
-### 3.2 `sqlrs plan`
+### 3.2 `sqlrs status`
+
+Check local or remote engine health and report status details.
+
+```bash
+sqlrs status [options]
+```
+
+---
+
+### 3.3 `sqlrs ls`
+
+See the user guide for the authoritative, up-to-date command semantics:
+
+- [`docs/user-guides/sqlrs-ls.md`](../user-guides/sqlrs-ls.md)
+
+---
+
+### 3.4 `sqlrs prepare`
+
+See the user guide for the authoritative, up-to-date command semantics:
+
+- [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
+
+---
+
+### 3.5 `sqlrs plan`
 
 Compute the execution plan without applying changes.
 
@@ -85,7 +121,6 @@ Purpose:
 Common flags:
 
 ```bash
---format=json|table
 --contexts=<ctx>
 --labels=<expr>
 --dbms=<db>
@@ -95,133 +130,22 @@ Example output (table):
 
 ```text
 STEP  TYPE        HASH        CACHED  NOTE
-0     changeset  ab12…cd     yes     snapshot found
-1     changeset  ef34…56     no      requires execution
+0     changeset  ab12:cd     yes     snapshot found
+1     changeset  ef34:56     no      requires execution
 2     changeset  ?           n/a     volatile
 ```
 
 ---
 
-### 3.3 `sqlrs migrate`
+### 3.6 `sqlrs run`
 
-Apply migrations step-by-step with snapshotting and caching.
+See the user guide for the authoritative, up-to-date command semantics:
 
-```bash
-sqlrs migrate [options]
-```
-
-Behavior:
-
-- uses `plan`
-- rewinds via cache where possible
-- materializes instances as needed
-- snapshots after each successful step
-
-Important flags:
-
-```bash
---mode=conservative|investigative
---dry-run
---max-steps=N
-```
-
----
-
-### 3.4 `sqlrs prepare` and `sqlrs run`
-
-See the user guides for the authoritative, up-to-date command semantics:
-
-- [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
 
 ---
 
-## 4. State and Instance Management
-
-### 4.1 `sqlrs state`
-
-Inspect and manage immutable states.
-
-```bash
-sqlrs state list
-sqlrs state show <state-id>
-```
-
----
-
-### 4.2 `sqlrs instance`
-
-Manage live instances.
-
-```bash
-sqlrs instance list
-sqlrs instance open <id>
-sqlrs instance destroy <id>
-```
-
----
-
-## 5. Tagging and Discovery
-
-### 5.1 `sqlrs tag`
-
-Attach human-friendly metadata to states.
-
-```bash
-sqlrs tag add <state-id> --name v1-seed
-sqlrs tag add --nearest --name after-schema
-sqlrs tag list
-```
-
-Tags:
-
-- do not change state identity
-- influence cache eviction
-
----
-
-## 6. Cache Control (Advanced)
-
-### 6.1 `sqlrs cache`
-
-Inspect and influence cache behavior.
-
-```bash
-sqlrs cache stats
-sqlrs cache prune
-sqlrs cache pin <state-id>
-```
-
----
-
-## 7. Inspection and Debugging
-
-### 7.1 `sqlrs inspect`
-
-Inspect plans, runs, and failures.
-
-```bash
-sqlrs inspect plan
-sqlrs inspect run <run-id>
-sqlrs inspect failure <state-id>
-```
-
----
-
-## 8. Configuration
-
-### 8.1 `sqlrs config`
-
-View and modify configuration.
-
-```bash
-sqlrs config get
-sqlrs config set key=value
-```
-
----
-
-## 9. Output and Scripting
+## 4. Output and Scripting
 
 - Default output: human-readable
 - `--json`: machine-readable
@@ -231,7 +155,7 @@ Designed for CI/CD usage.
 
 ---
 
-## 10. Input Sources (Local Paths, URLs, Remote Uploads)
+## 5. Input Sources (Local Paths, URLs, Remote Uploads)
 
 Wherever the CLI expects a file or directory, it accepts:
 
@@ -249,7 +173,7 @@ This keeps `POST /runs` small and enables resumable uploads for large projects.
 
 ---
 
-## 11. Compatibility and Extensibility
+## 6. Compatibility and Extensibility
 
 - Liquibase is treated as an external planner/executor
 - CLI does not expose Liquibase internals directly
@@ -257,7 +181,7 @@ This keeps `POST /runs` small and enables resumable uploads for large projects.
 
 ---
 
-## 12. Non-Goals (for this CLI contract)
+## 7. Non-Goals (for this CLI contract)
 
 - Full parity with Liquibase CLI options
 - Interactive TUI
@@ -265,7 +189,7 @@ This keeps `POST /runs` small and enables resumable uploads for large projects.
 
 ---
 
-## 13. Open Questions
+## 8. Open Questions
 
 - Should we allow multiple prepare/run steps per invocation? (see user guides)
 - Should `plan` be implicit in `migrate` or always explicit?
@@ -274,7 +198,7 @@ This keeps `POST /runs` small and enables resumable uploads for large projects.
 
 ---
 
-## 14. Philosophy
+## 9. Philosophy
 
 `sqrls` (sic) is not a database.
 
