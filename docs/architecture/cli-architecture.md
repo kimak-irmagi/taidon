@@ -26,11 +26,11 @@ For any CLI flag that expects a file or directory, the CLI accepts:
 
 Decision matrix:
 
-| Target | Input | CLI action |
-|---|---|---|
-| Local engine | Local path | pass path to engine |
-| Local engine | Public URL | pass URL to engine |
-| Remote engine | Public URL | pass URL to engine |
+| Target        | Input      | CLI action                                      |
+| ------------- | ---------- | ----------------------------------------------- |
+| Local engine  | Local path | pass path to engine                             |
+| Local engine  | Public URL | pass URL to engine                              |
+| Remote engine | Public URL | pass URL to engine                              |
 | Remote engine | Local path | upload to source storage, then pass `source_id` |
 
 ## 4. Flows
@@ -81,6 +81,39 @@ sequenceDiagram
   RUN->>RUN: fetch URL into source cache
   RUN-->>CLI: stream status/results
 ```
+
+### 4.4 Listing (sqlrs ls)
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant FS as "State Dir"
+  participant ENG as Engine
+
+  alt Local target
+    CLI->>FS: read engine.json (endpoint + auth token)
+    alt missing or stale
+      CLI->>ENG: spawn local engine
+      ENG-->>FS: write engine.json
+      CLI->>FS: read engine.json
+    end
+  end
+
+  CLI->>ENG: GET /v1/names (Authorization, Accept)
+  ENG-->>CLI: JSON array or NDJSON
+  CLI->>ENG: GET /v1/instances (Authorization, Accept)
+  ENG-->>CLI: JSON array or NDJSON
+  opt states requested
+    CLI->>ENG: GET /v1/states (Authorization, Accept)
+    ENG-->>CLI: JSON array or NDJSON
+  end
+  CLI->>CLI: render tables or JSON
+```
+
+Notes:
+
+- Remote targets use the same list endpoints; the CLI supplies credentials from profile configuration.
+- The CLI defaults to listing names and instances; states are requested explicitly.
 
 ## 5. Upload Details (Remote)
 

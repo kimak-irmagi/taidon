@@ -93,53 +93,110 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 	}
 
 	cliClient := client.New(endpoint, client.Options{Timeout: opts.Timeout, AuthToken: authToken})
-	filters := client.ListFilters{
-		Name:     opts.FilterName,
-		Instance: opts.FilterInstance,
-		State:    opts.FilterState,
-		Kind:     opts.FilterKind,
-		Image:    opts.FilterImage,
-	}
 
 	var result LsResult
 	if opts.IncludeNames {
 		if opts.Verbose {
 			fmt.Fprintln(os.Stderr, "requesting names")
 		}
-		names, err := cliClient.ListNames(ctx, filters)
-		if err != nil {
-			return result, err
+		if opts.FilterName != "" {
+			entry, found, err := cliClient.GetName(ctx, opts.FilterName)
+			if err != nil {
+				return result, err
+			}
+			if found {
+				names := []client.NameEntry{entry}
+				result.Names = &names
+			} else {
+				empty := []client.NameEntry{}
+				result.Names = &empty
+			}
+		} else {
+			names, err := cliClient.ListNames(ctx, client.ListFilters{
+				Instance: opts.FilterInstance,
+				Image:    opts.FilterImage,
+				State:    opts.FilterState,
+			})
+			if err != nil {
+				return result, err
+			}
+			if names == nil {
+				names = []client.NameEntry{}
+			}
+			result.Names = &names
 		}
-		if names == nil {
-			names = []client.NameEntry{}
-		}
-		result.Names = &names
 	}
 	if opts.IncludeInstances {
 		if opts.Verbose {
 			fmt.Fprintln(os.Stderr, "requesting instances")
 		}
-		instances, err := cliClient.ListInstances(ctx, filters)
-		if err != nil {
-			return result, err
+		if opts.FilterInstance != "" {
+			entry, found, err := cliClient.GetInstance(ctx, opts.FilterInstance)
+			if err != nil {
+				return result, err
+			}
+			if found {
+				instances := []client.InstanceEntry{entry}
+				result.Instances = &instances
+			} else {
+				empty := []client.InstanceEntry{}
+				result.Instances = &empty
+			}
+		} else if opts.FilterName != "" {
+			entry, found, err := cliClient.GetInstance(ctx, opts.FilterName)
+			if err != nil {
+				return result, err
+			}
+			if found {
+				instances := []client.InstanceEntry{entry}
+				result.Instances = &instances
+			} else {
+				empty := []client.InstanceEntry{}
+				result.Instances = &empty
+			}
+		} else {
+			instances, err := cliClient.ListInstances(ctx, client.ListFilters{
+				State: opts.FilterState,
+				Image: opts.FilterImage,
+			})
+			if err != nil {
+				return result, err
+			}
+			if instances == nil {
+				instances = []client.InstanceEntry{}
+			}
+			result.Instances = &instances
 		}
-		if instances == nil {
-			instances = []client.InstanceEntry{}
-		}
-		result.Instances = &instances
 	}
 	if opts.IncludeStates {
 		if opts.Verbose {
 			fmt.Fprintln(os.Stderr, "requesting states")
 		}
-		states, err := cliClient.ListStates(ctx, filters)
-		if err != nil {
-			return result, err
+		if opts.FilterState != "" {
+			entry, found, err := cliClient.GetState(ctx, opts.FilterState)
+			if err != nil {
+				return result, err
+			}
+			if found {
+				states := []client.StateEntry{entry}
+				result.States = &states
+			} else {
+				empty := []client.StateEntry{}
+				result.States = &empty
+			}
+		} else {
+			states, err := cliClient.ListStates(ctx, client.ListFilters{
+				Kind:  opts.FilterKind,
+				Image: opts.FilterImage,
+			})
+			if err != nil {
+				return result, err
+			}
+			if states == nil {
+				states = []client.StateEntry{}
+			}
+			result.States = &states
 		}
-		if states == nil {
-			states = []client.StateEntry{}
-		}
-		result.States = &states
 	}
 
 	return result, nil

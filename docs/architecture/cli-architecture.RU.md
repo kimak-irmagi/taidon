@@ -82,6 +82,39 @@ sequenceDiagram
   RUN-->>CLI: stream status/results
 ```
 
+### 4.4 Список (sqlrs ls)
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant FS as "State Dir"
+  participant ENG as Engine
+
+  alt Local target
+    CLI->>FS: read engine.json (endpoint + auth token)
+    alt missing or stale
+      CLI->>ENG: spawn local engine
+      ENG-->>FS: write engine.json
+      CLI->>FS: read engine.json
+    end
+  end
+
+  CLI->>ENG: GET /v1/names (Authorization, Accept)
+  ENG-->>CLI: JSON array или NDJSON
+  CLI->>ENG: GET /v1/instances (Authorization, Accept)
+  ENG-->>CLI: JSON array или NDJSON
+  opt states requested
+    CLI->>ENG: GET /v1/states (Authorization, Accept)
+    ENG-->>CLI: JSON array или NDJSON
+  end
+  CLI->>CLI: render tables or JSON
+```
+
+Примечания:
+
+- Для remote target используются те же list endpoint-ы; CLI берёт credentials из конфигурации профиля.
+- По умолчанию CLI запрашивает names и instances; states запрашиваются явно.
+
 ## 5. Детали загрузки (remote)
 
 - CLI режет файлы на чанки, считает хеши и загружает только отсутствующие чанки.

@@ -59,7 +59,6 @@ func TestListNamesAddsFilters(t *testing.T) {
 
 	cli := New(server.URL, Options{Timeout: time.Second, AuthToken: "token"})
 	_, err := cli.ListNames(context.Background(), ListFilters{
-		Name:     "devdb",
 		Instance: "i-1",
 		State:    "s-1",
 		Image:    "img-1",
@@ -70,7 +69,7 @@ func TestListNamesAddsFilters(t *testing.T) {
 	if gotPath != "/v1/names" {
 		t.Fatalf("expected /v1/names path, got %q", gotPath)
 	}
-	if gotQuery.Get("name") != "devdb" || gotQuery.Get("instance") != "i-1" || gotQuery.Get("state") != "s-1" || gotQuery.Get("image") != "img-1" {
+	if gotQuery.Get("instance") != "i-1" || gotQuery.Get("state") != "s-1" || gotQuery.Get("image") != "img-1" {
 		t.Fatalf("unexpected query params: %v", gotQuery.Encode())
 	}
 	if gotAuth != "Bearer token" {
