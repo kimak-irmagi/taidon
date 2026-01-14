@@ -8,7 +8,7 @@
    - **Testing**: hard to roll back to arbitrary states; hard to reproduce change chains.
    - **Experiments and benchmarks**: data prep is expensive; identical conditions are hard to guarantee.
    - **Product delivery**: migrations, CI/CD, and integration tests suffer without a reproducible environment.
-3. Existing DBMSs poorly support mass parallel sandboxes: snapshots are heavy, isolation is expensive.
+3. Existing DBMSs poorly support mass parallel instances: snapshots are heavy, isolation is expensive.
 
 ## II. Core idea: Smart versioning of query chains
 
@@ -51,7 +51,7 @@
 
 23. The MVP engine is stock PostgreSQL.
 24. SQL is full, industrial-grade, no emulation.
-25. One user = one sandbox.
+25. One user = one instance.
 26. External extensions are limited to built-ins (future options possible).
 27. Schema is managed only through SQL chains; the initial state is an empty or prebuilt DB.
 
@@ -64,7 +64,7 @@
 
 30. **Instant setup** - work in seconds without deployments.
 31. **Reproducibility** - exact state restoration at any point.
-32. **Scalable learning** - hundreds of parallel sandboxes without data duplication.
+32. **Scalable learning** - hundreds of parallel instances without data duplication.
 33. **Fearless usage** - experiment without risk.
 34. **Interactivity** - precise error messages and SQL analysis.
 
@@ -72,6 +72,6 @@
 
 35. Not cloning DBs but **computing state from a deterministic query chain**.
 36. Not rebuilding data but **smart caching of init procedures**.
-37. Not isolated sandboxes per user but **optimal storage of versioned states**.
+37. Not isolated instances per user but **optimal storage of versioned states**.
 38. Not a SQL playground but a **replicable platform for projects with branching histories**.
 39. Not SQL emulation but **real PostgreSQL managed by an orchestration engine**.

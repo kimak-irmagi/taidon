@@ -43,9 +43,9 @@
 
 ## 3. Определения
 
-- **State**: материализованный образ инстанса БД, который можно использовать как базу для новых песочниц.
+- **State**: неизменяемое состояние БД, полученное детерминированным процессом prepare.
 - **Snapshot**: акт создания State.
-- **Sandbox**: изолированный runtime-инстанс БД, созданный из State.
+- **Instance**: изменяемая копия State; все модификации БД происходят здесь.
 - **Snapshotable point**: момент, когда Taidon может безопасно создать State.
 - **Change block**: ограниченная единица планируемого изменения, которую Taidon может хешировать и искать в кэше.
 - **Ref**: пользовательская ссылка на State (имя, теги, pin, retention).
@@ -234,7 +234,7 @@ sequenceDiagram
   participant R as Runner
   participant L as Liquibase
   participant C as Cache
-  participant D as Sandbox DB
+  participant D as Instance DB
 
   C->>R: start run (migrate/apply)
   R->>L: plan (pending changesets)
@@ -244,7 +244,7 @@ sequenceDiagram
     R->>C: lookup(key(base_state, block))
     alt cache hit
       C-->>R: state_id
-      R->>D: recreate sandbox from state_id
+      R->>D: recreate instance from state_id
     else cache miss
       C-->>R: miss
       R->>L: apply(changeset)
@@ -259,7 +259,7 @@ sequenceDiagram
 
 Примечания:
 
-- Cache hits могут требовать переключения песочниц: пересоздать из кэшированного State и продолжить.
+- Cache hits могут требовать переключения экземпляров: пересоздать из кэшированного State и продолжить.
 - Пользователь получает логически непрерывный процесс миграции.
 
 ### 9.5 Общий SQL-режим (без Liquibase)

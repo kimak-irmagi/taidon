@@ -93,16 +93,16 @@
 
 ### 1.3 Use Cases
 
-| ID   | Use Case                            | Actors         |
-| ---- | ----------------------------------- | -------------- |
-| UC-1 | Provision isolated database sandbox | P1, P2, P3, P5 |
-| UC-2 | Apply migrations (Liquibase / SQL)  | P1, P2, P4     |
-| UC-3 | Run tests / queries / scripts       | P1, P3, P5     |
-| UC-4 | Cache and reuse database states     | P1, P2         |
-| UC-5 | Integrate with CI/CD                | P2             |
-| UC-6 | Share experiment results            | P3, P5         |
-| UC-7 | Prepare assignments                 | P4             |
-| UC-8 | Submit and review results           | P4, P5         |
+| ID   | Use Case                             | Actors         |
+| ---- | ------------------------------------ | -------------- |
+| UC-1 | Provision isolated database instance | P1, P2, P3, P5 |
+| UC-2 | Apply migrations (Liquibase / SQL)   | P1, P2, P4     |
+| UC-3 | Run tests / queries / scripts        | P1, P3, P5     |
+| UC-4 | Cache and reuse database states      | P1, P2         |
+| UC-5 | Integrate with CI/CD                 | P2             |
+| UC-6 | Share experiment results             | P3, P5         |
+| UC-7 | Prepare assignments                  | P4             |
+| UC-8 | Submit and review results            | P4, P5         |
 
 ---
 
@@ -150,7 +150,7 @@ flowchart TB
     VCS[VCS / Git Connector]
     AUTO[Autoscaling Controller]
 
-    RUNTIME[Sandbox Runtime]
+    RUNTIME[Instance Runtime]
     CACHE[State Cache]
     STORE[Artifact Store]
     GIT[(Git Remote)]
@@ -194,7 +194,7 @@ flowchart TB
 ##### VS Code Extension
 
 - Optional productivity layer
-- Sandbox management and result inspection
+- Instance management and result inspection
 
 ##### API Gateway
 
@@ -208,27 +208,27 @@ flowchart TB
 
 ##### Orchestrator
 
-- Schedules sandbox lifecycle operations
+- Schedules instance lifecycle operations
 - Enforces quotas and TTL policies
 
 ##### Taidon Engine
 
-- Core sandbox lifecycle logic
+- Core instance lifecycle logic
 - Migration execution and experiment runs
 
 ##### VCS / Git Connector (optional, cloud-first)
 
 - Connect and sync Git repositories with SQL projects
 - Access to private repositories via tokens/SSO (cloud)
-- Triggers to start/refresh sandboxes by branch/commit
+- Triggers to start/refresh instances by branch/commit
 
 ##### Autoscaling Controller (team/cloud)
 
-- Manages pools of sandboxes and cache workers (HPA/VPA/Cluster Autoscaler)
-- Based on metrics: orchestration queue, active sandboxes, storage node CPU/IO, cache hit/latency
+- Manages pools of instances and cache workers (HPA/VPA/Cluster Autoscaler)
+- Based on metrics: orchestration queue, active instances, storage node CPU/IO, cache hit/latency
 - Warm pool to reduce cold-start; graceful drain on scale-in
 
-##### Sandbox Runtime
+##### Instance Runtime
 
 - Database isolation (containers, pods, instances)
 - Supports multiple database engines

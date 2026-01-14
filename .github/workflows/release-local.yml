@@ -1,0 +1,114 @@
+name: release-local
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., v0.1.0)"
+        required: true
+      engine_dir:
+        description: "Directory containing sqlrs-engine binaries per target (default: dist/engine)"
+        required: false
+        default: "dist/engine"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test-cli:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: frontend/cli-go/go.mod
+
+      - name: Run CLI tests
+        working-directory: frontend/cli-go
+        run: go test ./...
+
+  test-engine:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/local-engine-go/go.mod
+
+      - name: Run engine tests
+        working-directory: backend/local-engine-go
+        run: go test ./...
+
+  build:
+    runs-on: ${{ matrix.runner }}
+    needs: [test-cli, test-engine]
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+      ENGINE_DIR: ${{ inputs.engine_dir || 'dist/engine' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            exe: ""
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            exe: ""
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+            exe: ".exe"
+          - runner: macos-latest
+            goos: darwin
+            goarch: amd64
+            exe: ""
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+            exe: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: frontend/cli-go/go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build local release
+        run: >
+          node scripts/release-local.mjs
+          --version "${VERSION}"
+          --os "${{ matrix.goos }}"
+          --arch "${{ matrix.goarch }}"
+          --engine-bin "${{ github.workspace }}/${{ env.ENGINE_DIR }}/${{ matrix.goos }}_${{ matrix.goarch }}/sqlrs-engine${{ matrix.exe }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlrs_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: |
+            dist/release/sqlrs_${{ env.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.*

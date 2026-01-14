@@ -7,118 +7,150 @@
 ```mermaid
 flowchart LR
   API[REST API]
-  CTRL[Run Controller]
-  PLAN[Planner (head/tail)]
-  CACHE[state-cache client]
-  SNAP[Snapshotter]
-  RUNTIME[Sandbox Runtime (Docker)]
-  LB[Liquibase Provider]
-  STORE[State Store (paths + metadata)]
-  OBS[Telemetry/Audit]
+  CTRL["Контроллер prepare"]
+  PLAN["Планировщик prepare"]
+  EXEC["Исполнитель prepare"]
+  CACHE[Клиент кэша состояний]
+  SNAP[Менеджер снапшотов]
+  RUNTIME["Рантайм экземпляров (Docker)"]
+  ADAPTER["Адаптер системы скриптов"]
+  INST["Менеджер экземпляров"]
+  STORE["Хранилище снапшотов (пути + метаданные)"]
+  OBS[Телеметрия/Аудит]
 
   API --> CTRL
   CTRL --> PLAN
+  CTRL --> EXEC
   CTRL --> CACHE
   CTRL --> SNAP
   CTRL --> RUNTIME
-  CTRL --> LB
+  CTRL --> ADAPTER
+  CTRL --> INST
   CTRL --> OBS
+  PLAN --> ADAPTER
+  EXEC --> ADAPTER
   SNAP --> STORE
+  INST --> STORE
   CACHE --> STORE
   RUNTIME --> STORE
 ```
 
 ### 1.1 API-слой
 
-- REST по loopback (HTTP/UDS); exposes `/runs`, `/snapshots`, `/cache/{key}`, `/engine/shutdown`.
+- REST по loopback (HTTP/UDS); expose prepare jobs, операции с экземплярами, snapshots, cache и shutdown endpoints.
 - Все долгие операции выполняются асинхронно; sync-режим CLI только наблюдает статус/стрим.
 
-### 1.2 Run Controller
+### 1.2 Prepare Controller
 
-- Координирует run как job: plan, cache lookup, sandbox bind, execute, snapshot, persist metadata.
+- Координирует prepare job: plan steps, cache lookup, instance bind, execute steps, snapshot states, bind/select instance, persist metadata.
 - Навязывает дедлайны и отмену; управляет дочерними процессами/контейнерами.
 - Эмитит статусы и структурированные события для стрима в CLI.
 
-### 1.3 Planner
+### 1.3 Планировщик prepare
 
-- Делит head/tail; вычисляет cache key (engine/version/base/block hash/params).
-- Консультируется с Liquibase (если доступен) по pending changesets и checksums.
+- Строит упорядоченный список шагов prepare из системы скриптов (Liquibase, psql/sql, pgbench или другие DB-инструменты).
+- Каждый шаг хешируется (специфично для системы скриптов) для cache key: `engine/version/base/step_hash/params`.
+- На выходе цепочка шагов, а не head/tail; промежуточные состояния могут материализоваться для cache reuse.
+- Вход prepare также дает стабильный fingerprint состояния:
+  `state_id = hash(prepare_kind + normalized_args + normalized_input_hashes + engine_version)`.
 
-### 1.4 Cache Client
+### 1.4 Исполнитель prepare
+
+- Выполняет один prepare шаг в instance через выбранный адаптер системы скриптов.
+- Собирает структурированные логи/метрики для observability и cache planning.
+
+### 1.5 Cache Client
 
 - Общается с локальным state-cache индексом (SQLite) для lookup/store `key -> state_id`.
 - Знает текущий корень state store; никогда не отдает наружу raw filesystem paths.
 
-### 1.5 Snapshotter
+### 1.6 Snapshotter
 
 - Абстрагирует CoW/copy стратегии (btrfs, VHDX+link-dest, rsync).
-- Экспортирует `Clone`, `Snapshot`, `Destroy` для states и sandboxes.
+- Экспортирует `Clone`, `Snapshot`, `Destroy` для states и instances.
 - Использует path resolver из State Store, чтобы найти корни `PGDATA`.
 
-### 1.6 Sandbox Runtime
+### 1.7 Instance Runtime
 
-- Управляет DB-контейнерами через Docker (один контейнер на sandbox).
+- Управляет DB-контейнерами через Docker (один контейнер на instance).
 - Применяет монтирования от Snapshotter, задает лимиты ресурсов, default statement timeout.
 - Возвращает connection info контроллеру.
 
-### 1.7 Liquibase Provider
+### 1.8 Адаптер системы скриптов
 
-- Выбирает режим исполнения: host binary или Docker runner.
-- Стримит структурированные логи в контроллер для observability и cache planning.
+- Дает общий интерфейс для систем скриптов (Liquibase, psql/sql с include-графом, pgbench, другие native-инструменты DB).
+- Каждый адаптер реализует planning, execution и правила хеширования шагов.
+- Liquibase вызывается как внешний CLI (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
 
-### 1.8 State Store (Paths + Metadata)
+### 1.9 Менеджер экземпляров
+
+- Ведет mutable экземпляры, производные от immutable states.
+- Применяет правила name binding (reuse/fresh/rebind) и возвращает DSN экземпляра.
+- Запрещает reuse имени при другом состоянии, если не указан rebind.
+- Управляет жизненным циклом экземпляров (ephemeral vs named) и метаданными TTL/GC.
+
+### 1.10 State Store (Paths + Metadata)
 
 - Разрешает корень хранилища (`~/.cache/sqlrs/state-store` или override).
 - Владеет metadata DB (SQLite WAL) и layout путей (`engines/<engine>/<version>/base|states/<uuid>`).
 - Пишет `engine.json` в state directory (endpoint + PID + auth token + lock) для discovery со стороны CLI.
 
-### 1.9 Telemetry/Audit
+### 1.11 Telemetry/Audit
 
-- Эмитит метрики: cache hit/miss, planning latency, sandbox bind/exec durations, snapshot size/time.
-- Пишет audit events для runs и cache mutations.
+- Эмитит метрики: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
+- Пишет audit events для prepare jobs и cache mutations.
 
-## 2. Run Flow (local)
+## 2. Prepare Flow (local)
 
 ```mermaid
 sequenceDiagram
   participant CLI as CLI
   participant API as Engine API
-  participant CTRL as Run Controller
+  participant CTRL as Prepare Controller
   participant CACHE as Cache
   participant SNAP as Snapshotter
   participant RT as Runtime (Docker)
-  participant LB as Liquibase
+  participant ADAPTER as Script Adapter
+  participant INST as Instance Manager
 
-  CLI->>API: POST /runs (watch or no-watch)
+  CLI->>API: start prepare job (watch or no-watch)
   API->>CTRL: enqueue job
+  CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   alt cache hit
     CACHE-->>CTRL: state_id
   else cache miss
     CACHE-->>CTRL: miss
   end
-  CTRL->>SNAP: clone base/state for sandbox
-  SNAP-->>CTRL: sandbox path
+  CTRL->>SNAP: clone base/state for instance
+  SNAP-->>CTRL: instance path
   CTRL->>RT: start DB container with mount
   RT-->>CTRL: endpoint ready
-  alt miss path
-    CTRL->>LB: apply planned steps
-    LB-->>CTRL: logs/status per step
-    CTRL->>SNAP: snapshot new state(s)
-    CTRL->>CACHE: store key->state_id
+  loop for each step
+    CTRL->>CACHE: lookup(key)
+    alt cache hit
+      CACHE-->>CTRL: state_id
+    else cache miss
+      CTRL->>ADAPTER: execute step
+      ADAPTER-->>CTRL: logs/status per step
+      CTRL->>SNAP: snapshot new state
+      CTRL->>CACHE: store key->state_id
+    end
   end
+  CTRL->>INST: bind/select instance (name + policy)
+  INST-->>CTRL: instance_id + DSN
   CTRL-->>API: status updates / stream
-  CTRL->>SNAP: teardown sandbox (or keep warm by policy)
+  CTRL->>SNAP: teardown instance (or keep warm by policy)
   API-->>CLI: terminal status
 ```
 
-- Отмена: CLI вызывает `POST /runs/{id}/cancel`; контроллер делает `pg_cancel_backend`/останов контейнера и завершает стрим со статусом `cancelled`.
-- Таймауты: контроллер ограничивает wall-clock; `statement_timeout` задается на run или на шаг.
+- Отмена: контроллер отменяет prepare job, прерывает активную работу с БД, завершает стрим со статусом `cancelled`.
+- Таймауты: контроллер ограничивает wall-clock; `statement_timeout` задается на шаг.
 
 ## 3. Конкурентность и процессная модель
 
 - Один процесс engine; очередь job с небольшим пулом воркеров (настраиваемо).
-- Одна активная песочница на job; несколько job могут выполняться параллельно при наличии ресурсов.
+- Один активный экземпляр на job; несколько job могут выполняться параллельно при наличии ресурсов.
 - Лок: per-store lock, чтобы два экземпляра engine не писали в один store.
 
 ## 4. Персистентность и discovery
@@ -129,7 +161,7 @@ sequenceDiagram
 
 ## 5. Обработка ошибок
 
-- Все долгие операции возвращают `run_id`; ошибки фиксируются как terminal state с причиной и логами.
+- Все долгие операции возвращают `prepare_id`; ошибки фиксируются как terminal state с причиной и логами.
 - Cache writes идемпотентны по `state_id`; частичные snapshots помечаются failed и не переиспользуются без явной ссылки.
 - Если Docker/Liquibase недоступны, API возвращает понятные ошибки; CLI их показывает и завершает с ненулевым кодом.
 

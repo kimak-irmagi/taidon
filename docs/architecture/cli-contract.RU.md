@@ -26,27 +26,27 @@
 
 С точки зрения пользователя `sqlrs` управляет:
 
-- **states**: неизменяемые снимки базы данных
-- **sandboxes**: живые временные БД, создаваемые из states
+- **states**: неизменяемые состояния БД, получаемые детерминированным процессом prepare
+- **instances**: изменяемые копии states; все модификации БД происходят здесь
 - **plans**: упорядоченные наборы изменений (например, Liquibase changesets)
 - **runs**: исполнение планов, скриптов или команд
 
-```
-state  --(materialize)-->  sandbox  --(run/apply)-->  new state
+```text
+state  --(materialize)-->  instance  --(run/apply)-->  new state
 ```
 
 ---
 
 ## 2. Группы команд (неймспейсы)
 
-```
+```text
 sqlrs
 |-- init
 |-- plan
 |-- migrate
 |-- run
 |-- state
-|-- sandbox
+|-- instance
 |-- cache
 |-- inspect
 |-- tag
@@ -62,17 +62,9 @@ sqlrs
 
 ### 3.1 `sqlrs init`
 
-Инициализирует sqlrs-проект в текущей директории.
+Актуальная семантика команды описана в user guide:
 
-```bash
-sqlrs init
-```
-
-Создает:
-
-- директорию `.sqlrs/`
-- дефолтный конфиг
-- ссылки на источники миграций (например, Liquibase changelog)
+- [`docs/user-guides/sqlrs-init.md`](../user-guides/sqlrs-init.md)
 
 ---
 
@@ -92,7 +84,7 @@ sqlrs plan [options]
 
 Общие флаги:
 
-```
+```bash
 --format=json|table
 --contexts=<ctx>
 --labels=<expr>
@@ -101,8 +93,8 @@ sqlrs plan [options]
 
 Пример вывода (table):
 
-```
-STEP  TYPE        HASH        CACHED  NOTE
+```text
+STEP  TYPE       HASH        CACHED  NOTE
 0     changeset  ab12:cd     yes     snapshot found
 1     changeset  ef34:56     no      requires execution
 2     changeset  ?           n/a     volatile
@@ -122,12 +114,12 @@ sqlrs migrate [options]
 
 - использует `plan`
 - откатывается через cache там, где возможно
-- материализует sandboxes по мере необходимости
+- материализует instances по мере необходимости
 - делает снимок после каждого успешного шага
 
 Важные флаги:
 
-```
+```bash
 --mode=conservative|investigative
 --dry-run
 --max-steps=N
@@ -135,35 +127,16 @@ sqlrs migrate [options]
 
 ---
 
-### 3.4 `sqlrs run` (PoC-форма)
+### 3.4 `sqlrs prepare` и `sqlrs run`
 
-Запускает произвольную команду или скрипт в песочнице. В PoC используем единый
-вызов с флагами шагов.
+Актуальная семантика команд описана в user guides:
 
-```bash
-sqlrs --run -- <command>
-sqlrs --prepare -- <command> --run -- <command>
-```
-
-Примеры:
-
-```bash
-sqlrs --run -- psql -c "SELECT count(*) FROM users"
-sqlrs --prepare -- psql -f ./schema.sql --run -- pytest
-```
-
-Поведение:
-
-- стартует одну песочницу на invocation
-- выполняет `prepare` (если задан) затем `run`
-- делает снимок после успешного `prepare` в `workspace/states/<state-id>`
-- останавливается на первой ошибке с ненулевым exit code
-- `--prepare` и `--run` зарезервированы и не могут находиться внутри команд
-- только один `prepare` и один `run` на invocation
+- [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
+- [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
 
 ---
 
-## 4. Управление состояниями и песочницами
+## 4. Управление состояниями и экземплярами
 
 ### 4.1 `sqlrs state`
 
@@ -176,14 +149,14 @@ sqlrs state show <state-id>
 
 ---
 
-### 4.2 `sqlrs sandbox`
+### 4.2 `sqlrs instance`
 
-Управление живыми песочницами.
+Управление живыми экземплярами.
 
 ```bash
-sqlrs sandbox list
-sqlrs sandbox open <id>
-sqlrs sandbox destroy <id>
+sqlrs instance list
+sqlrs instance open <id>
+sqlrs instance destroy <id>
 ```
 
 ---
@@ -294,7 +267,7 @@ sqlrs config set key=value
 
 ## 13. Открытые вопросы
 
-- Разрешать ли несколько prepare/run шагов на invocation?
+- Разрешать ли несколько prepare/run шагов на invocation? (см. user guides)
 - Должен ли `plan` быть неявным в `migrate` или всегда явным?
 - Сколько истории состояний показывать по умолчанию?
 - Нужны ли флаги подтверждения для destructive операций?

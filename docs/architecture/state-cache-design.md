@@ -43,9 +43,9 @@ This document specifies how Taidon creates, identifies, reuses, and evicts datab
 
 ## 3. Definitions
 
-- **State**: A materialised database instance image that can be used as a base for new sandboxes.
+- **State**: An immutable database state produced by a deterministic preparation process.
 - **Snapshot**: The act of producing a State.
-- **Sandbox**: An isolated runtime database instance created from a State.
+- **Instance**: A mutable copy of a State; all database modifications happen here.
 - **Snapshotable point**: A time when Taidon can safely create a State.
 - **Change block**: A bounded unit of planned change that Taidon can hash and look up in cache.
 - **Ref**: A user-visible reference to a State (name, tags, pin, retention).
@@ -234,7 +234,7 @@ sequenceDiagram
   participant R as Runner
   participant L as Liquibase
   participant C as Cache
-  participant D as Sandbox DB
+  participant D as Instance DB
 
   C->>R: start run (migrate/apply)
   R->>L: plan (pending changesets)
@@ -244,7 +244,7 @@ sequenceDiagram
     R->>C: lookup(key(base_state, block))
     alt cache hit
       C-->>R: state_id
-      R->>D: recreate sandbox from state_id
+      R->>D: recreate instance from state_id
     else cache miss
       C-->>R: miss
       R->>L: apply(changeset)
@@ -259,7 +259,7 @@ sequenceDiagram
 
 Notes:
 
-- Cache hits may require switching sandboxes: recreate from the cached State and continue.
+- Cache hits may require switching instances: recreate from the cached State and continue.
 - The user experiences a logically continuous migration run.
 
 ### 9.5 Generic SQL mode (no Liquibase)

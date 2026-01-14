@@ -19,7 +19,7 @@ It focuses on **how database states are materialised, snapshotted, cloned, and r
 
 - In-database snapshotting or WAL-level manipulation.
 - Restoring or continuing mid-transaction execution.
-- Cross-node replication of live sandboxes.
+- Cross-node replication of live instances.
 - Full multi-engine support beyond Postgres family.
 
 ---
@@ -49,8 +49,8 @@ Runtime code does not expose concrete paths: engine/adapter resolves data dirs i
 
 ### 4.1 Docker-based Runtime (Local MVP)
 
-- Docker is used as the sandbox execution layer.
-- Each sandbox runs a single DB container.
+- Docker is used as the instance execution layer.
+- Each instance runs a single DB container.
 - Containers are short-lived and disposable.
 
 ### 4.2 Images
@@ -148,7 +148,7 @@ state-store/
 ```
 
 - Each state is immutable once created.
-- Sandboxes use writable clones of states.
+- Instances use writable clones of states.
 
 ---
 
@@ -159,7 +159,7 @@ state-store/
 - Filesystem snapshot without stopping the DB.
 - Relies on DB crash recovery on next start.
 - Fastest and acceptable for most workflows.
-- Default for interactive development and education sandboxes.
+- Default for interactive development and education instances.
 
 ### 8.2 Clean Snapshot (Optional)
 
@@ -175,32 +175,32 @@ Used for:
 
 ---
 
-## 9. Sandbox Lifecycle
+## 9. Instance Lifecycle
 
 ### 9.1 Creation
 
 1. Select `(engine, version)`.
 2. Select base state.
-3. Clone base state into sandbox state.
-4. Start container with sandbox state mounted.
+3. Clone base state into instance state.
+4. Start container with instance state mounted.
 
 ### 9.2 Execution
 
-- Liquibase or user commands run inside the sandbox.
+- Liquibase or user commands run inside the instance.
 - DB connections are proxied or exposed as needed.
 
 ### 9.3 Snapshotting
 
 After a successful step:
 
-1. Snapshot sandbox state into immutable state.
+1. Snapshot instance state into immutable state.
 2. Register state in cache index.
 
 ### 9.4 Teardown and Cooldown
 
-- After use, sandbox enters a cooldown period.
+- After use, instance enters a cooldown period.
 - If reused, container may be kept warm.
-- Otherwise, container is stopped and sandbox destroyed.
+- Otherwise, container is stopped and instance destroyed.
 
 ---
 
@@ -247,4 +247,4 @@ This prevents accidental coupling to a single engine or layout.
 
 - Minimum viable abstraction for volume handles across snapshotters?
 - How aggressively to snapshot large seed steps?
-- Default cooldown policy for sandboxes?
+- Default cooldown policy for instances?

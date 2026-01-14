@@ -6,119 +6,151 @@ Scope: internal structure of the `sqlrs` engine process for local deployment (MV
 
 ```mermaid
 flowchart LR
-  API[REST API]
-  CTRL[Run Controller]
-  PLAN[Planner (head/tail)]
+  API["REST API"]
+  CTRL["Prepare Controller"]
+  PLAN["Prepare Planner"]
+  EXEC["Prepare Executor"]
   CACHE[state-cache client]
   SNAP[Snapshotter]
-  RUNTIME[Sandbox Runtime (Docker)]
-  LB[Liquibase Provider]
-  STORE[State Store (paths + metadata)]
+  RUNTIME["Instance Runtime (Docker)"]
+  ADAPTER["Script System Adapter"]
+  INST["Instance Manager"]
+  STORE["State Store (paths + metadata)"]
   OBS[Telemetry/Audit]
 
   API --> CTRL
   CTRL --> PLAN
+  CTRL --> EXEC
   CTRL --> CACHE
   CTRL --> SNAP
   CTRL --> RUNTIME
-  CTRL --> LB
+  CTRL --> ADAPTER
+  CTRL --> INST
   CTRL --> OBS
+  PLAN --> ADAPTER
+  EXEC --> ADAPTER
   SNAP --> STORE
+  INST --> STORE
   CACHE --> STORE
   RUNTIME --> STORE
 ```
 
 ### 1.1 API Layer
 
-- REST over loopback (HTTP/UDS); exposes `/runs`, `/snapshots`, `/cache/{key}`, `/engine/shutdown`.
+- REST over loopback (HTTP/UDS); exposes prepare jobs, instance lookup/binding, snapshots, cache, and shutdown endpoints.
 - All long operations run asynchronously; sync CLI mode just watches status/stream.
 
-### 1.2 Run Controller
+### 1.2 Prepare Controller
 
-- Coordinates a run as a job: plan, cache lookup, sandbox bind, execute, snapshot, persist metadata.
+- Coordinates a prepare job: plan steps, cache lookup, instance bind, execute steps, snapshot states, bind/select instance, persist metadata.
 - Enforces deadlines and cancellation; supervises child processes/containers.
 - Emits status transitions and structured events for streaming to the CLI.
 
-### 1.3 Planner
+### 1.3 Prepare Planner
 
-- Splits head/tail; computes cache key (engine/version/base/block hash/params).
-- Consults Liquibase (when available) for pending changesets and checksums.
+- Builds an ordered list of prepare steps from a script system (Liquibase, psql/sql, pgbench, or other DB tools).
+- Each step is hashed (script-system specific) to form cache keys: `engine/version/base/step_hash/params`.
+- The output is a step chain, not head/tail; intermediate states may be materialized for cache reuse.
+- The overall prepare input also produces a stable state fingerprint:
+  `state_id = hash(prepare_kind + normalized_args + normalized_input_hashes + engine_version)`.
 
-### 1.4 Cache Client
+### 1.4 Prepare Executor
+
+- Executes a single prepare step in a instance using the selected script system adapter.
+- Captures structured logs/metrics for observability and cache planning.
+
+### 1.5 Cache Client
 
 - Talks to local state-cache index (SQLite) to lookup/store `key -> state_id`.
 - Knows current state store root; never exposes raw filesystem paths to callers.
 
-### 1.5 Snapshotter
+### 1.6 Snapshotter
 
 - Abstracts CoW/copy strategies (btrfs, VHDX+link-dest, rsync).
-- Exposes `Clone`, `Snapshot`, `Destroy` for states and sandboxes.
+- Exposes `Clone`, `Snapshot`, `Destroy` for states and instances.
 - Uses path resolver from State Store to locate `PGDATA` roots.
 
-### 1.6 Sandbox Runtime
+### 1.7 Instance Runtime
 
-- Manages DB containers via Docker (single-container per sandbox).
+- Manages DB containers via Docker (single-container per instance).
 - Applies mounts from Snapshotter, sets resource limits, statement timeout defaults.
 - Provides connection info to the controller.
 
-### 1.7 Liquibase Provider
+### 1.8 Script System Adapter
 
-- Selects execution mode: host binary or Docker runner.
-- Streams structured logs back to the controller for observability and cache planning.
+- Provides a common interface for script systems (Liquibase, psql/sql with include graph, pgbench, other DB-native tools).
+- Each adapter implements step planning + step execution + hashing rules.
+- Liquibase execution is via external CLI (host binary or Docker runner); overhead is tracked and optimized if needed.
 
-### 1.8 State Store (Paths + Metadata)
+### 1.9 Instance Manager
+
+- Maintains mutable instances derived from immutable states.
+- Enforces name binding rules (reuse/fresh/rebind) and returns DSNs for instances.
+- Rejects name reuse when bound to a different state unless explicitly rebind requested.
+- Handles instance lifecycle (ephemeral vs named) and TTL/GC metadata.
+
+### 1.10 State Store (Paths + Metadata)
 
 - Resolves storage root (`~/.cache/sqlrs/state-store` or overridden).
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
 - Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
 
-### 1.9 Telemetry/Audit
+### 1.11 Telemetry/Audit
 
-- Emits metrics: cache hit/miss, planning latency, sandbox bind/exec durations, snapshot size/time.
-- Writes audit events for runs and cache mutations.
+- Emits metrics: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
+- Writes audit events for prepare jobs and cache mutations.
 
-## 2. Run Flow (Local)
+## 2. Prepare Flow (Local)
 
 ```mermaid
 sequenceDiagram
   participant CLI as CLI
   participant API as Engine API
-  participant CTRL as Run Controller
+  participant CTRL as Prepare Controller
   participant CACHE as Cache
   participant SNAP as Snapshotter
   participant RT as Runtime (Docker)
-  participant LB as Liquibase
+  participant ADAPTER as Script Adapter
+  participant INST as Instance Manager
 
-  CLI->>API: POST /runs (watch or no-watch)
+  CLI->>API: start prepare job (watch or no-watch)
   API->>CTRL: enqueue job
+  CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   alt cache hit
     CACHE-->>CTRL: state_id
   else cache miss
     CACHE-->>CTRL: miss
   end
-  CTRL->>SNAP: clone base/state for sandbox
-  SNAP-->>CTRL: sandbox path
+  CTRL->>SNAP: clone base/state for instance
+  SNAP-->>CTRL: instance path
   CTRL->>RT: start DB container with mount
   RT-->>CTRL: endpoint ready
-  alt miss path
-    CTRL->>LB: apply planned steps
-    LB-->>CTRL: logs/status per step
-    CTRL->>SNAP: snapshot new state(s)
-    CTRL->>CACHE: store key->state_id
+  loop for each step
+    CTRL->>CACHE: lookup(key)
+    alt cache hit
+      CACHE-->>CTRL: state_id
+    else cache miss
+      CTRL->>ADAPTER: execute step
+      ADAPTER-->>CTRL: logs/status per step
+      CTRL->>SNAP: snapshot new state
+      CTRL->>CACHE: store key->state_id
+    end
   end
+  CTRL->>INST: bind/select instance (name + policy)
+  INST-->>CTRL: instance_id + DSN
   CTRL-->>API: status updates / stream
-  CTRL->>SNAP: teardown sandbox (or keep warm by policy)
+  CTRL->>SNAP: teardown instance (or keep warm by policy)
   API-->>CLI: terminal status
 ```
 
-- Cancellation: CLI calls `POST /runs/{id}/cancel`; controller sends `pg_cancel_backend`/container stop and ends stream with `cancelled`.
-- Timeouts: controller enforces wall-clock deadline; DB statement_timeout is set per run or per step.
+- Cancellation: controller cancels the prepare job; active DB work is interrupted; stream ends with `cancelled`.
+- Timeouts: controller enforces wall-clock deadline; DB statement_timeout is set per step.
 
 ## 3. Concurrency and Process Model
 
 - Single engine process; job queue with a small worker pool (configurable).
-- One active sandbox per job; multiple jobs may run in parallel if resources allow.
+- One active instance per job; multiple jobs may run in parallel if resources allow.
 - Locking: per-store lock to prevent two engine instances from mutating the same store.
 
 ## 4. Persistence and Discovery
@@ -129,7 +161,7 @@ sequenceDiagram
 
 ## 5. Error Handling
 
-- All long ops return `run_id`; failures are terminal states with reason and logs.
+- All long ops return a prepare job id; failures are terminal states with reason and logs.
 - Cache writes are idempotent per `state_id`; partial snapshots are marked failed and not reused unless explicitly referenced.
 - If Docker/Liquibase unavailable, API returns actionable errors; CLI surfaces them and exits non-zero.
 

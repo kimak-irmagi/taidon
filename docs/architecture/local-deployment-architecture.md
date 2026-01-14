@@ -56,6 +56,7 @@ flowchart LR
 - Interact with local filesystem (project config, paths)
 - Discover or spawn a local engine process
 - Communicate with engine via HTTP over loopback or Unix socket
+- Execute `run` commands locally against a prepared instance/instance
 - Exit immediately after command completion
 - Optional: pre-flight checks (Docker reachable, state store writable), show engine endpoint/version for diagnostics
 
@@ -86,6 +87,8 @@ The CLI is intentionally **thin** and stateless.
 - Liquibase orchestration (via providers)
 - Connection / proxy layer (when needed)
 - IPC/API for CLI and future IDE integrations
+- Prepare planning/execution; does not execute `run` commands
+- Instance creation/binding for prepare (ephemeral vs named)
 
 ### 4.3 Lifecycle
 
@@ -110,16 +113,18 @@ This avoids permanent background services in MVP.
 
 Key engine endpoints (logical):
 
-- `POST /runs` — start run (migrate/apply/run scripts)
-- `POST /snapshots` — manual snapshot
-- `GET /cache/{key}` — cache lookup
-- `POST /engine/shutdown` — optional graceful stop
+- start prepare job (plan/execute steps, snapshot states, bind/select instance)
+- status/stream for a prepare job
+- instance lookup/binding (by name or id)
+- `POST /snapshots` - manual snapshot
+- `GET /cache/{key}` - cache lookup
+- `POST /engine/shutdown` - optional graceful stop
 
 ### 5.1 Long-running operations: sync vs async CLI modes
 
-- **Async (fire-and-forget)**: CLI sends the request, receives `run_id` and status URL, prints it, exits. User can poll or stream later.
+- **Async (fire-and-forget)**: CLI sends the request, receives `prepare_id` and status URL, prints it, exits. User can poll or stream later.
 - **Sync (watch)**: CLI sends the request, then polls/streams status/events until terminal state; prints progress/logs; exits with engine result code.
-- Engine side: all long ops are asynchronous; even sync mode is just CLI-side watch on top of the same REST endpoints (`GET /runs/{id}`, `GET /runs/{id}/stream`).
+- Engine side: all long ops are asynchronous; even sync mode is just CLI-side watch on top of the same REST endpoints (status + stream for a prepare job).
 - Flags: e.g., `--watch/--no-watch` to switch mode; default can be `--watch` for interactive, `--no-watch` for scripted/CI.
 
 ---
@@ -132,6 +137,8 @@ The engine delegates Liquibase execution to a _Liquibase provider_:
 - Docker-based Liquibase runner
 
 Provider selection and compatibility checks are defined in [`liquibase-integration.md`](liquibase-integration.md).
+
+Liquibase is invoked as an external process (host binary or container); overhead is measured and optimized if needed.
 
 The engine consumes **structured logs** from Liquibase for observability and control.
 
@@ -172,7 +179,7 @@ On Windows:
 ### Phase 2
 
 - Optional persistent local daemon (`sqlrsd`)
-- Warm sandbox reuse
+- Warm instance reuse
 - IDE integrations
 
 ### Phase 3

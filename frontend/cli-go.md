@@ -78,20 +78,20 @@ go test ./...
 Binary:
 
 ```bash
-go build -o sqlrs ./cmd/sqlrs
+go build -o ../../dist/bin/sqlrs ./cmd/sqlrs
 ```
 
 Release build recommended flags:
 
 ```bash
-go build -trimpath -ldflags="-s -w" -o sqlrs ./cmd/sqlrs
+go build -trimpath -ldflags="-s -w" -o ../../dist/bin/sqlrs ./cmd/sqlrs
 ```
 
 Cross-compile examples:
 
-- Windows: GOOS=windows GOARCH=amd64 go build -o sqlrs.exe ./cmd/sqlrs
-- Linux: GOOS=linux GOARCH=amd64 go build -o sqlrs ./cmd/sqlrs
-- macOS arm64: GOOS=darwin GOARCH=arm64 go build -o sqlrs ./cmd/sqlrs
+- Windows: GOOS=windows GOARCH=amd64 go build -o ../../dist/bin/sqlrs.exe ./cmd/sqlrs
+- Linux: GOOS=linux GOARCH=amd64 go build -o ../../dist/bin/sqlrs ./cmd/sqlrs
+- macOS arm64: GOOS=darwin GOARCH=arm64 go build -o ../../dist/bin/sqlrs ./cmd/sqlrs
 
 ## 4. CLI UX
 
