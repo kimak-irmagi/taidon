@@ -4,7 +4,7 @@ import path from "node:path";
 const rootDir = process.cwd();
 const docsDir = path.join(rootDir, "docs");
 
-const refStart = "<!--ref:";
+const refStart = "[^`]<!--ref:";
 const refEnd = "<!--ref:end-->";
 const refBody = "<!--ref:body-->";
 
