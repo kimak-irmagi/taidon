@@ -33,13 +33,17 @@ Base URLs:
 
     * **port** -  Default: 8080
 
+License: <a href="https://www.apache.org/licenses/LICENSE-2.0.html">Apache-2.0</a>
+
 # Authentication
 
 - HTTP Authentication, scheme: bearer 
 
 <h1 id="the-sqlrs-engine-api-health">health</h1>
 
-## get__v1_health
+## getHealth
+
+<a id="opIdgetHealth"></a>
 
 > Code samples
 
@@ -197,11 +201,12 @@ Returns engine status. No auth required.
 }
 ```
 
-<h3 id="get__v1_health-responses">Responses</h3>
+<h3 id="gethealth-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[HealthResponse](#schemahealthresponse)|
+|405|[Method Not Allowed](https://tools.ietf.org/html/rfc7231#section-6.5.5)|Method not allowed|None|
 
 <aside class="success">
 This operation does not require authentication
@@ -209,7 +214,9 @@ This operation does not require authentication
 
 <h1 id="the-sqlrs-engine-api-names">names</h1>
 
-## get__v1_names
+## listNames
+
+<a id="opIdlistNames"></a>
 
 > Code samples
 
@@ -360,7 +367,7 @@ func main() {
 
 Returns name bindings.
 
-<h3 id="get__v1_names-parameters">Parameters</h3>
+<h3 id="listnames-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -386,7 +393,7 @@ Returns name bindings.
 ]
 ```
 
-<h3 id="get__v1_names-responses">Responses</h3>
+<h3 id="listnames-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -398,7 +405,9 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
-## get__v1_names_{name}
+## getName
+
+<a id="opIdgetName"></a>
 
 > Code samples
 
@@ -549,7 +558,7 @@ func main() {
 
 Returns a single name binding.
 
-<h3 id="get__v1_names_{name}-parameters">Parameters</h3>
+<h3 id="getname-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -571,7 +580,7 @@ Returns a single name binding.
 }
 ```
 
-<h3 id="get__v1_names_{name}-responses">Responses</h3>
+<h3 id="getname-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -586,7 +595,9 @@ bearerAuth
 
 <h1 id="the-sqlrs-engine-api-instances">instances</h1>
 
-## get__v1_instances
+## listInstances
+
+<a id="opIdlistInstances"></a>
 
 > Code samples
 
@@ -737,7 +748,7 @@ func main() {
 
 Returns instances.
 
-<h3 id="get__v1_instances-parameters">Parameters</h3>
+<h3 id="listinstances-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -762,7 +773,7 @@ Returns instances.
 ]
 ```
 
-<h3 id="get__v1_instances-responses">Responses</h3>
+<h3 id="listinstances-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -774,7 +785,9 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
-## get__v1_instances_{instanceId}
+## getInstance
+
+<a id="opIdgetInstance"></a>
 
 > Code samples
 
@@ -929,7 +942,7 @@ format, the engine first attempts id lookup, then falls back to name.
 When resolved by name, the response is a temporary redirect to the
 canonical id-based URL.
 
-<h3 id="get__v1_instances_{instanceid}-parameters">Parameters</h3>
+<h3 id="getinstance-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -951,7 +964,7 @@ canonical id-based URL.
 }
 ```
 
-<h3 id="get__v1_instances_{instanceid}-responses">Responses</h3>
+<h3 id="getinstance-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -973,7 +986,9 @@ bearerAuth
 
 <h1 id="the-sqlrs-engine-api-states">states</h1>
 
-## get__v1_states
+## listStates
+
+<a id="opIdlistStates"></a>
 
 > Code samples
 
@@ -1124,7 +1139,7 @@ func main() {
 
 Returns states.
 
-<h3 id="get__v1_states-parameters">Parameters</h3>
+<h3 id="liststates-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -1149,7 +1164,7 @@ Returns states.
 ]
 ```
 
-<h3 id="get__v1_states-responses">Responses</h3>
+<h3 id="liststates-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1161,7 +1176,9 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
-## get__v1_states_{stateId}
+## getState
+
+<a id="opIdgetState"></a>
 
 > Code samples
 
@@ -1312,7 +1329,7 @@ func main() {
 
 Returns a single state.
 
-<h3 id="get__v1_states_{stateid}-parameters">Parameters</h3>
+<h3 id="getstate-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -1334,7 +1351,7 @@ Returns a single state.
 }
 ```
 
-<h3 id="get__v1_states_{stateid}-responses">Responses</h3>
+<h3 id="getstate-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1400,12 +1417,24 @@ bearerAuth
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |name|string|true|none|none|
-|instance_id|string¦null|false|none|none|
+|instance_id|string,null|false|none|none|
 |image_id|string|true|none|none|
 |state_id|string|true|none|none|
 |state_fingerprint|string|false|none|none|
 |status|string|true|none|none|
-|last_used_at|string(date-time)¦null|false|none|none|
+|last_used_at|any|false|none|none|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string(date-time)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
 
 #### Enumerated Values
 
@@ -1442,9 +1471,26 @@ bearerAuth
 |instance_id|string|true|none|none|
 |image_id|string|true|none|none|
 |state_id|string|true|none|none|
-|name|string¦null|false|none|none|
+|name|string,null|false|none|none|
 |created_at|string(date-time)|true|none|none|
-|expires_at|string(date-time)¦null|false|none|none|
+|expires_at|any|false|none|none|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string(date-time)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
 |status|string|true|none|none|
 
 #### Enumerated Values

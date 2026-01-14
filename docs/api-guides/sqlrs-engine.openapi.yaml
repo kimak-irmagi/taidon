@@ -6,6 +6,9 @@ info:
     Local sqlrs engine HTTP API (MVP).
     Only the implemented endpoints are documented here.
     Do not edit the file directly; it is generated from the codebase.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
 security:
   - bearerAuth: []
 servers:
@@ -17,6 +20,7 @@ servers:
 paths:
   /v1/health:
     get:
+      operationId: getHealth
       summary: Engine health check
       description: Returns engine status. No auth required.
       tags:
@@ -29,8 +33,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+        "405":
+          description: Method not allowed
   /v1/names:
     get:
+      operationId: listNames
       summary: List names
       description: Returns name bindings.
       tags:
@@ -68,6 +75,7 @@ paths:
           description: Unauthorized
   /v1/names/{name}:
     get:
+      operationId: getName
       summary: Get a name binding
       description: Returns a single name binding.
       tags:
@@ -91,6 +99,7 @@ paths:
           description: Unauthorized
   /v1/instances:
     get:
+      operationId: listInstances
       summary: List instances
       description: Returns instances.
       tags:
@@ -123,6 +132,7 @@ paths:
           description: Unauthorized
   /v1/instances/{instanceId}:
     get:
+      operationId: getInstance
       summary: Get an instance
       description: |
         Returns a single instance by id. If the path segment does not match the
@@ -158,6 +168,7 @@ paths:
           description: Unauthorized
   /v1/states:
     get:
+      operationId: listStates
       summary: List states
       description: Returns states.
       tags:
@@ -190,6 +201,7 @@ paths:
           description: Unauthorized
   /v1/states/{stateId}:
     get:
+      operationId: getState
       summary: Get a state
       description: Returns a single state.
       tags:
@@ -257,8 +269,9 @@ components:
         name:
           type: string
         instance_id:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
         image_id:
           type: string
         state_id:
@@ -269,9 +282,10 @@ components:
           type: string
           enum: [active, missing, expired]
         last_used_at:
-          type: string
-          format: date-time
-          nullable: true
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
     InstanceEntry:
       type: object
       additionalProperties: false
@@ -289,15 +303,17 @@ components:
         state_id:
           type: string
         name:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
         created_at:
           type: string
           format: date-time
         expires_at:
-          type: string
-          format: date-time
-          nullable: true
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
         status:
           type: string
           enum: [active, expired, orphaned]
