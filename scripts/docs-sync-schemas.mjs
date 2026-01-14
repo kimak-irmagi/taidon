@@ -4,7 +4,7 @@ import path from "node:path";
 const rootDir = process.cwd();
 const docsDir = path.join(rootDir, "docs");
 
-const refStart = "[^`]<!--ref:";
+const refStart = "<!--ref:";
 const refEnd = "<!--ref:end-->";
 const refBody = "<!--ref:body-->";
 
@@ -66,7 +66,7 @@ function readSnippet(resolvedPath, hash) {
 }
 
 function processBlock(block, filePath) {
-  const startMatch = block.match(/<!--ref:([a-zA-Z0-9_-]+)\s*-->/);
+  const startMatch = block.match(/^<!--ref:([a-zA-Z0-9_-]+)\s*-->/);
   if (!startMatch) {
     return block;
   }
@@ -88,13 +88,24 @@ function processBlock(block, filePath) {
   return `${refStart}${lang} -->\n${linkText}\n${refBody}\n${codeBlock}\n${refEnd}`;
 }
 
+function findRefStart(content, fromIndex) {
+  let idx = content.indexOf(refStart, fromIndex);
+  while (idx !== -1) {
+    if (idx === 0 || content[idx - 1] === "\n") {
+      return idx;
+    }
+    idx = content.indexOf(refStart, idx + refStart.length);
+  }
+  return -1;
+}
+
 function processContent(content, filePath) {
   let cursor = 0;
   let out = "";
   let changed = false;
 
   while (true) {
-    const start = content.indexOf(refStart, cursor);
+    const start = findRefStart(content, cursor);
     if (start === -1) {
       out += content.slice(cursor);
       break;
