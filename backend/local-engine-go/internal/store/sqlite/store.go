@@ -223,6 +223,38 @@ WHERE s.state_id = ?`
 	return entry, true, nil
 }
 
+func (s *Store) CreateState(ctx context.Context, entry store.StateCreate) error {
+	query := `
+INSERT OR IGNORE INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query,
+		entry.StateID,
+		entry.StateFingerprint,
+		entry.ImageID,
+		entry.PrepareKind,
+		entry.PrepareArgsNormalized,
+		entry.CreatedAt,
+		entry.SizeBytes,
+		entry.Status,
+	)
+	return err
+}
+
+func (s *Store) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
+	query := `
+INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, status)
+VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, query,
+		entry.InstanceID,
+		entry.StateID,
+		entry.ImageID,
+		entry.CreatedAt,
+		entry.ExpiresAt,
+		entry.Status,
+	)
+	return err
+}
+
 func initDB(db *sql.DB) error {
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err

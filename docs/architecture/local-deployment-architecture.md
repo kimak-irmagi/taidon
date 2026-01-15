@@ -6,9 +6,10 @@ It focuses on:
 
 - thin CLI design
 - ephemeral engine process
-- interaction with Docker and Liquibase
+- interaction with Docker and psql
 
-This document intentionally avoids repeating Liquibase-specific details; those are covered in [`liquibase-integration.md`](liquibase-integration.md).
+This document intentionally avoids repeating script-runner details; Liquibase integration
+is planned and covered in [`liquibase-integration.md`](liquibase-integration.md).
 Engine internals are detailed in [`engine-internals.md`](engine-internals.md).
 Team/Cloud variant is covered in [`shared-deployment-architecture.md`](shared-deployment-architecture.md).
 
@@ -33,14 +34,14 @@ flowchart LR
   ENG["sqlrs engine process"]
   DOCKER["Docker Engine"]
   DB["DB Container"]
-  LB[Liquibase]
+  PS["psql runner"]
   STATE["State dir (engine.json)"]
   STORE["state store"]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
   ENG --> DOCKER
-  ENG --> LB
+  ENG --> PS
   DOCKER --> DB
   ENG --> STORE
   CLI -. discovery .-> STATE
@@ -66,7 +67,7 @@ The CLI is intentionally **thin** and stateless.
 
 - No Docker orchestration logic
 - No snapshotting logic
-- No direct Liquibase execution
+- No direct script execution
 
 ---
 
@@ -84,11 +85,11 @@ The CLI is intentionally **thin** and stateless.
 - Docker container orchestration
 - Snapshotting and state management
 - Cache rewind and eviction
-- Liquibase orchestration (via providers)
+- Script execution via `psql`
 - Connection / proxy layer (when needed)
 - IPC/API for CLI and future IDE integrations
 - Prepare planning/execution; does not execute `run` commands
-- Instance creation/binding for prepare (ephemeral vs named)
+- Ephemeral instance creation for prepare
 
 ### 4.3 Lifecycle
 
@@ -113,8 +114,9 @@ This avoids permanent background services in MVP.
 
 Key engine endpoints (logical):
 
-- start prepare job (plan/execute steps, snapshot states, bind/select instance)
-- status/stream for a prepare job
+- `POST /v1/prepare-jobs` - start prepare job (plan/execute steps, snapshot states, create instance)
+- `GET /v1/prepare-jobs/{jobId}` - job status
+- `GET /v1/prepare-jobs/{jobId}/events` - job event stream (NDJSON)
 - list names/instances/states (JSON array or NDJSON via `Accept`)
 - `GET /v1/names/{name}` - read name binding
 - `GET /v1/instances/{instanceId}` - read instance (supports name alias with 307 redirect to the canonical id URL when resolved by name)
@@ -123,34 +125,32 @@ Key engine endpoints (logical):
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - optional graceful stop
 
-### 5.1 Long-running operations: sync vs async CLI modes
+### 5.1 Long-running operations: async jobs, sync CLI
 
-- **Async (fire-and-forget)**: CLI sends the request, receives `prepare_id` and status URL, prints it, exits. User can poll or stream later.
-- **Sync (watch)**: CLI sends the request, then polls/streams status/events until terminal state; prints progress/logs; exits with engine result code.
-- Engine side: all long ops are asynchronous; even sync mode is just CLI-side watch on top of the same REST endpoints (status + stream for a prepare job).
-- Flags: e.g., `--watch/--no-watch` to switch mode; default can be `--watch` for interactive, `--no-watch` for scripted/CI.
+- Engine handles prepare as asynchronous jobs; `POST /v1/prepare-jobs` returns `202 Accepted` with a job id.
+- CLI immediately watches the job via status/events and exits when it reaches a terminal state.
+- CLI currently has no detach mode; `--watch/--no-watch` is a future extension.
 
 ---
 
-## 6. Interaction with Liquibase
+## 6. Interaction with psql
 
-The engine delegates Liquibase execution to a _Liquibase provider_:
+The engine delegates script execution to `psql`:
 
-- system-installed Liquibase
-- Docker-based Liquibase runner
+- system-installed `psql`
+- Docker-based `psql` runner (optional)
 
-Provider selection and compatibility checks are defined in [`liquibase-integration.md`](liquibase-integration.md).
+`psql` is invoked as an external process (host binary or container); overhead is measured and optimized if needed.
 
-Liquibase is invoked as an external process (host binary or container); overhead is measured and optimized if needed.
-
-The engine consumes **structured logs** from Liquibase for observability and control.
+Liquibase integration is planned; provider selection details live in
+[`liquibase-integration.md`](liquibase-integration.md).
 
 ---
 
 ## 6. Interaction with Docker
 
 - Docker is required in MVP
-- Engine controls DB containers and Liquibase containers
+- Engine controls DB containers and optional `psql` runner containers
 - All persistent data directories are mounted from host-managed storage
 - Engine validates Docker availability on start; CLI surfaces actionable errors if missing/denied
 

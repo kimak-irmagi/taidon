@@ -158,7 +158,7 @@ Content (minimum):
 - git ref + commit (if `--ref` used)
 - `dirty/clean` (working tree state)
 - input file list from `--prepare` + hashes
-- environment params (`engine/image`, key flags)
+- environment params (`dbms.image`, key flags)
 - Taidon snapshot chain used (base/derived)
 - command `sqlrs run -- <cmd>` + argv
 

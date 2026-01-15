@@ -80,15 +80,12 @@ Resolution order:
 1. Instance produced by a preceding `prepare` in the same invocation
 2. `--dsn <dsn>`
 3. `--instance <id>`
-4. `--name <name>`
 
 If resolution fails, `run` terminates with an error.
 
 ---
 
-## Ephemeral vs Named Usage
-
-### Ephemeral Pipeline Usage
+## Ephemeral Pipeline Usage
 
 ```bash
 sqlrs prepare:psql init.sql run:psql -- -c "select 1"
@@ -100,18 +97,6 @@ sqlrs prepare:psql init.sql run:psql -- -c "select 1"
 
 ---
 
-### Named Instance Usage
-
-```bash
-sqlrs prepare:psql init.sql --name devdb
-sqlrs run --name devdb -- psql
-```
-
-- Instance persists independently of the process
-- Multiple `run` invocations may target the same instance
-
----
-
 ## Instance Lifetime and Liveness
 
 `run` itself does not define instance lifetime.
@@ -119,7 +104,6 @@ sqlrs run --name devdb -- psql
 Depending on configuration:
 
 - Ephemeral instances may be removed after command exit
-- Named instances persist until explicitly dropped or expired
 
 Some `run:<kind>` implementations may:
 
@@ -149,7 +133,7 @@ These behaviors are **implementation-specific** and not guaranteed by `run`.
 When possible, errors include hints such as:
 
 ```text
-Hint: run sqlrs prepare:<kind> ... to create the instance.
+Hint: run sqlrs prepare:psql ... to create the instance.
 ```
 
 ---
@@ -159,7 +143,6 @@ Hint: run sqlrs prepare:<kind> ... to create the instance.
 ```text
 --dsn <dsn>           Explicit DSN to use
 --instance <id>       Target a specific instance
---name <name>         Target a named instance
 ```
 
 At most one of these options may be specified.
@@ -183,14 +166,6 @@ At most one of these options may be specified.
 
 ```bash
 sqlrs prepare:psql init.sql run:psql -- -c "select count(*) from users"
-```
-
----
-
-### Run against a named instance
-
-```bash
-sqlrs run --name devdb -- psql -c "select 1"
 ```
 
 ---

@@ -6,6 +6,7 @@ type Config struct {
 	DefaultProfile string                   `yaml:"defaultProfile"`
 	Client         ClientConfig             `yaml:"client"`
 	Orchestrator   OrchestratorConfig       `yaml:"orchestrator"`
+	DBMS           DBMSConfig               `yaml:"dbms"`
 	Profiles       map[string]ProfileConfig `yaml:"profiles"`
 }
 
@@ -20,6 +21,10 @@ type OrchestratorConfig struct {
 	IdleTimeout    string `yaml:"idleTimeout"`
 	RunDir         string `yaml:"runDir"`
 	DaemonPath     string `yaml:"daemonPath"`
+}
+
+type DBMSConfig struct {
+	Image string `yaml:"image"`
 }
 
 type ProfileConfig struct {

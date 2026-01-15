@@ -129,6 +129,20 @@ func Run(args []string) error {
 			Verbose:        opts.Verbose,
 		}
 		return runLs(os.Stdout, runOpts, cmd.Args, output)
+	case "prepare:psql":
+		runOpts := cli.PrepareOptions{
+			ProfileName:    profileName,
+			Mode:           mode,
+			Endpoint:       profile.Endpoint,
+			Autostart:      profile.Autostart,
+			DaemonPath:     daemonPath,
+			RunDir:         runDir,
+			StateDir:       dirs.StateDir,
+			Timeout:        timeout,
+			StartupTimeout: startupTimeout,
+			Verbose:        opts.Verbose,
+		}
+		return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, cwd, cmd.Args)
 	case "status":
 		if len(cmd.Args) > 0 {
 			return fmt.Errorf("status does not accept arguments")

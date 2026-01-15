@@ -1,10 +1,12 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -117,6 +119,35 @@ func (c *Client) GetState(ctx context.Context, stateID string) (StateEntry, bool
 	return out, found, err
 }
 
+func (c *Client) CreatePrepareJob(ctx context.Context, req PrepareJobRequest) (PrepareJobAccepted, error) {
+	var out PrepareJobAccepted
+	body, err := json.Marshal(req)
+	if err != nil {
+		return out, err
+	}
+	resp, err := c.doRequestWithBody(ctx, http.MethodPost, "/v1/prepare-jobs", true, bytes.NewReader(body), "application/json")
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted {
+		return out, parseErrorResponse(resp)
+	}
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func (c *Client) GetPrepareJob(ctx context.Context, jobID string) (PrepareJobStatus, bool, error) {
+	path := "/v1/prepare-jobs/" + url.PathEscape(strings.TrimSpace(jobID))
+	var out PrepareJobStatus
+	found, err := c.doJSONOptional(ctx, http.MethodGet, path, true, &out)
+	return out, found, err
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, useAuth bool, out any) error {
 	resp, err := c.doRequest(ctx, method, path, useAuth)
 	if err != nil {
@@ -165,6 +196,24 @@ func (c *Client) doRequest(ctx context.Context, method, path string, useAuth boo
 	return c.http.Do(req)
 }
 
+func (c *Client) doRequestWithBody(ctx context.Context, method, path string, useAuth bool, body io.Reader, contentType string) (*http.Response, error) {
+	url := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
+	if useAuth && c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	return c.http.Do(req)
+}
+
 func normalizeBaseURL(raw string) string {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -198,4 +247,21 @@ func appendQuery(path string, values url.Values) string {
 		return path
 	}
 	return path + "?" + values.Encode()
+}
+
+func parseErrorResponse(resp *http.Response) error {
+	if resp == nil {
+		return &HTTPStatusError{StatusCode: 0, Status: "missing response"}
+	}
+	var errResp ErrorResponse
+	data, _ := io.ReadAll(resp.Body)
+	if len(data) > 0 {
+		if json.Unmarshal(data, &errResp) == nil && errResp.Message != "" {
+			if errResp.Details != "" {
+				return fmt.Errorf("%s: %s", errResp.Message, errResp.Details)
+			}
+			return fmt.Errorf("%s", errResp.Message)
+		}
+	}
+	return &HTTPStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 }

@@ -141,3 +141,5 @@ vite.config.ts.timestamp-*
 # sqlrs run artifacts
 
 sqlrs-work
+.gocache
+.gomodcache

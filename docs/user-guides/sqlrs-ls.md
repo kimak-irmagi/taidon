@@ -6,7 +6,7 @@
 
 sqlrs manages three object types:
 
-- **states** — immutable database states produced by `prepare:<kind>`
+- **states** - immutable database states produced by `prepare:psql`
 - **instances** — mutable database instances derived from states
 - **names** — stable user-defined handles pointing to instances (and bound to a state fingerprint)
 
@@ -202,7 +202,7 @@ List instances derived from a specific state:
 sqlrs ls -i --state <state_id>
 ```
 
-List a single named environment:
+List a single name entry:
 
 ```bash
 sqlrs ls -n --name devdb
@@ -232,7 +232,3 @@ not directly user-relevant. Showing it explicitly avoids surprising output volum
 ### Missing instance behind a name
 
 `ls` intentionally reports `STATUS=missing` for names whose instance was purged.
-This enables a common workflow:
-
-- `prepare:<kind> ... --name X --reuse` can recreate the instance while preserving the binding
-  (depending on chosen semantics and purge policies).

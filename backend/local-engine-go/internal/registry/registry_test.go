@@ -63,6 +63,14 @@ func (f *fakeStore) GetState(ctx context.Context, stateID string) (store.StateEn
 	return store.StateEntry{}, false, nil
 }
 
+func (f *fakeStore) CreateState(ctx context.Context, entry store.StateCreate) error {
+	return nil
+}
+
+func (f *fakeStore) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
+	return nil
+}
+
 func (f *fakeStore) Close() error {
 	return nil
 }

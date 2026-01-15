@@ -102,6 +102,12 @@ sqlrs status [options]
 
 - [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
 
+TODO (будущее):
+
+- Добавить `prepare:liquibase` (alias: `prepare:lb`).
+- Добавить именованные экземпляры и флаги привязки (`--name`, `--reuse`, `--fresh`, `--rebind`).
+- Добавить async-режим (`--watch/--no-watch`) с выводом `prepare_id` и URL статуса.
+
 ---
 
 ### 3.5 `sqlrs plan`

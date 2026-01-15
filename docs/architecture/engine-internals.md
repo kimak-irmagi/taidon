@@ -1,6 +1,6 @@
 # sqlrs Engine Internals (Local Profile)
 
-Scope: internal structure of the `sqlrs` engine process for local deployment (MVP). Focus on how requests from the CLI are handled, how snapshot/cache logic is wired, and how Docker/Liquibase are orchestrated.
+Scope: internal structure of the `sqlrs` engine process for local deployment (MVP). Focus on how requests from the CLI are handled, how snapshot/cache logic is wired, and how Docker/psql are orchestrated.
 
 ## 1. Component Model
 
@@ -38,21 +38,21 @@ flowchart LR
 ### 1.1 API Layer
 
 - REST over loopback (HTTP/UDS); exposes prepare jobs, instance lookup/binding, snapshots, cache, and shutdown endpoints.
-- All long operations run asynchronously; sync CLI mode just watches status/stream.
+- Prepare runs as async jobs; the CLI watches status/events and waits for completion.
 
 ### 1.2 Prepare Controller
 
-- Coordinates a prepare job: plan steps, cache lookup, instance bind, execute steps, snapshot states, bind/select instance, persist metadata.
+- Coordinates a prepare job: plan steps, cache lookup, execute steps, snapshot states, create instance, persist metadata.
 - Enforces deadlines and cancellation; supervises child processes/containers.
 - Emits status transitions and structured events for streaming to the CLI.
 
 ### 1.3 Prepare Planner
 
-- Builds an ordered list of prepare steps from a script system (Liquibase, psql/sql, pgbench, or other DB tools).
+- Builds an ordered list of prepare steps from `psql` scripts.
 - Each step is hashed (script-system specific) to form cache keys: `engine/version/base/step_hash/params`.
 - The output is a step chain, not head/tail; intermediate states may be materialized for cache reuse.
 - The overall prepare input also produces a stable state fingerprint:
-  `state_id = hash(prepare_kind + normalized_args + normalized_input_hashes + engine_version)`.
+  `state_id = hash(prepare_kind + base_image_id + normalized_args + normalized_input_hashes + engine_version)`.
 
 ### 1.4 Prepare Executor
 
@@ -78,16 +78,15 @@ flowchart LR
 
 ### 1.8 Script System Adapter
 
-- Provides a common interface for script systems (Liquibase, psql/sql with include graph, pgbench, other DB-native tools).
+- Provides a common interface for script systems (currently `psql`).
 - Each adapter implements step planning + step execution + hashing rules.
-- Liquibase execution is via external CLI (host binary or Docker runner); overhead is tracked and optimized if needed.
+- Liquibase execution is planned via external CLI (host binary or Docker runner); overhead is tracked and optimized if needed.
 
 ### 1.9 Instance Manager
 
 - Maintains mutable instances derived from immutable states.
-- Enforces name binding rules (reuse/fresh/rebind) and returns DSNs for instances.
-- Rejects name reuse when bound to a different state unless explicitly rebind requested.
-- Handles instance lifecycle (ephemeral vs named) and TTL/GC metadata.
+- Creates ephemeral instances and returns DSNs.
+- Handles instance lifecycle (ephemeral) and TTL/GC metadata.
 
 ### 1.10 State Store (Paths + Metadata)
 
@@ -113,7 +112,9 @@ sequenceDiagram
   participant ADAPTER as Script Adapter
   participant INST as Instance Manager
 
-  CLI->>API: start prepare job (watch or no-watch)
+  CLI->>API: start prepare job
+  API-->>CLI: job_id
+  CLI->>API: watch status/events
   API->>CTRL: enqueue job
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
@@ -137,9 +138,9 @@ sequenceDiagram
       CTRL->>CACHE: store key->state_id
     end
   end
-  CTRL->>INST: bind/select instance (name + policy)
+  CTRL->>INST: create instance
   INST-->>CTRL: instance_id + DSN
-  CTRL-->>API: status updates / stream
+  CTRL-->>API: status updates / events
   CTRL->>SNAP: teardown instance (or keep warm by policy)
   API-->>CLI: terminal status
 ```
@@ -163,7 +164,7 @@ sequenceDiagram
 
 - All long ops return a prepare job id; failures are terminal states with reason and logs.
 - Cache writes are idempotent per `state_id`; partial snapshots are marked failed and not reused unless explicitly referenced.
-- If Docker/Liquibase unavailable, API returns actionable errors; CLI surfaces them and exits non-zero.
+- If Docker/psql unavailable, API returns actionable errors; CLI surfaces them and exits non-zero.
 
 ## 6. Evolution Hooks
 

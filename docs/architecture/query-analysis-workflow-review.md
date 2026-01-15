@@ -4,6 +4,8 @@ This document describes a **minimal-interference** workflow for running a comple
 
 The key idea: keep using the same familiar tools (`psql`, `pgbench`, scripts). The only thing that changes with `sqlrs` is **how fast and repeatably you get the target database state**.
 
+Note: Liquibase examples below are aspirational; the current local prepare supports only `prepare:psql`.
+
 ---
 
 ## 1. User Goal

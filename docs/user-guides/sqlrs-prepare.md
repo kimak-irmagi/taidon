@@ -5,11 +5,11 @@
 `sqlrs prepare` is the only command that can **deterministically construct or restore**
 a database state in sqlrs.
 
-A `prepare:<kind>` invocation:
+A `prepare:psql` invocation:
 
 1. Identifies an immutable **state** based on its arguments.
 2. Ensures this state exists (by reusing or building it).
-3. Creates or selects a mutable **instance** derived from this state.
+3. Creates a mutable **instance** derived from this state.
 4. Returns a DSN pointing to that instance.
 
 All reproducibility guarantees in sqlrs rely on `prepare`.
@@ -18,41 +18,86 @@ All reproducibility guarantees in sqlrs rely on `prepare`.
 
 ## Terminology
 
-- **State** — an immutable database state produced by a deterministic preparation process.
-- **Instance** — a mutable copy of a state; all database modifications happen here.
-- **Name** — a stable user-defined handle bound to an instance and its originating state.
+- **State** - an immutable database state produced by a deterministic preparation process.
+- **Instance** - a mutable copy of a state; all database modifications happen here.
 
 ---
 
 ## Command Syntax
 
 ```text
-sqlrs prepare:<kind> <prepare-args> [OPTIONS]
+sqlrs prepare:psql [--image <image-id>] [--] [psql-args...]
 ```
 
 Where:
 
-- `<kind>` defines the preparation method and executor.
-- `<prepare-args>` fully describe how the state is produced.
-- `OPTIONS` control instance creation and name binding.
+- `--image <image-id>` overrides the base Docker image.
+- `psql-args` are passed to `psql` and fully describe how the state is produced.
+
+If `--` is omitted, all remaining arguments are treated as `psql-args`.
+To pass `psql` flags that would clash with sqlrs flags (for example `-v`),
+use `--` explicitly.
 
 ---
 
-## `prepare:<kind>` Concept
+## `prepare:psql` Concept
 
-`prepare:<kind>` defines:
+`prepare:psql` defines:
 
 - how the database state is constructed,
 - which inputs participate in state identification,
 - how the executor connects to the database during preparation.
 
-Examples of built-in kinds:
+---
 
-- `prepare:psql`
-- `prepare:liquibase` (alias: `prepare:lb`)
+## psql Argument Handling
 
-Each `<kind>` defines its own argument semantics, but all kinds share
-the same lifecycle and identity rules.
+`prepare:psql` aims to match `psql` semantics closely. All `psql-args` are passed
+verbatim to `psql` with two enforced defaults for determinism:
+
+- `-X` (ignore `~/.psqlrc`)
+- `-v ON_ERROR_STOP=1`
+
+If a user-provided argument conflicts with these enforced defaults, `prepare`
+fails with an error.
+
+Connection arguments are rejected because sqlrs supplies the connection to the
+prepared instance:
+
+- `-h`, `--host`
+- `-p`, `--port`
+- `-U`, `--username`
+- `-d`, `--dbname`, `--database`
+
+### SQL input sources
+
+- `-f`, `--file <path>`: SQL script file (absolute paths are passed to the engine).
+- `-c`, `--command <sql>`: inline SQL string.
+- `-f -`: read SQL from stdin; sqlrs reads stdin and passes it to the engine.
+
+All inputs above participate in state identification.
+
+---
+
+## Base Image Selection
+
+The base Docker image id is resolved in this order:
+
+1. `--image <image-id>` command-line flag
+2. Workspace config (`.sqlrs/config.yaml`, `dbms.image`)
+3. Global config (`$XDG_CONFIG_HOME/sqlrs/config.yaml`, `dbms.image`)
+
+The image id is treated as an opaque value and passed to Docker as-is.
+If no image id can be resolved, `prepare` fails.
+
+Config key:
+
+```yaml
+dbms:
+  image: postgres:17
+```
+
+When `-v/--verbose` is set, sqlrs prints the resolved image id and its source.
 
 ---
 
@@ -61,8 +106,9 @@ the same lifecycle and identity rules.
 A **state** is identified by a fingerprint computed from:
 
 - `prepare kind`
+- `base image id`
 - normalized `prepare arguments`
-- hashes of all derived input files (normalzed)
+- hashes of all input sources (files, inline SQL, stdin)
 - sqlrs engine version
 
 Formally:
@@ -70,6 +116,7 @@ Formally:
 ```text
 state_id = hash(
   prepare_kind +
+  base_image_id +
   normalized_prepare_args +
   normalized_input_hashes +
   engine_version
@@ -79,9 +126,8 @@ state_id = hash(
 ### Normalization Rules
 
 - File paths are resolved to absolute paths.
-- Glob patterns are expanded deterministically.
-- Argument ordering is normalized.
-- Runtime-only flags (verbosity, progress output) are excluded.
+- Argument ordering is preserved.
+- `psql` arguments are included verbatim, with enforced defaults applied.
 
 If any participating input changes, a **new state** is produced.
 
@@ -89,82 +135,16 @@ If any participating input changes, a **new state** is produced.
 
 ## Instance Creation Semantics
 
-Each `prepare` invocation results in selecting or creating a **mutable instance**
-derived from the identified state.
-
-### Default Behavior
-
-| Condition              | Result                         |
-| ---------------------- | ------------------------------ |
-| `--name` not specified | New ephemeral instance         |
-| `--name` specified     | Reuse existing instance if any |
+Each `prepare` invocation creates a **new ephemeral instance** derived from the
+identified state.
 
 ### Instance Modes
 
 - **Ephemeral instance**
 
-  - Created when `--name` is not specified.
+  - Created for each invocation.
   - Intended for short-lived usage.
   - Typically removed automatically.
-
-- **Named instance**
-  - Created or reused when `--name <name>` is provided.
-  - Persists independently of process lifetime.
-  - Subject to TTL / garbage collection policies.
-
----
-
-## Name Binding Rules
-
-A name is bound to:
-
-- the current `state fingerprint`
-- a specific `instance` derived from that state
-
-### Reuse vs Fresh
-
-- `--reuse`  
-  Reuse the existing instance bound to the name (default when `--name` is set).
-  Issues warning whenever the instance doesn't exist.
-
-- `--fresh`  
-  Discard the existing instance and create a new one from the same state.
-
-These options are **mutually exclusive**.
-
-### State Mismatch Protection
-
-If a name already exists and is bound to a **different state fingerprint**:
-
-- `prepare` fails by default.
-- This prevents silent reuse of outdated database states.
-
-To explicitly change the meaning of a name, use:
-
-```text
---rebind
-```
-
-This destroys the old instance and rebinds the name to the new state.
-**Note** this also preserves the DSN used for the instance bound to this name.
-
----
-
-## Flags and Defaults
-
-```text
---name <name>     Bind the instance to a stable name
---reuse           Reuse existing named instance (default with --name)
---fresh           Create a new instance from the same state
---rebind          Explicitly change state binding for an existing name
-```
-
-### Default Resolution
-
-| Condition          | Default Mode |
-| ------------------ | ------------ |
-| `--name` specified | `--reuse`    |
-| `--name` omitted   | `--fresh`    |
 
 ---
 
@@ -172,15 +152,10 @@ This destroys the old instance and rebinds the name to the new state.
 
 `sqlrs prepare` may fail with the following errors:
 
-- **State mismatch**
-
-  - Name exists but is bound to a different state fingerprint.
-  - Requires `--rebind` to proceed.
-
 - **Invalid inputs**
 
   - Missing files.
-  - Invalid arguments for the selected `prepare:<kind>`.
+  - Invalid arguments for the selected `prepare:psql`.
 
 - **Executor failure**
 
@@ -197,6 +172,7 @@ All errors are reported before any mutable instance is exposed.
 ## Output
 
 On success, `prepare` prints the DSN of the selected instance to stdout.
+With `-v/--verbose`, extra details (including image source) are printed to stderr.
 
 Example:
 
@@ -214,40 +190,28 @@ or external applications.
 ### Ephemeral preparation
 
 ```bash
-sqlrs prepare:psql ./init.sql
+sqlrs prepare:psql -- -f ./init.sql
 ```
 
 Creates a new instance derived from the state produced by `init.sql`.
 
 ---
 
-### Named reusable instance
+### Override base image
 
 ```bash
-sqlrs prepare:psql ./init.sql --name devdb
+sqlrs prepare:psql --image postgres:17 -- -f ./init.sql
 ```
 
-Creates or reuses a persistent instance named `devdb`.
+Creates the instance using the specified base image.
 
 ---
 
-### Force clean rebuild
+### Use stdin
 
 ```bash
-sqlrs prepare:psql ./init.sql --name devdb --fresh
+cat ./init.sql | sqlrs prepare:psql -- -f -
 ```
-
-Recreates the instance while keeping the same state.
-
----
-
-### Rebinding a name to a new state
-
-```bash
-sqlrs prepare:psql ./init_v2.sql --name devdb --rebind
-```
-
-Changes the meaning of `devdb` to point to a new state.
 
 ---
 
@@ -255,4 +219,3 @@ Changes the meaning of `devdb` to point to a new state.
 
 - `prepare` is idempotent with respect to state identification.
 - State objects are immutable once created.
-- Named instances are never silently reused across different states.

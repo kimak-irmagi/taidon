@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"sqlrs/engine/internal/auth"
+	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store"
 	"sqlrs/engine/internal/stream"
@@ -17,6 +19,7 @@ type Options struct {
 	InstanceID string
 	AuthToken  string
 	Registry   *registry.Registry
+	Prepare    *prepare.Manager
 }
 
 type healthResponse struct {
@@ -41,6 +44,84 @@ func NewHandler(opts Options) http.Handler {
 			PID:        os.Getpid(),
 		}
 		writeJSON(w, resp)
+	})
+
+	mux.HandleFunc("/v1/prepare-jobs", func(w http.ResponseWriter, r *http.Request) {
+		if !auth.RequireBearer(w, r, opts.AuthToken) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if opts.Prepare == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var req prepare.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, prepare.ErrorResponse{
+				Code:    "invalid_argument",
+				Message: "invalid json payload",
+				Details: err.Error(),
+			}, http.StatusBadRequest)
+			return
+		}
+		accepted, err := opts.Prepare.Submit(r.Context(), req)
+		if err != nil {
+			resp := prepare.ToErrorResponse(err)
+			status := http.StatusInternalServerError
+			if _, ok := err.(prepare.ValidationError); ok {
+				status = http.StatusBadRequest
+			}
+			if _, ok := err.(*prepare.ValidationError); ok {
+				status = http.StatusBadRequest
+			}
+			writeError(w, *resp, status)
+			return
+		}
+		w.Header().Set("Location", accepted.StatusURL)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(accepted)
+	})
+
+	mux.HandleFunc("/v1/prepare-jobs/", func(w http.ResponseWriter, r *http.Request) {
+		if !auth.RequireBearer(w, r, opts.AuthToken) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if opts.Prepare == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		path := strings.TrimPrefix(r.URL.Path, "/v1/prepare-jobs/")
+		if path == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/events") {
+			jobID := strings.TrimSuffix(path, "/events")
+			if jobID == "" || strings.Contains(jobID, "/") {
+				http.NotFound(w, r)
+				return
+			}
+			streamPrepareEvents(w, r, opts.Prepare, jobID)
+			return
+		}
+		if strings.Contains(path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		status, ok := opts.Prepare.Get(path)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, status)
 	})
 
 	mux.HandleFunc("/v1/names", func(w http.ResponseWriter, r *http.Request) {
@@ -192,6 +273,43 @@ func writeJSON(w http.ResponseWriter, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+func writeError(w http.ResponseWriter, payload prepare.ErrorResponse, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
 func readQueryValue(r *http.Request, key string) string {
 	return strings.TrimSpace(r.URL.Query().Get(key))
+}
+
+func streamPrepareEvents(w http.ResponseWriter, r *http.Request, mgr *prepare.Manager, jobID string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	enc := json.NewEncoder(w)
+	index := 0
+	for {
+		events, ok, done := mgr.EventsSince(jobID, index)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		for _, event := range events {
+			_ = enc.Encode(event)
+			flusher.Flush()
+			index++
+		}
+		if done {
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
