@@ -147,7 +147,7 @@ jobs:
       - name: Build local release
         run: >
           node scripts/release-local.mjs
-          --version "${VERSION}"
+          --version "${{ env.VERSION }}"
           --os "${{ matrix.goos }}"
           --arch "${{ matrix.goarch }}"
           --engine-bin "${{ github.workspace }}/${{ env.ENGINE_DIR }}/${{ matrix.goos }}_${{ matrix.goarch }}/sqlrs-engine${{ matrix.exe }}"
