@@ -180,7 +180,16 @@ func Run(args []string) error {
 			return fmt.Errorf("service unhealthy")
 		}
 		return nil
+	case "prepare":
+		return fmt.Errorf("missing prepare kind (consider prepare:psql)")
 	default:
+		if strings.HasPrefix(cmd.Name, "prepare:") {
+			kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "prepare:"))
+			if kind == "" {
+				return fmt.Errorf("missing prepare kind (consider prepare:psql)")
+			}
+			return fmt.Errorf("unknown prepare kind: %s", kind)
+		}
 		return fmt.Errorf("unknown command: %s", cmd.Name)
 	}
 }
