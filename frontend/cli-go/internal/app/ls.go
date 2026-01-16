@@ -22,6 +22,7 @@ type lsOptions struct {
 
 	Quiet    bool
 	NoHeader bool
+	LongIDs  bool
 }
 
 func parseLsFlags(args []string) (lsOptions, bool, error) {
@@ -40,6 +41,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 
 	quiet := fs.Bool("quiet", false, "suppress headers and explanatory text")
 	noHeader := fs.Bool("no-header", false, "do not print table header")
+	longIDs := fs.Bool("long", false, "show full ids")
 
 	name := fs.String("name", "", "filter by name")
 	instance := fs.String("instance", "", "filter by instance id")
@@ -82,6 +84,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	opts.FilterImage = strings.TrimSpace(*image)
 	opts.Quiet = *quiet
 	opts.NoHeader = *noHeader
+	opts.LongIDs = *longIDs
 	return opts, false, nil
 }
 
@@ -118,6 +121,7 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	cli.PrintLs(w, result, cli.LsPrintOptions{
 		Quiet:    opts.Quiet,
 		NoHeader: opts.NoHeader,
+		LongIDs:  opts.LongIDs,
 	})
 	return nil
 }

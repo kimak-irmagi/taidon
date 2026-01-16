@@ -88,6 +88,7 @@ func (c *Client) ListInstances(ctx context.Context, filters ListFilters) ([]Inst
 	query := url.Values{}
 	addFilter(query, "state", filters.State)
 	addFilter(query, "image", filters.Image)
+	addFilter(query, "id_prefix", filters.IDPrefix)
 	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/instances", query), true, &out); err != nil {
 		return nil, err
 	}
@@ -106,6 +107,7 @@ func (c *Client) ListStates(ctx context.Context, filters ListFilters) ([]StateEn
 	query := url.Values{}
 	addFilter(query, "kind", filters.Kind)
 	addFilter(query, "image", filters.Image)
+	addFilter(query, "id_prefix", filters.IDPrefix)
 	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/states", query), true, &out); err != nil {
 		return nil, err
 	}
