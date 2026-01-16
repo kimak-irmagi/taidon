@@ -799,6 +799,16 @@ Streams job events as NDJSON.
 
 > 200 Response
 
+> 400 Response
+
+```json
+{
+  "code": "string",
+  "message": "string",
+  "details": "string"
+}
+```
+
 <h3 id="streampreparejobevents-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
