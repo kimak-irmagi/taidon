@@ -19,5 +19,6 @@ func PrintLsUsage(w io.Writer) {
 	io.WriteString(w, "Output:\n")
 	io.WriteString(w, "  --quiet           Suppress section titles\n")
 	io.WriteString(w, "  --no-header       Suppress table header\n")
+	io.WriteString(w, "  --long            Show full ids\n")
 	io.WriteString(w, "  -h, --help        Show help\n")
 }

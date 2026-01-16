@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -178,9 +179,19 @@ func NewHandler(opts Options) http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		idPrefix, err := normalizeIDPrefix(readQueryValue(r, "id_prefix"))
+		if err != nil {
+			writeError(w, prepare.ErrorResponse{
+				Code:    "invalid_argument",
+				Message: "invalid id_prefix",
+				Details: err.Error(),
+			}, http.StatusBadRequest)
+			return
+		}
 		filters := store.InstanceFilters{
-			StateID: readQueryValue(r, "state"),
-			ImageID: readQueryValue(r, "image"),
+			StateID:  readQueryValue(r, "state"),
+			ImageID:  readQueryValue(r, "image"),
+			IDPrefix: idPrefix,
 		}
 		entries, err := opts.Registry.ListInstances(r.Context(), filters)
 		if err != nil {
@@ -228,9 +239,19 @@ func NewHandler(opts Options) http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		idPrefix, err := normalizeIDPrefix(readQueryValue(r, "id_prefix"))
+		if err != nil {
+			writeError(w, prepare.ErrorResponse{
+				Code:    "invalid_argument",
+				Message: "invalid id_prefix",
+				Details: err.Error(),
+			}, http.StatusBadRequest)
+			return
+		}
 		filters := store.StateFilters{
-			Kind:    readQueryValue(r, "kind"),
-			ImageID: readQueryValue(r, "image"),
+			Kind:     readQueryValue(r, "kind"),
+			ImageID:  readQueryValue(r, "image"),
+			IDPrefix: idPrefix,
 		}
 		entries, err := opts.Registry.ListStates(r.Context(), filters)
 		if err != nil {
@@ -281,6 +302,26 @@ func writeError(w http.ResponseWriter, payload prepare.ErrorResponse, status int
 
 func readQueryValue(r *http.Request, key string) string {
 	return strings.TrimSpace(r.URL.Query().Get(key))
+}
+
+func normalizeIDPrefix(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) < 8 {
+		return "", fmt.Errorf("prefix must be at least 8 characters")
+	}
+	for _, ch := range value {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return "", fmt.Errorf("prefix must be hex")
+		}
+	}
+	return strings.ToLower(value), nil
 }
 
 func streamPrepareEvents(w http.ResponseWriter, r *http.Request, mgr *prepare.Manager, jobID string) {

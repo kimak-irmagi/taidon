@@ -13,6 +13,7 @@ type ListFilters struct {
 	State    string
 	Kind     string
 	Image    string
+	IDPrefix string
 }
 
 type NameEntry struct {

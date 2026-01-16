@@ -627,6 +627,7 @@ Returns job status and result when available.
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[PrepareJobStatus](#schemapreparejobstatus)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
 
@@ -798,11 +799,22 @@ Streams job events as NDJSON.
 
 > 200 Response
 
+> 400 Response
+
+```json
+{
+  "code": "string",
+  "message": "string",
+  "details": "string"
+}
+```
+
 <h3 id="streampreparejobevents-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
 
@@ -1352,6 +1364,7 @@ Returns instances.
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
 |state|query|string|false|Filter by state id.|
+|id_prefix|query|string|false|Filter by instance id prefix (case-insensitive, 8+ hex chars).|
 |image|query|string|false|Filter by base image id.|
 
 > Example responses
@@ -1743,6 +1756,7 @@ Returns states.
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
 |kind|query|string|false|Filter by prepare kind.|
+|id_prefix|query|string|false|Filter by state id prefix (case-insensitive, 8+ hex chars).|
 |image|query|string|false|Filter by base image id.|
 
 > Example responses

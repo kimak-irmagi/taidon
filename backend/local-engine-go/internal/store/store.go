@@ -69,13 +69,15 @@ type NameFilters struct {
 }
 
 type InstanceFilters struct {
-	StateID string
-	ImageID string
+	StateID  string
+	ImageID  string
+	IDPrefix string
 }
 
 type StateFilters struct {
-	Kind    string
-	ImageID string
+	Kind     string
+	ImageID  string
+	IDPrefix string
 }
 
 type Store interface {

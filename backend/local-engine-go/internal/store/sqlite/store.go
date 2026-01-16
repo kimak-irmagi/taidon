@@ -136,6 +136,7 @@ WHERE 1=1`)
 	args := []any{}
 	addFilter(&query, &args, "i.state_id", filters.StateID)
 	addFilter(&query, &args, "i.image_id", filters.ImageID)
+	addPrefixFilter(&query, &args, "i.instance_id", filters.IDPrefix)
 	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, err
@@ -186,6 +187,7 @@ WHERE 1=1`)
 	args := []any{}
 	addFilter(&query, &args, "s.prepare_kind", filters.Kind)
 	addFilter(&query, &args, "s.image_id", filters.ImageID)
+	addPrefixFilter(&query, &args, "s.state_id", filters.IDPrefix)
 	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, err
@@ -272,6 +274,17 @@ func addFilter(query *strings.Builder, args *[]any, column, value string) {
 	query.WriteString(column)
 	query.WriteString(" = ?")
 	*args = append(*args, value)
+}
+
+func addPrefixFilter(query *strings.Builder, args *[]any, column, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	query.WriteString(" AND lower(")
+	query.WriteString(column)
+	query.WriteString(") LIKE ?")
+	*args = append(*args, strings.ToLower(value)+"%")
 }
 
 func scanName(scanner interface {

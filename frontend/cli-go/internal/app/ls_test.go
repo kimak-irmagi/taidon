@@ -38,3 +38,13 @@ func TestParseLsInvalidArgs(t *testing.T) {
 		t.Fatalf("expected exit code 2, got %d", exitErr.Code)
 	}
 }
+
+func TestParseLsLong(t *testing.T) {
+	opts, _, err := parseLsFlags([]string{"--long"})
+	if err != nil {
+		t.Fatalf("parseLsFlags: %v", err)
+	}
+	if !opts.LongIDs {
+		t.Fatalf("expected long ids flag true")
+	}
+}
