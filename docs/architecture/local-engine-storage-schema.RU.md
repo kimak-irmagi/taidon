@@ -27,6 +27,7 @@
 ```sql
 CREATE TABLE IF NOT EXISTS states (
   state_id TEXT PRIMARY KEY,
+  parent_state_id TEXT,
   state_fingerprint TEXT,
   image_id TEXT NOT NULL,
   prepare_kind TEXT NOT NULL,
@@ -36,13 +37,13 @@ CREATE TABLE IF NOT EXISTS states (
   status TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_states_fingerprint ON states(state_fingerprint);
-CREATE INDEX IF NOT EXISTS idx_states_image ON states(image_id);
-CREATE INDEX IF NOT EXISTS idx_states_kind ON states(prepare_kind);
+CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id);
 ```
 <!--ref:end-->
 
 Примечания:
 - `state_id` имеет формат UUID (см. state-cache design).
+- `parent_state_id` nullable и задает иерархию состояний для рекурсивного удаления.
 - `state_fingerprint` может совпадать с `state_id`; он нужен для name binding
   даже при эвикшне state.
 - `status` зарезервирован для будущего использования (например, `success`, `failed`).
@@ -53,6 +54,8 @@ CREATE INDEX IF NOT EXISTS idx_states_kind ON states(prepare_kind);
 [`schema.sql`](../../backend/local-engine-go/internal/store/sqlite/schema.sql#L17-L28)
 <!--ref:body-->
 ```sql
+CREATE INDEX IF NOT EXISTS idx_states_kind ON states(prepare_kind);
+
 CREATE TABLE IF NOT EXISTS instances (
   instance_id TEXT PRIMARY KEY,
   state_id TEXT NOT NULL,
@@ -63,8 +66,6 @@ CREATE TABLE IF NOT EXISTS instances (
   FOREIGN KEY(state_id) REFERENCES states(state_id)
 );
 CREATE INDEX IF NOT EXISTS idx_instances_state ON instances(state_id);
-CREATE INDEX IF NOT EXISTS idx_instances_image ON instances(image_id);
-CREATE INDEX IF NOT EXISTS idx_instances_expires ON instances(expires_at);
 ```
 <!--ref:end-->
 
@@ -78,6 +79,8 @@ CREATE INDEX IF NOT EXISTS idx_instances_expires ON instances(expires_at);
 [`schema.sql`](../../backend/local-engine-go/internal/store/sqlite/schema.sql#L30-L42)
 <!--ref:body-->
 ```sql
+CREATE INDEX IF NOT EXISTS idx_instances_expires ON instances(expires_at);
+
 CREATE TABLE IF NOT EXISTS names (
   name TEXT PRIMARY KEY,
   instance_id TEXT,
@@ -89,8 +92,6 @@ CREATE TABLE IF NOT EXISTS names (
 );
 CREATE INDEX IF NOT EXISTS idx_names_instance ON names(instance_id);
 CREATE INDEX IF NOT EXISTS idx_names_state ON names(state_id);
-CREATE INDEX IF NOT EXISTS idx_names_image ON names(image_id);
-CREATE INDEX IF NOT EXISTS idx_names_primary ON names(instance_id, is_primary);
 ```
 <!--ref:end-->
 
@@ -99,21 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_names_primary ON names(instance_id, is_primary);
 - `is_primary` - предпочтительное имя для listing instance.
 - `state_id` nullable, чтобы имя могло жить дольше instance/state.
 
-## 3.4 Планируемые изменения (rm support)
-
-Команда rm требует иерархии состояний для рекурсивного удаления.
-
-Планируемые изменения:
-
-- `states.parent_state_id` (nullable), ссылка на `states(state_id)`.
-- Индекс по `parent_state_id` для поиска потомков.
-
-Предлагаемый SQL:
-
-```sql
-ALTER TABLE states ADD COLUMN parent_state_id TEXT;
-CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id);
-```
+## 3.4 Трекинг подключений
 
 Счетчик активных подключений хранится в памяти и не записывается в SQLite.
 

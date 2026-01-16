@@ -97,6 +97,7 @@ With `--output json`, the command prints a single JSON object:
 ```json
 {
   "dry_run": true,
+  "outcome": "blocked",
   "root": {
     "kind": "state",
     "id": "6b6f...",
@@ -115,6 +116,7 @@ With `--output json`, the command prints a single JSON object:
 Rules:
 
 - `dry_run` is `true` only when `--dry-run` is set.
+- `outcome` is `deleted`, `would_delete`, or `blocked`.
 - `kind` is `state` or `instance`.
 - `connections` is present for instance nodes.
 - `blocked` is present only when deletion is not possible for that node.

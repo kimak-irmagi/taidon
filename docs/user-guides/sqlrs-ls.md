@@ -34,6 +34,7 @@ sqlrs ls [OPTIONS]
 ```text
 --quiet          Suppress headers and explanatory text (table still printed)
 --no-header      Do not print table header (human output)
+--long           Show full ids (human output)
 ```
 
 ### Optional filters
@@ -48,6 +49,14 @@ sqlrs ls [OPTIONS]
 
 > Note: filters apply after object selection. If no selector flags are provided,
 > defaults apply (see below).
+
+### ID prefix rules
+
+Anywhere `sqlrs ls` expects an id, you may pass a hex prefix (minimum 8 chars).
+Prefixes are case-insensitive and must be unambiguous.
+
+- If multiple objects match a prefix, the command fails.
+- If nothing matches a prefix, the output list is empty.
 
 ---
 
@@ -72,6 +81,8 @@ By default, `sqlrs ls` prints a table per selected object type, in this order:
 
 Each section begins with a one-line title (suppressed by `--quiet`).
 When `--quiet` is set and multiple sections are printed, sections are separated by a blank line.
+
+By default, ids are shown as 12-character prefixes. Use `--long` to show full ids.
 
 ### Names table
 
@@ -133,6 +144,7 @@ With the global `--output json` option, `sqlrs ls` prints a single JSON object:
 
 - Arrays are present only for the selected object types.
 - Each element is a stable schema suitable for CI tooling.
+- JSON output always uses full ids (no truncation).
 
 Recommended fields:
 

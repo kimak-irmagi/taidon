@@ -38,6 +38,7 @@ type LsOptions struct {
 
 	Quiet    bool
 	NoHeader bool
+	Long     bool
 }
 
 type LsResult struct {
@@ -49,6 +50,7 @@ type LsResult struct {
 type LsPrintOptions struct {
 	Quiet    bool
 	NoHeader bool
+	Long     bool
 }
 
 func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
@@ -94,6 +96,27 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 
 	cliClient := client.New(endpoint, client.Options{Timeout: opts.Timeout, AuthToken: authToken})
 
+	var resolvedInstance *client.InstanceEntry
+	var resolvedState *client.StateEntry
+	var instanceFound bool
+	var stateFound bool
+	if opts.FilterInstance != "" {
+		entry, found, err := resolveInstancePrefix(ctx, cliClient, opts.FilterInstance)
+		if err != nil {
+			return LsResult{}, err
+		}
+		resolvedInstance = entry
+		instanceFound = found
+	}
+	if opts.FilterState != "" {
+		entry, found, err := resolveStatePrefix(ctx, cliClient, opts.FilterState)
+		if err != nil {
+			return LsResult{}, err
+		}
+		resolvedState = entry
+		stateFound = found
+	}
+
 	var result LsResult
 	if opts.IncludeNames {
 		if opts.Verbose {
@@ -112,18 +135,31 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 				result.Names = &empty
 			}
 		} else {
-			names, err := cliClient.ListNames(ctx, client.ListFilters{
-				Instance: opts.FilterInstance,
-				Image:    opts.FilterImage,
-				State:    opts.FilterState,
-			})
-			if err != nil {
-				return result, err
+			if (opts.FilterInstance != "" && !instanceFound) || (opts.FilterState != "" && !stateFound) {
+				empty := []client.NameEntry{}
+				result.Names = &empty
+			} else {
+				instanceID := ""
+				if resolvedInstance != nil {
+					instanceID = resolvedInstance.InstanceID
+				}
+				stateID := ""
+				if resolvedState != nil {
+					stateID = resolvedState.StateID
+				}
+				names, err := cliClient.ListNames(ctx, client.ListFilters{
+					Instance: instanceID,
+					Image:    opts.FilterImage,
+					State:    stateID,
+				})
+				if err != nil {
+					return result, err
+				}
+				if names == nil {
+					names = []client.NameEntry{}
+				}
+				result.Names = &names
 			}
-			if names == nil {
-				names = []client.NameEntry{}
-			}
-			result.Names = &names
 		}
 	}
 	if opts.IncludeInstances {
@@ -131,16 +167,12 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			fmt.Fprintln(os.Stderr, "requesting instances")
 		}
 		if opts.FilterInstance != "" {
-			entry, found, err := cliClient.GetInstance(ctx, opts.FilterInstance)
-			if err != nil {
-				return result, err
-			}
-			if found {
-				instances := []client.InstanceEntry{entry}
-				result.Instances = &instances
-			} else {
+			if !instanceFound {
 				empty := []client.InstanceEntry{}
 				result.Instances = &empty
+			} else {
+				instances := []client.InstanceEntry{*resolvedInstance}
+				result.Instances = &instances
 			}
 		} else if opts.FilterName != "" {
 			entry, found, err := cliClient.GetInstance(ctx, opts.FilterName)
@@ -155,17 +187,26 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 				result.Instances = &empty
 			}
 		} else {
-			instances, err := cliClient.ListInstances(ctx, client.ListFilters{
-				State: opts.FilterState,
-				Image: opts.FilterImage,
-			})
-			if err != nil {
-				return result, err
+			if opts.FilterState != "" && !stateFound {
+				empty := []client.InstanceEntry{}
+				result.Instances = &empty
+			} else {
+				stateID := ""
+				if resolvedState != nil {
+					stateID = resolvedState.StateID
+				}
+				instances, err := cliClient.ListInstances(ctx, client.ListFilters{
+					State: stateID,
+					Image: opts.FilterImage,
+				})
+				if err != nil {
+					return result, err
+				}
+				if instances == nil {
+					instances = []client.InstanceEntry{}
+				}
+				result.Instances = &instances
 			}
-			if instances == nil {
-				instances = []client.InstanceEntry{}
-			}
-			result.Instances = &instances
 		}
 	}
 	if opts.IncludeStates {
@@ -173,16 +214,12 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			fmt.Fprintln(os.Stderr, "requesting states")
 		}
 		if opts.FilterState != "" {
-			entry, found, err := cliClient.GetState(ctx, opts.FilterState)
-			if err != nil {
-				return result, err
-			}
-			if found {
-				states := []client.StateEntry{entry}
-				result.States = &states
-			} else {
+			if !stateFound {
 				empty := []client.StateEntry{}
 				result.States = &empty
+			} else {
+				states := []client.StateEntry{*resolvedState}
+				result.States = &states
 			}
 		} else {
 			states, err := cliClient.ListStates(ctx, client.ListFilters{
@@ -211,7 +248,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Names")
 		}
-		printNamesTable(w, *result.Names, opts.NoHeader)
+		printNamesTable(w, *result.Names, opts.NoHeader, opts.Long)
 		sections++
 	}
 	if result.Instances != nil {
@@ -221,7 +258,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Instances")
 		}
-		printInstancesTable(w, *result.Instances, opts.NoHeader)
+		printInstancesTable(w, *result.Instances, opts.NoHeader, opts.Long)
 		sections++
 	}
 	if result.States != nil {
@@ -231,11 +268,11 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "States")
 		}
-		printStatesTable(w, *result.States, opts.NoHeader)
+		printStatesTable(w, *result.States, opts.NoHeader, opts.Long)
 	}
 }
 
-func printNamesTable(w io.Writer, rows []client.NameEntry, noHeader bool) {
+func printNamesTable(w io.Writer, rows []client.NameEntry, noHeader bool, longIDs bool) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {
 		fmt.Fprintln(tw, "NAME\tINSTANCE_ID\tIMAGE_ID\tSTATE_ID\tSTATUS\tLAST_USED")
@@ -247,9 +284,9 @@ func printNamesTable(w io.Writer, rows []client.NameEntry, noHeader bool) {
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			row.Name,
-			optionalString(row.InstanceID),
+			formatOptionalID(row.InstanceID, longIDs),
 			row.ImageID,
-			stateID,
+			formatID(stateID, longIDs),
 			row.Status,
 			optionalString(row.LastUsedAt),
 		)
@@ -257,16 +294,16 @@ func printNamesTable(w io.Writer, rows []client.NameEntry, noHeader bool) {
 	_ = tw.Flush()
 }
 
-func printInstancesTable(w io.Writer, rows []client.InstanceEntry, noHeader bool) {
+func printInstancesTable(w io.Writer, rows []client.InstanceEntry, noHeader bool, longIDs bool) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {
 		fmt.Fprintln(tw, "INSTANCE_ID\tIMAGE_ID\tSTATE_ID\tNAME\tCREATED\tEXPIRES\tSTATUS")
 	}
 	for _, row := range rows {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			row.InstanceID,
+			formatID(row.InstanceID, longIDs),
 			row.ImageID,
-			row.StateID,
+			formatID(row.StateID, longIDs),
 			optionalString(row.Name),
 			row.CreatedAt,
 			optionalString(row.ExpiresAt),
@@ -276,14 +313,14 @@ func printInstancesTable(w io.Writer, rows []client.InstanceEntry, noHeader bool
 	_ = tw.Flush()
 }
 
-func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool) {
+func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {
 		fmt.Fprintln(tw, "STATE_ID\tIMAGE_ID\tPREPARE_KIND\tPREPARE_ARGS\tCREATED\tSIZE\tREFCOUNT")
 	}
 	for _, row := range rows {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			row.StateID,
+			formatID(row.StateID, longIDs),
 			row.ImageID,
 			row.PrepareKind,
 			row.PrepareArgs,
@@ -307,4 +344,58 @@ func optionalInt64(value *int64) string {
 		return ""
 	}
 	return strconv.FormatInt(*value, 10)
+}
+
+func formatOptionalID(value *string, longIDs bool) string {
+	if value == nil {
+		return ""
+	}
+	return formatID(*value, longIDs)
+}
+
+func formatID(value string, longIDs bool) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return ""
+	}
+	if longIDs || len(value) <= 12 {
+		return value
+	}
+	return value[:12]
+}
+
+func resolveInstancePrefix(ctx context.Context, cliClient *client.Client, prefix string) (*client.InstanceEntry, bool, error) {
+	normalized, err := normalizeIDPrefix("instance", prefix)
+	if err != nil {
+		return nil, false, err
+	}
+	entries, err := cliClient.ListInstances(ctx, client.ListFilters{IDPrefix: normalized})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(entries) > 1 {
+		return nil, false, &AmbiguousPrefixError{Kind: "instance", Prefix: prefix}
+	}
+	if len(entries) == 0 {
+		return nil, false, nil
+	}
+	return &entries[0], true, nil
+}
+
+func resolveStatePrefix(ctx context.Context, cliClient *client.Client, prefix string) (*client.StateEntry, bool, error) {
+	normalized, err := normalizeIDPrefix("state", prefix)
+	if err != nil {
+		return nil, false, err
+	}
+	entries, err := cliClient.ListStates(ctx, client.ListFilters{IDPrefix: normalized})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(entries) > 1 {
+		return nil, false, &AmbiguousPrefixError{Kind: "state", Prefix: prefix}
+	}
+	if len(entries) == 0 {
+		return nil, false, nil
+	}
+	return &entries[0], true, nil
 }

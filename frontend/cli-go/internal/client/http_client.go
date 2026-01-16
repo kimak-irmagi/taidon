@@ -88,6 +88,7 @@ func (c *Client) ListInstances(ctx context.Context, filters ListFilters) ([]Inst
 	query := url.Values{}
 	addFilter(query, "state", filters.State)
 	addFilter(query, "image", filters.Image)
+	addFilter(query, "id_prefix", filters.IDPrefix)
 	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/instances", query), true, &out); err != nil {
 		return nil, err
 	}
@@ -106,6 +107,7 @@ func (c *Client) ListStates(ctx context.Context, filters ListFilters) ([]StateEn
 	query := url.Values{}
 	addFilter(query, "kind", filters.Kind)
 	addFilter(query, "image", filters.Image)
+	addFilter(query, "id_prefix", filters.IDPrefix)
 	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/states", query), true, &out); err != nil {
 		return nil, err
 	}
@@ -117,6 +119,14 @@ func (c *Client) GetState(ctx context.Context, stateID string) (StateEntry, bool
 	var out StateEntry
 	found, err := c.doJSONOptional(ctx, http.MethodGet, path, true, &out)
 	return out, found, err
+}
+
+func (c *Client) DeleteInstance(ctx context.Context, instanceID string, opts DeleteOptions) (DeleteResult, int, error) {
+	return c.deleteWithOptions(ctx, "/v1/instances/"+url.PathEscape(strings.TrimSpace(instanceID)), opts, false)
+}
+
+func (c *Client) DeleteState(ctx context.Context, stateID string, opts DeleteOptions) (DeleteResult, int, error) {
+	return c.deleteWithOptions(ctx, "/v1/states/"+url.PathEscape(strings.TrimSpace(stateID)), opts, true)
 }
 
 func (c *Client) CreatePrepareJob(ctx context.Context, req PrepareJobRequest) (PrepareJobAccepted, error) {
@@ -179,6 +189,34 @@ func (c *Client) doJSONOptional(ctx context.Context, method, path string, useAut
 
 	decoder := json.NewDecoder(resp.Body)
 	return true, decoder.Decode(out)
+}
+
+func (c *Client) deleteWithOptions(ctx context.Context, path string, opts DeleteOptions, allowRecurse bool) (DeleteResult, int, error) {
+	var out DeleteResult
+	query := url.Values{}
+	if opts.Force {
+		query.Set("force", "true")
+	}
+	if opts.DryRun {
+		query.Set("dry_run", "true")
+	}
+	if allowRecurse && opts.Recurse {
+		query.Set("recurse", "true")
+	}
+	resp, err := c.doRequest(ctx, http.MethodDelete, appendQuery(path, query), true)
+	if err != nil {
+		return out, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
+		return out, resp.StatusCode, parseErrorResponse(resp)
+	}
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&out); err != nil {
+		return out, resp.StatusCode, err
+	}
+	return out, resp.StatusCode, nil
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, useAuth bool) (*http.Response, error) {

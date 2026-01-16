@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"time"
 
+	"sqlrs/engine/internal/conntrack"
+	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/httpapi"
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
@@ -115,8 +117,8 @@ func main() {
 	}
 	defer removeEngineState(*statePath)
 
-	tracker := newActivityTracker()
-	tracker.Touch()
+	activity := newActivityTracker()
+	activity.Touch()
 	reg := registry.New(store)
 	prepareMgr, err := prepare.NewManager(prepare.Options{
 		Store:   store,
@@ -128,17 +130,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	deleteMgr, err := deletion.NewManager(deletion.Options{
+		Store: store,
+		Conn:  conntrack.Noop{},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "delete manager: %v\n", err)
+		os.Exit(1)
+	}
+
 	mux := httpapi.NewHandler(httpapi.Options{
 		Version:    *version,
 		InstanceID: instanceID,
 		AuthToken:  authToken,
 		Registry:   reg,
 		Prepare:    prepareMgr,
+		Deletion:   deleteMgr,
 	})
 
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			tracker.Touch()
+			activity.Touch()
 			mux.ServeHTTP(w, r)
 		}),
 	}
@@ -167,7 +179,7 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if tracker.IdleFor() >= *idleTimeout {
+					if activity.IdleFor() >= *idleTimeout {
 						shutdown("idle timeout")
 						return
 					}

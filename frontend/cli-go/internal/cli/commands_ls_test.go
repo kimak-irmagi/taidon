@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -99,5 +100,86 @@ func TestRunLsUsesInstanceItemEndpoint(t *testing.T) {
 	}
 	if result.Instances == nil || len(*result.Instances) != 1 {
 		t.Fatalf("unexpected instances result: %+v", result.Instances)
+	}
+}
+
+func TestRunLsUsesInstancePrefixListEndpoint(t *testing.T) {
+	var gotPath string
+	var gotQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[{"instance_id":"abc123456789abcd","image_id":"img","state_id":"state","created_at":"2025-01-01T00:00:00Z","status":"active"}]`)
+	}))
+	defer server.Close()
+
+	opts := LsOptions{
+		Mode:             "remote",
+		Endpoint:         server.URL,
+		Timeout:          time.Second,
+		IncludeInstances: true,
+		FilterInstance:   "abc12345",
+	}
+	result, err := RunLs(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("RunLs: %v", err)
+	}
+	if gotPath != "/v1/instances" {
+		t.Fatalf("expected list instances endpoint, got %q", gotPath)
+	}
+	if !strings.Contains(gotQuery, "id_prefix=abc12345") {
+		t.Fatalf("expected id_prefix in query, got %q", gotQuery)
+	}
+	if result.Instances == nil || len(*result.Instances) != 1 {
+		t.Fatalf("unexpected instances result: %+v", result.Instances)
+	}
+}
+
+func TestRunLsInstancePrefixAmbiguous(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[{"instance_id":"a1","image_id":"img","state_id":"s1","created_at":"2025-01-01T00:00:00Z","status":"active"},{"instance_id":"a2","image_id":"img","state_id":"s2","created_at":"2025-01-01T00:00:00Z","status":"active"}]`)
+	}))
+	defer server.Close()
+
+	opts := LsOptions{
+		Mode:             "remote",
+		Endpoint:         server.URL,
+		Timeout:          time.Second,
+		IncludeInstances: true,
+		FilterInstance:   "abc12345",
+	}
+	_, err := RunLs(context.Background(), opts)
+	if err == nil {
+		t.Fatalf("expected ambiguous prefix error")
+	}
+	var ambErr *AmbiguousPrefixError
+	if !errors.As(err, &ambErr) {
+		t.Fatalf("expected AmbiguousPrefixError, got %v", err)
+	}
+}
+
+func TestPrintLsTruncatesIDs(t *testing.T) {
+	result := LsResult{
+		Instances: &[]client.InstanceEntry{
+			{
+				InstanceID: "abcdef1234567890abcd",
+				ImageID:    "image-1",
+				StateID:    "1234567890abcdef1234",
+				CreatedAt:  "2025-01-01T00:00:00Z",
+				Status:     "active",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, "abcdef123456") {
+		t.Fatalf("expected truncated instance id, got %q", out)
+	}
+	if strings.Contains(out, "abcdef1234567890") {
+		t.Fatalf("expected truncated output, got %q", out)
 	}
 }

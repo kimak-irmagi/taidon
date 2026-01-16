@@ -2,6 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS states (
   state_id TEXT PRIMARY KEY,
+  parent_state_id TEXT,
   state_fingerprint TEXT,
   image_id TEXT NOT NULL,
   prepare_kind TEXT NOT NULL,
@@ -11,6 +12,7 @@ CREATE TABLE IF NOT EXISTS states (
   status TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_states_fingerprint ON states(state_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id);
 CREATE INDEX IF NOT EXISTS idx_states_image ON states(image_id);
 CREATE INDEX IF NOT EXISTS idx_states_kind ON states(prepare_kind);
 

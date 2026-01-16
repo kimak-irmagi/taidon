@@ -13,6 +13,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"sqlrs/engine/internal/conntrack"
+	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store"
@@ -160,6 +162,26 @@ func TestNamesFilterByInstance(t *testing.T) {
 	}
 }
 
+func TestInstancesRejectInvalidPrefix(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/instances?id_prefix=xyz", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("instances request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
 func newTestServer(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
 	dir := t.TempDir()
@@ -186,12 +208,20 @@ func newTestServer(t *testing.T) (*httptest.Server, func()) {
 	if err != nil {
 		t.Fatalf("prepare manager: %v", err)
 	}
+	deleteMgr, err := deletion.NewManager(deletion.Options{
+		Store: st,
+		Conn:  conntrack.Noop{},
+	})
+	if err != nil {
+		t.Fatalf("delete manager: %v", err)
+	}
 	handler := NewHandler(Options{
 		Version:    "test",
 		InstanceID: "instance",
 		AuthToken:  "secret",
 		Registry:   reg,
 		Prepare:    prep,
+		Deletion:   deleteMgr,
 	})
 	server := httptest.NewServer(handler)
 

@@ -27,6 +27,7 @@ Run `pnpm run docs:schemas` to refresh embedded snippets.
 ```sql
 CREATE TABLE IF NOT EXISTS states (
   state_id TEXT PRIMARY KEY,
+  parent_state_id TEXT,
   state_fingerprint TEXT,
   image_id TEXT NOT NULL,
   prepare_kind TEXT NOT NULL,
@@ -36,14 +37,14 @@ CREATE TABLE IF NOT EXISTS states (
   status TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_states_fingerprint ON states(state_fingerprint);
-CREATE INDEX IF NOT EXISTS idx_states_image ON states(image_id);
-CREATE INDEX IF NOT EXISTS idx_states_kind ON states(prepare_kind);
+CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id);
 ```
 <!--ref:end-->
 
 Notes:
 
 - `state_id` is a UUID (see state-cache design).
+- `parent_state_id` is nullable and models state ancestry for recursive deletes.
 - `state_fingerprint` may equal `state_id`; it is stored for name bindings even
   if the state is evicted.
 - `status` is reserved for future use (e.g., `success`, `failed`).
@@ -54,6 +55,8 @@ Notes:
 [`schema.sql`](../../backend/local-engine-go/internal/store/sqlite/schema.sql#L17-L28)
 <!--ref:body-->
 ```sql
+CREATE INDEX IF NOT EXISTS idx_states_kind ON states(prepare_kind);
+
 CREATE TABLE IF NOT EXISTS instances (
   instance_id TEXT PRIMARY KEY,
   state_id TEXT NOT NULL,
@@ -64,8 +67,6 @@ CREATE TABLE IF NOT EXISTS instances (
   FOREIGN KEY(state_id) REFERENCES states(state_id)
 );
 CREATE INDEX IF NOT EXISTS idx_instances_state ON instances(state_id);
-CREATE INDEX IF NOT EXISTS idx_instances_image ON instances(image_id);
-CREATE INDEX IF NOT EXISTS idx_instances_expires ON instances(expires_at);
 ```
 <!--ref:end-->
 
@@ -80,6 +81,8 @@ Notes:
 [`schema.sql`](../../backend/local-engine-go/internal/store/sqlite/schema.sql#L30-L42)
 <!--ref:body-->
 ```sql
+CREATE INDEX IF NOT EXISTS idx_instances_expires ON instances(expires_at);
+
 CREATE TABLE IF NOT EXISTS names (
   name TEXT PRIMARY KEY,
   instance_id TEXT,
@@ -91,8 +94,6 @@ CREATE TABLE IF NOT EXISTS names (
 );
 CREATE INDEX IF NOT EXISTS idx_names_instance ON names(instance_id);
 CREATE INDEX IF NOT EXISTS idx_names_state ON names(state_id);
-CREATE INDEX IF NOT EXISTS idx_names_image ON names(image_id);
-CREATE INDEX IF NOT EXISTS idx_names_primary ON names(instance_id, is_primary);
 ```
 <!--ref:end-->
 
@@ -102,21 +103,7 @@ Notes:
 - `is_primary` marks the preferred name for instance listings.
 - `state_id` is nullable to allow a name to outlive a missing instance/state.
 
-## 3.4 Planned changes (rm support)
-
-The rm feature needs state ancestry for recursive deletion.
-
-Planned additions:
-
-- `states.parent_state_id` (nullable), referencing `states(state_id)`.
-- Index on `parent_state_id` for descendant lookups.
-
-Proposed SQL:
-
-```sql
-ALTER TABLE states ADD COLUMN parent_state_id TEXT;
-CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id);
-```
+## 3.4 Connection tracking
 
 Connection counts are tracked in memory and are not stored in SQLite.
 
