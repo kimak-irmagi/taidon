@@ -44,7 +44,7 @@ func TestParseLsLong(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseLsFlags: %v", err)
 	}
-	if !opts.Long {
-		t.Fatalf("expected long ids enabled")
+	if !opts.LongIDs {
+		t.Fatalf("expected long ids flag true")
 	}
 }

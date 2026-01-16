@@ -182,14 +182,18 @@ func NewHandler(opts Options) http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		idPrefix, err := parseIDPrefix(readQueryValue(r, "id_prefix"))
+		idPrefix, err := normalizeIDPrefix(readQueryValue(r, "id_prefix"))
 		if err != nil {
-			writeErrorResponse(w, "invalid_argument", "invalid id_prefix", err.Error(), http.StatusBadRequest)
+			writeError(w, prepare.ErrorResponse{
+				Code:    "invalid_argument",
+				Message: "invalid id_prefix",
+				Details: err.Error(),
+			}, http.StatusBadRequest)
 			return
 		}
 		filters := store.InstanceFilters{
-			StateID: readQueryValue(r, "state"),
-			ImageID: readQueryValue(r, "image"),
+			StateID:  readQueryValue(r, "state"),
+			ImageID:  readQueryValue(r, "image"),
 			IDPrefix: idPrefix,
 		}
 		entries, err := opts.Registry.ListInstances(r.Context(), filters)
@@ -272,14 +276,18 @@ func NewHandler(opts Options) http.Handler {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		idPrefix, err := parseIDPrefix(readQueryValue(r, "id_prefix"))
+		idPrefix, err := normalizeIDPrefix(readQueryValue(r, "id_prefix"))
 		if err != nil {
-			writeErrorResponse(w, "invalid_argument", "invalid id_prefix", err.Error(), http.StatusBadRequest)
+			writeError(w, prepare.ErrorResponse{
+				Code:    "invalid_argument",
+				Message: "invalid id_prefix",
+				Details: err.Error(),
+			}, http.StatusBadRequest)
 			return
 		}
 		filters := store.StateFilters{
-			Kind:    readQueryValue(r, "kind"),
-			ImageID: readQueryValue(r, "image"),
+			Kind:     readQueryValue(r, "kind"),
+			ImageID:  readQueryValue(r, "image"),
 			IDPrefix: idPrefix,
 		}
 		entries, err := opts.Registry.ListStates(r.Context(), filters)
@@ -395,7 +403,7 @@ func parseBoolQuery(r *http.Request, key string) (bool, error) {
 	return strconv.ParseBool(raw)
 }
 
-func parseIDPrefix(value string) (string, error) {
+func normalizeIDPrefix(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return "", nil

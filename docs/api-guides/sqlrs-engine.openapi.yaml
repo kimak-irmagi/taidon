@@ -98,6 +98,12 @@ paths:
                 $ref: "#/components/schemas/PrepareJobStatus"
         "401":
           description: Unauthorized
+        "400":
+          description: Invalid prefix filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
   /v1/prepare-jobs/{jobId}/events:
@@ -123,6 +129,12 @@ paths:
                 description: Newline-delimited JSON stream of PrepareJobEvent objects.
         "401":
           description: Unauthorized
+        "400":
+          description: Invalid prefix filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
   /v1/names:
@@ -206,6 +218,11 @@ paths:
           schema:
             type: string
           description: Filter by state id.
+        - in: query
+          name: id_prefix
+          schema:
+            type: string
+          description: Filter by instance id prefix (case-insensitive, 8+ hex chars).
         - in: query
           name: image
           schema:
@@ -342,6 +359,11 @@ paths:
           schema:
             type: string
           description: Filter by prepare kind.
+        - in: query
+          name: id_prefix
+          schema:
+            type: string
+          description: Filter by state id prefix (case-insensitive, 8+ hex chars).
         - in: query
           name: image
           schema:

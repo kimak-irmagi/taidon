@@ -34,15 +34,15 @@ sqlrs ls [OPTIONS]
 ```text
 --quiet          Suppress headers and explanatory text (table still printed)
 --no-header      Do not print table header (human output)
---long           Show full ids (human output)
+--long           Show full ids in human output (default is 12 chars)
 ```
 
 ### Optional filters
 
 ```text
 --name <name>            Filter by name (names/instances)
---instance <instance_id> Filter by instance id
---state <state_id>       Filter by state id (states/instances)
+--instance <instance_id> Filter by instance id (full or hex prefix)
+--state <state_id>       Filter by state id (full or hex prefix)
 --kind <prepare_kind>    Filter by prepare kind (states)
 --image <image id>       Filter by the base image
 ```
@@ -50,13 +50,14 @@ sqlrs ls [OPTIONS]
 > Note: filters apply after object selection. If no selector flags are provided,
 > defaults apply (see below).
 
-### ID prefix rules
+### ID prefixes
 
-Anywhere `sqlrs ls` expects an id, you may pass a hex prefix (minimum 8 chars).
-Prefixes are case-insensitive and must be unambiguous.
+`--instance` and `--state` accept full ids or hex prefixes (8+ characters).
+Prefix matching is case-insensitive and resolves to a single id:
 
-- If multiple objects match a prefix, the command fails.
-- If nothing matches a prefix, the output list is empty.
+- If the prefix matches exactly one id, that id is used.
+- If the prefix matches multiple ids, `ls` fails with an error.
+- If the prefix matches nothing, the result is an empty list.
 
 ---
 
@@ -82,7 +83,8 @@ By default, `sqlrs ls` prints a table per selected object type, in this order:
 Each section begins with a one-line title (suppressed by `--quiet`).
 When `--quiet` is set and multiple sections are printed, sections are separated by a blank line.
 
-By default, ids are shown as 12-character prefixes. Use `--long` to show full ids.
+IDs are printed in lowercase. By default, human output shortens ids to 12
+characters. Use `--long` to print full ids.
 
 ### Names table
 
@@ -212,6 +214,12 @@ List instances derived from a specific state:
 
 ```bash
 sqlrs ls -i --state <state_id>
+```
+
+List instances by state id prefix:
+
+```bash
+sqlrs ls -i --state deadbeef
 ```
 
 List a single name entry:

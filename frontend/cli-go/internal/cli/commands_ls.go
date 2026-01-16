@@ -50,7 +50,7 @@ type LsResult struct {
 type LsPrintOptions struct {
 	Quiet    bool
 	NoHeader bool
-	Long     bool
+	LongIDs  bool
 }
 
 func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
@@ -96,25 +96,26 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 
 	cliClient := client.New(endpoint, client.Options{Timeout: opts.Timeout, AuthToken: authToken})
 
-	var resolvedInstance *client.InstanceEntry
-	var resolvedState *client.StateEntry
-	var instanceFound bool
-	var stateFound bool
-	if opts.FilterInstance != "" {
-		entry, found, err := resolveInstancePrefix(ctx, cliClient, opts.FilterInstance)
+	stateMatch := resolvedMatch{}
+	if opts.FilterState != "" && (opts.IncludeStates || opts.IncludeInstances || opts.IncludeNames) {
+		match, err := resolveStatePrefix(ctx, cliClient, opts.FilterState, opts.FilterKind, opts.FilterImage)
 		if err != nil {
 			return LsResult{}, err
 		}
-		resolvedInstance = entry
-		instanceFound = found
+		stateMatch = match
 	}
-	if opts.FilterState != "" {
-		entry, found, err := resolveStatePrefix(ctx, cliClient, opts.FilterState)
-		if err != nil {
-			return LsResult{}, err
+
+	instanceMatch := resolvedMatch{}
+	if opts.FilterInstance != "" && (opts.IncludeInstances || opts.IncludeNames) {
+		if stateMatch.noMatch {
+			instanceMatch.noMatch = true
+		} else {
+			match, err := resolveInstancePrefix(ctx, cliClient, opts.FilterInstance, stateMatch.value, opts.FilterImage)
+			if err != nil {
+				return LsResult{}, err
+			}
+			instanceMatch = match
 		}
-		resolvedState = entry
-		stateFound = found
 	}
 
 	var result LsResult
@@ -134,31 +135,28 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 				empty := []client.NameEntry{}
 				result.Names = &empty
 			}
+		} else if stateMatch.noMatch || instanceMatch.noMatch {
+			empty := []client.NameEntry{}
+			result.Names = &empty
 		} else {
-			if (opts.FilterInstance != "" && !instanceFound) || (opts.FilterState != "" && !stateFound) {
-				empty := []client.NameEntry{}
-				result.Names = &empty
-			} else {
-				instanceID := ""
-				if resolvedInstance != nil {
-					instanceID = resolvedInstance.InstanceID
-				}
-				stateID := ""
-				if resolvedState != nil {
-					stateID = resolvedState.StateID
-				}
-				names, err := cliClient.ListNames(ctx, client.ListFilters{
-					Instance: instanceID,
-					Image:    opts.FilterImage,
-					State:    stateID,
-				})
-				if err != nil {
-					return result, err
-				}
-				if names == nil {
-					names = []client.NameEntry{}
-				}
-				result.Names = &names
+			filterState := opts.FilterState
+			if stateMatch.value != "" {
+				filterState = stateMatch.value
+			}
+			filterInstance := opts.FilterInstance
+			if instanceMatch.value != "" {
+				filterInstance = instanceMatch.value
+			}
+			names, err := cliClient.ListNames(ctx, client.ListFilters{
+				Instance: filterInstance,
+				Image:    opts.FilterImage,
+				State:    filterState,
+			})
+			if err != nil {
+				return result, err
+			}
+			if names == nil {
+				names = []client.NameEntry{}
 			}
 		}
 	}
@@ -167,11 +165,24 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			fmt.Fprintln(os.Stderr, "requesting instances")
 		}
 		if opts.FilterInstance != "" {
-			if !instanceFound {
+			if instanceMatch.noMatch {
 				empty := []client.InstanceEntry{}
 				result.Instances = &empty
+			} else if instanceMatch.value != "" {
+				instances := []client.InstanceEntry{instanceMatch.instance}
+				result.Instances = &instances
 			} else {
-				instances := []client.InstanceEntry{*resolvedInstance}
+				instances, err := cliClient.ListInstances(ctx, client.ListFilters{
+					State:    stateMatch.valueOr(opts.FilterState),
+					Image:    opts.FilterImage,
+					IDPrefix: "",
+				})
+				if err != nil {
+					return result, err
+				}
+				if instances == nil {
+					instances = []client.InstanceEntry{}
+				}
 				result.Instances = &instances
 			}
 		} else if opts.FilterName != "" {
@@ -186,26 +197,19 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 				empty := []client.InstanceEntry{}
 				result.Instances = &empty
 			}
+		} else if stateMatch.noMatch {
+			empty := []client.InstanceEntry{}
+			result.Instances = &empty
 		} else {
-			if opts.FilterState != "" && !stateFound {
-				empty := []client.InstanceEntry{}
-				result.Instances = &empty
-			} else {
-				stateID := ""
-				if resolvedState != nil {
-					stateID = resolvedState.StateID
-				}
-				instances, err := cliClient.ListInstances(ctx, client.ListFilters{
-					State: stateID,
-					Image: opts.FilterImage,
-				})
-				if err != nil {
-					return result, err
-				}
-				if instances == nil {
-					instances = []client.InstanceEntry{}
-				}
-				result.Instances = &instances
+			instances, err := cliClient.ListInstances(ctx, client.ListFilters{
+				State: stateMatch.valueOr(opts.FilterState),
+				Image: opts.FilterImage,
+			})
+			if err != nil {
+				return result, err
+			}
+			if instances == nil {
+				instances = []client.InstanceEntry{}
 			}
 		}
 	}
@@ -214,11 +218,24 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			fmt.Fprintln(os.Stderr, "requesting states")
 		}
 		if opts.FilterState != "" {
-			if !stateFound {
+			if stateMatch.noMatch {
 				empty := []client.StateEntry{}
 				result.States = &empty
+			} else if stateMatch.value != "" {
+				states := []client.StateEntry{stateMatch.state}
+				result.States = &states
 			} else {
-				states := []client.StateEntry{*resolvedState}
+				states, err := cliClient.ListStates(ctx, client.ListFilters{
+					Kind:     opts.FilterKind,
+					Image:    opts.FilterImage,
+					IDPrefix: "",
+				})
+				if err != nil {
+					return result, err
+				}
+				if states == nil {
+					states = []client.StateEntry{}
+				}
 				result.States = &states
 			}
 		} else {
@@ -248,7 +265,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Names")
 		}
-		printNamesTable(w, *result.Names, opts.NoHeader, opts.Long)
+		printNamesTable(w, *result.Names, opts.NoHeader, opts.LongIDs)
 		sections++
 	}
 	if result.Instances != nil {
@@ -258,7 +275,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Instances")
 		}
-		printInstancesTable(w, *result.Instances, opts.NoHeader, opts.Long)
+		printInstancesTable(w, *result.Instances, opts.NoHeader, opts.LongIDs)
 		sections++
 	}
 	if result.States != nil {
@@ -268,7 +285,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "States")
 		}
-		printStatesTable(w, *result.States, opts.NoHeader, opts.Long)
+		printStatesTable(w, *result.States, opts.NoHeader, opts.LongIDs)
 	}
 }
 
@@ -284,7 +301,7 @@ func printNamesTable(w io.Writer, rows []client.NameEntry, noHeader bool, longID
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			row.Name,
-			formatOptionalID(row.InstanceID, longIDs),
+			formatIDPtr(row.InstanceID, longIDs),
 			row.ImageID,
 			formatID(stateID, longIDs),
 			row.Status,
@@ -346,56 +363,96 @@ func optionalInt64(value *int64) string {
 	return strconv.FormatInt(*value, 10)
 }
 
-func formatOptionalID(value *string, longIDs bool) string {
-	if value == nil {
-		return ""
+type resolvedMatch struct {
+	value    string
+	noMatch  bool
+	state    client.StateEntry
+	instance client.InstanceEntry
+}
+
+func (m resolvedMatch) valueOr(fallback string) string {
+	if m.value != "" {
+		return m.value
 	}
-	return formatID(*value, longIDs)
+	return fallback
+}
+
+func resolveStatePrefix(ctx context.Context, cliClient *client.Client, prefix, kind, image string) (resolvedMatch, error) {
+	normalized, err := normalizeHexPrefix(prefix)
+	if err != nil {
+		return resolvedMatch{}, fmt.Errorf("invalid state id prefix: %s", err)
+	}
+	states, err := cliClient.ListStates(ctx, client.ListFilters{
+		Kind:     kind,
+		Image:    image,
+		IDPrefix: normalized,
+	})
+	if err != nil {
+		return resolvedMatch{}, err
+	}
+	if len(states) == 0 {
+		return resolvedMatch{noMatch: true}, nil
+	}
+	if len(states) > 1 {
+		return resolvedMatch{}, fmt.Errorf("ambiguous id prefix: %s", normalized)
+	}
+	return resolvedMatch{value: states[0].StateID, state: states[0]}, nil
+}
+
+func resolveInstancePrefix(ctx context.Context, cliClient *client.Client, prefix, stateID, image string) (resolvedMatch, error) {
+	normalized, err := normalizeHexPrefix(prefix)
+	if err != nil {
+		return resolvedMatch{}, fmt.Errorf("invalid instance id prefix: %s", err)
+	}
+	instances, err := cliClient.ListInstances(ctx, client.ListFilters{
+		State:    stateID,
+		Image:    image,
+		IDPrefix: normalized,
+	})
+	if err != nil {
+		return resolvedMatch{}, err
+	}
+	if len(instances) == 0 {
+		return resolvedMatch{noMatch: true}, nil
+	}
+	if len(instances) > 1 {
+		return resolvedMatch{}, fmt.Errorf("ambiguous id prefix: %s", normalized)
+	}
+	return resolvedMatch{value: instances[0].InstanceID, instance: instances[0]}, nil
+}
+
+func normalizeHexPrefix(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if len(value) < 8 {
+		return "", fmt.Errorf("prefix must be at least 8 characters")
+	}
+	for _, ch := range value {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return "", fmt.Errorf("prefix must be hex")
+		}
+	}
+	return strings.ToLower(value), nil
 }
 
 func formatID(value string, longIDs bool) string {
-	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
 	}
+	value = strings.ToLower(value)
 	if longIDs || len(value) <= 12 {
 		return value
 	}
 	return value[:12]
 }
 
-func resolveInstancePrefix(ctx context.Context, cliClient *client.Client, prefix string) (*client.InstanceEntry, bool, error) {
-	normalized, err := normalizeIDPrefix("instance", prefix)
-	if err != nil {
-		return nil, false, err
+func formatIDPtr(value *string, longIDs bool) string {
+	if value == nil {
+		return ""
 	}
-	entries, err := cliClient.ListInstances(ctx, client.ListFilters{IDPrefix: normalized})
-	if err != nil {
-		return nil, false, err
-	}
-	if len(entries) > 1 {
-		return nil, false, &AmbiguousPrefixError{Kind: "instance", Prefix: prefix}
-	}
-	if len(entries) == 0 {
-		return nil, false, nil
-	}
-	return &entries[0], true, nil
-}
-
-func resolveStatePrefix(ctx context.Context, cliClient *client.Client, prefix string) (*client.StateEntry, bool, error) {
-	normalized, err := normalizeIDPrefix("state", prefix)
-	if err != nil {
-		return nil, false, err
-	}
-	entries, err := cliClient.ListStates(ctx, client.ListFilters{IDPrefix: normalized})
-	if err != nil {
-		return nil, false, err
-	}
-	if len(entries) > 1 {
-		return nil, false, &AmbiguousPrefixError{Kind: "state", Prefix: prefix}
-	}
-	if len(entries) == 0 {
-		return nil, false, nil
-	}
-	return &entries[0], true, nil
+	return formatID(*value, longIDs)
 }

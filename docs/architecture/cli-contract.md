@@ -107,6 +107,14 @@ See the user guide for the authoritative, up-to-date command semantics:
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-rm.md`](../user-guides/sqlrs-rm.md)
+ID prefix support (implemented):
+
+- Full ids are hex strings (instances: 32 chars, states: 64 chars).
+- Any id argument accepts 8+ hex characters as a case-insensitive prefix.
+- If the value is shorter than 8 or contains non-hex characters, it is treated as a name.
+- If a prefix matches multiple ids, the command fails with an ambiguity error.
+- Human output shortens ids to 12 characters by default; `--long` prints full ids.
+- JSON output always uses full ids.
 
 ---
 

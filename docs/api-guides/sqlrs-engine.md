@@ -627,6 +627,7 @@ Returns job status and result when available.
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[PrepareJobStatus](#schemapreparejobstatus)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
 
@@ -793,6 +794,620 @@ Streams job events as NDJSON.
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
 |jobId|path|string|true|none|
+
+> Example responses
+
+> 200 Response
+
+> 400 Response
+
+```json
+{
+  "code": "string",
+  "message": "string",
+  "details": "string"
+}
+```
+
+<h3 id="streampreparejobevents-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+<h1 id="the-sqlrs-engine-api-names">names</h1>
+
+## createPrepareJob
+
+<a id="opIdcreatePrepareJob"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X POST http://127.0.0.1:{port}/v1/prepare-jobs \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+POST http://127.0.0.1:{port}/v1/prepare-jobs HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Accept: application/json
+
+```
+
+```javascript
+const inputBody = '{
+  "prepare_kind": "psql",
+  "image_id": "string",
+  "psql_args": [
+    "string"
+  ],
+  "stdin": "string"
+}';
+const headers = {
+  'Content-Type':'application/json',
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/prepare-jobs',
+{
+  method: 'POST',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/json',
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.post 'http://127.0.0.1:{port}/v1/prepare-jobs',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.post('http://127.0.0.1:{port}/v1/prepare-jobs', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('POST','http://127.0.0.1:{port}/v1/prepare-jobs', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/prepare-jobs");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("POST");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/json"},
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("POST", "http://127.0.0.1:{port}/v1/prepare-jobs", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`POST /v1/prepare-jobs`
+
+*Start a prepare job*
+
+Starts a prepare job and returns a job reference.
+The engine enforces deterministic defaults for `psql` (`-X` and
+`-v ON_ERROR_STOP=1`) and rejects connection flags.
+
+> Body parameter
+
+```json
+{
+  "prepare_kind": "psql",
+  "image_id": "string",
+  "psql_args": [
+    "string"
+  ],
+  "stdin": "string"
+}
+```
+
+<h3 id="createpreparejob-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[PrepareJobRequest](#schemapreparejobrequest)|true|none|
+
+> Example responses
+
+> 202 Response
+
+```json
+{
+  "job_id": "string",
+  "status_url": "string",
+  "events_url": "string",
+  "status": "queued"
+}
+```
+
+<h3 id="createpreparejob-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|202|[Accepted](https://tools.ietf.org/html/rfc7231#section-6.3.3)|Accepted|[PrepareJobAccepted](#schemapreparejobaccepted)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
+
+### Response Headers
+
+|Status|Header|Type|Format|Description|
+|---|---|---|---|---|
+|202|Location|string||Canonical job status URL.|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## getPrepareJob
+
+<a id="opIdgetPrepareJob"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/prepare-jobs/{jobId} \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/prepare-jobs/{jobId} HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/prepare-jobs/{jobId}`
+
+*Get prepare job status*
+
+Returns job status and result when available.
+
+<h3 id="getpreparejob-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|jobId|path|string|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "job_id": "string",
+  "status": "queued",
+  "prepare_kind": "string",
+  "image_id": "string",
+  "created_at": "2019-08-24T14:15:22Z",
+  "started_at": "2019-08-24T14:15:22Z",
+  "finished_at": "2019-08-24T14:15:22Z",
+  "result": {
+    "dsn": "string",
+    "instance_id": "string",
+    "state_id": "string",
+    "image_id": "string",
+    "prepare_kind": "string",
+    "prepare_args_normalized": "string"
+  },
+  "error": {
+    "code": "string",
+    "message": "string",
+    "details": "string"
+  }
+}
+```
+
+<h3 id="getpreparejob-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[PrepareJobStatus](#schemapreparejobstatus)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## streamPrepareJobEvents
+
+<a id="opIdstreamPrepareJobEvents"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events \
+  -H 'Accept: application/x-ndjson' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events HTTP/1.1
+Host: 127.0.0.1
+Accept: application/x-ndjson
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/x-ndjson',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/x-ndjson',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/x-ndjson',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/x-ndjson',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/x-ndjson"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/prepare-jobs/{jobId}/events`
+
+*Stream prepare job events*
+
+Streams job events as NDJSON.
+
+<h3 id="streampreparejobevents-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|jobId|path|string|true|none|
+|state|query|string|false|Filter by state id.|
+|id_prefix|query|string|false|Filter by instance id prefix (case-insensitive, 8+ hex chars).|
+|image|query|string|false|Filter by base image id.|
 
 > Example responses
 
@@ -1162,6 +1777,9 @@ Returns a single name binding.
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
 |name|path|string|true|none|
+|kind|query|string|false|Filter by prepare kind.|
+|id_prefix|query|string|false|Filter by state id prefix (case-insensitive, 8+ hex chars).|
+|image|query|string|false|Filter by base image id.|
 
 > Example responses
 

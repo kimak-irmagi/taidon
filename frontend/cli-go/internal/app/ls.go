@@ -23,7 +23,7 @@ type lsOptions struct {
 
 	Quiet    bool
 	NoHeader bool
-	Long     bool
+	LongIDs  bool
 }
 
 func parseLsFlags(args []string) (lsOptions, bool, error) {
@@ -85,7 +85,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	opts.FilterImage = strings.TrimSpace(*image)
 	opts.Quiet = *quiet
 	opts.NoHeader = *noHeader
-	opts.Long = *longIDs
+	opts.LongIDs = *longIDs
 	return opts, false, nil
 }
 
@@ -131,7 +131,7 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	cli.PrintLs(w, result, cli.LsPrintOptions{
 		Quiet:    opts.Quiet,
 		NoHeader: opts.NoHeader,
-		Long:     opts.Long,
+		LongIDs:  opts.LongIDs,
 	})
 	return nil
 }
