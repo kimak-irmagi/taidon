@@ -2,6 +2,9 @@ name: ci
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
   test-cli:
@@ -43,6 +46,7 @@ jobs:
         run: go test ./...
 
   docs-sync:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -90,3 +94,78 @@ jobs:
       - name: Fail if docs are out of date (forks)
         if: github.event.pull_request.head.repo.full_name != github.repository
         run: git diff --exit-code
+
+  coverage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/local-engine-go/go.mod
+
+      - name: Run engine coverage
+        working-directory: backend/local-engine-go
+        run: go test ./... -coverprofile=coverage-engine.out
+
+      - name: Run CLI coverage
+        working-directory: frontend/cli-go
+        run: go test ./... -coverprofile=coverage-cli.out
+
+      - name: Merge coverage
+        id: coverage
+        run: |
+          set -euo pipefail
+          echo "mode: set" > coverage.out
+          tail -n +2 backend/local-engine-go/coverage-engine.out >> coverage.out
+          tail -n +2 frontend/cli-go/coverage-cli.out >> coverage.out
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
+          engine=$(go tool cover -func=backend/local-engine-go/coverage-engine.out | awk '/^total:/ {print $3}')
+          cli=$(go tool cover -func=frontend/cli-go/coverage-cli.out | awk '/^total:/ {print $3}')
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "engine=$engine" >> "$GITHUB_OUTPUT"
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
+
+      - name: Find coverage comment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: peter-evans/find-comment@v3
+        id: coverage-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "Coverage summary"
+
+      - name: Create coverage comment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.coverage-comment.outputs.comment-id == ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            Coverage summary (ubuntu-latest):
+            - engine: ${{ steps.coverage.outputs.engine }}
+            - cli: ${{ steps.coverage.outputs.cli }}
+            - combined: ${{ steps.coverage.outputs.total }}
+
+      - name: Update coverage comment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.coverage-comment.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.coverage-comment.outputs.comment-id }}
+          edit-mode: replace
+          body: |
+            Coverage summary (ubuntu-latest):
+            - engine: ${{ steps.coverage.outputs.engine }}
+            - cli: ${{ steps.coverage.outputs.cli }}
+            - combined: ${{ steps.coverage.outputs.total }}
+
+      - name: Upload coverage to Coveralls
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage.out
+          format: golang

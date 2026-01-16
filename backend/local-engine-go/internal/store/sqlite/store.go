@@ -281,16 +281,21 @@ func initDB(db *sql.DB) error {
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
 	}
-	_, err := db.Exec(SchemaSQL())
-	if err != nil {
+	if err := ensureParentStateColumn(db); err != nil {
 		return err
 	}
-	return ensureParentStateColumn(db)
+	_, err := db.Exec(SchemaSQL())
+	return err
 }
 
 func ensureParentStateColumn(db *sql.DB) error {
 	if _, err := db.Exec("ALTER TABLE states ADD COLUMN parent_state_id TEXT"); err != nil {
-		if !strings.Contains(err.Error(), "duplicate column name") {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			// column already exists, continue to index creation
+		} else if strings.Contains(err.Error(), "no such table") {
+			// fresh database; schema creation will add the column and index
+			return nil
+		} else {
 			return err
 		}
 	}
