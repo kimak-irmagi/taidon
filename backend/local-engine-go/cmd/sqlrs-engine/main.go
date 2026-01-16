@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"sqlrs/engine/internal/httpapi"
+	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store/sqlite"
 )
@@ -117,12 +118,22 @@ func main() {
 	tracker := newActivityTracker()
 	tracker.Touch()
 	reg := registry.New(store)
+	prepareMgr, err := prepare.NewManager(prepare.Options{
+		Store:   store,
+		Version: *version,
+		Async:   true,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "prepare manager: %v\n", err)
+		os.Exit(1)
+	}
 
 	mux := httpapi.NewHandler(httpapi.Options{
 		Version:    *version,
 		InstanceID: instanceID,
 		AuthToken:  authToken,
 		Registry:   reg,
+		Prepare:    prepareMgr,
 	})
 
 	server := &http.Server{

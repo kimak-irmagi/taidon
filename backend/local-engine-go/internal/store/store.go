@@ -42,6 +42,26 @@ type StateEntry struct {
 	RefCount    int    `json:"refcount"`
 }
 
+type StateCreate struct {
+	StateID               string
+	StateFingerprint      string
+	ImageID               string
+	PrepareKind           string
+	PrepareArgsNormalized string
+	CreatedAt             string
+	SizeBytes             *int64
+	Status                *string
+}
+
+type InstanceCreate struct {
+	InstanceID string
+	StateID    string
+	ImageID    string
+	CreatedAt  string
+	ExpiresAt  *string
+	Status     *string
+}
+
 type NameFilters struct {
 	InstanceID string
 	StateID    string
@@ -65,5 +85,7 @@ type Store interface {
 	GetInstance(ctx context.Context, instanceID string) (InstanceEntry, bool, error)
 	ListStates(ctx context.Context, filters StateFilters) ([]StateEntry, error)
 	GetState(ctx context.Context, stateID string) (StateEntry, bool, error)
+	CreateState(ctx context.Context, entry StateCreate) error
+	CreateInstance(ctx context.Context, entry InstanceCreate) error
 	Close() error
 }

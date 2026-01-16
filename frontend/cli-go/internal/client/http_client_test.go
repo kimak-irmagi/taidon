@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -104,5 +105,44 @@ func TestGetInstanceFollowsRedirectWithAuth(t *testing.T) {
 	}
 	if gotAuth != "Bearer token" {
 		t.Fatalf("expected Authorization on redirected request, got %q", gotAuth)
+	}
+}
+
+func TestCreatePrepareJob(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	var gotRequest PrepareJobRequest
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second, AuthToken: "token"})
+	accepted, err := cli.CreatePrepareJob(context.Background(), PrepareJobRequest{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-f", "/abs/init.sql"},
+	})
+	if err != nil {
+		t.Fatalf("create prepare job: %v", err)
+	}
+	if gotPath != "/v1/prepare-jobs" {
+		t.Fatalf("expected /v1/prepare-jobs path, got %q", gotPath)
+	}
+	if gotAuth != "Bearer token" {
+		t.Fatalf("expected Authorization header, got %q", gotAuth)
+	}
+	if gotRequest.ImageID != "image-1" || gotRequest.PrepareKind != "psql" {
+		t.Fatalf("unexpected request: %+v", gotRequest)
+	}
+	if accepted.JobID != "job-1" {
+		t.Fatalf("unexpected accepted response: %+v", accepted)
 	}
 }

@@ -160,7 +160,7 @@ sqlrs run --provenance write --provenance-path ./artifacts/provenance.json -- <c
 - git ref + commit (если задан `--ref`)
 - `dirty/clean` (грязное/чистое состояние рабочего дерева)
 - список входных файлов `--prepare` + хеши
-- параметры окружения (`engine/image`, важные флаги)
+- параметры окружения (`dbms.image`, важные флаги)
 - цепочка снапшотов Taidon, использованные base/derived
 - команда `sqlrs run -- <cmd>` + argv
 

@@ -6,9 +6,10 @@
 
 - тонкий CLI
 - эфемерный процесс engine
-- взаимодействие с Docker и Liquibase
+- взаимодействие с Docker и psql
 
-Этот документ намеренно не повторяет Liquibase-специфику; она описана в [`liquibase-integration.RU.md`](liquibase-integration.RU.md).
+Этот документ намеренно не повторяет детали запуска скриптов; интеграция Liquibase планируется
+и описана в [`liquibase-integration.RU.md`](liquibase-integration.RU.md).
 Внутренности engine описаны в [`engine-internals.RU.md`](engine-internals.RU.md).
 Team/Cloud вариант описан в [`shared-deployment-architecture.RU.md`](shared-deployment-architecture.RU.md).
 
@@ -33,14 +34,14 @@ flowchart LR
   ENG["sqlrs engine process"]
   DOCKER["Docker Engine"]
   DB["DB Container"]
-  LB[Liquibase]
+  PS["psql runner"]
   STATE["State dir (engine.json)"]
   STORE["state store"]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
   ENG --> DOCKER
-  ENG --> LB
+  ENG --> PS
   DOCKER --> DB
   ENG --> STORE
   CLI -. discovery .-> STATE
@@ -66,7 +67,7 @@ CLI намеренно **тонкий** и без состояния.
 
 - Нет логики оркестрации Docker
 - Нет логики snapshotting
-- Нет прямого выполнения Liquibase
+- Нет прямого выполнения скриптов
 
 ---
 
@@ -84,11 +85,11 @@ CLI намеренно **тонкий** и без состояния.
 - Оркестрация Docker-контейнеров
 - Snapshotting и управление состояниями
 - Cache rewind и eviction
-- Оркестрация Liquibase (через провайдеры)
+- Выполнение скриптов через `psql`
 - Connection / proxy слой (если нужен)
 - IPC/API для CLI и будущих IDE-интеграций
 - Планирование/исполнение prepare; `run` команды не выполняет
-- Создание/привязка экземпляров для prepare (ephemeral vs named)
+- Создание эфемерных экземпляров для prepare
 
 ### 4.3 Жизненный цикл
 
@@ -113,8 +114,9 @@ CLI намеренно **тонкий** и без состояния.
 
 Ключевые endpoint-ы engine (логически):
 
-- старт prepare job (plan/execute steps, snapshot states, bind/select instance)
-- статус/стрим для prepare job
+- `POST /v1/prepare-jobs` - старт prepare job (plan/execute steps, snapshot states, создание экземпляра)
+- `GET /v1/prepare-jobs/{jobId}` - статус job
+- `GET /v1/prepare-jobs/{jobId}/events` - стрим событий job (NDJSON)
 - список names/instances/states (JSON array или NDJSON через `Accept`)
 - `GET /v1/names/{name}` - чтение name binding
 - `GET /v1/instances/{instanceId}` - чтение экземпляра (если найдено по имени, engine отвечает 307 redirect на канонический URL по id)
@@ -123,34 +125,32 @@ CLI намеренно **тонкий** и без состояния.
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - опциональная мягкая остановка
 
-### 5.1 Долгие операции: sync vs async режимы CLI
+### 5.1 Долгие операции: async jobs, sync CLI
 
-- **Async (fire-and-forget)**: CLI отправляет запрос, получает `prepare_id` и URL статуса, печатает его и выходит. Пользователь может позже опрашивать или стримить.
-- **Sync (watch)**: CLI отправляет запрос, затем опрашивает/стримит статусы до терминального состояния; выводит прогресс/логи; завершаетcя кодом engine.
-- Со стороны engine: все долгие операции асинхронны; даже sync-режим - это просто watch на стороне CLI поверх тех же REST endpoint-ов (status + stream для prepare job).
-- Флаги: например, `--watch/--no-watch` для переключения; default может быть `--watch` для интерактива и `--no-watch` для скриптов/CI.
+- Engine выполняет prepare как асинхронные job; `POST /v1/prepare-jobs` отвечает `202 Accepted` с job id.
+- CLI сразу начинает наблюдать job через статус/стрим и завершает работу после терминального статуса.
+- У CLI пока нет detach-режима; `--watch/--no-watch` — future extension.
 
 ---
 
-## 6. Взаимодействие с Liquibase
+## 6. Взаимодействие с psql
 
-Engine делегирует выполнение Liquibase _Liquibase provider_:
+Engine делегирует выполнение скриптов `psql`:
 
-- system-installed Liquibase
-- Docker-based Liquibase runner
+- system-installed `psql`
+- Docker-based `psql` runner (опционально)
 
-Выбор провайдера и compatibility checks описаны в [`liquibase-integration.RU.md`](liquibase-integration.RU.md).
+`psql` вызывается как внешний процесс (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
 
-Liquibase вызывается как внешний CLI (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
-
-Engine потребляет **структурированные логи** Liquibase для наблюдаемости и контроля.
+Интеграция Liquibase планируется; детали провайдера описаны в
+[`liquibase-integration.RU.md`](liquibase-integration.RU.md).
 
 ---
 
 ## 6. Взаимодействие с Docker
 
 - Docker обязателен в MVP
-- Engine управляет DB-контейнерами и Liquibase-контейнерами
+- Engine управляет DB-контейнерами и опциональными `psql` runner-контейнерами
 - Все persistent data directories монтируются из host-managed хранилища
 - Engine проверяет доступность Docker на старте; CLI выводит понятные ошибки, если Docker недоступен
 

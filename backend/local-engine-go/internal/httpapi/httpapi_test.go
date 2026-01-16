@@ -13,6 +13,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store"
 	"sqlrs/engine/internal/store/sqlite"
@@ -177,11 +178,20 @@ func newTestServer(t *testing.T) (*httptest.Server, func()) {
 	}
 
 	reg := registry.New(st)
+	prep, err := prepare.NewManager(prepare.Options{
+		Store:   st,
+		Version: "test",
+		Async:   false,
+	})
+	if err != nil {
+		t.Fatalf("prepare manager: %v", err)
+	}
 	handler := NewHandler(Options{
 		Version:    "test",
 		InstanceID: "instance",
 		AuthToken:  "secret",
 		Registry:   reg,
+		Prepare:    prep,
 	})
 	server := httptest.NewServer(handler)
 

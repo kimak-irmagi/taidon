@@ -1,6 +1,6 @@
 # Внутреннее устройство sqlrs Engine (локальный профиль)
 
-Область: внутренняя структура процесса `sqlrs` для локального деплоймента (MVP). Фокус на том, как обрабатываются запросы от CLI, как устроены snapshot/cache, и как оркестрируются Docker и Liquibase.
+Область: внутренняя структура процесса `sqlrs` для локального деплоймента (MVP). Фокус на том, как обрабатываются запросы от CLI, как устроены snapshot/cache, и как оркестрируются Docker и psql.
 
 ## 1. Модель компонентов
 
@@ -38,21 +38,21 @@ flowchart LR
 ### 1.1 API-слой
 
 - REST по loopback (HTTP/UDS); expose prepare jobs, операции с экземплярами, snapshots, cache и shutdown endpoints.
-- Все долгие операции выполняются асинхронно; sync-режим CLI только наблюдает статус/стрим.
+- Prepare выполняется как async job; CLI следит за статусом/событиями и ждет завершения.
 
 ### 1.2 Prepare Controller
 
-- Координирует prepare job: plan steps, cache lookup, instance bind, execute steps, snapshot states, bind/select instance, persist metadata.
+- Координирует prepare job: plan steps, cache lookup, execute steps, snapshot states, создание экземпляра, persist metadata.
 - Навязывает дедлайны и отмену; управляет дочерними процессами/контейнерами.
 - Эмитит статусы и структурированные события для стрима в CLI.
 
 ### 1.3 Планировщик prepare
 
-- Строит упорядоченный список шагов prepare из системы скриптов (Liquibase, psql/sql, pgbench или другие DB-инструменты).
+- Строит упорядоченный список шагов prepare из `psql` скриптов.
 - Каждый шаг хешируется (специфично для системы скриптов) для cache key: `engine/version/base/step_hash/params`.
 - На выходе цепочка шагов, а не head/tail; промежуточные состояния могут материализоваться для cache reuse.
 - Вход prepare также дает стабильный fingerprint состояния:
-  `state_id = hash(prepare_kind + normalized_args + normalized_input_hashes + engine_version)`.
+  `state_id = hash(prepare_kind + base_image_id + normalized_args + normalized_input_hashes + engine_version)`.
 
 ### 1.4 Исполнитель prepare
 
@@ -78,16 +78,15 @@ flowchart LR
 
 ### 1.8 Адаптер системы скриптов
 
-- Дает общий интерфейс для систем скриптов (Liquibase, psql/sql с include-графом, pgbench, другие native-инструменты DB).
+- Дает общий интерфейс для систем скриптов (сейчас только `psql`).
 - Каждый адаптер реализует planning, execution и правила хеширования шагов.
-- Liquibase вызывается как внешний CLI (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
+- Liquibase планируется как внешний CLI (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
 
 ### 1.9 Менеджер экземпляров
 
 - Ведет mutable экземпляры, производные от immutable states.
-- Применяет правила name binding (reuse/fresh/rebind) и возвращает DSN экземпляра.
-- Запрещает reuse имени при другом состоянии, если не указан rebind.
-- Управляет жизненным циклом экземпляров (ephemeral vs named) и метаданными TTL/GC.
+- Создает эфемерные экземпляры и возвращает DSN.
+- Управляет жизненным циклом экземпляров (ephemeral) и метаданными TTL/GC.
 
 ### 1.10 State Store (Paths + Metadata)
 
@@ -113,7 +112,9 @@ sequenceDiagram
   participant ADAPTER as Script Adapter
   participant INST as Instance Manager
 
-  CLI->>API: start prepare job (watch or no-watch)
+  CLI->>API: start prepare job
+  API-->>CLI: job_id
+  CLI->>API: watch status/events
   API->>CTRL: enqueue job
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
@@ -137,9 +138,9 @@ sequenceDiagram
       CTRL->>CACHE: store key->state_id
     end
   end
-  CTRL->>INST: bind/select instance (name + policy)
+  CTRL->>INST: create instance
   INST-->>CTRL: instance_id + DSN
-  CTRL-->>API: status updates / stream
+  CTRL-->>API: status updates / events
   CTRL->>SNAP: teardown instance (or keep warm by policy)
   API-->>CLI: terminal status
 ```
@@ -161,9 +162,9 @@ sequenceDiagram
 
 ## 5. Обработка ошибок
 
-- Все долгие операции возвращают `prepare_id`; ошибки фиксируются как terminal state с причиной и логами.
+- Все долгие операции возвращают job id; ошибки фиксируются как terminal state с причиной и логами.
 - Cache writes идемпотентны по `state_id`; частичные snapshots помечаются failed и не переиспользуются без явной ссылки.
-- Если Docker/Liquibase недоступны, API возвращает понятные ошибки; CLI их показывает и завершает с ненулевым кодом.
+- Если Docker/psql недоступны, API возвращает понятные ошибки; CLI их показывает и завершает с ненулевым кодом.
 
 ## 6. Точки эволюции
 

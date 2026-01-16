@@ -129,6 +129,20 @@ func Run(args []string) error {
 			Verbose:        opts.Verbose,
 		}
 		return runLs(os.Stdout, runOpts, cmd.Args, output)
+	case "prepare:psql":
+		runOpts := cli.PrepareOptions{
+			ProfileName:    profileName,
+			Mode:           mode,
+			Endpoint:       profile.Endpoint,
+			Autostart:      profile.Autostart,
+			DaemonPath:     daemonPath,
+			RunDir:         runDir,
+			StateDir:       dirs.StateDir,
+			Timeout:        timeout,
+			StartupTimeout: startupTimeout,
+			Verbose:        opts.Verbose,
+		}
+		return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, cwd, cmd.Args)
 	case "status":
 		if len(cmd.Args) > 0 {
 			return fmt.Errorf("status does not accept arguments")
@@ -166,7 +180,16 @@ func Run(args []string) error {
 			return fmt.Errorf("service unhealthy")
 		}
 		return nil
+	case "prepare":
+		return fmt.Errorf("missing prepare kind (consider prepare:psql)")
 	default:
+		if strings.HasPrefix(cmd.Name, "prepare:") {
+			kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "prepare:"))
+			if kind == "" {
+				return fmt.Errorf("missing prepare kind (consider prepare:psql)")
+			}
+			return fmt.Errorf("unknown prepare kind: %s", kind)
+		}
 		return fmt.Errorf("unknown command: %s", cmd.Name)
 	}
 }

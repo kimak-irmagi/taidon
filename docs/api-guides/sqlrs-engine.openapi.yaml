@@ -4,8 +4,7 @@ info:
   version: 0.1.0
   description: |
     Local sqlrs engine HTTP API (MVP).
-    Only the implemented endpoints are documented here.
-    Do not edit the file directly; it is generated from the codebase.
+    This file is the design source of truth for the engine API.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
@@ -35,6 +34,97 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
         "405":
           description: Method not allowed
+  /v1/prepare-jobs:
+    post:
+      operationId: createPrepareJob
+      summary: Start a prepare job
+      description: |
+        Starts a prepare job and returns a job reference.
+        The engine enforces deterministic defaults for `psql` (`-X` and
+        `-v ON_ERROR_STOP=1`) and rejects connection flags.
+      tags:
+        - prepare
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrepareJobRequest"
+      responses:
+        "202":
+          description: Accepted
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Canonical job status URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrepareJobAccepted"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/prepare-jobs/{jobId}:
+    get:
+      operationId: getPrepareJob
+      summary: Get prepare job status
+      description: Returns job status and result when available.
+      tags:
+        - prepare
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrepareJobStatus"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
+  /v1/prepare-jobs/{jobId}/events:
+    get:
+      operationId: streamPrepareJobEvents
+      summary: Stream prepare job events
+      description: Streams job events as NDJSON.
+      tags:
+        - prepare
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON stream of PrepareJobEvent objects.
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
   /v1/names:
     get:
       operationId: listNames
@@ -257,6 +347,151 @@ components:
           version: dev
           instanceId: 9f4d2d4b6c1a4a4ea2d39d1f7b0d8a21
           pid: 12345
+    PrepareJobRequest:
+      oneOf:
+        - $ref: "#/components/schemas/PrepareJobRequestPsql"
+      discriminator:
+        propertyName: prepare_kind
+        mapping:
+          psql: "#/components/schemas/PrepareJobRequestPsql"
+    PrepareJobRequestPsql:
+      type: object
+      additionalProperties: false
+      required:
+        - prepare_kind
+        - image_id
+        - psql_args
+      properties:
+        prepare_kind:
+          type: string
+          enum: [psql]
+          description: Prepare adapter kind.
+        image_id:
+          type: string
+          description: Base Docker image id to use.
+        psql_args:
+          type: array
+          description: |
+            Arguments passed to `psql` (excluding connection flags). Argument
+            ordering is preserved. File paths must be absolute.
+          items:
+            type: string
+        stdin:
+          type: string
+          description: SQL content to use for stdin when `psql_args` includes `-f -`.
+    PrepareJobAccepted:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - status_url
+      properties:
+        job_id:
+          type: string
+          description: Prepare job id.
+        status_url:
+          type: string
+          description: URL for job status polling.
+        events_url:
+          type: string
+          description: URL for job event streaming.
+        status:
+          type: string
+          enum: [queued]
+    PrepareJobStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - status
+        - prepare_kind
+        - image_id
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        prepare_kind:
+          type: string
+        image_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        result:
+          anyOf:
+            - $ref: "#/components/schemas/PrepareJobResult"
+            - type: "null"
+        error:
+          anyOf:
+            - $ref: "#/components/schemas/ErrorResponse"
+            - type: "null"
+    PrepareJobEvent:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - ts
+      properties:
+        type:
+          type: string
+          enum: [status, log, result, error]
+        ts:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        message:
+          type: string
+        result:
+          $ref: "#/components/schemas/PrepareJobResult"
+        error:
+          $ref: "#/components/schemas/ErrorResponse"
+    PrepareJobResult:
+      type: object
+      additionalProperties: false
+      required:
+        - dsn
+        - instance_id
+        - state_id
+        - image_id
+        - prepare_kind
+        - prepare_args_normalized
+      properties:
+        dsn:
+          type: string
+          description: DSN for the prepared instance.
+        instance_id:
+          type: string
+        state_id:
+          type: string
+        image_id:
+          type: string
+        prepare_kind:
+          type: string
+        prepare_args_normalized:
+          type: string
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: string
     NameEntry:
       type: object
       additionalProperties: false
