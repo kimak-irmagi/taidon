@@ -115,6 +115,29 @@ Notes:
 - Remote targets use the same list endpoints; the CLI supplies credentials from profile configuration.
 - The CLI defaults to listing names and instances; states are requested explicitly.
 
+### 4.5 Removal (sqlrs rm)
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant ENG as Engine
+
+  CLI->>ENG: GET /v1/instances?id_prefix=...
+  ENG-->>CLI: instance list
+  CLI->>ENG: GET /v1/states?id_prefix=...
+  ENG-->>CLI: state list
+  alt ambiguous or not found
+    CLI->>CLI: error or noop
+  else instance resolved
+    CLI->>ENG: DELETE /v1/instances/{id}?force&dry_run
+    ENG-->>CLI: DeleteResult
+  else state resolved
+    CLI->>ENG: DELETE /v1/states/{id}?recurse&force&dry_run
+    ENG-->>CLI: DeleteResult
+  end
+  CLI->>CLI: render deletion tree
+```
+
 ## 5. Upload Details (Remote)
 
 - CLI chunks files, computes hashes, and uploads only missing chunks.

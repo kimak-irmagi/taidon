@@ -87,6 +87,7 @@ The CLI is intentionally **thin** and stateless.
 - Cache rewind and eviction
 - Script execution via `psql`
 - Connection / proxy layer (when needed)
+- Connection tracking for TTL and safe deletion
 - IPC/API for CLI and future IDE integrations
 - Prepare planning/execution; does not execute `run` commands
 - Ephemeral instance creation for prepare
@@ -120,7 +121,9 @@ Key engine endpoints (logical):
 - list names/instances/states (JSON array or NDJSON via `Accept`)
 - `GET /v1/names/{name}` - read name binding
 - `GET /v1/instances/{instanceId}` - read instance (supports name alias with 307 redirect to the canonical id URL when resolved by name)
+- `DELETE /v1/instances/{instanceId}` - delete instance (idempotent; supports dry-run)
 - `GET /v1/states/{stateId}` - read state
+- `DELETE /v1/states/{stateId}` - delete state (idempotent; supports recurse/force/dry-run)
 - `POST /snapshots` - manual snapshot
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - optional graceful stop

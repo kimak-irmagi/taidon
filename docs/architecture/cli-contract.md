@@ -52,6 +52,11 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
+## ID Prefix Rules
+
+Anywhere the CLI expects an id, users may supply a hex prefix (minimum 8 chars).
+The CLI resolves the prefix case-insensitively and fails on ambiguity.
+
 ## 2. Command Groups (Namespaces)
 
 ```text
@@ -59,6 +64,7 @@ sqlrs
   init
   status
   ls
+  rm
   prepare
   plan
   run
@@ -94,25 +100,17 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-ls.md`](../user-guides/sqlrs-ls.md)
 
-TODO:
+---
 
-1. Improve ID support so user can use a long enough ID prefix to identify a resource.
-   Idea is similar to GIT:
-   - Full ID is a hex-representation of the hash (32/64 chars)
-   - Everywhere an ID is required, we accept 8 chars or more
-   - When CLI faces a string that is supposed to identify an object, it should
-     handle it as follows:
-     1. If the length is less than 8 => treat it as name
-     2. If the string contains non-hex-char => treat it as name
-     3. If the string len is 8 or more - treat it as an ID prefix.
-        - If the object is resolved by the prefix unambiguously - use it
-        - If more than a single object matches the prefix - report an error
-   - `ls` command in human format should  display the first 12 chars of an ID. The --long option should show the full IDs.
-   - json format should always use the full IDs.
+### 3.4 `sqlrs rm`
+
+See the user guide for the authoritative, up-to-date command semantics:
+
+- [`docs/user-guides/sqlrs-rm.md`](../user-guides/sqlrs-rm.md)
 
 ---
 
-### 3.4 `sqlrs prepare`
+### 3.5 `sqlrs prepare`
 
 See the user guide for the authoritative, up-to-date command semantics:
 
@@ -126,7 +124,7 @@ TODO (future):
 
 ---
 
-### 3.5 `sqlrs plan`
+### 3.6 `sqlrs plan`
 
 Compute the execution plan without applying changes.
 
@@ -159,7 +157,7 @@ STEP  TYPE        HASH        CACHED  NOTE
 
 ---
 
-### 3.6 `sqlrs run`
+### 3.7 `sqlrs run`
 
 See the user guide for the authoritative, up-to-date command semantics:
 

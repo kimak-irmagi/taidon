@@ -16,7 +16,7 @@
   - Глобальные флаги и диспетчер команд.
   - Загружает config и workspace.
 - `internal/cli`
-  - Логика команд (status, init, ls).
+  - Логика команд (status, init, ls, rm).
   - Выбор режима вывода.
 - `internal/client`
   - HTTP клиент, auth headers, обработка redirect.

@@ -96,8 +96,26 @@ CREATE INDEX IF NOT EXISTS idx_names_primary ON names(instance_id, is_primary);
 
 Примечания:
 - Несколько имен могут быть алиасами одного instance.
-- `is_primary` — предпочтительное имя для listing instance.
+- `is_primary` - предпочтительное имя для listing instance.
 - `state_id` nullable, чтобы имя могло жить дольше instance/state.
+
+## 3.4 Планируемые изменения (rm support)
+
+Команда rm требует иерархии состояний для рекурсивного удаления.
+
+Планируемые изменения:
+
+- `states.parent_state_id` (nullable), ссылка на `states(state_id)`.
+- Индекс по `parent_state_id` для поиска потомков.
+
+Предлагаемый SQL:
+
+```sql
+ALTER TABLE states ADD COLUMN parent_state_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id);
+```
+
+Счетчик активных подключений хранится в памяти и не записывается в SQLite.
 
 ## 4. Вычисляемые поля
 
@@ -125,4 +143,5 @@ erDiagram
   STATES ||--o{ INSTANCES : "state_id"
   INSTANCES ||--o{ NAMES : "instance_id"
   STATES ||--o{ NAMES : "state_id"
+  STATES ||--o{ STATES : "parent_state_id"
 ```

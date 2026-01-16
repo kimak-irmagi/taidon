@@ -8,6 +8,7 @@ Scope: internal structure of the `sqlrs` engine process for local deployment (MV
 flowchart LR
   API["REST API"]
   CTRL["Prepare Controller"]
+  DEL["Delete Controller"]
   PLAN["Prepare Planner"]
   EXEC["Prepare Executor"]
   CACHE[state-cache client]
@@ -15,10 +16,12 @@ flowchart LR
   RUNTIME["Instance Runtime (Docker)"]
   ADAPTER["Script System Adapter"]
   INST["Instance Manager"]
+  CONN["Connection Tracker"]
   STORE["State Store (paths + metadata)"]
   OBS[Telemetry/Audit]
 
   API --> CTRL
+  API --> DEL
   CTRL --> PLAN
   CTRL --> EXEC
   CTRL --> CACHE
@@ -27,17 +30,23 @@ flowchart LR
   CTRL --> ADAPTER
   CTRL --> INST
   CTRL --> OBS
+  DEL --> INST
+  DEL --> SNAP
+  DEL --> STORE
+  DEL --> CONN
   PLAN --> ADAPTER
   EXEC --> ADAPTER
   SNAP --> STORE
   INST --> STORE
   CACHE --> STORE
   RUNTIME --> STORE
+  CONN --> RUNTIME
 ```
 
 ### 1.1 API Layer
 
 - REST over loopback (HTTP/UDS); exposes prepare jobs, instance lookup/binding, snapshots, cache, and shutdown endpoints.
+- Exposes delete endpoints for instances and states with recurse/force/dry-run options.
 - Prepare runs as async jobs; the CLI watches status/events and waits for completion.
 
 ### 1.2 Prepare Controller
@@ -88,18 +97,33 @@ flowchart LR
 - Creates ephemeral instances and returns DSNs.
 - Handles instance lifecycle (ephemeral) and TTL/GC metadata.
 
-### 1.10 State Store (Paths + Metadata)
+### 1.10 Delete Controller
+
+- Builds deletion trees for instances and states.
+- Evaluates safety rules (active connections, descendants, flags).
+- Executes deletions when allowed; responses are idempotent.
+
+### 1.11 Connection Tracker
+
+- Tracks active connections per instance.
+- Uses DB introspection (e.g., `pg_stat_activity`) on a periodic schedule.
+- Feeds TTL extension and deletion safety checks.
+
+### 1.12 State Store (Paths + Metadata)
 
 - Resolves storage root (`~/.cache/sqlrs/state-store` or overridden).
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
 - Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
+- Stores `parent_state_id` to support state ancestry and recursive deletion.
 
-### 1.11 Telemetry/Audit
+### 1.13 Telemetry/Audit
 
 - Emits metrics: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
 - Writes audit events for prepare jobs and cache mutations.
 
-## 2. Prepare Flow (Local)
+## 2. Flows (Local)
+
+### 2.1 Prepare Flow
 
 ```mermaid
 sequenceDiagram
@@ -147,6 +171,34 @@ sequenceDiagram
 
 - Cancellation: controller cancels the prepare job; active DB work is interrupted; stream ends with `cancelled`.
 - Timeouts: controller enforces wall-clock deadline; DB statement_timeout is set per step.
+
+### 2.2 Delete Flow
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant API as "Engine API"
+  participant DEL as "Delete Controller"
+  participant STORE as "Metadata Store"
+  participant INST as "Instance Manager"
+  participant CONN as "Connection Tracker"
+  participant SNAP as Snapshotter
+
+  CLI->>API: DELETE /v1/states/{id}?recurse&force&dry_run
+  API->>DEL: build deletion tree
+  DEL->>STORE: load state + descendants
+  DEL->>INST: list instances per state
+  DEL->>CONN: get active connection counts
+  alt blocked
+    DEL-->>API: DeleteResult (blocked)
+  else allowed
+    DEL->>INST: remove instances
+    DEL->>SNAP: remove snapshots
+    DEL->>STORE: delete metadata
+    DEL-->>API: DeleteResult (deleted)
+  end
+  API-->>CLI: 200/409 + DeleteResult
+```
 
 ## 3. Concurrency and Process Model
 

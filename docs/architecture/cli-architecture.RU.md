@@ -115,6 +115,29 @@ sequenceDiagram
 - Для remote target используются те же list endpoint-ы; CLI берёт credentials из конфигурации профиля.
 - По умолчанию CLI запрашивает names и instances; states запрашиваются явно.
 
+### 4.5 Удаление (sqlrs rm)
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant ENG as Engine
+
+  CLI->>ENG: GET /v1/instances?id_prefix=...
+  ENG-->>CLI: instance list
+  CLI->>ENG: GET /v1/states?id_prefix=...
+  ENG-->>CLI: state list
+  alt ambiguous or not found
+    CLI->>CLI: error or noop
+  else instance resolved
+    CLI->>ENG: DELETE /v1/instances/{id}?force&dry_run
+    ENG-->>CLI: DeleteResult
+  else state resolved
+    CLI->>ENG: DELETE /v1/states/{id}?recurse&force&dry_run
+    ENG-->>CLI: DeleteResult
+  end
+  CLI->>CLI: render deletion tree
+```
+
 ## 5. Детали загрузки (remote)
 
 - CLI режет файлы на чанки, считает хеши и загружает только отсутствующие чанки.

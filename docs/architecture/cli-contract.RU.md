@@ -52,6 +52,11 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` не использует `:<kind>` и не принимает `-- <command>...`.
 
+## Правила префиксов id
+
+Везде, где CLI ожидает id, пользователь может передать hex-префикс (минимум 8 символов).
+CLI разрешает префикс без учета регистра и сообщает об ошибке при неоднозначности.
+
 ## 2. Группы команд (неймспейсы)
 
 ```text
@@ -59,6 +64,7 @@ sqlrs
   init
   status
   ls
+  rm
   prepare
   plan
   run
@@ -96,7 +102,15 @@ sqlrs status [options]
 
 ---
 
-### 3.4 `sqlrs prepare`
+### 3.4 `sqlrs rm`
+
+Актуальная семантика команды описана в user guide:
+
+- [`docs/user-guides/sqlrs-rm.md`](../user-guides/sqlrs-rm.md)
+
+---
+
+### 3.5 `sqlrs prepare`
 
 Актуальная семантика команды описана в user guide:
 
@@ -110,7 +124,7 @@ TODO (будущее):
 
 ---
 
-### 3.5 `sqlrs plan`
+### 3.6 `sqlrs plan`
 
 Вычисляет план выполнения без применения изменений.
 
@@ -144,7 +158,7 @@ STEP  TYPE       HASH        CACHED  NOTE
 
 ---
 
-### 3.6 `sqlrs run`
+### 3.7 `sqlrs run`
 
 Актуальная семантика команды описана в user guide:
 

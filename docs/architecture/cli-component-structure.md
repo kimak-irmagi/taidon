@@ -16,7 +16,7 @@ This document defines the internal component layout of the sqlrs CLI.
   - Global flags and command dispatch.
   - Loads config and workspace.
 - `internal/cli`
-  - Command logic (status, init, ls).
+  - Command logic (status, init, ls, rm).
   - Chooses output mode.
 - `internal/client`
   - HTTP client, auth headers, redirect handling.

@@ -17,6 +17,14 @@ This document defines the internal component layout of the local sqlrs engine.
   - HTTP routing and handlers.
   - JSON/NDJSON encoding.
   - Uses auth + registry + store interfaces.
+- `internal/deletion`
+  - Builds deletion trees for instances and states.
+  - Enforces recurse/force rules and executes removals.
+- `internal/instances`
+  - Instance lifecycle (create/remove) and DSN tracking.
+  - Integrates connection tracking for TTL and safety checks.
+- `internal/conntrack`
+  - Tracks active connections per instance via DB introspection.
 - `internal/auth`
   - Bearer token verification.
   - Exempt `/v1/health`.
@@ -47,6 +55,9 @@ This document defines the internal component layout of the local sqlrs engine.
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
+  DEL["internal/deletion"]
+  INST["internal/instances"]
+  CONN["internal/conntrack"]
   AUTH["internal/auth"]
   REG["internal/registry"]
   ID["internal/id"]
@@ -57,8 +68,13 @@ flowchart TD
   CMD --> HTTP
   CMD --> SQLITE
   HTTP --> AUTH
+  HTTP --> DEL
+  HTTP --> INST
   HTTP --> REG
   HTTP --> STREAM
+  DEL --> INST
+  DEL --> STORE
+  INST --> CONN
   REG --> ID
   REG --> STORE
   SQLITE --> STORE

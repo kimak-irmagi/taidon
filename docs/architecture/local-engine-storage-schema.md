@@ -102,6 +102,24 @@ Notes:
 - `is_primary` marks the preferred name for instance listings.
 - `state_id` is nullable to allow a name to outlive a missing instance/state.
 
+## 3.4 Planned changes (rm support)
+
+The rm feature needs state ancestry for recursive deletion.
+
+Planned additions:
+
+- `states.parent_state_id` (nullable), referencing `states(state_id)`.
+- Index on `parent_state_id` for descendant lookups.
+
+Proposed SQL:
+
+```sql
+ALTER TABLE states ADD COLUMN parent_state_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id);
+```
+
+Connection counts are tracked in memory and are not stored in SQLite.
+
 ## 4. Derived fields
 
 - **Instance status**:
@@ -128,4 +146,5 @@ erDiagram
   STATES ||--o{ INSTANCES : "state_id"
   INSTANCES ||--o{ NAMES : "instance_id"
   STATES ||--o{ NAMES : "state_id"
+  STATES ||--o{ STATES : "parent_state_id"
 ```
