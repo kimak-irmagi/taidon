@@ -109,7 +109,7 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	runOpts.FilterImage = opts.FilterImage
 	runOpts.Quiet = opts.Quiet
 	runOpts.NoHeader = opts.NoHeader
-	runOpts.Long = opts.Long
+	runOpts.Long = opts.LongIDs
 
 	result, err := cli.RunLs(context.Background(), runOpts)
 	if err != nil {

@@ -219,11 +219,6 @@ paths:
             type: string
           description: Filter by state id.
         - in: query
-          name: id_prefix
-          schema:
-            type: string
-          description: Filter by instance id prefix (case-insensitive, 8+ hex chars).
-        - in: query
           name: image
           schema:
             type: string
@@ -359,11 +354,6 @@ paths:
           schema:
             type: string
           description: Filter by prepare kind.
-        - in: query
-          name: id_prefix
-          schema:
-            type: string
-          description: Filter by state id prefix (case-insensitive, 8+ hex chars).
         - in: query
           name: image
           schema:
