@@ -52,6 +52,11 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
+## ID Prefix Rules
+
+Anywhere the CLI expects an id, users may supply a hex prefix (minimum 8 chars).
+The CLI resolves the prefix case-insensitively and fails on ambiguity.
+
 ## 2. Command Groups (Namespaces)
 
 ```text
@@ -59,6 +64,7 @@ sqlrs
   init
   status
   ls
+  rm
   prepare
   plan
   run
@@ -94,6 +100,13 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-ls.md`](../user-guides/sqlrs-ls.md)
 
+---
+
+### 3.4 `sqlrs rm`
+
+See the user guide for the authoritative, up-to-date command semantics:
+
+- [`docs/user-guides/sqlrs-rm.md`](../user-guides/sqlrs-rm.md)
 ID prefix support (implemented):
 
 - Full ids are hex strings (instances: 32 chars, states: 64 chars).
@@ -105,7 +118,7 @@ ID prefix support (implemented):
 
 ---
 
-### 3.4 `sqlrs prepare`
+### 3.5 `sqlrs prepare`
 
 See the user guide for the authoritative, up-to-date command semantics:
 
@@ -119,7 +132,7 @@ TODO (future):
 
 ---
 
-### 3.5 `sqlrs plan`
+### 3.6 `sqlrs plan`
 
 Compute the execution plan without applying changes.
 
@@ -152,7 +165,7 @@ STEP  TYPE        HASH        CACHED  NOTE
 
 ---
 
-### 3.6 `sqlrs run`
+### 3.7 `sqlrs run`
 
 See the user guide for the authoritative, up-to-date command semantics:
 

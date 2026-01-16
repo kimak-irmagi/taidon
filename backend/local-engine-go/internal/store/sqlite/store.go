@@ -180,13 +180,14 @@ WHERE i.instance_id = ?`
 func (s *Store) ListStates(ctx context.Context, filters store.StateFilters) ([]store.StateEntry, error) {
 	query := strings.Builder{}
 	query.WriteString(`
-SELECT s.state_id, s.image_id, s.prepare_kind, s.prepare_args_normalized, s.created_at, s.size_bytes,
+SELECT s.state_id, s.parent_state_id, s.image_id, s.prepare_kind, s.prepare_args_normalized, s.created_at, s.size_bytes,
        (SELECT COUNT(1) FROM instances i WHERE i.state_id = s.state_id) as refcount
 FROM states s
 WHERE 1=1`)
 	args := []any{}
 	addFilter(&query, &args, "s.prepare_kind", filters.Kind)
 	addFilter(&query, &args, "s.image_id", filters.ImageID)
+	addFilter(&query, &args, "s.parent_state_id", filters.ParentID)
 	addPrefixFilter(&query, &args, "s.state_id", filters.IDPrefix)
 	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
@@ -197,8 +198,12 @@ WHERE 1=1`)
 	var out []store.StateEntry
 	for rows.Next() {
 		var entry store.StateEntry
-		if err := rows.Scan(&entry.StateID, &entry.ImageID, &entry.PrepareKind, &entry.PrepareArgs, &entry.CreatedAt, &entry.SizeBytes, &entry.RefCount); err != nil {
+		var parent sql.NullString
+		if err := rows.Scan(&entry.StateID, &parent, &entry.ImageID, &entry.PrepareKind, &entry.PrepareArgs, &entry.CreatedAt, &entry.SizeBytes, &entry.RefCount); err != nil {
 			return nil, err
+		}
+		if parent.Valid && strings.TrimSpace(parent.String) != "" {
+			entry.ParentStateID = strPtr(parent.String)
 		}
 		out = append(out, entry)
 	}
@@ -210,27 +215,32 @@ WHERE 1=1`)
 
 func (s *Store) GetState(ctx context.Context, stateID string) (store.StateEntry, bool, error) {
 	query := `
-SELECT s.state_id, s.image_id, s.prepare_kind, s.prepare_args_normalized, s.created_at, s.size_bytes,
+SELECT s.state_id, s.parent_state_id, s.image_id, s.prepare_kind, s.prepare_args_normalized, s.created_at, s.size_bytes,
        (SELECT COUNT(1) FROM instances i WHERE i.state_id = s.state_id) as refcount
 FROM states s
 WHERE s.state_id = ?`
 	row := s.db.QueryRowContext(ctx, query, stateID)
 	var entry store.StateEntry
-	if err := row.Scan(&entry.StateID, &entry.ImageID, &entry.PrepareKind, &entry.PrepareArgs, &entry.CreatedAt, &entry.SizeBytes, &entry.RefCount); err != nil {
+	var parent sql.NullString
+	if err := row.Scan(&entry.StateID, &parent, &entry.ImageID, &entry.PrepareKind, &entry.PrepareArgs, &entry.CreatedAt, &entry.SizeBytes, &entry.RefCount); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return store.StateEntry{}, false, nil
 		}
 		return store.StateEntry{}, false, err
+	}
+	if parent.Valid && strings.TrimSpace(parent.String) != "" {
+		entry.ParentStateID = strPtr(parent.String)
 	}
 	return entry, true, nil
 }
 
 func (s *Store) CreateState(ctx context.Context, entry store.StateCreate) error {
 	query := `
-INSERT OR IGNORE INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT OR IGNORE INTO states (state_id, parent_state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
 		entry.StateID,
+		entry.ParentStateID,
 		entry.StateFingerprint,
 		entry.ImageID,
 		entry.PrepareKind,
@@ -257,11 +267,34 @@ VALUES (?, ?, ?, ?, ?, ?)`
 	return err
 }
 
+func (s *Store) DeleteInstance(ctx context.Context, instanceID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM instances WHERE instance_id = ?`, instanceID)
+	return err
+}
+
+func (s *Store) DeleteState(ctx context.Context, stateID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM states WHERE state_id = ?`, stateID)
+	return err
+}
+
 func initDB(db *sql.DB) error {
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
 	}
 	_, err := db.Exec(SchemaSQL())
+	if err != nil {
+		return err
+	}
+	return ensureParentStateColumn(db)
+}
+
+func ensureParentStateColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE states ADD COLUMN parent_state_id TEXT"); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	_, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_states_parent ON states(parent_state_id)")
 	return err
 }
 

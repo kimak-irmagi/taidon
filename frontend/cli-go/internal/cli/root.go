@@ -80,6 +80,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  init     Initialize a workspace")
 	fmt.Fprintln(w, "  ls       List names, instances, or states")
+	fmt.Fprintln(w, "  rm       Remove an instance or state")
 	fmt.Fprintln(w, "  prepare:psql  Prepare a database state with psql")
 	fmt.Fprintln(w, "  status   Check service health")
 	fmt.Fprintln(w, "")

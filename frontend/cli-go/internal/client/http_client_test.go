@@ -131,6 +131,27 @@ func TestGetInstanceFollowsRedirectWithAuth(t *testing.T) {
 	}
 }
 
+func TestListStatesAddsIDPrefix(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListStates(context.Background(), ListFilters{
+		IDPrefix: "abc12345",
+	})
+	if err != nil {
+		t.Fatalf("list states failed: %v", err)
+	}
+	if gotQuery.Get("id_prefix") != "abc12345" {
+		t.Fatalf("expected id_prefix param, got %v", gotQuery.Encode())
+	}
+}
+
 func TestCreatePrepareJob(t *testing.T) {
 	var gotPath string
 	var gotAuth string

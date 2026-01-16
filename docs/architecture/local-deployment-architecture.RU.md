@@ -87,6 +87,7 @@ CLI намеренно **тонкий** и без состояния.
 - Cache rewind и eviction
 - Выполнение скриптов через `psql`
 - Connection / proxy слой (если нужен)
+- Трекинг подключений для TTL и безопасного удаления
 - IPC/API для CLI и будущих IDE-интеграций
 - Планирование/исполнение prepare; `run` команды не выполняет
 - Создание эфемерных экземпляров для prepare
@@ -120,7 +121,9 @@ CLI намеренно **тонкий** и без состояния.
 - список names/instances/states (JSON array или NDJSON через `Accept`)
 - `GET /v1/names/{name}` - чтение name binding
 - `GET /v1/instances/{instanceId}` - чтение экземпляра (если найдено по имени, engine отвечает 307 redirect на канонический URL по id)
+- `DELETE /v1/instances/{instanceId}` - удаление экземпляра (идемпотентно; поддерживает dry-run)
 - `GET /v1/states/{stateId}` - чтение state
+- `DELETE /v1/states/{stateId}` - удаление state (идемпотентно; поддерживает recurse/force/dry-run)
 - `POST /snapshots` - ручной snapshot
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - опциональная мягкая остановка

@@ -37,13 +37,14 @@ type InstanceEntry struct {
 }
 
 type StateEntry struct {
-	StateID     string `json:"state_id"`
-	ImageID     string `json:"image_id"`
-	PrepareKind string `json:"prepare_kind"`
-	PrepareArgs string `json:"prepare_args_normalized"`
-	CreatedAt   string `json:"created_at"`
-	SizeBytes   *int64 `json:"size_bytes,omitempty"`
-	RefCount    int    `json:"refcount"`
+	StateID       string  `json:"state_id"`
+	ParentStateID *string `json:"parent_state_id,omitempty"`
+	ImageID       string  `json:"image_id"`
+	PrepareKind   string  `json:"prepare_kind"`
+	PrepareArgs   string  `json:"prepare_args_normalized"`
+	CreatedAt     string  `json:"created_at"`
+	SizeBytes     *int64  `json:"size_bytes,omitempty"`
+	RefCount      int     `json:"refcount"`
 }
 
 type PrepareJobRequest struct {
@@ -94,4 +95,24 @@ type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Details string `json:"details,omitempty"`
+}
+
+type DeleteOptions struct {
+	Recurse bool
+	Force   bool
+	DryRun  bool
+}
+
+type DeleteResult struct {
+	DryRun  bool       `json:"dry_run"`
+	Outcome string     `json:"outcome"`
+	Root    DeleteNode `json:"root"`
+}
+
+type DeleteNode struct {
+	Kind        string       `json:"kind"`
+	ID          string       `json:"id"`
+	Connections *int         `json:"connections,omitempty"`
+	Blocked     string       `json:"blocked,omitempty"`
+	Children    []DeleteNode `json:"children,omitempty"`
 }

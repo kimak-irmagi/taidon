@@ -8,6 +8,7 @@
 flowchart LR
   API[REST API]
   CTRL["Контроллер prepare"]
+  DEL["Контроллер удаления"]
   PLAN["Планировщик prepare"]
   EXEC["Исполнитель prepare"]
   CACHE[Клиент кэша состояний]
@@ -15,10 +16,12 @@ flowchart LR
   RUNTIME["Рантайм экземпляров (Docker)"]
   ADAPTER["Адаптер системы скриптов"]
   INST["Менеджер экземпляров"]
+  CONN["Трекинг подключений"]
   STORE["Хранилище снапшотов (пути + метаданные)"]
   OBS[Телеметрия/Аудит]
 
   API --> CTRL
+  API --> DEL
   CTRL --> PLAN
   CTRL --> EXEC
   CTRL --> CACHE
@@ -27,17 +30,23 @@ flowchart LR
   CTRL --> ADAPTER
   CTRL --> INST
   CTRL --> OBS
+  DEL --> INST
+  DEL --> SNAP
+  DEL --> STORE
+  DEL --> CONN
   PLAN --> ADAPTER
   EXEC --> ADAPTER
   SNAP --> STORE
   INST --> STORE
   CACHE --> STORE
   RUNTIME --> STORE
+  CONN --> RUNTIME
 ```
 
 ### 1.1 API-слой
 
 - REST по loopback (HTTP/UDS); expose prepare jobs, операции с экземплярами, snapshots, cache и shutdown endpoints.
+- expose endpoints удаления экземпляров и состояний с опциями recurse/force/dry-run.
 - Prepare выполняется как async job; CLI следит за статусом/событиями и ждет завершения.
 
 ### 1.2 Prepare Controller
@@ -88,18 +97,33 @@ flowchart LR
 - Создает эфемерные экземпляры и возвращает DSN.
 - Управляет жизненным циклом экземпляров (ephemeral) и метаданными TTL/GC.
 
-### 1.10 State Store (Paths + Metadata)
+### 1.10 Контроллер удаления
+
+- Строит дерево удаления для экземпляров и состояний.
+- Проверяет правила безопасности (активные подключения, потомки, флаги).
+- Выполняет удаление при разрешении; ответы идемпотентны.
+
+### 1.11 Трекинг подключений
+
+- Отслеживает активные подключения на уровне экземпляров.
+- Использует introspection в БД (например, `pg_stat_activity`) по расписанию.
+- Используется для продления TTL и проверок удаления.
+
+### 1.12 State Store (Paths + Metadata)
 
 - Разрешает корень хранилища (`~/.cache/sqlrs/state-store` или override).
 - Владеет metadata DB (SQLite WAL) и layout путей (`engines/<engine>/<version>/base|states/<uuid>`).
 - Пишет `engine.json` в state directory (endpoint + PID + auth token + lock) для discovery со стороны CLI.
+- Хранит `parent_state_id` для поддержки иерархии состояний и рекурсивного удаления.
 
-### 1.11 Telemetry/Audit
+### 1.13 Telemetry/Audit
 
 - Эмитит метрики: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
 - Пишет audit events для prepare jobs и cache mutations.
 
-## 2. Prepare Flow (local)
+## 2. Потоки (local)
+
+### 2.1 Prepare Flow
 
 ```mermaid
 sequenceDiagram
@@ -147,6 +171,34 @@ sequenceDiagram
 
 - Отмена: контроллер отменяет prepare job, прерывает активную работу с БД, завершает стрим со статусом `cancelled`.
 - Таймауты: контроллер ограничивает wall-clock; `statement_timeout` задается на шаг.
+
+### 2.2 Delete Flow
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant API as "Engine API"
+  participant DEL as "Контроллер удаления"
+  participant STORE as "Metadata Store"
+  participant INST as "Менеджер экземпляров"
+  participant CONN as "Трекинг подключений"
+  participant SNAP as Snapshotter
+
+  CLI->>API: DELETE /v1/states/{id}?recurse&force&dry_run
+  API->>DEL: build deletion tree
+  DEL->>STORE: load state + descendants
+  DEL->>INST: list instances per state
+  DEL->>CONN: get active connection counts
+  alt blocked
+    DEL-->>API: DeleteResult (blocked)
+  else allowed
+    DEL->>INST: remove instances
+    DEL->>SNAP: remove snapshots
+    DEL->>STORE: delete metadata
+    DEL-->>API: DeleteResult (deleted)
+  end
+  API-->>CLI: 200/409 + DeleteResult
+```
 
 ## 3. Конкурентность и процессная модель
 

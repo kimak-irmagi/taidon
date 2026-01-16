@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"sqlrs/engine/internal/store"
@@ -45,6 +46,9 @@ func (f *fakeStore) ListInstances(ctx context.Context, filters store.InstanceFil
 		if filters.ImageID != "" && entry.ImageID != filters.ImageID {
 			continue
 		}
+		if filters.IDPrefix != "" && !strings.HasPrefix(strings.ToLower(entry.InstanceID), strings.ToLower(filters.IDPrefix)) {
+			continue
+		}
 		out = append(out, entry)
 	}
 	return out, nil
@@ -68,6 +72,15 @@ func (f *fakeStore) CreateState(ctx context.Context, entry store.StateCreate) er
 }
 
 func (f *fakeStore) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
+	return nil
+}
+
+func (f *fakeStore) DeleteInstance(ctx context.Context, instanceID string) error {
+	delete(f.instances, instanceID)
+	return nil
+}
+
+func (f *fakeStore) DeleteState(ctx context.Context, stateID string) error {
 	return nil
 }
 

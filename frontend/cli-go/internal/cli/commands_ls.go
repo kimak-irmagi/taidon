@@ -38,6 +38,7 @@ type LsOptions struct {
 
 	Quiet    bool
 	NoHeader bool
+	Long     bool
 }
 
 type LsResult struct {
@@ -157,7 +158,6 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			if names == nil {
 				names = []client.NameEntry{}
 			}
-			result.Names = &names
 		}
 	}
 	if opts.IncludeInstances {
@@ -211,7 +211,6 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			if instances == nil {
 				instances = []client.InstanceEntry{}
 			}
-			result.Instances = &instances
 		}
 	}
 	if opts.IncludeStates {

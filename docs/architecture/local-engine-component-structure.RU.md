@@ -17,6 +17,14 @@
   - Роутинг и handlers.
   - JSON/NDJSON кодирование.
   - Использует auth + registry + store interfaces.
+- `internal/deletion`
+  - Строит дерево удаления для экземпляров и состояний.
+  - Применяет правила recurse/force и выполняет удаление.
+- `internal/instances`
+  - Жизненный цикл экземпляров (create/remove) и DSN.
+  - Интегрирует трекинг подключений для TTL и проверок.
+- `internal/conntrack`
+  - Трекинг активных подключений через DB introspection.
 - `internal/auth`
   - Проверка Bearer токена.
   - Исключение для `/v1/health`.
@@ -47,6 +55,9 @@
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
+  DEL["internal/deletion"]
+  INST["internal/instances"]
+  CONN["internal/conntrack"]
   AUTH["internal/auth"]
   REG["internal/registry"]
   ID["internal/id"]
@@ -57,8 +68,13 @@ flowchart TD
   CMD --> HTTP
   CMD --> SQLITE
   HTTP --> AUTH
+  HTTP --> DEL
+  HTTP --> INST
   HTTP --> REG
   HTTP --> STREAM
+  DEL --> INST
+  DEL --> STORE
+  INST --> CONN
   REG --> ID
   REG --> STORE
   SQLITE --> STORE

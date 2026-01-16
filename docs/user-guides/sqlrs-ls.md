@@ -146,7 +146,7 @@ With the global `--output json` option, `sqlrs ls` prints a single JSON object:
 
 - Arrays are present only for the selected object types.
 - Each element is a stable schema suitable for CI tooling.
-- JSON output always uses full ids.
+- JSON output always uses full ids (no truncation).
 
 Recommended fields:
 

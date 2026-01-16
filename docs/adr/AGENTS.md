@@ -10,3 +10,4 @@ When working on the documents in this folder, follow these rules:
    - The alternatives considered
    - The chosen solution or decision made
    - The brief rationale of the decision
+2. If multiple decisions are made within a single session, each should have a separate ADR record, though they may share the same .md file.

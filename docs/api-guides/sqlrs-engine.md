@@ -1363,8 +1363,8 @@ Returns instances.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|id_prefix|query|string|false|Case-insensitive hex id prefix (min 8 chars).|
 |state|query|string|false|Filter by state id.|
-|id_prefix|query|string|false|Filter by instance id prefix (case-insensitive, 8+ hex chars).|
 |image|query|string|false|Filter by base image id.|
 
 > Example responses
@@ -1390,6 +1390,7 @@ Returns instances.
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 
 <aside class="warning">
@@ -1596,6 +1597,210 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
+## deleteInstance
+
+<a id="opIddeleteInstance"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X DELETE http://127.0.0.1:{port}/v1/instances/{instanceId} \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+DELETE http://127.0.0.1:{port}/v1/instances/{instanceId} HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/instances/{instanceId}',
+{
+  method: 'DELETE',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.delete 'http://127.0.0.1:{port}/v1/instances/{instanceId}',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.delete('http://127.0.0.1:{port}/v1/instances/{instanceId}', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('DELETE','http://127.0.0.1:{port}/v1/instances/{instanceId}', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/instances/{instanceId}");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("DELETE");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("DELETE", "http://127.0.0.1:{port}/v1/instances/{instanceId}", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`DELETE /v1/instances/{instanceId}`
+
+*Delete an instance*
+
+Deletes a single instance by id. This operation is idempotent.
+The response includes a deletion tree with blocked reasons when removal
+is not possible.
+
+<h3 id="deleteinstance-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|instanceId|path|string|true|none|
+|force|query|boolean|false|Ignore active connections.|
+|dry_run|query|boolean|false|Return the deletion tree without making changes.|
+
+#### Detailed descriptions
+
+**dry_run**: Return the deletion tree without making changes.
+When true, the response is always 200 and `outcome` indicates whether
+deletion would succeed.
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "dry_run": true,
+  "outcome": "deleted",
+  "root": {
+    "kind": "state",
+    "id": "string",
+    "connections": 0,
+    "blocked": "active_connections",
+    "children": [
+      {}
+    ]
+  }
+}
+```
+
+<h3 id="deleteinstance-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK (deleted or dry-run result)|[DeleteResult](#schemadeleteresult)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|[ErrorResponse](#schemaerrorresponse)|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Blocked by safety rules (dry_run=false only)|[DeleteResult](#schemadeleteresult)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 <h1 id="the-sqlrs-engine-api-states">states</h1>
 
 ## listStates
@@ -1755,8 +1960,8 @@ Returns states.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|id_prefix|query|string|false|Case-insensitive hex id prefix (min 8 chars).|
 |kind|query|string|false|Filter by prepare kind.|
-|id_prefix|query|string|false|Filter by state id prefix (case-insensitive, 8+ hex chars).|
 |image|query|string|false|Filter by base image id.|
 
 > Example responses
@@ -1767,6 +1972,7 @@ Returns states.
 [
   {
     "state_id": "string",
+    "parent_state_id": "string",
     "image_id": "string",
     "prepare_kind": "string",
     "prepare_args_normalized": "string",
@@ -1782,6 +1988,7 @@ Returns states.
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 
 <aside class="warning">
@@ -1955,6 +2162,7 @@ Returns a single state.
 ```json
 {
   "state_id": "string",
+  "parent_state_id": "string",
   "image_id": "string",
   "prepare_kind": "string",
   "prepare_args_normalized": "string",
@@ -1971,6 +2179,212 @@ Returns a single state.
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[StateEntry](#schemastateentry)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## deleteState
+
+<a id="opIddeleteState"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X DELETE http://127.0.0.1:{port}/v1/states/{stateId} \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+DELETE http://127.0.0.1:{port}/v1/states/{stateId} HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/states/{stateId}',
+{
+  method: 'DELETE',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.delete 'http://127.0.0.1:{port}/v1/states/{stateId}',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.delete('http://127.0.0.1:{port}/v1/states/{stateId}', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('DELETE','http://127.0.0.1:{port}/v1/states/{stateId}', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/states/{stateId}");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("DELETE");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("DELETE", "http://127.0.0.1:{port}/v1/states/{stateId}", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`DELETE /v1/states/{stateId}`
+
+*Delete a state*
+
+Deletes a single state by id. This operation is idempotent.
+By default, the state must have no descendants. When `recurse` is set,
+the engine returns a full deletion tree and only deletes when all nodes
+are allowed. Partial deletion is not performed.
+
+<h3 id="deletestate-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|stateId|path|string|true|none|
+|recurse|query|boolean|false|Allow removal of descendant states and instances.|
+|force|query|boolean|false|Ignore active connections.|
+|dry_run|query|boolean|false|Return the deletion tree without making changes.|
+
+#### Detailed descriptions
+
+**dry_run**: Return the deletion tree without making changes.
+When true, the response is always 200 and `outcome` indicates whether
+deletion would succeed.
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "dry_run": true,
+  "outcome": "deleted",
+  "root": {
+    "kind": "state",
+    "id": "string",
+    "connections": 0,
+    "blocked": "active_connections",
+    "children": [
+      {}
+    ]
+  }
+}
+```
+
+<h3 id="deletestate-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK (deleted or dry-run result)|[DeleteResult](#schemadeleteresult)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|[ErrorResponse](#schemaerrorresponse)|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Blocked by safety rules (dry_run=false only)|[DeleteResult](#schemadeleteresult)|
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2263,6 +2677,92 @@ or
 |prepare_kind|string|true|none|none|
 |prepare_args_normalized|string|true|none|none|
 
+<h2 id="tocS_DeleteResult">DeleteResult</h2>
+<!-- backwards compatibility -->
+<a id="schemadeleteresult"></a>
+<a id="schema_DeleteResult"></a>
+<a id="tocSdeleteresult"></a>
+<a id="tocsdeleteresult"></a>
+
+```json
+{
+  "dry_run": true,
+  "outcome": "deleted",
+  "root": {
+    "kind": "state",
+    "id": "string",
+    "connections": 0,
+    "blocked": "active_connections",
+    "children": [
+      {}
+    ]
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|dry_run|boolean|true|none|none|
+|outcome|string|true|none|none|
+|root|[DeleteTreeNode](#schemadeletetreenode)|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|outcome|deleted|
+|outcome|would_delete|
+|outcome|blocked|
+
+<h2 id="tocS_DeleteTreeNode">DeleteTreeNode</h2>
+<!-- backwards compatibility -->
+<a id="schemadeletetreenode"></a>
+<a id="schema_DeleteTreeNode"></a>
+<a id="tocSdeletetreenode"></a>
+<a id="tocsdeletetreenode"></a>
+
+```json
+{
+  "kind": "state",
+  "id": "string",
+  "connections": 0,
+  "blocked": "active_connections",
+  "children": [
+    {
+      "kind": "state",
+      "id": "string",
+      "connections": 0,
+      "blocked": "active_connections",
+      "children": []
+    }
+  ]
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|kind|string|true|none|none|
+|id|string|true|none|none|
+|connections|integer(int32)|false|none|Active connections (instances only).|
+|blocked|string|false|none|Reason the node cannot be deleted.|
+|children|[[DeleteTreeNode](#schemadeletetreenode)]|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|kind|state|
+|kind|instance|
+|blocked|active_connections|
+|blocked|has_descendants|
+|blocked|blocked_by_descendant|
+
 <h2 id="tocS_ErrorResponse">ErrorResponse</h2>
 <!-- backwards compatibility -->
 <a id="schemaerrorresponse"></a>
@@ -2406,6 +2906,7 @@ continued
 ```json
 {
   "state_id": "string",
+  "parent_state_id": "string",
   "image_id": "string",
   "prepare_kind": "string",
   "prepare_args_normalized": "string",
@@ -2421,6 +2922,24 @@ continued
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |state_id|string|true|none|none|
+|parent_state_id|any|false|none|Parent state id (null for roots).|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
 |image_id|string|true|none|none|
 |prepare_kind|string|true|none|none|
 |prepare_args_normalized|string|true|none|none|

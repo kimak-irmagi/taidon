@@ -208,15 +208,16 @@ paths:
         - instances
       parameters:
         - in: query
+          name: id_prefix
+          schema:
+            type: string
+            pattern: "^[0-9a-fA-F]{8,}$"
+          description: Case-insensitive hex id prefix (min 8 chars).
+        - in: query
           name: state
           schema:
             type: string
           description: Filter by state id.
-        - in: query
-          name: id_prefix
-          schema:
-            type: string
-          description: Filter by instance id prefix (case-insensitive, 8+ hex chars).
         - in: query
           name: image
           schema:
@@ -235,6 +236,12 @@ paths:
               schema:
                 type: string
                 description: Newline-delimited JSON stream of InstanceEntry objects.
+        "400":
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized
   /v1/instances/{instanceId}:
@@ -273,6 +280,61 @@ paths:
           description: Not found
         "401":
           description: Unauthorized
+    delete:
+      operationId: deleteInstance
+      summary: Delete an instance
+      description: |
+        Deletes a single instance by id. This operation is idempotent.
+        The response includes a deletion tree with blocked reasons when removal
+        is not possible.
+      tags:
+        - instances
+      parameters:
+        - in: path
+          name: instanceId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: force
+          schema:
+            type: boolean
+          description: Ignore active connections.
+        - in: query
+          name: dry_run
+          schema:
+            type: boolean
+          description: |
+            Return the deletion tree without making changes.
+            When true, the response is always 200 and `outcome` indicates whether
+            deletion would succeed.
+      responses:
+        "200":
+          description: OK (deleted or dry-run result)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Blocked by safety rules (dry_run=false only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
   /v1/states:
     get:
       operationId: listStates
@@ -282,15 +344,16 @@ paths:
         - states
       parameters:
         - in: query
+          name: id_prefix
+          schema:
+            type: string
+            pattern: "^[0-9a-fA-F]{8,}$"
+          description: Case-insensitive hex id prefix (min 8 chars).
+        - in: query
           name: kind
           schema:
             type: string
           description: Filter by prepare kind.
-        - in: query
-          name: id_prefix
-          schema:
-            type: string
-          description: Filter by state id prefix (case-insensitive, 8+ hex chars).
         - in: query
           name: image
           schema:
@@ -309,6 +372,12 @@ paths:
               schema:
                 type: string
                 description: Newline-delimited JSON stream of StateEntry objects.
+        "400":
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized
   /v1/states/{stateId}:
@@ -335,6 +404,67 @@ paths:
           description: Not found
         "401":
           description: Unauthorized
+    delete:
+      operationId: deleteState
+      summary: Delete a state
+      description: |
+        Deletes a single state by id. This operation is idempotent.
+        By default, the state must have no descendants. When `recurse` is set,
+        the engine returns a full deletion tree and only deletes when all nodes
+        are allowed. Partial deletion is not performed.
+      tags:
+        - states
+      parameters:
+        - in: path
+          name: stateId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: recurse
+          schema:
+            type: boolean
+          description: Allow removal of descendant states and instances.
+        - in: query
+          name: force
+          schema:
+            type: boolean
+          description: Ignore active connections.
+        - in: query
+          name: dry_run
+          schema:
+            type: boolean
+          description: |
+            Return the deletion tree without making changes.
+            When true, the response is always 200 and `outcome` indicates whether
+            deletion would succeed.
+      responses:
+        "200":
+          description: OK (deleted or dry-run result)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Blocked by safety rules (dry_run=false only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
 components:
   securitySchemes:
     bearerAuth:
@@ -501,6 +631,46 @@ components:
           type: string
         prepare_args_normalized:
           type: string
+    DeleteResult:
+      type: object
+      additionalProperties: false
+      required:
+        - dry_run
+        - outcome
+        - root
+      properties:
+        dry_run:
+          type: boolean
+        outcome:
+          type: string
+          enum: [deleted, would_delete, blocked]
+        root:
+          $ref: "#/components/schemas/DeleteTreeNode"
+    DeleteTreeNode:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - id
+      properties:
+        kind:
+          type: string
+          enum: [state, instance]
+        id:
+          type: string
+        connections:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Active connections (instances only).
+        blocked:
+          type: string
+          enum: [active_connections, has_descendants, blocked_by_descendant]
+          description: Reason the node cannot be deleted.
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeleteTreeNode"
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -587,6 +757,11 @@ components:
       properties:
         state_id:
           type: string
+        parent_state_id:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Parent state id (null for roots).
         image_id:
           type: string
         prepare_kind:

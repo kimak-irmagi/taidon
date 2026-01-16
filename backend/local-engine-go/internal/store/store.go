@@ -33,17 +33,19 @@ type InstanceEntry struct {
 }
 
 type StateEntry struct {
-	StateID     string `json:"state_id"`
-	ImageID     string `json:"image_id"`
-	PrepareKind string `json:"prepare_kind"`
-	PrepareArgs string `json:"prepare_args_normalized"`
-	CreatedAt   string `json:"created_at"`
-	SizeBytes   *int64 `json:"size_bytes,omitempty"`
-	RefCount    int    `json:"refcount"`
+	StateID       string  `json:"state_id"`
+	ParentStateID *string `json:"parent_state_id,omitempty"`
+	ImageID       string  `json:"image_id"`
+	PrepareKind   string  `json:"prepare_kind"`
+	PrepareArgs   string  `json:"prepare_args_normalized"`
+	CreatedAt     string  `json:"created_at"`
+	SizeBytes     *int64  `json:"size_bytes,omitempty"`
+	RefCount      int     `json:"refcount"`
 }
 
 type StateCreate struct {
 	StateID               string
+	ParentStateID         *string
 	StateFingerprint      string
 	ImageID               string
 	PrepareKind           string
@@ -69,15 +71,16 @@ type NameFilters struct {
 }
 
 type InstanceFilters struct {
-	StateID  string
-	ImageID  string
-	IDPrefix string
+	StateID   string
+	ImageID   string
+	IDPrefix  string
 }
 
 type StateFilters struct {
 	Kind     string
 	ImageID  string
 	IDPrefix string
+	ParentID string
 }
 
 type Store interface {
@@ -89,5 +92,7 @@ type Store interface {
 	GetState(ctx context.Context, stateID string) (StateEntry, bool, error)
 	CreateState(ctx context.Context, entry StateCreate) error
 	CreateInstance(ctx context.Context, entry InstanceCreate) error
+	DeleteInstance(ctx context.Context, instanceID string) error
+	DeleteState(ctx context.Context, stateID string) error
 	Close() error
 }
