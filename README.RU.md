@@ -1,5 +1,7 @@
 # Taidon
 
+[![Coverage Status](https://coveralls.io/repos/github/kimak-irmagi/taidon/badge.svg?branch=main)](https://coveralls.io/github/kimak-irmagi/taidon?branch=main)
+
 Taidon — это open-source платформа для безопасных и воспроизводимых SQL‑экспериментов.  
 Она предоставляет изолированные окружения, быстрые снапшотные базы и единый API для выполнения SQL‑нагрузок без побочных эффектов.
 
