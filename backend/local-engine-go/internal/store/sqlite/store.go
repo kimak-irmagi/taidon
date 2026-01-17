@@ -407,10 +407,10 @@ func parseTime(value string) (time.Time, bool) {
 	if value == "" {
 		return time.Time{}, false
 	}
-	if ts, err := time.Parse(time.RFC3339Nano, value); err == nil {
+	if ts, err := time.Parse(time.RFC3339, value); err == nil {
 		return ts, true
 	}
-	if ts, err := time.Parse(time.RFC3339, value); err == nil {
+	if ts, err := time.Parse(time.RFC3339Nano, value); err == nil {
 		return ts, true
 	}
 	return time.Time{}, false

@@ -105,6 +105,46 @@ func TestWriteEngineStateRemoveError(t *testing.T) {
 	}
 }
 
+func TestWriteEngineStateTempFileError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "engine.json")
+	tmp := path + ".tmp"
+	if err := os.MkdirAll(tmp, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := writeEngineState(path, EngineState{Endpoint: "127.0.0.1:1234"}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteEngineStateWriteError(t *testing.T) {
+	prevWrite := writeFileFn
+	writeFileFn = func(string, []byte, os.FileMode) error {
+		return errors.New("boom")
+	}
+	t.Cleanup(func() { writeFileFn = prevWrite })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "engine.json")
+	if err := writeEngineState(path, EngineState{Endpoint: "127.0.0.1:1234"}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteEngineStateRenameError(t *testing.T) {
+	prevRename := renameFn
+	renameFn = func(string, string) error {
+		return errors.New("boom")
+	}
+	t.Cleanup(func() { renameFn = prevRename })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "engine.json")
+	if err := writeEngineState(path, EngineState{Endpoint: "127.0.0.1:1234"}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
 func TestRemoveEngineStateError(t *testing.T) {
 	dir := t.TempDir()
 	nested := filepath.Join(dir, "nested")
@@ -192,6 +232,20 @@ func TestRunRandomHexError(t *testing.T) {
 	}
 }
 
+func TestRunAuthTokenError(t *testing.T) {
+	prevReader := randReader
+	seq := &sequenceReader{failOn: 2}
+	randReader = seq
+	t.Cleanup(func() { randReader = prevReader })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "auth token") {
+		t.Fatalf("expected auth token error, got code=%d err=%v", code, err)
+	}
+}
+
 func TestRunOpenStateDBError(t *testing.T) {
 	previousServe := serveHTTP
 	serveHTTP = func(server *http.Server, listener net.Listener) error {
@@ -254,6 +308,21 @@ func TestRunWithRunDir(t *testing.T) {
 	}
 }
 
+func TestRunIdleTimeoutShutdown(t *testing.T) {
+	previousServe := serveHTTP
+	serveHTTP = func(server *http.Server, listener net.Listener) error {
+		return server.Serve(listener)
+	}
+	t.Cleanup(func() { serveHTTP = previousServe })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=100ms"})
+	if err != nil || code != 0 {
+		t.Fatalf("expected success, got code=%d err=%v", code, err)
+	}
+}
+
 func TestRunSuccess(t *testing.T) {
 	previousServe := serveHTTP
 	called := false
@@ -300,4 +369,20 @@ type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) {
 	return 0, errors.New("boom")
+}
+
+type sequenceReader struct {
+	calls  int
+	failOn int
+}
+
+func (r *sequenceReader) Read(p []byte) (int, error) {
+	r.calls++
+	if r.calls == r.failOn {
+		return 0, errors.New("boom")
+	}
+	for i := range p {
+		p[i] = 0x1
+	}
+	return len(p), nil
 }

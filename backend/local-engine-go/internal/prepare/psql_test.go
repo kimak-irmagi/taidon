@@ -41,8 +41,8 @@ func TestPreparePsqlArgsRespectsProvidedDefaults(t *testing.T) {
 func TestPreparePsqlArgsRejectsConnectionFlags(t *testing.T) {
 	flags := []string{
 		"-h", "--host", "--host=localhost",
-		"-p", "--port", "-p5432",
-		"-U", "--username", "-Uuser",
+		"-p", "--port", "-p5432", "--port=5432",
+		"-U", "--username", "-Uuser", "--username=postgres",
 		"-d", "-dpostgres", "--dbname", "--dbname=postgres",
 		"--database", "--database=test",
 	}
@@ -128,8 +128,16 @@ func TestPreparePsqlArgsHandlesVarFlags(t *testing.T) {
 	_, err = preparePsqlArgs([]string{"--set"}, nil)
 	expectValidationError(t, err, "missing value for variable flag")
 
+	_, err = preparePsqlArgs([]string{"--variable"}, nil)
+	expectValidationError(t, err, "missing value for variable flag")
+
 	_, err = preparePsqlArgs([]string{"-v", "ON_ERROR_STOP"}, nil)
 	expectValidationError(t, err, "ON_ERROR_STOP must be set to 1")
+
+	_, err = preparePsqlArgs([]string{"-v", "FOO"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
 
 	_, err = preparePsqlArgs([]string{"-v", "ON_ERROR_STOP=0"}, nil)
 	expectValidationError(t, err, "ON_ERROR_STOP must be set to 1")
@@ -149,14 +157,46 @@ func TestPreparePsqlArgsHandlesVarFlags(t *testing.T) {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
 
+	_, err = preparePsqlArgs([]string{"--set=ON_ERROR_STOP=0"}, nil)
+	expectValidationError(t, err, "ON_ERROR_STOP must be set to 1")
+
 	_, err = preparePsqlArgs([]string{"--set", "FOO=bar"}, nil)
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
 
+	_, err = preparePsqlArgs([]string{"--variable=ON_ERROR_STOP=0"}, nil)
+	expectValidationError(t, err, "ON_ERROR_STOP must be set to 1")
+
 	_, err = preparePsqlArgs([]string{"--variable", "FOO=bar"}, nil)
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+}
+
+func TestPreparePsqlArgsIgnoresMiscFlags(t *testing.T) {
+	out, err := preparePsqlArgs([]string{"", "-q"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+	if !containsArg(out.normalizedArgs, "-X") {
+		t.Fatalf("expected -X to be added")
+	}
+	if !containsArg(out.normalizedArgs, "ON_ERROR_STOP=1") {
+		t.Fatalf("expected ON_ERROR_STOP=1 to be added")
+	}
+}
+
+func TestPreparePsqlArgsAllowsTerminator(t *testing.T) {
+	out, err := preparePsqlArgs([]string{"--"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+	if !containsArg(out.normalizedArgs, "-X") {
+		t.Fatalf("expected -X to be added")
+	}
+	if !containsArg(out.normalizedArgs, "ON_ERROR_STOP=1") {
+		t.Fatalf("expected ON_ERROR_STOP=1 to be added")
 	}
 }
 
@@ -191,6 +231,11 @@ func TestPreparePsqlArgsHandlesFileFlagEquals(t *testing.T) {
 	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
 		t.Fatalf("expected file hash, got %+v", out.inputHashes)
 	}
+}
+
+func TestPreparePsqlArgsRejectsInlineRelativeFile(t *testing.T) {
+	_, err := preparePsqlArgs([]string{"-frelative.sql"}, nil)
+	expectValidationError(t, err, "file path must be absolute")
 }
 
 func TestPreparePsqlArgsRejectsEmptyFilePath(t *testing.T) {

@@ -484,6 +484,18 @@ func TestDeleteStateRecurseDeleteError(t *testing.T) {
 	}
 }
 
+func TestDeleteTreeUnknownKind(t *testing.T) {
+	st := newFakeStore()
+	mgr, err := NewManager(Options{Store: st})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if err := mgr.deleteTree(context.Background(), DeleteNode{Kind: "unknown", ID: "x"}); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
 func findNode(root DeleteNode, kind, id string) *DeleteNode {
 	if root.Kind == kind && root.ID == id {
 		return &root

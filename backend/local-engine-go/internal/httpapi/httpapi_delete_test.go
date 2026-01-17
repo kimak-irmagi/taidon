@@ -155,6 +155,33 @@ func TestDeleteInstanceInvalidForceQuery(t *testing.T) {
 	}
 }
 
+func TestDeleteInstanceInvalidDryRunQuery(t *testing.T) {
+	server, cleanup := newDeleteTestServer(t, seedInstanceData, fakeConnTracker{})
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/instances/inst-1?dry_run=nah", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var body prepare.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "invalid_argument" || body.Message != "invalid dry_run" {
+		t.Fatalf("unexpected error response: %+v", body)
+	}
+}
+
 func TestDeleteInstanceNotFound(t *testing.T) {
 	server, cleanup := newDeleteTestServer(t, seedEmptyData, fakeConnTracker{})
 	defer cleanup()

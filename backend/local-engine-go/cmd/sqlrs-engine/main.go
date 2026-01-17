@@ -60,6 +60,8 @@ var serveHTTP = func(server *http.Server, listener net.Listener) error {
 
 var exitFn = os.Exit
 var randReader = rand.Reader
+var writeFileFn = os.WriteFile
+var renameFn = os.Rename
 
 func run(args []string) (int, error) {
 	fs := flag.NewFlagSet("sqlrs-engine", flag.ContinueOnError)
@@ -234,13 +236,13 @@ func writeEngineState(path string, state EngineState) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := writeFileFn(tmp, data, 0o600); err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return renameFn(tmp, path)
 }
 
 func removeEngineState(path string) {
