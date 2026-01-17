@@ -115,7 +115,7 @@ CLI намеренно **тонкий** и без состояния.
 
 Ключевые endpoint-ы engine (логически):
 
-- `POST /v1/prepare-jobs` - старт prepare job (plan/execute steps, snapshot states, создание экземпляра)
+- `POST /v1/prepare-jobs` - старт prepare job (plan/execute steps, snapshot states, создание экземпляра); `plan_only` считает только задачи
 - `GET /v1/prepare-jobs/{jobId}` - статус job
 - `GET /v1/prepare-jobs/{jobId}/events` - стрим событий job (NDJSON)
 - список names/instances/states (JSON array или NDJSON через `Accept`)

@@ -48,6 +48,7 @@ flowchart LR
 - REST по loopback (HTTP/UDS); expose prepare jobs, операции с экземплярами, snapshots, cache и shutdown endpoints.
 - expose endpoints удаления экземпляров и состояний с опциями recurse/force/dry-run.
 - Prepare выполняется как async job; CLI следит за статусом/событиями и ждет завершения.
+  `plan_only`-запросы возвращают список задач в статусе job.
 
 ### 1.2 Prepare Controller
 
@@ -172,7 +173,31 @@ sequenceDiagram
 - Отмена: контроллер отменяет prepare job, прерывает активную работу с БД, завершает стрим со статусом `cancelled`.
 - Таймауты: контроллер ограничивает wall-clock; `statement_timeout` задается на шаг.
 
-### 2.2 Delete Flow
+### 2.2 Plan-only Flow
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant API as "Engine API"
+  participant CTRL as "Контроллер prepare"
+  participant ADAPTER as "Адаптер скриптов"
+  participant CACHE as Cache
+
+  CLI->>API: start prepare job (plan_only=true)
+  API-->>CLI: job_id
+  CLI->>API: watch status/events
+  API->>CTRL: enqueue job
+  CTRL->>ADAPTER: plan steps
+  CTRL->>CACHE: lookup(key)
+  CACHE-->>CTRL: hit/miss
+  CTRL-->>API: tasks + cached flags
+  API-->>CLI: terminal status (tasks included)
+```
+
+- Plan-only job не выполняет шаги и не создает экземпляр.
+- Статус job содержит список задач, когда он доступен.
+
+### 2.3 Delete Flow
 
 ```mermaid
 sequenceDiagram
