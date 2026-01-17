@@ -35,6 +35,23 @@ func TestResolveWindows(t *testing.T) {
 	}
 }
 
+func TestResolveWindowsFallback(t *testing.T) {
+	t.Setenv("APPDATA", "")
+	t.Setenv("LOCALAPPDATA", "")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home: %v", err)
+	}
+	dirs, err := resolveWindows()
+	if err != nil {
+		t.Fatalf("resolveWindows: %v", err)
+	}
+	expectedConfig := filepath.Join(home, "AppData", "Roaming", "sqlrs")
+	if dirs.ConfigDir != expectedConfig {
+		t.Fatalf("expected %q, got %q", expectedConfig, dirs.ConfigDir)
+	}
+}
+
 func TestResolveDarwin(t *testing.T) {
 	dirs, err := resolveDarwin()
 	if err != nil {
@@ -42,6 +59,16 @@ func TestResolveDarwin(t *testing.T) {
 	}
 	if filepath.Base(dirs.ConfigDir) != "config" || filepath.Base(dirs.StateDir) != "state" || filepath.Base(dirs.CacheDir) != "cache" {
 		t.Fatalf("unexpected dirs: %+v", dirs)
+	}
+}
+
+func TestResolveUsesPlatform(t *testing.T) {
+	dirs, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if dirs.ConfigDir == "" || dirs.StateDir == "" || dirs.CacheDir == "" {
+		t.Fatalf("expected directories, got %+v", dirs)
 	}
 }
 

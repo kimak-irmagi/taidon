@@ -48,6 +48,24 @@ func TestAuthAndHealth(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestHealthMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/health", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("health request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
 func TestNamesNDJSON(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
@@ -84,6 +102,63 @@ func TestNamesNDJSON(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			t.Fatalf("invalid ndjson line: %v", err)
 		}
+	}
+}
+
+func TestNamesMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/names", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("names request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestNamesNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/names/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("names request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestNameDetailMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/names/dev", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("names request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
 	}
 }
 
@@ -135,6 +210,139 @@ func TestInstancesAliasRedirect(t *testing.T) {
 	}
 }
 
+func TestInstancesNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/instances/missing", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("instances request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestInstanceDetailMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/instances/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("instances request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestInstancesMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/instances", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("instances request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestInstancesEmptyPathNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/instances/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("instances request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestStatesMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/states", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("states request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestStatesEmptyPathNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/states/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("states request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestStateDetailMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/states/state-1", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("states request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
 func TestNamesFilterByInstance(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
@@ -179,6 +387,63 @@ func TestInstancesRejectInvalidPrefix(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobsInvalidJSON(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/prepare-jobs", strings.NewReader("{"))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("prepare request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobStatusNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/missing", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("prepare status request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobEventsNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/missing/events", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("prepare events request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 }
 

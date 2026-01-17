@@ -131,8 +131,12 @@ func (f *fakeStore) Close() error {
 }
 
 func TestNewManagerRequiresStore(t *testing.T) {
-	if _, err := NewManager(Options{}); err == nil {
+	_, err := NewManager(Options{})
+	if err == nil {
 		t.Fatalf("expected error when store is nil")
+	}
+	if err.Error() == "" {
+		t.Fatalf("expected error message")
 	}
 }
 
@@ -239,6 +243,54 @@ func TestDeleteStateNonRecurseBlocked(t *testing.T) {
 	}
 }
 
+func TestDeleteStateNonRecurseDeletes(t *testing.T) {
+	st := newFakeStore()
+	st.states["root"] = store.StateEntry{StateID: "root"}
+
+	mgr, err := NewManager(Options{Store: st})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	result, found, err := mgr.DeleteState(context.Background(), "root", DeleteOptions{})
+	if err != nil {
+		t.Fatalf("DeleteState: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected state to be found")
+	}
+	if result.Outcome != OutcomeDeleted {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if _, ok := st.states["root"]; ok {
+		t.Fatalf("expected state to be deleted")
+	}
+}
+
+func TestDeleteStateNonRecurseDryRun(t *testing.T) {
+	st := newFakeStore()
+	st.states["root"] = store.StateEntry{StateID: "root"}
+
+	mgr, err := NewManager(Options{Store: st})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	result, found, err := mgr.DeleteState(context.Background(), "root", DeleteOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("DeleteState: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected state to be found")
+	}
+	if result.Outcome != OutcomeWouldDelete || !result.DryRun {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if _, ok := st.states["root"]; !ok {
+		t.Fatalf("expected state to remain on dry run")
+	}
+}
+
 func TestDeleteStateRecurseBlockedByConnections(t *testing.T) {
 	parent := "root"
 	st := newFakeStore()
@@ -328,6 +380,106 @@ func TestDeleteInstancePropagatesErrors(t *testing.T) {
 	}
 
 	if _, _, err := mgr.DeleteInstance(context.Background(), "inst", DeleteOptions{}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteInstanceConnectionError(t *testing.T) {
+	st := newFakeStore()
+	st.instances["inst-1"] = store.InstanceEntry{InstanceID: "inst-1", StateID: "state-1"}
+
+	mgr, err := NewManager(Options{
+		Store: st,
+		Conn:  fakeConn{err: errors.New("boom")},
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, _, err := mgr.DeleteInstance(context.Background(), "inst-1", DeleteOptions{}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteInstanceDeleteError(t *testing.T) {
+	st := newFakeStore()
+	st.instances["inst-1"] = store.InstanceEntry{InstanceID: "inst-1", StateID: "state-1"}
+	st.deleteInstanceErr = errors.New("boom")
+
+	mgr, err := NewManager(Options{Store: st})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, _, err := mgr.DeleteInstance(context.Background(), "inst-1", DeleteOptions{}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteStateListInstancesError(t *testing.T) {
+	st := newFakeStore()
+	st.states["root"] = store.StateEntry{StateID: "root"}
+	st.listInstancesErr = errors.New("boom")
+
+	mgr, err := NewManager(Options{Store: st})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, _, err := mgr.DeleteState(context.Background(), "root", DeleteOptions{}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteStateListStatesError(t *testing.T) {
+	st := newFakeStore()
+	st.states["root"] = store.StateEntry{StateID: "root"}
+	st.listStatesErr = errors.New("boom")
+
+	mgr, err := NewManager(Options{Store: st})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, _, err := mgr.DeleteState(context.Background(), "root", DeleteOptions{}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteStateRecurseConnectionError(t *testing.T) {
+	parent := "root"
+	st := newFakeStore()
+	st.states["root"] = store.StateEntry{StateID: "root"}
+	st.states["child"] = store.StateEntry{StateID: "child", ParentStateID: &parent}
+	st.instances["inst-1"] = store.InstanceEntry{InstanceID: "inst-1", StateID: "child"}
+
+	mgr, err := NewManager(Options{
+		Store: st,
+		Conn:  fakeConn{err: errors.New("boom")},
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, _, err := mgr.DeleteState(context.Background(), "root", DeleteOptions{Recurse: true}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestDeleteStateRecurseDeleteError(t *testing.T) {
+	parent := "root"
+	st := newFakeStore()
+	st.states["root"] = store.StateEntry{StateID: "root"}
+	st.states["child"] = store.StateEntry{StateID: "child", ParentStateID: &parent}
+	st.instances["inst-1"] = store.InstanceEntry{InstanceID: "inst-1", StateID: "child"}
+	st.deleteInstanceErr = errors.New("boom")
+
+	mgr, err := NewManager(Options{Store: st})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, _, err := mgr.DeleteState(context.Background(), "root", DeleteOptions{Recurse: true, Force: true}); err == nil {
 		t.Fatalf("expected error")
 	}
 }

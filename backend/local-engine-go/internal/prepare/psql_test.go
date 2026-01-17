@@ -40,7 +40,11 @@ func TestPreparePsqlArgsRespectsProvidedDefaults(t *testing.T) {
 
 func TestPreparePsqlArgsRejectsConnectionFlags(t *testing.T) {
 	flags := []string{
-		"-h", "--host=localhost", "-p5432", "-Uuser", "--dbname=postgres", "--database=test",
+		"-h", "--host", "--host=localhost",
+		"-p", "--port", "-p5432",
+		"-U", "--username", "-Uuser",
+		"-d", "-dpostgres", "--dbname", "--dbname=postgres",
+		"--database", "--database=test",
 	}
 	for _, flag := range flags {
 		_, err := preparePsqlArgs([]string{flag}, nil)
@@ -78,6 +82,9 @@ func TestPreparePsqlArgsRejectsInvalidFileFlag(t *testing.T) {
 	_, err := preparePsqlArgs([]string{"-f"}, nil)
 	expectValidationError(t, err, "missing value for file flag")
 
+	_, err = preparePsqlArgs([]string{"--file"}, nil)
+	expectValidationError(t, err, "missing value for file flag")
+
 	_, err = preparePsqlArgs([]string{"--file="}, nil)
 	expectValidationError(t, err, "missing value for file flag")
 
@@ -96,11 +103,33 @@ func TestPreparePsqlArgsHandlesCommandFlags(t *testing.T) {
 
 	_, err = preparePsqlArgs([]string{"-c"}, nil)
 	expectValidationError(t, err, "missing value for command flag")
+
+	out, err = preparePsqlArgs([]string{"-cselect 1;"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "command" {
+		t.Fatalf("expected inline command hash, got %+v", out.inputHashes)
+	}
+
+	out, err = preparePsqlArgs([]string{"--command=select 1;"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "command" {
+		t.Fatalf("expected command hash, got %+v", out.inputHashes)
+	}
 }
 
 func TestPreparePsqlArgsHandlesVarFlags(t *testing.T) {
 	_, err := preparePsqlArgs([]string{"-v"}, nil)
 	expectValidationError(t, err, "missing value for variable flag")
+
+	_, err = preparePsqlArgs([]string{"--set"}, nil)
+	expectValidationError(t, err, "missing value for variable flag")
+
+	_, err = preparePsqlArgs([]string{"-v", "ON_ERROR_STOP"}, nil)
+	expectValidationError(t, err, "ON_ERROR_STOP must be set to 1")
 
 	_, err = preparePsqlArgs([]string{"-v", "ON_ERROR_STOP=0"}, nil)
 	expectValidationError(t, err, "ON_ERROR_STOP must be set to 1")
@@ -114,6 +143,66 @@ func TestPreparePsqlArgsHandlesVarFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
+
+	_, err = preparePsqlArgs([]string{"--set=ON_ERROR_STOP=1"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+
+	_, err = preparePsqlArgs([]string{"--set", "FOO=bar"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+
+	_, err = preparePsqlArgs([]string{"--variable", "FOO=bar"}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+}
+
+func TestPreparePsqlArgsHandlesInlineFileFlag(t *testing.T) {
+	path := writeTempSQL(t, "select 1;")
+	out, err := preparePsqlArgs([]string{"-f" + path}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
+		t.Fatalf("expected file hash, got %+v", out.inputHashes)
+	}
+}
+
+func TestPreparePsqlArgsHandlesLongFileFlag(t *testing.T) {
+	path := writeTempSQL(t, "select 1;")
+	out, err := preparePsqlArgs([]string{"--file", path}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
+		t.Fatalf("expected file hash, got %+v", out.inputHashes)
+	}
+}
+
+func TestPreparePsqlArgsHandlesFileFlagEquals(t *testing.T) {
+	path := writeTempSQL(t, "select 1;")
+	out, err := preparePsqlArgs([]string{"--file=" + path}, nil)
+	if err != nil {
+		t.Fatalf("preparePsqlArgs: %v", err)
+	}
+	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
+		t.Fatalf("expected file hash, got %+v", out.inputHashes)
+	}
+}
+
+func TestPreparePsqlArgsRejectsEmptyFilePath(t *testing.T) {
+	_, err := preparePsqlArgs([]string{"-f", ""}, nil)
+	expectValidationError(t, err, "file path is empty")
+}
+
+func TestPreparePsqlArgsRejectsUnreadableFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "missing.sql")
+	_, err := preparePsqlArgs([]string{"-f", path}, nil)
+	expectValidationError(t, err, "cannot read file")
 }
 
 func writeTempSQL(t *testing.T, contents string) string {

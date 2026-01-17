@@ -347,9 +347,11 @@ func formatTimePtr(value *time.Time) *string {
 	return formatTime(*value)
 }
 
+var randReader = rand.Reader
+
 func randomHex(bytes int) (string, error) {
 	buf := make([]byte, bytes)
-	if _, err := rand.Read(buf); err != nil {
+	if _, err := randReader.Read(buf); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil

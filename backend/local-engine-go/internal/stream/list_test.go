@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,3 +56,31 @@ func TestWriteListJSON(t *testing.T) {
 		t.Fatalf("unexpected body: %q", rec.Body.String())
 	}
 }
+
+func TestWriteListNDJSONError(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "application/x-ndjson")
+	writer := &errorWriter{}
+
+	items := []sample{{ID: "a"}}
+	if err := WriteList(writer, req, items); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+type errorWriter struct {
+	header http.Header
+}
+
+func (w *errorWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *errorWriter) Write([]byte) (int, error) {
+	return 0, errors.New("boom")
+}
+
+func (w *errorWriter) WriteHeader(status int) {}

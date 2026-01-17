@@ -24,8 +24,19 @@ func TestToErrorResponse(t *testing.T) {
 		t.Fatalf("unexpected validation response: %+v", resp)
 	}
 
+	ptr := &ValidationError{Code: "invalid_argument", Message: "bad", Details: "details"}
+	resp = ToErrorResponse(ptr)
+	if resp == nil || resp.Code != "invalid_argument" || resp.Message != "bad" || resp.Details != "details" {
+		t.Fatalf("unexpected pointer response: %+v", resp)
+	}
+
 	resp = ToErrorResponse(errors.New("boom"))
 	if resp == nil || resp.Code != "internal_error" || resp.Message != "internal error" || resp.Details != "boom" {
 		t.Fatalf("unexpected generic response: %+v", resp)
+	}
+
+	resp = ToErrorResponse(nil)
+	if resp != nil {
+		t.Fatalf("expected nil response, got %+v", resp)
 	}
 }

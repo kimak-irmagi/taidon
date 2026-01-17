@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -213,6 +214,75 @@ func TestInitRelativeEnginePathOutsideWorkspace(t *testing.T) {
 	expected := filepath.Clean(filepath.Join(outsideAbs, relEngine))
 	if !pathsEquivalent(expected, actual) {
 		t.Fatalf("expected daemonPath %q, got %v", expected, orchestrator["daemonPath"])
+	}
+}
+
+func TestParseInitFlagsHelp(t *testing.T) {
+	_, showHelp, err := parseInitFlags([]string{"--help"}, "")
+	if err != nil || !showHelp {
+		t.Fatalf("expected help, got err=%v help=%v", err, showHelp)
+	}
+}
+
+func TestParseInitFlagsInvalidArgs(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"--unknown"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestResolveWorkspacePathRejectsFile(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if _, err := resolveWorkspacePath(filePath, dir); err == nil {
+		t.Fatalf("expected error for file path")
+	}
+}
+
+func TestRunInitExistingWorkspaceWithoutConfig(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workspace, ".sqlrs"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runInit(&out, workspace, "", nil); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	if !strings.Contains(out.String(), "Workspace already initialized") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestRunInitRejectsMissingWorkspace(t *testing.T) {
+	var out bytes.Buffer
+	missing := filepath.Join(t.TempDir(), "missing")
+	err := runInit(&out, missing, "", nil)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 4 {
+		t.Fatalf("expected ExitError code 4, got %v", err)
+	}
+}
+
+func TestIsWithin(t *testing.T) {
+	dir := t.TempDir()
+	if !isWithin(dir, dir) {
+		t.Fatalf("expected same dir to be within")
+	}
+	if isWithin(dir, filepath.Join(dir, "..")) {
+		t.Fatalf("expected outside dir to be false")
+	}
+}
+
+func TestResolveExistingPathAbsolute(t *testing.T) {
+	dir := t.TempDir()
+	path := resolveExistingPath(filepath.Join(dir, ".."))
+	if !filepath.IsAbs(path) {
+		t.Fatalf("expected absolute path, got %q", path)
 	}
 }
 

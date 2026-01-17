@@ -2,6 +2,7 @@ package prepare
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"testing"
 	"time"
@@ -144,6 +145,11 @@ func TestSubmitStoresStateAndInstance(t *testing.T) {
 	if !ok || !done || len(events) == 0 {
 		t.Fatalf("unexpected events: ok=%v done=%v len=%d", ok, done, len(events))
 	}
+
+	events, ok, done = mgr.EventsSince("job-1", 100)
+	if !ok || !done || len(events) != 0 {
+		t.Fatalf("unexpected events slice: ok=%v done=%v len=%d", ok, done, len(events))
+	}
 }
 
 func TestSubmitCreateStateFails(t *testing.T) {
@@ -202,6 +208,38 @@ func TestSubmitCreateInstanceFails(t *testing.T) {
 	}
 }
 
+func TestSubmitInstanceIDFails(t *testing.T) {
+	store := &fakeStore{}
+	mgr, err := NewManager(Options{
+		Store: store,
+		IDGen: func() (string, error) { return "job-1", nil },
+		Async: false,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	prevReader := randReader
+	randReader = errorReader{}
+	t.Cleanup(func() { randReader = prevReader })
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	status, ok := mgr.Get("job-1")
+	if !ok {
+		t.Fatalf("expected job to exist")
+	}
+	if status.Status != StatusFailed || status.Error == nil || status.Error.Message != "cannot generate instance id" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
 func TestSubmitJobIDError(t *testing.T) {
 	mgr, err := NewManager(Options{
 		Store: &fakeStore{},
@@ -230,4 +268,60 @@ func TestEventsSinceUnknown(t *testing.T) {
 	if ok || done || events != nil {
 		t.Fatalf("expected missing job, got ok=%v done=%v events=%v", ok, done, events)
 	}
+}
+
+func TestGetUnknownJob(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, ok := mgr.Get("missing"); ok {
+		t.Fatalf("expected missing job")
+	}
+}
+
+func TestFormatTimeHelpers(t *testing.T) {
+	if formatTime(time.Time{}) != nil {
+		t.Fatalf("expected nil for zero time")
+	}
+	now := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if formatTime(now) == nil {
+		t.Fatalf("expected formatted time")
+	}
+	if formatTimePtr(nil) != nil {
+		t.Fatalf("expected nil for nil pointer")
+	}
+	if formatTimePtr(&now) == nil {
+		t.Fatalf("expected formatted time for pointer")
+	}
+}
+
+func TestRandomHex(t *testing.T) {
+	value, err := randomHex(4)
+	if err != nil {
+		t.Fatalf("randomHex: %v", err)
+	}
+	if len(value) != 8 {
+		t.Fatalf("expected 8 chars, got %d", len(value))
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		t.Fatalf("expected hex string, got %q", value)
+	}
+}
+
+func TestRandomHexError(t *testing.T) {
+	prevReader := randReader
+	randReader = errorReader{}
+	t.Cleanup(func() { randReader = prevReader })
+
+	if _, err := randomHex(4); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+type errorReader struct{}
+
+func (errorReader) Read([]byte) (int, error) {
+	return 0, errors.New("boom")
 }

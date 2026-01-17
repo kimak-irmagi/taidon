@@ -64,6 +64,80 @@ func TestConnectOrStartMissingRunDir(t *testing.T) {
 	}
 }
 
+func TestConnectOrStartReturnsHealthyState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true,"instanceId":"inst"}`)
+	}))
+	defer server.Close()
+
+	temp := t.TempDir()
+	statePath := filepath.Join(temp, "engine.json")
+	state := EngineState{
+		Endpoint:   server.URL,
+		InstanceID: "inst",
+		AuthToken:  "token",
+	}
+	if err := WriteEngineState(statePath, state); err != nil {
+		t.Fatalf("WriteEngineState: %v", err)
+	}
+
+	result, err := ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:      "auto",
+		Autostart:     false,
+		StateDir:      temp,
+		ClientTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ConnectOrStart: %v", err)
+	}
+	if result.Endpoint != server.URL || result.AuthToken != "token" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestConnectOrStartEnsureDirError(t *testing.T) {
+	temp := t.TempDir()
+	runDir := filepath.Join(temp, "run")
+	if err := os.WriteFile(runDir, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	_, err := ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:   "auto",
+		Autostart:  true,
+		DaemonPath: "sqlrs-engine",
+		RunDir:     runDir,
+		StateDir:   temp,
+	})
+	if err == nil {
+		t.Fatalf("expected ensure dir error")
+	}
+}
+
+func TestConnectOrStartStartError(t *testing.T) {
+	temp := t.TempDir()
+	runDir := filepath.Join(temp, "run")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatalf("mkdir runDir: %v", err)
+	}
+
+	_, err := ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:       "auto",
+		Autostart:      true,
+		DaemonPath:     filepath.Join(temp, "missing.exe"),
+		RunDir:         runDir,
+		StateDir:       temp,
+		StartupTimeout: 50 * time.Millisecond,
+	})
+	if err == nil {
+		t.Fatalf("expected start error")
+	}
+}
+
 func TestLoadHealthyState(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/health" {

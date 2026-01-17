@@ -212,6 +212,7 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			if instances == nil {
 				instances = []client.InstanceEntry{}
 			}
+			result.Instances = &instances
 		}
 	}
 	if opts.IncludeStates {

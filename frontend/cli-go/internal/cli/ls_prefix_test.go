@@ -107,6 +107,35 @@ func TestRunLsStatePrefixUnique(t *testing.T) {
 	}
 }
 
+func TestRunLsStatePrefixAmbiguous(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/states" {
+			http.NotFound(w, r)
+			return
+		}
+		resp := []client.StateEntry{
+			{StateID: "cafef00d11111111111111111111111111111111111111111111111111111111"},
+			{StateID: "cafef00d22222222222222222222222222222222222222222222222222222222"},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	opts := LsOptions{
+		Mode:          "remote",
+		Endpoint:      server.URL,
+		Timeout:       time.Second,
+		IncludeStates: true,
+		FilterState:   "cafef00d",
+	}
+	_, err := RunLs(context.Background(), opts)
+	var ambErr *AmbiguousPrefixError
+	if !errors.As(err, &ambErr) {
+		t.Fatalf("expected AmbiguousPrefixError, got %v", err)
+	}
+}
+
 func TestPrintLsShortAndLongIDs(t *testing.T) {
 	result := LsResult{
 		Instances: &[]client.InstanceEntry{

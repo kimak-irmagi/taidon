@@ -301,3 +301,29 @@ func TestCreatePrepareJobParsesError(t *testing.T) {
 		t.Fatalf("expected error message, got %v", err)
 	}
 }
+
+func TestParseErrorResponseFallback(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Status:     "500 Internal Server Error",
+		Body:       io.NopCloser(strings.NewReader("not-json")),
+	}
+	err := parseErrorResponse(resp)
+	if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+		t.Fatalf("expected HTTPStatusError, got %v", err)
+	}
+}
+
+func TestParseErrorResponseNil(t *testing.T) {
+	err := parseErrorResponse(nil)
+	if err == nil || !strings.Contains(err.Error(), "missing response") {
+		t.Fatalf("expected missing response error, got %v", err)
+	}
+}
+
+func TestHTTPStatusErrorMessage(t *testing.T) {
+	err := (&HTTPStatusError{Status: "418 I'm a teapot"}).Error()
+	if !strings.Contains(err, "418 I'm a teapot") {
+		t.Fatalf("unexpected error message: %q", err)
+	}
+}
