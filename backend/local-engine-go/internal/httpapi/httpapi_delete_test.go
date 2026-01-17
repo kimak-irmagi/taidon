@@ -14,6 +14,7 @@ import (
 
 	"sqlrs/engine/internal/conntrack"
 	"sqlrs/engine/internal/deletion"
+	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store"
 	"sqlrs/engine/internal/store/sqlite"
@@ -124,6 +125,87 @@ func TestDeleteInstanceForceDeletes(t *testing.T) {
 	defer getResp.Body.Close()
 	if getResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404 after delete, got %d", getResp.StatusCode)
+	}
+}
+
+func TestDeleteInstanceInvalidForceQuery(t *testing.T) {
+	server, cleanup := newDeleteTestServer(t, seedInstanceData, fakeConnTracker{})
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/instances/inst-1?force=nah", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var body prepare.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "invalid_argument" || body.Message != "invalid force" {
+		t.Fatalf("unexpected error response: %+v", body)
+	}
+}
+
+func TestDeleteInstanceInvalidDryRunQuery(t *testing.T) {
+	server, cleanup := newDeleteTestServer(t, seedInstanceData, fakeConnTracker{})
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/instances/inst-1?dry_run=nah", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var body prepare.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "invalid_argument" || body.Message != "invalid dry_run" {
+		t.Fatalf("unexpected error response: %+v", body)
+	}
+}
+
+func TestDeleteInstanceNotFound(t *testing.T) {
+	server, cleanup := newDeleteTestServer(t, seedEmptyData, fakeConnTracker{})
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/instances/missing", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+	var body prepare.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "not_found" || body.Message != "instance not found" {
+		t.Fatalf("unexpected error response: %+v", body)
 	}
 }
 
@@ -245,6 +327,60 @@ func TestDeleteStateDryRunReturns200(t *testing.T) {
 	}
 }
 
+func TestDeleteStateNotFound(t *testing.T) {
+	server, cleanup := newDeleteTestServer(t, seedEmptyData, fakeConnTracker{})
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/states/missing", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+	var body prepare.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "not_found" || body.Message != "state not found" {
+		t.Fatalf("unexpected error response: %+v", body)
+	}
+}
+
+func TestDeleteStateInvalidDryRunQuery(t *testing.T) {
+	server, cleanup := newDeleteTestServer(t, seedStateTree, fakeConnTracker{})
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/states/state-root?dry_run=nah", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+	var body prepare.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "invalid_argument" || body.Message != "invalid dry_run" {
+		t.Fatalf("unexpected error response: %+v", body)
+	}
+}
+
 func TestListStatesIncludesParentID(t *testing.T) {
 	server, cleanup := newDeleteTestServer(t, seedStateTree, fakeConnTracker{})
 	defer cleanup()
@@ -345,4 +481,8 @@ func seedStateTree(db *sql.DB) error {
 	_, err := db.Exec(`INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, status)
 		VALUES (?, ?, ?, ?, ?, ?)`, "inst-child", "state-child", "image-1", now, nil, nil)
 	return err
+}
+
+func seedEmptyData(db *sql.DB) error {
+	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -53,53 +54,63 @@ func (a *activityTracker) IdleFor() time.Duration {
 	return time.Since(time.Unix(0, last))
 }
 
-func main() {
-	listenAddr := flag.String("listen", "", "listen address (host:port)")
-	runDir := flag.String("run-dir", "", "runtime directory (unused in MVP)")
-	statePath := flag.String("write-engine-json", "", "path to engine.json")
-	idleTimeout := flag.Duration("idle-timeout", 30*time.Second, "shutdown after this idle duration")
-	version := flag.String("version", "dev", "engine version")
-	flag.Parse()
+var serveHTTP = func(server *http.Server, listener net.Listener) error {
+	return server.Serve(listener)
+}
+
+var exitFn = os.Exit
+var randReader = rand.Reader
+var writeFileFn = os.WriteFile
+var renameFn = os.Rename
+
+func run(args []string) (int, error) {
+	fs := flag.NewFlagSet("sqlrs-engine", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	listenAddr := fs.String("listen", "", "listen address (host:port)")
+	runDir := fs.String("run-dir", "", "runtime directory (unused in MVP)")
+	statePath := fs.String("write-engine-json", "", "path to engine.json")
+	idleTimeout := fs.Duration("idle-timeout", 30*time.Second, "shutdown after this idle duration")
+	version := fs.String("version", "dev", "engine version")
+	if err := fs.Parse(args); err != nil {
+		return 2, err
+	}
 
 	log.SetFlags(log.LstdFlags | log.LUTC)
 
 	if *listenAddr == "" {
-		fmt.Fprintln(os.Stderr, "missing --listen")
-		os.Exit(2)
+		return 2, errors.New("missing --listen")
 	}
 	if *statePath == "" {
-		fmt.Fprintln(os.Stderr, "missing --write-engine-json")
-		os.Exit(2)
+		return 2, errors.New("missing --write-engine-json")
 	}
 	if *runDir != "" {
 		if err := os.MkdirAll(*runDir, 0o700); err != nil {
-			fmt.Fprintf(os.Stderr, "create run dir: %v\n", err)
-			os.Exit(1)
+			return 1, fmt.Errorf("create run dir: %v", err)
 		}
 	}
 
 	listener, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "listen: %v\n", err)
-		os.Exit(1)
+		return 1, fmt.Errorf("listen: %v", err)
 	}
+	defer func() {
+		_ = listener.Close()
+	}()
 
 	instanceID, err := randomHex(16)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "instance id: %v\n", err)
-		os.Exit(1)
+		return 1, fmt.Errorf("instance id: %v", err)
 	}
 	authToken, err := randomHex(32)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "auth token: %v\n", err)
-		os.Exit(1)
+		return 1, fmt.Errorf("auth token: %v", err)
 	}
 
 	stateDir := filepath.Dir(*statePath)
 	store, err := sqlite.Open(filepath.Join(stateDir, "state.db"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "open state db: %v\n", err)
-		os.Exit(1)
+		return 1, fmt.Errorf("open state db: %v", err)
 	}
 	defer store.Close()
 
@@ -112,8 +123,7 @@ func main() {
 		InstanceID: instanceID,
 	}
 	if err := writeEngineState(*statePath, state); err != nil {
-		fmt.Fprintf(os.Stderr, "write engine.json: %v\n", err)
-		os.Exit(1)
+		return 1, fmt.Errorf("write engine.json: %v", err)
 	}
 	defer removeEngineState(*statePath)
 
@@ -126,8 +136,7 @@ func main() {
 		Async:   true,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "prepare manager: %v\n", err)
-		os.Exit(1)
+		return 1, fmt.Errorf("prepare manager: %v", err)
 	}
 
 	deleteMgr, err := deletion.NewManager(deletion.Options{
@@ -135,8 +144,7 @@ func main() {
 		Conn:  conntrack.Noop{},
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "delete manager: %v\n", err)
-		os.Exit(1)
+		return 1, fmt.Errorf("delete manager: %v", err)
 	}
 
 	mux := httpapi.NewHandler(httpapi.Options{
@@ -194,15 +202,26 @@ func main() {
 	}()
 
 	log.Printf("sqlrs-engine listening on %s", state.Endpoint)
-	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := serveHTTP(server, listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Printf("server error: %v", err)
-		os.Exit(1)
+		return 1, nil
+	}
+	return 0, nil
+}
+
+func main() {
+	code, err := run(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+	}
+	if code != 0 {
+		exitFn(code)
 	}
 }
 
 func randomHex(bytes int) (string, error) {
 	buf := make([]byte, bytes)
-	if _, err := rand.Read(buf); err != nil {
+	if _, err := randReader.Read(buf); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
@@ -217,13 +236,13 @@ func writeEngineState(path string, state EngineState) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	if err := writeFileFn(tmp, data, 0o600); err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return renameFn(tmp, path)
 }
 
 func removeEngineState(path string) {

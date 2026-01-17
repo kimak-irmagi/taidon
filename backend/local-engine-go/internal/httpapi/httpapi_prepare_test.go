@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,8 @@ import (
 	"time"
 
 	"sqlrs/engine/internal/prepare"
+	"sqlrs/engine/internal/registry"
+	"sqlrs/engine/internal/store/sqlite"
 )
 
 func TestPrepareJobsRequireAuth(t *testing.T) {
@@ -30,6 +34,25 @@ func TestPrepareJobsRequireAuth(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobsMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
 	}
 }
 
@@ -57,6 +80,129 @@ func TestPrepareJobsRejectsInvalidKind(t *testing.T) {
 	}
 	if body.Code == "" {
 		t.Fatalf("expected error code")
+	}
+}
+
+func TestPrepareJobsInternalError(t *testing.T) {
+	dir := t.TempDir()
+	st, err := sqlite.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	reg := registry.New(st)
+	prep, err := prepare.NewManager(prepare.Options{
+		Store: st,
+		IDGen: func() (string, error) { return "", errors.New("boom") },
+		Async: false,
+	})
+	if err != nil {
+		t.Fatalf("prepare manager: %v", err)
+	}
+	handler := NewHandler(Options{
+		Version:    "test",
+		InstanceID: "instance",
+		AuthToken:  "secret",
+		Registry:   reg,
+		Prepare:    prep,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	reqBody := prepare.Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/prepare-jobs", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobStatusMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/prepare-jobs/job-1", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobStatusNotFoundPath(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/job/extra", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobEventsInvalidPath(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/job/extra/events", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
 	}
 }
 
@@ -156,6 +302,37 @@ func TestPrepareJobsCreateAndEvents(t *testing.T) {
 	if !foundResult {
 		t.Fatalf("expected result event")
 	}
+}
+
+func TestPrepareEventsWithoutFlusher(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example/v1/prepare-jobs/job/events", nil)
+	writer := &noFlushWriter{}
+
+	streamPrepareEvents(writer, req, nil, "job")
+	if writer.code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", writer.code)
+	}
+}
+
+type noFlushWriter struct {
+	header http.Header
+	code   int
+	body   bytes.Buffer
+}
+
+func (w *noFlushWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *noFlushWriter) Write(data []byte) (int, error) {
+	return w.body.Write(data)
+}
+
+func (w *noFlushWriter) WriteHeader(status int) {
+	w.code = status
 }
 
 func pollPrepareStatus(baseURL, location, token string) (prepare.Status, error) {

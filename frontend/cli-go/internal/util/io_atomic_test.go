@@ -23,3 +23,15 @@ func TestAtomicWriteFile(t *testing.T) {
 		t.Fatalf("unexpected content: %s", string(data))
 	}
 }
+
+func TestAtomicWriteFileReturnsErrorOnInvalidDir(t *testing.T) {
+	temp := t.TempDir()
+	dirFile := filepath.Join(temp, "not-a-dir")
+	if err := os.WriteFile(dirFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	path := filepath.Join(dirFile, "file.txt")
+	if err := AtomicWriteFile(path, []byte("data"), 0o600); err == nil {
+		t.Fatalf("expected error for invalid dir")
+	}
+}

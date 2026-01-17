@@ -27,4 +27,7 @@ When working on this project, follow these rules:
 2. Once the design is approved and the documents are updated, design the tests for the feature.
    - Show the list of the new tests to the user and get approval.
    - Once the list is approved, review the existing tests searching for the contradictions. If any contradictions are found, ask the user what to do: fix the new tests or the old ones.
-3. Once the tests are approved, start bulding the code to pass those tests. Do not skip tests or alter them unless explicitly requested by user.
+3. Once the tests are approved, start bulding the tests.
+4. Once the tests are ready, write the code to pass those tests.
+   Do not skip tests or alter them unless explicitly requested by user.
+5. Once the code is written, run the tests, fix any issues, and measure the code coverage. Target value is 100% coverage, with the acceptable minimum is 95%.

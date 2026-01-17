@@ -190,3 +190,140 @@ func TestCreatePrepareJob(t *testing.T) {
 		t.Fatalf("unexpected accepted response: %+v", accepted)
 	}
 }
+
+func TestGetNameNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, found, err := cli.GetName(context.Background(), "missing")
+	if err != nil {
+		t.Fatalf("GetName: %v", err)
+	}
+	if found {
+		t.Fatalf("expected not found")
+	}
+}
+
+func TestGetStateFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"state_id":"state","image_id":"img","prepare_kind":"psql","prepare_args_normalized":"","created_at":"2025-01-01T00:00:00Z","refcount":0}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	entry, found, err := cli.GetState(context.Background(), "state")
+	if err != nil {
+		t.Fatalf("GetState: %v", err)
+	}
+	if !found || entry.StateID != "state" {
+		t.Fatalf("unexpected entry: %+v", entry)
+	}
+}
+
+func TestDeleteInstanceAddsQuery(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"dry_run":true,"outcome":"would_delete","root":{"kind":"instance","id":"abc","connections":0}}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, status, err := cli.DeleteInstance(context.Background(), "abc", DeleteOptions{Force: true, DryRun: true, Recurse: true})
+	if err != nil {
+		t.Fatalf("DeleteInstance: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d", status)
+	}
+	if gotQuery.Get("force") != "true" || gotQuery.Get("dry_run") != "true" {
+		t.Fatalf("unexpected query: %v", gotQuery.Encode())
+	}
+	if gotQuery.Get("recurse") != "" {
+		t.Fatalf("unexpected recurse for instance: %v", gotQuery.Encode())
+	}
+}
+
+func TestDeleteStateAddsRecurse(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"dry_run":true,"outcome":"would_delete","root":{"kind":"state","id":"state"}}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, status, err := cli.DeleteState(context.Background(), "state", DeleteOptions{Recurse: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("DeleteState: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d", status)
+	}
+	if gotQuery.Get("recurse") != "true" {
+		t.Fatalf("expected recurse=true, got %v", gotQuery.Encode())
+	}
+}
+
+func TestGetPrepareJobNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, found, err := cli.GetPrepareJob(context.Background(), "job")
+	if err != nil {
+		t.Fatalf("GetPrepareJob: %v", err)
+	}
+	if found {
+		t.Fatalf("expected not found")
+	}
+}
+
+func TestCreatePrepareJobParsesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"message":"bad","details":"info"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.CreatePrepareJob(context.Background(), PrepareJobRequest{PrepareKind: "psql", ImageID: "img"})
+	if err == nil || !strings.Contains(err.Error(), "bad: info") {
+		t.Fatalf("expected error message, got %v", err)
+	}
+}
+
+func TestParseErrorResponseFallback(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Status:     "500 Internal Server Error",
+		Body:       io.NopCloser(strings.NewReader("not-json")),
+	}
+	err := parseErrorResponse(resp)
+	if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+		t.Fatalf("expected HTTPStatusError, got %v", err)
+	}
+}
+
+func TestParseErrorResponseNil(t *testing.T) {
+	err := parseErrorResponse(nil)
+	if err == nil || !strings.Contains(err.Error(), "missing response") {
+		t.Fatalf("expected missing response error, got %v", err)
+	}
+}
+
+func TestHTTPStatusErrorMessage(t *testing.T) {
+	err := (&HTTPStatusError{Status: "418 I'm a teapot"}).Error()
+	if !strings.Contains(err, "418 I'm a teapot") {
+		t.Fatalf("unexpected error message: %q", err)
+	}
+}

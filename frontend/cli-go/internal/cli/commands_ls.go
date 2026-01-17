@@ -158,6 +158,7 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			if names == nil {
 				names = []client.NameEntry{}
 			}
+			result.Names = &names
 		}
 	}
 	if opts.IncludeInstances {
@@ -211,6 +212,7 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 			if instances == nil {
 				instances = []client.InstanceEntry{}
 			}
+			result.Instances = &instances
 		}
 	}
 	if opts.IncludeStates {
@@ -378,9 +380,9 @@ func (m resolvedMatch) valueOr(fallback string) string {
 }
 
 func resolveStatePrefix(ctx context.Context, cliClient *client.Client, prefix, kind, image string) (resolvedMatch, error) {
-	normalized, err := normalizeHexPrefix(prefix)
+	normalized, err := normalizeIDPrefix("state", prefix)
 	if err != nil {
-		return resolvedMatch{}, fmt.Errorf("invalid state id prefix: %s", err)
+		return resolvedMatch{}, err
 	}
 	states, err := cliClient.ListStates(ctx, client.ListFilters{
 		Kind:     kind,
@@ -394,15 +396,15 @@ func resolveStatePrefix(ctx context.Context, cliClient *client.Client, prefix, k
 		return resolvedMatch{noMatch: true}, nil
 	}
 	if len(states) > 1 {
-		return resolvedMatch{}, fmt.Errorf("ambiguous id prefix: %s", normalized)
+		return resolvedMatch{}, &AmbiguousPrefixError{Kind: "state", Prefix: prefix}
 	}
 	return resolvedMatch{value: states[0].StateID, state: states[0]}, nil
 }
 
 func resolveInstancePrefix(ctx context.Context, cliClient *client.Client, prefix, stateID, image string) (resolvedMatch, error) {
-	normalized, err := normalizeHexPrefix(prefix)
+	normalized, err := normalizeIDPrefix("instance", prefix)
 	if err != nil {
-		return resolvedMatch{}, fmt.Errorf("invalid instance id prefix: %s", err)
+		return resolvedMatch{}, err
 	}
 	instances, err := cliClient.ListInstances(ctx, client.ListFilters{
 		State:    stateID,
@@ -416,7 +418,7 @@ func resolveInstancePrefix(ctx context.Context, cliClient *client.Client, prefix
 		return resolvedMatch{noMatch: true}, nil
 	}
 	if len(instances) > 1 {
-		return resolvedMatch{}, fmt.Errorf("ambiguous id prefix: %s", normalized)
+		return resolvedMatch{}, &AmbiguousPrefixError{Kind: "instance", Prefix: prefix}
 	}
 	return resolvedMatch{value: instances[0].InstanceID, instance: instances[0]}, nil
 }

@@ -8,14 +8,27 @@ import (
 	"sqlrs/cli/internal/app"
 )
 
-func main() {
-	if err := app.Run(os.Args[1:]); err != nil {
+var runApp = app.Run
+
+var exitFn = os.Exit
+
+func run(args []string) (int, error) {
+	if err := runApp(args); err != nil {
 		var exitErr *app.ExitError
 		if errors.As(err, &exitErr) {
-			fmt.Fprintln(os.Stderr, exitErr.Error())
-			os.Exit(exitErr.Code)
+			return exitErr.Code, exitErr
 		}
+		return 1, err
+	}
+	return 0, nil
+}
+
+func main() {
+	code, err := run(os.Args[1:])
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+	}
+	if code != 0 {
+		exitFn(code)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,8 +41,12 @@ func TestRunLsInstancePrefixAmbiguous(t *testing.T) {
 		FilterInstance:   "deadbeef",
 	}
 	_, err := RunLs(context.Background(), opts)
-	if err == nil || !strings.Contains(err.Error(), "ambiguous id prefix") {
-		t.Fatalf("expected ambiguous id prefix error, got %v", err)
+	if err == nil {
+		t.Fatalf("expected ambiguous prefix error")
+	}
+	var ambErr *AmbiguousPrefixError
+	if !errors.As(err, &ambErr) {
+		t.Fatalf("expected AmbiguousPrefixError, got %v", err)
 	}
 }
 
@@ -99,6 +104,35 @@ func TestRunLsStatePrefixUnique(t *testing.T) {
 	}
 	if result.States == nil || len(*result.States) != 1 {
 		t.Fatalf("expected 1 state, got %+v", result.States)
+	}
+}
+
+func TestRunLsStatePrefixAmbiguous(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/states" {
+			http.NotFound(w, r)
+			return
+		}
+		resp := []client.StateEntry{
+			{StateID: "cafef00d11111111111111111111111111111111111111111111111111111111"},
+			{StateID: "cafef00d22222222222222222222222222222222222222222222222222222222"},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	opts := LsOptions{
+		Mode:          "remote",
+		Endpoint:      server.URL,
+		Timeout:       time.Second,
+		IncludeStates: true,
+		FilterState:   "cafef00d",
+	}
+	_, err := RunLs(context.Background(), opts)
+	var ambErr *AmbiguousPrefixError
+	if !errors.As(err, &ambErr) {
+		t.Fatalf("expected AmbiguousPrefixError, got %v", err)
 	}
 }
 
