@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"sqlrs/cli/internal/paths"
 )
 
 func TestRunStatusRemoteJSON(t *testing.T) {
@@ -299,7 +301,11 @@ func TestRunInvalidOutputFromConfig(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
 
-	configDir := filepath.Join(temp, "config", "sqlrs")
+	dirs, err := paths.Resolve()
+	if err != nil {
+		t.Fatalf("resolve dirs: %v", err)
+	}
+	configDir := dirs.ConfigDir
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
@@ -307,7 +313,7 @@ func TestRunInvalidOutputFromConfig(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	err := Run([]string{"status"})
+	err = Run([]string{"status"})
 	if err == nil || !strings.Contains(err.Error(), "invalid output") {
 		t.Fatalf("expected invalid output, got %v", err)
 	}
@@ -317,7 +323,11 @@ func TestRunProfileNotFound(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
 
-	configDir := filepath.Join(temp, "config", "sqlrs")
+	dirs, err := paths.Resolve()
+	if err != nil {
+		t.Fatalf("resolve dirs: %v", err)
+	}
+	configDir := dirs.ConfigDir
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
@@ -326,7 +336,7 @@ func TestRunProfileNotFound(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	err := Run([]string{"status"})
+	err = Run([]string{"status"})
 	if err == nil || !strings.Contains(err.Error(), "profile not found") {
 		t.Fatalf("expected profile not found, got %v", err)
 	}
@@ -337,6 +347,7 @@ func setTestDirs(t *testing.T, root string) {
 	configDir := filepath.Join(root, "config")
 	stateDir := filepath.Join(root, "state")
 	cacheDir := filepath.Join(root, "cache")
+	t.Setenv("HOME", root)
 	t.Setenv("APPDATA", configDir)
 	t.Setenv("LOCALAPPDATA", stateDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
