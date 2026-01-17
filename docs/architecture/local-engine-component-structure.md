@@ -16,13 +16,13 @@ This document defines the internal component layout of the local sqlrs engine.
 - `internal/httpapi`
   - HTTP routing and handlers.
   - JSON/NDJSON encoding.
-  - Uses auth + registry + store interfaces.
+  - Uses auth + registry + prepare + store interfaces.
+- `internal/prepare`
+  - Prepare job coordination (plan, cache lookup, execute, snapshot).
+  - Handles `plan_only` jobs and task list output.
 - `internal/deletion`
   - Builds deletion trees for instances and states.
   - Enforces recurse/force rules and executes removals.
-- `internal/instances`
-  - Instance lifecycle (create/remove) and DSN tracking.
-  - Integrates connection tracking for TTL and safety checks.
 - `internal/conntrack`
   - Tracks active connections per instance via DB introspection.
 - `internal/auth`
@@ -44,19 +44,33 @@ This document defines the internal component layout of the local sqlrs engine.
 - `internal/stream`
   - NDJSON writer helpers.
 
-## 3. Data ownership
+## 3. Key types and interfaces
+
+- `prepare.Manager`
+  - Submits jobs and exposes status/events.
+  - Handles `plan_only` by returning task lists.
+- `prepare.Request`, `prepare.Status`
+  - Job request and status payloads (includes `tasks` for plan-only).
+- `prepare.PlanTask`, `prepare.TaskInput`
+  - Task descriptions and input references for planning/execution.
+- `store.Store`
+  - Interface for names/instances/states persistence.
+- `deletion.Manager`
+  - Builds delete trees and executes deletions.
+
+## 4. Data ownership
 
 - Persistent data (names/instances/states) lives in SQLite under `<StateDir>`.
 - In-memory structures are caches or request-scoped only.
 
-## 4. Dependency diagram
+## 5. Dependency diagram
 
 ```mermaid
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
+  PREP["internal/prepare"]
   DEL["internal/deletion"]
-  INST["internal/instances"]
   CONN["internal/conntrack"]
   AUTH["internal/auth"]
   REG["internal/registry"]
@@ -68,13 +82,13 @@ flowchart TD
   CMD --> HTTP
   CMD --> SQLITE
   HTTP --> AUTH
+  HTTP --> PREP
   HTTP --> DEL
-  HTTP --> INST
   HTTP --> REG
   HTTP --> STREAM
-  DEL --> INST
   DEL --> STORE
-  INST --> CONN
+  DEL --> CONN
+  PREP --> STORE
   REG --> ID
   REG --> STORE
   SQLITE --> STORE

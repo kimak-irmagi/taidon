@@ -13,6 +13,8 @@ import (
 type fakeStore struct {
 	createStateErr    error
 	createInstanceErr error
+	getStateErr       error
+	statesByID        map[string]store.StateEntry
 	states            []store.StateCreate
 	instances         []store.InstanceCreate
 }
@@ -38,7 +40,14 @@ func (f *fakeStore) ListStates(ctx context.Context, filters store.StateFilters) 
 }
 
 func (f *fakeStore) GetState(ctx context.Context, stateID string) (store.StateEntry, bool, error) {
-	return store.StateEntry{}, false, nil
+	if f.getStateErr != nil {
+		return store.StateEntry{}, false, f.getStateErr
+	}
+	if f.statesByID == nil {
+		return store.StateEntry{}, false, nil
+	}
+	entry, ok := f.statesByID[stateID]
+	return entry, ok, nil
 }
 
 func (f *fakeStore) CreateState(ctx context.Context, entry store.StateCreate) error {
@@ -149,6 +158,110 @@ func TestSubmitStoresStateAndInstance(t *testing.T) {
 	events, ok, done = mgr.EventsSince("job-1", 100)
 	if !ok || !done || len(events) != 0 {
 		t.Fatalf("unexpected events slice: ok=%v done=%v len=%d", ok, done, len(events))
+	}
+}
+
+func TestSubmitPlanOnlyBuildsTasks(t *testing.T) {
+	store := &fakeStore{}
+	now := time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)
+	mgr, err := NewManager(Options{
+		Store:   store,
+		Version: "v1",
+		Now:     func() time.Time { return now },
+		IDGen:   func() (string, error) { return "job-1", nil },
+		Async:   false,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	accepted, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if accepted.JobID == "" {
+		t.Fatalf("expected job id")
+	}
+
+	if len(store.states) != 0 || len(store.instances) != 0 {
+		t.Fatalf("expected no state or instance creation")
+	}
+
+	status, ok := mgr.Get("job-1")
+	if !ok {
+		t.Fatalf("expected job to exist")
+	}
+	if status.Status != StatusSucceeded || !status.PlanOnly {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if status.Result != nil {
+		t.Fatalf("expected no result for plan-only, got %+v", status.Result)
+	}
+	if status.PrepareArgsNormalized == "" {
+		t.Fatalf("expected normalized args")
+	}
+	if len(status.Tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(status.Tasks))
+	}
+	if status.Tasks[1].Type != "state_execute" || status.Tasks[1].OutputStateID == "" {
+		t.Fatalf("unexpected execute task: %+v", status.Tasks[1])
+	}
+	if status.Tasks[1].Cached == nil {
+		t.Fatalf("expected cached flag")
+	}
+}
+
+func TestSubmitPlanOnlyCachedFlag(t *testing.T) {
+	fake := &fakeStore{statesByID: map[string]store.StateEntry{}}
+	mgr, err := NewManager(Options{
+		Store:   fake,
+		Version: "v1",
+		Now:     func() time.Time { return time.Now().UTC() },
+		IDGen:   func() (string, error) { return "job-1", nil },
+		Async:   false,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	taskHash, errResp := mgr.computeTaskHash(prepared)
+	if errResp != nil {
+		t.Fatalf("computeTaskHash: %+v", errResp)
+	}
+	stateID, errResp := mgr.computeOutputStateID("image", prepared.request.ImageID, taskHash)
+	if errResp != nil {
+		t.Fatalf("computeOutputStateID: %+v", errResp)
+	}
+	fake.statesByID[stateID] = store.StateEntry{StateID: stateID}
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	status, ok := mgr.Get("job-1")
+	if !ok {
+		t.Fatalf("expected job to exist")
+	}
+	if len(status.Tasks) < 2 || status.Tasks[1].Cached == nil || !*status.Tasks[1].Cached {
+		t.Fatalf("expected cached true, got %+v", status.Tasks)
 	}
 }
 

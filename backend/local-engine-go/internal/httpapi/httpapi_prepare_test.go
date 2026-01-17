@@ -304,6 +304,61 @@ func TestPrepareJobsCreateAndEvents(t *testing.T) {
 	}
 }
 
+func TestPrepareJobsPlanOnly(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	reqBody := prepare.Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/prepare-jobs", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+
+	location := resp.Header.Get("Location")
+	if location == "" {
+		t.Fatalf("expected Location header")
+	}
+
+	status, err := pollPrepareStatus(server.URL, location, "secret")
+	if err != nil {
+		t.Fatalf("poll status: %v", err)
+	}
+	if status.Status != prepare.StatusSucceeded || !status.PlanOnly {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if status.Result != nil {
+		t.Fatalf("expected no result, got %+v", status.Result)
+	}
+	if status.PrepareArgsNormalized == "" {
+		t.Fatalf("expected normalized args")
+	}
+	if len(status.Tasks) != 3 {
+		t.Fatalf("expected tasks, got %d", len(status.Tasks))
+	}
+	if status.Tasks[1].Cached == nil {
+		t.Fatalf("expected cached flag")
+	}
+}
+
 func TestPrepareEventsWithoutFlusher(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example/v1/prepare-jobs/job/events", nil)
 	writer := &noFlushWriter{}

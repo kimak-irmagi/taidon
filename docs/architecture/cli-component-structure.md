@@ -16,20 +16,34 @@ This document defines the internal component layout of the sqlrs CLI.
   - Global flags and command dispatch.
   - Loads config and workspace.
 - `internal/cli`
-  - Command logic (status, init, ls, rm).
-  - Chooses output mode.
+  - Command logic (status, init, ls, rm, prepare, plan).
+  - Chooses output mode and renders human/json output.
 - `internal/client`
   - HTTP client, auth headers, redirect handling.
   - JSON/NDJSON parsing.
 - `internal/daemon`
   - Local engine discovery and spawn.
   - Reads `engine.json`.
-- `internal/output`
-  - Table formatting and JSON output helpers.
 - `internal/config`
   - Config parsing and merging.
+- `internal/paths`
+  - OS-specific path resolution for config/cache/state.
+- `internal/util`
+  - IO helpers (atomic writes, NDJSON reader).
 
-## 3. Dependency diagram
+## 3. Key types and interfaces
+
+- `cli.PrepareOptions`
+  - Shared options for prepare/plan execution (endpoint, auth, image id, args).
+  - Extended with `PlanOnly` for `sqlrs plan`.
+- `client.PrepareJobRequest`
+  - HTTP payload for `POST /v1/prepare-jobs` (includes `plan_only`).
+- `client.PrepareJobStatus`
+  - Status payload with optional `tasks` list for plan-only jobs.
+- `cli.PlanResult`
+  - CLI-facing view of `tasks` for rendering.
+
+## 4. Dependency diagram
 
 ```mermaid
 flowchart LR
@@ -38,13 +52,15 @@ flowchart LR
   CLI["internal/cli"]
   CLIENT["internal/client"]
   DAEMON["internal/daemon"]
-  OUTPUT["internal/output"]
   CONFIG["internal/config"]
+  PATHS["internal/paths"]
+  UTIL["internal/util"]
 
   CMD --> APP
   APP --> CLI
   APP --> CONFIG
+  APP --> PATHS
+  APP --> UTIL
   CLI --> CLIENT
   CLI --> DAEMON
-  CLI --> OUTPUT
 ```

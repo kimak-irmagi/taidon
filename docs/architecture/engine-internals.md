@@ -48,6 +48,7 @@ flowchart LR
 - REST over loopback (HTTP/UDS); exposes prepare jobs, instance lookup/binding, snapshots, cache, and shutdown endpoints.
 - Exposes delete endpoints for instances and states with recurse/force/dry-run options.
 - Prepare runs as async jobs; the CLI watches status/events and waits for completion.
+  `plan_only` compute-only requests return task lists in job status.
 
 ### 1.2 Prepare Controller
 
@@ -172,7 +173,31 @@ sequenceDiagram
 - Cancellation: controller cancels the prepare job; active DB work is interrupted; stream ends with `cancelled`.
 - Timeouts: controller enforces wall-clock deadline; DB statement_timeout is set per step.
 
-### 2.2 Delete Flow
+### 2.2 Plan-only Flow
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant API as "Engine API"
+  participant CTRL as "Prepare Controller"
+  participant ADAPTER as "Script Adapter"
+  participant CACHE as Cache
+
+  CLI->>API: start prepare job (plan_only=true)
+  API-->>CLI: job_id
+  CLI->>API: watch status/events
+  API->>CTRL: enqueue job
+  CTRL->>ADAPTER: plan steps
+  CTRL->>CACHE: lookup(key)
+  CACHE-->>CTRL: hit/miss
+  CTRL-->>API: tasks + cached flags
+  API-->>CLI: terminal status (tasks included)
+```
+
+- Plan-only jobs skip execution and instance creation.
+- The job status includes the planned task list when available.
+
+### 2.3 Delete Flow
 
 ```mermaid
 sequenceDiagram

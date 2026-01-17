@@ -115,7 +115,7 @@ This avoids permanent background services in MVP.
 
 Key engine endpoints (logical):
 
-- `POST /v1/prepare-jobs` - start prepare job (plan/execute steps, snapshot states, create instance)
+- `POST /v1/prepare-jobs` - start prepare job (plan/execute steps, snapshot states, create instance); `plan_only` computes tasks only
 - `GET /v1/prepare-jobs/{jobId}` - job status
 - `GET /v1/prepare-jobs/{jobId}/events` - job event stream (NDJSON)
 - list names/instances/states (JSON array or NDJSON via `Accept`)

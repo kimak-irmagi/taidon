@@ -42,6 +42,8 @@ paths:
         Starts a prepare job and returns a job reference.
         The engine enforces deterministic defaults for `psql` (`-X` and
         `-v ON_ERROR_STOP=1`) and rejects connection flags.
+        When `plan_only` is true, the job computes a plan and does not create
+        an instance; the plan tasks are returned in the job status.
       tags:
         - prepare
       requestBody:
@@ -531,6 +533,90 @@ components:
         stdin:
           type: string
           description: SQL content to use for stdin when `psql_args` includes `-f -`.
+        plan_only:
+          type: boolean
+          description: When true, only the plan is computed and no instance is created.
+    PreparePlanTask:
+      oneOf:
+        - $ref: "#/components/schemas/PreparePlanTaskPlan"
+        - $ref: "#/components/schemas/PreparePlanTaskStateExecute"
+        - $ref: "#/components/schemas/PreparePlanTaskPrepareInstance"
+      discriminator:
+        propertyName: type
+        mapping:
+          plan: "#/components/schemas/PreparePlanTaskPlan"
+          state_execute: "#/components/schemas/PreparePlanTaskStateExecute"
+          prepare_instance: "#/components/schemas/PreparePlanTaskPrepareInstance"
+    PreparePlanTaskInput:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - id
+      properties:
+        kind:
+          type: string
+          enum: [image, state]
+        id:
+          type: string
+    PreparePlanTaskPlan:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - type
+        - planner_kind
+      properties:
+        task_id:
+          type: string
+        type:
+          type: string
+          enum: [plan]
+        planner_kind:
+          type: string
+    PreparePlanTaskStateExecute:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - type
+        - input
+        - task_hash
+        - output_state_id
+        - cached
+      properties:
+        task_id:
+          type: string
+        type:
+          type: string
+          enum: [state_execute]
+        input:
+          $ref: "#/components/schemas/PreparePlanTaskInput"
+        task_hash:
+          type: string
+        output_state_id:
+          type: string
+        cached:
+          type: boolean
+    PreparePlanTaskPrepareInstance:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - type
+        - input
+        - instance_mode
+      properties:
+        task_id:
+          type: string
+        type:
+          type: string
+          enum: [prepare_instance]
+        input:
+          $ref: "#/components/schemas/PreparePlanTaskInput"
+        instance_mode:
+          type: string
+          enum: [ephemeral]
     PrepareJobAccepted:
       type: object
       additionalProperties: false
@@ -568,6 +654,12 @@ components:
           type: string
         image_id:
           type: string
+        plan_only:
+          type: boolean
+          description: True when the job computes a plan only.
+        prepare_args_normalized:
+          type: string
+          description: Normalized prepare arguments (when available).
         created_at:
           type: string
           format: date-time
@@ -577,6 +669,11 @@ components:
         finished_at:
           type: string
           format: date-time
+        tasks:
+          type: array
+          description: Present when the plan is available (plan-only or planned job).
+          items:
+            $ref: "#/components/schemas/PreparePlanTask"
         result:
           anyOf:
             - $ref: "#/components/schemas/PrepareJobResult"

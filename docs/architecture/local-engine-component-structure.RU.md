@@ -16,13 +16,13 @@
 - `internal/httpapi`
   - Роутинг и handlers.
   - JSON/NDJSON кодирование.
-  - Использует auth + registry + store interfaces.
+  - Использует auth + registry + prepare + store interfaces.
+- `internal/prepare`
+  - Координация prepare jobs (plan, cache lookup, execute, snapshot).
+  - Обрабатывает `plan_only` и выводит список задач.
 - `internal/deletion`
   - Строит дерево удаления для экземпляров и состояний.
   - Применяет правила recurse/force и выполняет удаление.
-- `internal/instances`
-  - Жизненный цикл экземпляров (create/remove) и DSN.
-  - Интегрирует трекинг подключений для TTL и проверок.
 - `internal/conntrack`
   - Трекинг активных подключений через DB introspection.
 - `internal/auth`
@@ -44,19 +44,33 @@
 - `internal/stream`
   - NDJSON writer helpers.
 
-## 3. Владение данными
+## 3. Ключевые типы и интерфейсы
+
+- `prepare.Manager`
+  - Принимает jobs и отдает статус/события.
+  - Для `plan_only` возвращает список задач.
+- `prepare.Request`, `prepare.Status`
+  - Payload запроса и статуса (включая `tasks` для plan-only).
+- `prepare.PlanTask`, `prepare.TaskInput`
+  - Описания задач и входов для planning/execute.
+- `store.Store`
+  - Интерфейс хранения names/instances/states.
+- `deletion.Manager`
+  - Строит дерево удаления и выполняет удаление.
+
+## 4. Владение данными
 
 - Персистентные данные (names/instances/states) живут в SQLite под `<StateDir>`.
 - In-memory структуры — только кэши или request-scoped данные.
 
-## 4. Диаграмма зависимостей
+## 5. Диаграмма зависимостей
 
 ```mermaid
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
+  PREP["internal/prepare"]
   DEL["internal/deletion"]
-  INST["internal/instances"]
   CONN["internal/conntrack"]
   AUTH["internal/auth"]
   REG["internal/registry"]
@@ -68,13 +82,13 @@ flowchart TD
   CMD --> HTTP
   CMD --> SQLITE
   HTTP --> AUTH
+  HTTP --> PREP
   HTTP --> DEL
-  HTTP --> INST
   HTTP --> REG
   HTTP --> STREAM
-  DEL --> INST
   DEL --> STORE
-  INST --> CONN
+  DEL --> CONN
+  PREP --> STORE
   REG --> ID
   REG --> STORE
   SQLITE --> STORE

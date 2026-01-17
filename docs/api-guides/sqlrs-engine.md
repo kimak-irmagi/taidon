@@ -243,7 +243,8 @@ const inputBody = '{
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "plan_only": true
 }';
 const headers = {
   'Content-Type':'application/json',
@@ -381,6 +382,8 @@ func main() {
 Starts a prepare job and returns a job reference.
 The engine enforces deterministic defaults for `psql` (`-X` and
 `-v ON_ERROR_STOP=1`) and rejects connection flags.
+When `plan_only` is true, the job computes a plan and does not create
+an instance; the plan tasks are returned in the job status.
 
 > Body parameter
 
@@ -391,7 +394,8 @@ The engine enforces deterministic defaults for `psql` (`-X` and
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "plan_only": true
 }
 ```
 
@@ -603,9 +607,18 @@ Returns job status and result when available.
   "status": "queued",
   "prepare_kind": "string",
   "image_id": "string",
+  "plan_only": true,
+  "prepare_args_normalized": "string",
   "created_at": "2019-08-24T14:15:22Z",
   "started_at": "2019-08-24T14:15:22Z",
   "finished_at": "2019-08-24T14:15:22Z",
+  "tasks": [
+    {
+      "task_id": "string",
+      "type": "plan",
+      "planner_kind": "string"
+    }
+  ],
   "result": {
     "dsn": "string",
     "instance_id": "string",
@@ -2433,7 +2446,8 @@ bearerAuth
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "plan_only": true
 }
 
 ```
@@ -2456,7 +2470,8 @@ bearerAuth
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "plan_only": true
 }
 
 ```
@@ -2469,12 +2484,183 @@ bearerAuth
 |image_id|string|true|none|Base Docker image id to use.|
 |psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must be absolute.|
 |stdin|string|false|none|SQL content to use for stdin when `psql_args` includes `-f -`.|
+|plan_only|boolean|false|none|When true, only the plan is computed and no instance is created.|
 
 #### Enumerated Values
 
 |Property|Value|
 |---|---|
 |prepare_kind|psql|
+
+<h2 id="tocS_PreparePlanTask">PreparePlanTask</h2>
+<!-- backwards compatibility -->
+<a id="schemaprepareplantask"></a>
+<a id="schema_PreparePlanTask"></a>
+<a id="tocSprepareplantask"></a>
+<a id="tocsprepareplantask"></a>
+
+```json
+{
+  "task_id": "string",
+  "type": "plan",
+  "planner_kind": "string"
+}
+
+```
+
+### Properties
+
+oneOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[PreparePlanTaskPlan](#schemaprepareplantaskplan)|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[PreparePlanTaskStateExecute](#schemaprepareplantaskstateexecute)|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[PreparePlanTaskPrepareInstance](#schemaprepareplantaskprepareinstance)|false|none|none|
+
+<h2 id="tocS_PreparePlanTaskInput">PreparePlanTaskInput</h2>
+<!-- backwards compatibility -->
+<a id="schemaprepareplantaskinput"></a>
+<a id="schema_PreparePlanTaskInput"></a>
+<a id="tocSprepareplantaskinput"></a>
+<a id="tocsprepareplantaskinput"></a>
+
+```json
+{
+  "kind": "image",
+  "id": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|kind|string|true|none|none|
+|id|string|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|kind|image|
+|kind|state|
+
+<h2 id="tocS_PreparePlanTaskPlan">PreparePlanTaskPlan</h2>
+<!-- backwards compatibility -->
+<a id="schemaprepareplantaskplan"></a>
+<a id="schema_PreparePlanTaskPlan"></a>
+<a id="tocSprepareplantaskplan"></a>
+<a id="tocsprepareplantaskplan"></a>
+
+```json
+{
+  "task_id": "string",
+  "type": "plan",
+  "planner_kind": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|task_id|string|true|none|none|
+|type|string|true|none|none|
+|planner_kind|string|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|plan|
+
+<h2 id="tocS_PreparePlanTaskStateExecute">PreparePlanTaskStateExecute</h2>
+<!-- backwards compatibility -->
+<a id="schemaprepareplantaskstateexecute"></a>
+<a id="schema_PreparePlanTaskStateExecute"></a>
+<a id="tocSprepareplantaskstateexecute"></a>
+<a id="tocsprepareplantaskstateexecute"></a>
+
+```json
+{
+  "task_id": "string",
+  "type": "state_execute",
+  "input": {
+    "kind": "image",
+    "id": "string"
+  },
+  "task_hash": "string",
+  "output_state_id": "string",
+  "cached": true
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|task_id|string|true|none|none|
+|type|string|true|none|none|
+|input|[PreparePlanTaskInput](#schemaprepareplantaskinput)|true|none|none|
+|task_hash|string|true|none|none|
+|output_state_id|string|true|none|none|
+|cached|boolean|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|state_execute|
+
+<h2 id="tocS_PreparePlanTaskPrepareInstance">PreparePlanTaskPrepareInstance</h2>
+<!-- backwards compatibility -->
+<a id="schemaprepareplantaskprepareinstance"></a>
+<a id="schema_PreparePlanTaskPrepareInstance"></a>
+<a id="tocSprepareplantaskprepareinstance"></a>
+<a id="tocsprepareplantaskprepareinstance"></a>
+
+```json
+{
+  "task_id": "string",
+  "type": "prepare_instance",
+  "input": {
+    "kind": "image",
+    "id": "string"
+  },
+  "instance_mode": "ephemeral"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|task_id|string|true|none|none|
+|type|string|true|none|none|
+|input|[PreparePlanTaskInput](#schemaprepareplantaskinput)|true|none|none|
+|instance_mode|string|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|prepare_instance|
+|instance_mode|ephemeral|
 
 <h2 id="tocS_PrepareJobAccepted">PrepareJobAccepted</h2>
 <!-- backwards compatibility -->
@@ -2521,9 +2707,18 @@ bearerAuth
   "status": "queued",
   "prepare_kind": "string",
   "image_id": "string",
+  "plan_only": true,
+  "prepare_args_normalized": "string",
   "created_at": "2019-08-24T14:15:22Z",
   "started_at": "2019-08-24T14:15:22Z",
   "finished_at": "2019-08-24T14:15:22Z",
+  "tasks": [
+    {
+      "task_id": "string",
+      "type": "plan",
+      "planner_kind": "string"
+    }
+  ],
   "result": {
     "dsn": "string",
     "instance_id": "string",
@@ -2549,9 +2744,12 @@ bearerAuth
 |status|string|true|none|none|
 |prepare_kind|string|true|none|none|
 |image_id|string|true|none|none|
+|plan_only|boolean|false|none|True when the job computes a plan only.|
+|prepare_args_normalized|string|false|none|Normalized prepare arguments (when available).|
 |created_at|string(date-time)|false|none|none|
 |started_at|string(date-time)|false|none|none|
 |finished_at|string(date-time)|false|none|none|
+|tasks|[[PreparePlanTask](#schemaprepareplantask)]|false|none|Present when the plan is available (plan-only or planned job).|
 |result|any|false|none|none|
 
 anyOf
