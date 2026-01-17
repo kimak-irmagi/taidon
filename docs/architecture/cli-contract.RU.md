@@ -126,35 +126,9 @@ TODO (будущее):
 
 ### 3.6 `sqlrs plan`
 
-Вычисляет план выполнения без применения изменений.
+Актуальная семантика команды описана в user guide:
 
-```bash
-sqlrs plan [options]
-```
-
-Назначение:
-
-- показать ожидаемые изменения
-- посчитать хэш-горизонт
-- показать потенциальные cache hits
-
-Общие флаги:
-
-```bash
---format=json|table
---contexts=<ctx>
---labels=<expr>
---dbms=<db>
-```
-
-Пример вывода (table):
-
-```text
-STEP  TYPE       HASH        CACHED  NOTE
-0     changeset  ab12:cd     yes     snapshot found
-1     changeset  ef34:56     no      requires execution
-2     changeset  ?           n/a     volatile
-```
+- [`docs/user-guides/sqlrs-plan.md`](../user-guides/sqlrs-plan.md)
 
 ---
 

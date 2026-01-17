@@ -134,34 +134,9 @@ TODO (future):
 
 ### 3.6 `sqlrs plan`
 
-Compute the execution plan without applying changes.
+See the user guide for the authoritative, up-to-date command semantics:
 
-```bash
-sqlrs plan [options]
-```
-
-Purpose:
-
-- show pending changes
-- compute hash horizon
-- display potential cache hits
-
-Common flags:
-
-```bash
---contexts=<ctx>
---labels=<expr>
---dbms=<db>
-```
-
-Example output (table):
-
-```text
-STEP  TYPE        HASH        CACHED  NOTE
-0     changeset  ab12:cd     yes     snapshot found
-1     changeset  ef34:56     no      requires execution
-2     changeset  ?           n/a     volatile
-```
+- [`docs/user-guides/sqlrs-plan.md`](../user-guides/sqlrs-plan.md)
 
 ---
 
