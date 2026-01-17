@@ -134,3 +134,27 @@ func TestRunLsUsesInstancePrefixListEndpoint(t *testing.T) {
 		t.Fatalf("unexpected instances result: %+v", result.Instances)
 	}
 }
+
+func TestPrintLsStatesTable(t *testing.T) {
+	size := int64(42)
+	result := LsResult{
+		States: &[]client.StateEntry{
+			{
+				StateID:     "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+				ImageID:     "image-1",
+				PrepareKind: "psql",
+				PrepareArgs: "-c select 1",
+				CreatedAt:   "2025-01-01T00:00:00Z",
+				SizeBytes:   &size,
+				RefCount:    2,
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{NoHeader: true, LongIDs: true})
+	out := buf.String()
+	if !strings.Contains(out, "psql") || !strings.Contains(out, "42") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+}

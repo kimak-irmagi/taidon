@@ -145,3 +145,10 @@ func TestPrintRmShowsBlocked(t *testing.T) {
 func intPtr(value int) *int {
 	return &value
 }
+
+func TestAmbiguousResourceErrorMessage(t *testing.T) {
+	err := &AmbiguousResourceError{Prefix: "deadbeef"}
+	if err.Error() == "" {
+		t.Fatalf("expected error message")
+	}
+}

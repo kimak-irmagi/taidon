@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,8 +41,12 @@ func TestRunLsInstancePrefixAmbiguous(t *testing.T) {
 		FilterInstance:   "deadbeef",
 	}
 	_, err := RunLs(context.Background(), opts)
-	if err == nil || !strings.Contains(err.Error(), "ambiguous id prefix") {
-		t.Fatalf("expected ambiguous id prefix error, got %v", err)
+	if err == nil {
+		t.Fatalf("expected ambiguous prefix error")
+	}
+	var ambErr *AmbiguousPrefixError
+	if !errors.As(err, &ambErr) {
+		t.Fatalf("expected AmbiguousPrefixError, got %v", err)
 	}
 }
 
