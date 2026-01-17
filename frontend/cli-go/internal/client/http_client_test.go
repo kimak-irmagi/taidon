@@ -191,6 +191,32 @@ func TestCreatePrepareJob(t *testing.T) {
 	}
 }
 
+func TestCreatePrepareJobPlanOnly(t *testing.T) {
+	var gotRequest PrepareJobRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.CreatePrepareJob(context.Background(), PrepareJobRequest{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	})
+	if err != nil {
+		t.Fatalf("create prepare job: %v", err)
+	}
+	if !gotRequest.PlanOnly {
+		t.Fatalf("expected plan_only true, got %+v", gotRequest)
+	}
+}
+
 func TestGetNameNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -284,6 +310,29 @@ func TestGetPrepareJobNotFound(t *testing.T) {
 	}
 	if found {
 		t.Fatalf("expected not found")
+	}
+}
+
+func TestGetPrepareJobParsesTasks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":true,"prepare_kind":"psql","image_id":"img","prepare_args_normalized":"-c select 1","tasks":[{"task_id":"plan","type":"plan","planner_kind":"psql"},{"task_id":"execute-0","type":"state_execute","input":{"kind":"image","id":"img"},"task_hash":"hash","output_state_id":"state","cached":false},{"task_id":"prepare-instance","type":"prepare_instance","input":{"kind":"state","id":"state"},"instance_mode":"ephemeral"}]}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	status, found, err := cli.GetPrepareJob(context.Background(), "job-1")
+	if err != nil {
+		t.Fatalf("GetPrepareJob: %v", err)
+	}
+	if !found || !status.PlanOnly {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if len(status.Tasks) != 3 {
+		t.Fatalf("expected tasks, got %d", len(status.Tasks))
+	}
+	if status.PrepareArgsNormalized == "" {
+		t.Fatalf("expected normalized args")
 	}
 }
 

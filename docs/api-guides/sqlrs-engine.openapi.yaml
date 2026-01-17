@@ -657,6 +657,9 @@ components:
         plan_only:
           type: boolean
           description: True when the job computes a plan only.
+        prepare_args_normalized:
+          type: string
+          description: Normalized prepare arguments (when available).
         created_at:
           type: string
           format: date-time

@@ -43,10 +43,13 @@ type job struct {
 	id          string
 	prepareKind string
 	imageID     string
+	planOnly    bool
+	argsNorm    string
 	createdAt   time.Time
 	startedAt   *time.Time
 	finishedAt  *time.Time
 	status      string
+	tasks       []PlanTask
 	result      *Result
 	err         *ErrorResponse
 	events      []Event
@@ -97,6 +100,8 @@ func (m *Manager) Submit(ctx context.Context, req Request) (Accepted, error) {
 		id:          jobID,
 		prepareKind: prepared.request.PrepareKind,
 		imageID:     prepared.request.ImageID,
+		planOnly:    prepared.request.PlanOnly,
+		argsNorm:    prepared.argsNormalized,
 		createdAt:   now,
 		status:      StatusQueued,
 	}
@@ -153,9 +158,15 @@ func (m *Manager) runJob(prepared preparedRequest, j *job) {
 	started := m.now().UTC()
 	j.setStatus(StatusRunning, started)
 
-	stateID, argsNormalized, stateErr := m.computeState(prepared)
+	tasks, stateID, stateErr := m.buildPlan(prepared)
 	if stateErr != nil {
 		j.fail(m.now().UTC(), stateErr)
+		return
+	}
+	j.setTasks(tasks)
+
+	if prepared.request.PlanOnly {
+		j.succeedPlan(m.now().UTC())
 		return
 	}
 
@@ -171,7 +182,7 @@ func (m *Manager) runJob(prepared preparedRequest, j *job) {
 		StateFingerprint:      stateID,
 		ImageID:               prepared.request.ImageID,
 		PrepareKind:           prepared.request.PrepareKind,
-		PrepareArgsNormalized: argsNormalized,
+		PrepareArgsNormalized: prepared.argsNormalized,
 		CreatedAt:             created,
 	}); err != nil {
 		j.fail(m.now().UTC(), errorResponse("internal_error", "cannot store state", err.Error()))
@@ -194,7 +205,7 @@ func (m *Manager) runJob(prepared preparedRequest, j *job) {
 		StateID:               stateID,
 		ImageID:               prepared.request.ImageID,
 		PrepareKind:           prepared.request.PrepareKind,
-		PrepareArgsNormalized: argsNormalized,
+		PrepareArgsNormalized: prepared.argsNormalized,
 	}
 	j.succeed(m.now().UTC(), result)
 }
@@ -225,10 +236,54 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 	}, nil
 }
 
-func (m *Manager) computeState(prepared preparedRequest) (string, string, *ErrorResponse) {
+func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+	taskHash, errResp := m.computeTaskHash(prepared)
+	if errResp != nil {
+		return nil, "", errResp
+	}
+	stateID, errResp := m.computeOutputStateID("image", prepared.request.ImageID, taskHash)
+	if errResp != nil {
+		return nil, "", errResp
+	}
+	cached, err := m.isStateCached(stateID)
+	if err != nil {
+		return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
+	}
+	cachedFlag := cached
+
+	tasks := []PlanTask{
+		{
+			TaskID:      "plan",
+			Type:        "plan",
+			PlannerKind: prepared.request.PrepareKind,
+		},
+		{
+			TaskID: "execute-0",
+			Type:   "state_execute",
+			Input: &TaskInput{
+				Kind: "image",
+				ID:   prepared.request.ImageID,
+			},
+			TaskHash:      taskHash,
+			OutputStateID: stateID,
+			Cached:        &cachedFlag,
+		},
+		{
+			TaskID: "prepare-instance",
+			Type:   "prepare_instance",
+			Input: &TaskInput{
+				Kind: "state",
+				ID:   stateID,
+			},
+			InstanceMode: "ephemeral",
+		},
+	}
+	return tasks, stateID, nil
+}
+
+func (m *Manager) computeTaskHash(prepared preparedRequest) (string, *ErrorResponse) {
 	hasher := newStateHasher()
 	hasher.write("prepare_kind", prepared.request.PrepareKind)
-	hasher.write("image_id", prepared.request.ImageID)
 	for i, arg := range prepared.normalizedArgs {
 		hasher.write(fmt.Sprintf("arg:%d", i), arg)
 	}
@@ -236,23 +291,49 @@ func (m *Manager) computeState(prepared preparedRequest) (string, string, *Error
 		hasher.write(fmt.Sprintf("input:%d:%s", i, input.Kind), input.Value)
 	}
 	hasher.write("engine_version", m.version)
+	taskHash := hasher.sum()
+	if taskHash == "" {
+		return "", errorResponse("internal_error", "cannot compute task hash", "")
+	}
+	return taskHash, nil
+}
+
+func (m *Manager) computeOutputStateID(inputKind, inputID, taskHash string) (string, *ErrorResponse) {
+	hasher := newStateHasher()
+	hasher.write("input_kind", inputKind)
+	hasher.write("input_id", inputID)
+	hasher.write("task_hash", taskHash)
 	stateID := hasher.sum()
 	if stateID == "" {
-		return "", "", errorResponse("internal_error", "cannot compute state id", "")
+		return "", errorResponse("internal_error", "cannot compute state id", "")
 	}
-	return stateID, prepared.argsNormalized, nil
+	return stateID, nil
+}
+
+func (m *Manager) isStateCached(stateID string) (bool, error) {
+	if strings.TrimSpace(stateID) == "" {
+		return false, nil
+	}
+	_, ok, err := m.store.GetState(context.Background(), stateID)
+	if err != nil {
+		return false, err
+	}
+	return ok, nil
 }
 
 func (j *job) snapshot() Status {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	status := Status{
-		JobID:       j.id,
-		Status:      j.status,
-		PrepareKind: j.prepareKind,
-		ImageID:     j.imageID,
-		Result:      j.result,
-		Error:       j.err,
+		JobID:                 j.id,
+		Status:                j.status,
+		PrepareKind:           j.prepareKind,
+		ImageID:               j.imageID,
+		PlanOnly:              j.planOnly,
+		PrepareArgsNormalized: j.argsNorm,
+		Tasks:                 append([]PlanTask(nil), j.tasks...),
+		Result:                j.result,
+		Error:                 j.err,
 	}
 	status.CreatedAt = formatTime(j.createdAt)
 	status.StartedAt = formatTimePtr(j.startedAt)
@@ -288,6 +369,16 @@ func (j *job) setStatus(status string, when time.Time) {
 	})
 }
 
+func (j *job) setTasks(tasks []PlanTask) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if len(tasks) == 0 {
+		j.tasks = nil
+		return
+	}
+	j.tasks = append([]PlanTask(nil), tasks...)
+}
+
 func (j *job) succeed(when time.Time, result Result) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -304,6 +395,20 @@ func (j *job) succeed(when time.Time, result Result) {
 			Type:   "result",
 			Ts:     when.Format(time.RFC3339Nano),
 			Result: &result,
+		},
+	)
+}
+
+func (j *job) succeedPlan(when time.Time) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.status = StatusSucceeded
+	j.finishedAt = &when
+	j.events = append(j.events,
+		Event{
+			Type:   "status",
+			Ts:     when.Format(time.RFC3339Nano),
+			Status: StatusSucceeded,
 		},
 	)
 }
