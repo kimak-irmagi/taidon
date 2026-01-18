@@ -24,8 +24,40 @@ func TestParsePrepareArgsImageFlag(t *testing.T) {
 	}
 }
 
+func TestParsePrepareArgsHelp(t *testing.T) {
+	_, showHelp, err := parsePrepareArgs([]string{"--help"})
+	if err != nil || !showHelp {
+		t.Fatalf("expected help, err=%v help=%v", err, showHelp)
+	}
+	_, showHelp, err = parsePrepareArgs([]string{"-h"})
+	if err != nil || !showHelp {
+		t.Fatalf("expected help for -h, err=%v help=%v", err, showHelp)
+	}
+}
+
+func TestParsePrepareArgsImageEquals(t *testing.T) {
+	opts, showHelp, err := parsePrepareArgs([]string{"--image=img", "-c", "select 1"})
+	if err != nil || showHelp {
+		t.Fatalf("parsePrepareArgs: err=%v help=%v", err, showHelp)
+	}
+	if opts.Image != "img" {
+		t.Fatalf("expected image, got %q", opts.Image)
+	}
+}
+
 func TestParsePrepareArgsMissingImageValue(t *testing.T) {
 	_, _, err := parsePrepareArgs([]string{"--image"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+}
+
+func TestParsePrepareArgsImageEqualsMissing(t *testing.T) {
+	_, _, err := parsePrepareArgs([]string{"--image="})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -115,6 +147,13 @@ func TestNormalizePsqlArgs(t *testing.T) {
 	}
 }
 
+func TestNormalizePsqlArgsStdinReadError(t *testing.T) {
+	_, _, err := normalizePsqlArgs([]string{"-f", "-"}, t.TempDir(), errorReader{})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
 func TestNormalizePsqlArgsMissingValue(t *testing.T) {
 	_, _, err := normalizePsqlArgs([]string{"-f"}, t.TempDir(), strings.NewReader(""))
 	if err == nil {
@@ -143,4 +182,10 @@ func TestNormalizeFilePath(t *testing.T) {
 	if _, _, err := normalizeFilePath(" ", cwd); err == nil {
 		t.Fatalf("expected empty path error")
 	}
+}
+
+type errorReader struct{}
+
+func (errorReader) Read([]byte) (int, error) {
+	return 0, errors.New("boom")
 }

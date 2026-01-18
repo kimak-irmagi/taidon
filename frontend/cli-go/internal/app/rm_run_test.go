@@ -171,3 +171,93 @@ func TestRunRmPrintsResultHuman(t *testing.T) {
 		t.Fatalf("expected output, got %q", buf.String())
 	}
 }
+
+func TestRunRmHelp(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runRm(&buf, cli.RmOptions{}, []string{"--help"}, "human"); err != nil {
+		t.Fatalf("runRm: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Usage:") {
+		t.Fatalf("expected usage output, got %q", buf.String())
+	}
+}
+
+func TestRunRmInvalidPrefixMapped(t *testing.T) {
+	runOpts := cli.RmOptions{
+		Mode:     "remote",
+		Endpoint: "http://127.0.0.1:1",
+		Timeout:  time.Second,
+	}
+	err := runRm(&bytes.Buffer{}, runOpts, []string{"abc"}, "human")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	exitErr, ok := err.(*ExitError)
+	if !ok || exitErr.Code != 2 {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunRmAmbiguousResourceMapped(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/instances":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"instance_id":"abc","image_id":"img","state_id":"state","created_at":"2025-01-01T00:00:00Z","status":"active"}]`)
+		case "/v1/states":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"state_id":"def","image_id":"img","prepare_kind":"psql","prepare_args_normalized":"","created_at":"2025-01-01T00:00:00Z","refcount":0}]`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	runOpts := cli.RmOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}
+
+	err := runRm(&bytes.Buffer{}, runOpts, []string{"abc12345"}, "human")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	exitErr, ok := err.(*ExitError)
+	if !ok || exitErr.Code != 2 {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunRmPrintsResultJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/instances":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"instance_id":"abc123456789abcd","image_id":"img","state_id":"state","created_at":"2025-01-01T00:00:00Z","status":"active"}]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/states":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/instances/"):
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"dry_run":false,"outcome":"deleted","root":{"kind":"instance","id":"abc123456789abcd","connections":0}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	runOpts := cli.RmOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}
+
+	var buf bytes.Buffer
+	if err := runRm(&buf, runOpts, []string{"abc12345"}, "json"); err != nil {
+		t.Fatalf("runRm: %v", err)
+	}
+	if !strings.Contains(buf.String(), "\"outcome\":\"deleted\"") {
+		t.Fatalf("expected json output, got %q", buf.String())
+	}
+}
