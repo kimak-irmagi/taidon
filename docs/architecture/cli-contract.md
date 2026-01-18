@@ -54,8 +54,12 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 ## ID Prefix Rules
 
-Anywhere the CLI expects an id, users may supply a hex prefix (minimum 8 chars).
-The CLI resolves the prefix case-insensitively and fails on ambiguity.
+Where the CLI expects a **state or instance id**, users may supply a hex prefix
+(minimum 8 chars). The CLI resolves the prefix case-insensitively and fails on
+ambiguity.
+
+Job ids are **opaque and must be provided in full**; prefix matching is not
+supported for jobs.
 
 ## 2. Command Groups (Namespaces)
 
@@ -110,9 +114,11 @@ See the user guide for the authoritative, up-to-date command semantics:
 ID prefix support (implemented):
 
 - Full ids are hex strings (instances: 32 chars, states: 64 chars).
-- Any id argument accepts 8+ hex characters as a case-insensitive prefix.
-- If the value is shorter than 8 or contains non-hex characters, it is treated as a name.
-- If a prefix matches multiple ids, the command fails with an ambiguity error.
+- Any state/instance id argument accepts 8+ hex characters as a case-insensitive prefix.
+- Job ids must be specified in full (no prefix matching).
+- If multiple matches are found within a kind, the command fails with an ambiguity error.
+- If a job id matches and a state/instance prefix matches, the command fails with
+  a cross-kind ambiguity error.
 - Human output shortens ids to 12 characters by default; `--long` prints full ids.
 - JSON output always uses full ids.
 

@@ -35,6 +35,39 @@ paths:
         "405":
           description: Method not allowed
   /v1/prepare-jobs:
+    get:
+      operationId: listPrepareJobs
+      summary: List prepare jobs
+      description: Returns prepare jobs.
+      tags:
+        - prepare
+      parameters:
+        - in: query
+          name: job
+          schema:
+            type: string
+          description: Filter by job id (exact match).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrepareJobEntry"
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON stream of PrepareJobEntry objects.
+        "400":
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
     post:
       operationId: createPrepareJob
       summary: Start a prepare job
@@ -108,6 +141,60 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
+    delete:
+      operationId: deletePrepareJob
+      summary: Delete a prepare job
+      description: |
+        Deletes a prepare job by id. This operation is idempotent.
+        By default, jobs with started tasks are blocked unless `force` is set.
+      tags:
+        - prepare
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: force
+          schema:
+            type: boolean
+          description: Allow deletion of jobs with started tasks.
+        - in: query
+          name: dry_run
+          schema:
+            type: boolean
+          description: |
+            Return the deletion tree without making changes.
+            When true, the response is always 200 and `outcome` indicates whether
+            deletion would succeed.
+      responses:
+        "200":
+          description: OK (deleted or dry-run result)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Blocked by safety rules (dry_run=false only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteResult"
   /v1/prepare-jobs/{jobId}/events:
     get:
       operationId: streamPrepareJobEvents
@@ -139,6 +226,40 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks
+      description: Returns task queue entries across jobs.
+      tags:
+        - tasks
+      parameters:
+        - in: query
+          name: job
+          schema:
+            type: string
+          description: Filter by job id (exact match).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskEntry"
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON stream of TaskEntry objects.
+        "400":
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
   /v1/names:
     get:
       operationId: listNames
@@ -682,6 +803,36 @@ components:
           anyOf:
             - $ref: "#/components/schemas/ErrorResponse"
             - type: "null"
+    PrepareJobEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - status
+        - prepare_kind
+        - image_id
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        prepare_kind:
+          type: string
+        image_id:
+          type: string
+        plan_only:
+          type: boolean
+          description: True when the job computes a plan only.
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
     PrepareJobEvent:
       type: object
       additionalProperties: false
@@ -728,6 +879,38 @@ components:
           type: string
         prepare_args_normalized:
           type: string
+    TaskEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - job_id
+        - type
+        - status
+      properties:
+        task_id:
+          type: string
+        job_id:
+          type: string
+        type:
+          type: string
+          enum: [plan, state_execute, prepare_instance]
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        planner_kind:
+          type: string
+        input:
+          $ref: "#/components/schemas/PreparePlanTaskInput"
+        task_hash:
+          type: string
+        output_state_id:
+          type: string
+        cached:
+          type: boolean
+        instance_mode:
+          type: string
+          enum: [ephemeral]
     DeleteResult:
       type: object
       additionalProperties: false
@@ -752,7 +935,7 @@ components:
       properties:
         kind:
           type: string
-          enum: [state, instance]
+          enum: [state, instance, job]
         id:
           type: string
         connections:
@@ -762,7 +945,7 @@ components:
           description: Active connections (instances only).
         blocked:
           type: string
-          enum: [active_connections, has_descendants, blocked_by_descendant]
+          enum: [active_connections, active_tasks, has_descendants, blocked_by_descendant]
           description: Reason the node cannot be deleted.
         children:
           type: array

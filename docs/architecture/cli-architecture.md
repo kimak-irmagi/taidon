@@ -107,13 +107,22 @@ sequenceDiagram
     CLI->>ENG: GET /v1/states (Authorization, Accept)
     ENG-->>CLI: JSON array or NDJSON
   end
+  opt jobs requested
+    CLI->>ENG: GET /v1/prepare-jobs (Authorization, Accept)
+    ENG-->>CLI: JSON array or NDJSON
+  end
+  opt tasks requested
+    CLI->>ENG: GET /v1/tasks?job=... (Authorization, Accept)
+    ENG-->>CLI: JSON array or NDJSON
+  end
   CLI->>CLI: render tables or JSON
 ```
 
 Notes:
 
 - Remote targets use the same list endpoints; the CLI supplies credentials from profile configuration.
-- The CLI defaults to listing names and instances; states are requested explicitly.
+- The CLI defaults to listing names and instances; states, jobs, and tasks are requested explicitly.
+- Task listing can be filtered by job id (`--job`).
 
 ### 4.5 Removal (sqlrs rm)
 
@@ -126,8 +135,13 @@ sequenceDiagram
   ENG-->>CLI: instance list
   CLI->>ENG: GET /v1/states?id_prefix=...
   ENG-->>CLI: state list
+  CLI->>ENG: GET /v1/prepare-jobs?job=...
+  ENG-->>CLI: job list
   alt ambiguous or not found
     CLI->>CLI: error or noop
+  else job resolved
+    CLI->>ENG: DELETE /v1/prepare-jobs/{id}?force&dry_run
+    ENG-->>CLI: DeleteResult
   else instance resolved
     CLI->>ENG: DELETE /v1/instances/{id}?force&dry_run
     ENG-->>CLI: DeleteResult
