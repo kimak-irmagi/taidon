@@ -2,9 +2,13 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"sqlrs/cli/internal/client"
@@ -80,28 +84,53 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	if err != nil {
 		return ConnectResult{}, err
 	}
-	defer logFile.Close()
+	logFileClosed := false
+	closeLogFile := func() {
+		if logFileClosed {
+			return
+		}
+		logFileClosed = true
+		_ = logFile.Close()
+	}
 
 	cmd, err := buildDaemonCommand(opts.DaemonPath, opts.RunDir, enginePath)
 	if err != nil {
+		closeLogFile()
 		return ConnectResult{}, err
 	}
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cliOutput := newGatedWriter(os.Stderr)
+	logWriter := io.MultiWriter(logFile, cliOutput)
+	cmd.Stdout = logWriter
+	cmd.Stderr = logWriter
 
 	logVerbose(opts.Verbose, "starting engine: %s", opts.DaemonPath)
 	if err := cmd.Start(); err != nil {
+		closeLogFile()
 		return ConnectResult{}, err
 	}
+
+	exitCh := make(chan error, 1)
+	go func() {
+		exitCh <- cmd.Wait()
+		closeLogFile()
+	}()
 
 	logVerbose(opts.Verbose, "waiting for engine to become healthy")
 	deadline := time.Now().Add(opts.StartupTimeout)
 	for {
+		select {
+		case err := <-exitCh:
+			cliOutput.Disable()
+			return ConnectResult{}, formatEngineExit(err)
+		default:
+		}
 		if state, ok := loadHealthyState(ctx, enginePath, opts.ClientTimeout); ok {
+			cliOutput.Disable()
 			logVerbose(opts.Verbose, "engine healthy at %s", state.Endpoint)
 			return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
 		}
 		if time.Now().After(deadline) {
+			cliOutput.Disable()
 			return ConnectResult{}, fmt.Errorf("engine did not become healthy within startup timeout")
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -131,4 +160,37 @@ func loadHealthyState(ctx context.Context, enginePath string, timeout time.Durat
 func checkHealth(ctx context.Context, endpoint string, timeout time.Duration) (client.HealthResponse, error) {
 	client := client.New(endpoint, client.Options{Timeout: timeout})
 	return client.Health(ctx)
+}
+
+type gatedWriter struct {
+	enabled atomic.Bool
+	w       io.Writer
+}
+
+func newGatedWriter(w io.Writer) *gatedWriter {
+	writer := &gatedWriter{w: w}
+	writer.enabled.Store(true)
+	return writer
+}
+
+func (g *gatedWriter) Disable() {
+	g.enabled.Store(false)
+}
+
+func (g *gatedWriter) Write(p []byte) (int, error) {
+	if !g.enabled.Load() {
+		return len(p), nil
+	}
+	return g.w.Write(p)
+}
+
+func formatEngineExit(err error) error {
+	if err == nil {
+		return fmt.Errorf("engine exited before becoming healthy (exit code 0)")
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return fmt.Errorf("engine exited before becoming healthy (exit code %d)", exitErr.ExitCode())
+	}
+	return fmt.Errorf("engine exited before becoming healthy: %v", err)
 }

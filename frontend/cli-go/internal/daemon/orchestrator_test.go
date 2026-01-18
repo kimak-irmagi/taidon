@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -190,4 +194,52 @@ func TestLogVerboseWrites(t *testing.T) {
 	if !strings.Contains(buf.String(), "hello world") {
 		t.Fatalf("unexpected output: %q", buf.String())
 	}
+}
+
+func TestGatedWriterDisablesOutput(t *testing.T) {
+	var buf bytes.Buffer
+	writer := newGatedWriter(&buf)
+	if _, err := writer.Write([]byte("hello")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	writer.Disable()
+	if _, err := writer.Write([]byte(" world")); err != nil {
+		t.Fatalf("write disabled: %v", err)
+	}
+	if got := buf.String(); got != "hello" {
+		t.Fatalf("unexpected output: %q", got)
+	}
+}
+
+func TestFormatEngineExitNil(t *testing.T) {
+	err := formatEngineExit(nil)
+	if err == nil || !strings.Contains(err.Error(), "exit code 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFormatEngineExitCode(t *testing.T) {
+	cmd := exitCommand(7)
+	execErr := cmd.Run()
+	if execErr == nil {
+		t.Fatalf("expected exit error")
+	}
+	err := formatEngineExit(execErr)
+	if err == nil || !strings.Contains(err.Error(), "exit code 7") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFormatEngineExitMessage(t *testing.T) {
+	err := formatEngineExit(errors.New("boom"))
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func exitCommand(code int) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd.exe", "/c", "exit", "/b", fmt.Sprintf("%d", code))
+	}
+	return exec.Command("sh", "-c", fmt.Sprintf("exit %d", code))
 }

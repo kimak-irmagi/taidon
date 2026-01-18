@@ -34,7 +34,8 @@ func parseRmFlags(args []string) (rmOptions, bool, error) {
 	help := fs.Bool("help", false, "show help")
 	helpShort := fs.Bool("h", false, "show help")
 
-	if err := fs.Parse(args); err != nil {
+	flags, positionals := splitRmArgs(args)
+	if err := fs.Parse(flags); err != nil {
 		return opts, false, ExitErrorf(2, "Invalid arguments: %v", err)
 	}
 
@@ -42,11 +43,14 @@ func parseRmFlags(args []string) (rmOptions, bool, error) {
 		return opts, true, nil
 	}
 
-	if fs.NArg() != 1 {
+	if len(positionals) == 0 {
 		return opts, false, ExitErrorf(2, "Missing id prefix")
 	}
+	if len(positionals) > 1 {
+		return opts, false, ExitErrorf(2, "Too many arguments")
+	}
 
-	prefix := strings.TrimSpace(fs.Arg(0))
+	prefix := strings.TrimSpace(positionals[0])
 	if prefix == "" {
 		return opts, false, ExitErrorf(2, "Missing id prefix")
 	}
@@ -56,6 +60,28 @@ func parseRmFlags(args []string) (rmOptions, bool, error) {
 	opts.Force = *force || *forceShort
 	opts.DryRun = *dryRun
 	return opts, false, nil
+}
+
+func splitRmArgs(args []string) ([]string, []string) {
+	flags := make([]string, 0, len(args))
+	positionals := make([]string, 0, 1)
+	inPositionals := false
+	for _, arg := range args {
+		if inPositionals {
+			positionals = append(positionals, arg)
+			continue
+		}
+		if arg == "--" {
+			inPositionals = true
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			flags = append(flags, arg)
+			continue
+		}
+		positionals = append(positionals, arg)
+	}
+	return flags, positionals
 }
 
 func runRm(w io.Writer, runOpts cli.RmOptions, args []string, output string) error {
