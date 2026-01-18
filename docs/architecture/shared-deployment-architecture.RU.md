@@ -101,3 +101,34 @@ flowchart TD
 - Тот же API контракт, что и в локальном `sqlrs` для prepare jobs (endpoint-ы уточняются), но всегда async; watch через stream.
 - Можно шардировать cache/store по org или region; runner stateless, кроме per-job instance.
 - Будущее: pluggable executors помимо k8s; multi-region репликация cache/artifacts.
+
+## 10. Компонентная структура сервисов (jobs/tasks)
+
+### 10.1 Компоненты и ответственность
+
+- **Gateway**
+  - Экспортирует `GET /v1/prepare-jobs`, `DELETE /v1/prepare-jobs/{jobId}` и `GET /v1/tasks`.
+  - Проверяет authN/authZ и проксирует в Orchestrator.
+- **Orchestrator**
+  - Владеет реестром jobs и представлением очереди tasks.
+  - Применяет правила scheduling, quota и deletion.
+- **Runner**
+  - Выполняет tasks и репортит переходы статусов.
+  - Стримит логи/события для observability.
+- **Control DB**
+  - Персистит метаданные jobs/tasks и историю статусов.
+
+### 10.2 Ключевые типы и интерфейсы
+
+- `PrepareJobEntry`, `TaskEntry`
+  - Payload списка для job/task запросов.
+- `TaskStatus`
+  - `queued | running | succeeded | failed`.
+- `DeleteResult`
+  - Единая форма результата удаления для job.
+
+### 10.3 Владение данными
+
+- Control DB - источник истины для jobs/tasks в shared деплойменте.
+- Orchestrator держит in-memory состояние очереди, синхронизированное с Control DB.
+
