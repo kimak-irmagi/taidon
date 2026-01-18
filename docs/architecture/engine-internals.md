@@ -47,6 +47,7 @@ flowchart LR
 
 - REST over loopback (HTTP/UDS); exposes prepare jobs, instance lookup/binding, snapshots, cache, and shutdown endpoints.
 - Exposes delete endpoints for instances and states with recurse/force/dry-run options.
+- Exposes list/delete endpoints for prepare jobs and list endpoints for tasks.
 - Prepare runs as async jobs; the CLI watches status/events and waits for completion.
   `plan_only` compute-only requests return task lists in job status.
 
@@ -55,6 +56,7 @@ flowchart LR
 - Coordinates a prepare job: plan steps, cache lookup, execute steps, snapshot states, create instance, persist metadata.
 - Enforces deadlines and cancellation; supervises child processes/containers.
 - Emits status transitions and structured events for streaming to the CLI.
+- Provides job/task snapshots for list endpoints and handles job deletion requests.
 
 ### 1.3 Prepare Planner
 
@@ -221,6 +223,43 @@ sequenceDiagram
     DEL->>SNAP: remove snapshots
     DEL->>STORE: delete metadata
     DEL-->>API: DeleteResult (deleted)
+  end
+  API-->>CLI: 200/409 + DeleteResult
+```
+
+### 2.4 Job/Task Listing Flow
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant API as "Engine API"
+  participant CTRL as "Prepare Controller"
+
+  CLI->>API: GET /v1/prepare-jobs
+  API->>CTRL: snapshot jobs
+  CTRL-->>API: job entries
+  API-->>CLI: job list
+
+  CLI->>API: GET /v1/tasks?job=...
+  API->>CTRL: snapshot tasks
+  CTRL-->>API: task entries
+  API-->>CLI: task list
+```
+
+### 2.5 Job Deletion Flow
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant API as "Engine API"
+  participant CTRL as "Prepare Controller"
+
+  CLI->>API: DELETE /v1/prepare-jobs/{id}?force&dry_run
+  API->>CTRL: delete job request
+  alt blocked without force
+    CTRL-->>API: DeleteResult (blocked)
+  else allowed
+    CTRL-->>API: DeleteResult (deleted)
   end
   API-->>CLI: 200/409 + DeleteResult
 ```

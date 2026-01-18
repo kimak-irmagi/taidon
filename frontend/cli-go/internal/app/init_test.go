@@ -273,6 +273,9 @@ func TestIsWithin(t *testing.T) {
 	if !isWithin(dir, dir) {
 		t.Fatalf("expected same dir to be within")
 	}
+	if !isWithin(dir, filepath.Join(dir, "child")) {
+		t.Fatalf("expected child dir to be within")
+	}
 	if isWithin(dir, filepath.Join(dir, "..")) {
 		t.Fatalf("expected outside dir to be false")
 	}
@@ -283,6 +286,115 @@ func TestResolveExistingPathAbsolute(t *testing.T) {
 	path := resolveExistingPath(filepath.Join(dir, ".."))
 	if !filepath.IsAbs(path) {
 		t.Fatalf("expected absolute path, got %q", path)
+	}
+}
+
+func TestRunInitHelp(t *testing.T) {
+	var out bytes.Buffer
+	if err := runInit(&out, t.TempDir(), "", []string{"--help"}); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	if !strings.Contains(out.String(), "Usage:") {
+		t.Fatalf("expected usage output, got %q", out.String())
+	}
+}
+
+func TestRunInitExistingWorkspaceWithValidConfigDryRun(t *testing.T) {
+	workspace := t.TempDir()
+	marker := filepath.Join(workspace, ".sqlrs")
+	if err := os.MkdirAll(marker, 0o700); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+	configPath := filepath.Join(marker, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("client:\n  output: human\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runInit(&out, workspace, "", []string{"--dry-run"}); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	if !strings.Contains(out.String(), "Workspace already initialized") || !strings.Contains(out.String(), "dry-run") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestRunInitForceNestedWorkspace(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(parent, ".sqlrs"), 0o700); err != nil {
+		t.Fatalf("create parent marker: %v", err)
+	}
+	child := filepath.Join(parent, "child")
+	if err := os.MkdirAll(child, 0o700); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runInit(&out, child, "", []string{"--force"}); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	if !dirExists(filepath.Join(child, ".sqlrs")) {
+		t.Fatalf("expected workspace marker to exist")
+	}
+}
+
+func TestResolveWorkspacePathEmpty(t *testing.T) {
+	if _, err := resolveWorkspacePath("", ""); err == nil {
+		t.Fatalf("expected error for empty workspace path")
+	}
+}
+
+func TestNormalizeEnginePathEmpty(t *testing.T) {
+	dir := t.TempDir()
+	if got := normalizeEnginePath("  ", dir, dir); got != "" {
+		t.Fatalf("expected empty engine path, got %q", got)
+	}
+}
+
+func TestResolveExistingPathRelative(t *testing.T) {
+	cwd := t.TempDir()
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(old)
+	})
+
+	path := resolveExistingPath("child")
+	if !filepath.IsAbs(path) {
+		t.Fatalf("expected absolute path, got %q", path)
+	}
+}
+
+func TestValidateConfigOK(t *testing.T) {
+	workspace := t.TempDir()
+	configPath := filepath.Join(workspace, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("client:\n  output: human\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := validateConfig(configPath); err != nil {
+		t.Fatalf("validateConfig: %v", err)
+	}
+}
+
+func TestValidateConfigMissingFile(t *testing.T) {
+	if err := validateConfig(filepath.Join(t.TempDir(), "missing.yaml")); err == nil {
+		t.Fatalf("expected error for missing config")
+	}
+}
+
+func TestFindParentWorkspaceNoParent(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "child")
+	if err := os.MkdirAll(child, 0o700); err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+	if findParentWorkspace(child) {
+		t.Fatalf("expected no parent workspace")
 	}
 }
 

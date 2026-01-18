@@ -4,11 +4,13 @@
 
 `sqlrs ls` lists objects managed by sqlrs.
 
-sqlrs manages three object types:
+sqlrs manages five object types:
 
 - **states** - immutable database states produced by `prepare:psql`
-- **instances** — mutable database instances derived from states
-- **names** — stable user-defined handles pointing to instances (and bound to a state fingerprint)
+- **instances** - mutable database instances derived from states
+- **names** - stable user-defined handles pointing to instances (and bound to a state fingerprint)
+- **jobs** - prepare job executions and their lifecycle
+- **tasks** - queued or running steps belonging to jobs
 
 `ls` is a pure introspection command: it does not create, modify, or delete anything.
 
@@ -26,7 +28,9 @@ sqlrs ls [OPTIONS]
 --instances, -i   List instances
 --states,    -s   List states
 --names,     -n   List names
---all            Equivalent to -i -s -n
+--jobs,     -j   List jobs
+--tasks,    -t   List tasks
+--all            Equivalent to -i -s -n --jobs --tasks
 ```
 
 ### Filtering and formatting
@@ -43,6 +47,7 @@ sqlrs ls [OPTIONS]
 --name <name>            Filter by name (names/instances)
 --instance <instance_id> Filter by instance id (full or hex prefix)
 --state <state_id>       Filter by state id (full or hex prefix)
+--job <job_id>           Filter by job id (jobs/tasks)
 --kind <prepare_kind>    Filter by prepare kind (states)
 --image <image id>       Filter by the base image
 ```
@@ -50,7 +55,7 @@ sqlrs ls [OPTIONS]
 > Note: filters apply after object selection. If no selector flags are provided,
 > defaults apply (see below).
 
-### ID prefixes
+### ID matching
 
 `--instance` and `--state` accept full ids or hex prefixes (8+ characters).
 Prefix matching is case-insensitive and resolves to a single id:
@@ -58,6 +63,8 @@ Prefix matching is case-insensitive and resolves to a single id:
 - If the prefix matches exactly one id, that id is used.
 - If the prefix matches multiple ids, `ls` fails with an error.
 - If the prefix matches nothing, the result is an empty list.
+
+`--job` requires a full job id (no prefix matching).
 
 ---
 
@@ -68,7 +75,7 @@ If no object selector flags are given, `sqlrs ls` lists:
 - `--names` and `--instances`
 
 Rationale: these are the objects users interact with most often. `--states` can be
-large (cache), so it is shown explicitly.
+large (cache), and jobs/tasks are operational details, so they are shown explicitly.
 
 ---
 
@@ -79,6 +86,8 @@ By default, `sqlrs ls` prints a table per selected object type, in this order:
 1. Names
 2. Instances
 3. States
+4. Jobs
+5. Tasks
 
 Each section begins with a one-line title (suppressed by `--quiet`).
 When `--quiet` is set and multiple sections are printed, sections are separated by a blank line.
@@ -130,6 +139,31 @@ Columns:
 - `SIZE`
 - `REFCOUNT` (number of instances referencing this state)
 
+### Jobs table
+
+Columns:
+
+- `JOB_ID`
+- `STATUS` (queued / running / succeeded / failed)
+- `PREPARE_KIND`
+- `IMAGE_ID`
+- `PLAN_ONLY` (true / false)
+- `CREATED`
+- `STARTED`
+- `FINISHED`
+
+### Tasks table
+
+Columns:
+
+- `TASK_ID`
+- `JOB_ID`
+- `TYPE`
+- `STATUS` (queued / running / succeeded / failed)
+- `INPUT` (kind:id)
+- `OUTPUT_STATE_ID` (state_execute only)
+- `CACHED` (state_execute only)
+
 ---
 
 ## Output (JSON)
@@ -140,7 +174,9 @@ With the global `--output json` option, `sqlrs ls` prints a single JSON object:
 {
   "names": [ ... ],
   "instances": [ ... ],
-  "states": [ ... ]
+  "states": [ ... ],
+  "jobs": [ ... ],
+  "tasks": [ ... ]
 }
 ```
 
@@ -179,6 +215,29 @@ Recommended fields:
 - `created_at`
 - `size_bytes` (optional)
 - `refcount`
+
+### Job object
+
+- `job_id`
+- `status` (`queued` | `running` | `succeeded` | `failed`)
+- `prepare_kind`
+- `image_id`
+- `plan_only`
+- `created_at`
+- `started_at` (nullable)
+- `finished_at` (nullable)
+
+### Task object
+
+- `task_id`
+- `job_id`
+- `type`
+- `status` (`queued` | `running` | `succeeded` | `failed`)
+- `input` (object with `kind` and `id`)
+- `task_hash` (optional)
+- `output_state_id` (optional)
+- `cached` (optional)
+- `instance_mode` (optional)
 
 ---
 
@@ -226,6 +285,18 @@ List a single name entry:
 
 ```bash
 sqlrs ls -n --name devdb
+```
+
+List jobs:
+
+```bash
+sqlrs ls --jobs
+```
+
+List tasks for a job:
+
+```bash
+sqlrs ls --tasks --job <job_id>
 ```
 
 Machine-readable output for CI:

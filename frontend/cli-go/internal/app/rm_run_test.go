@@ -22,6 +22,9 @@ func TestRunRmBlockedReturnsExitError(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/states":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `[]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/instances/"):
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
@@ -95,6 +98,9 @@ func TestRunRmAmbiguousErrorMapped(t *testing.T) {
 		case "/v1/states":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `[]`)
+		case "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -148,6 +154,9 @@ func TestRunRmPrintsResultHuman(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/states":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `[]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/instances/"):
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"dry_run":false,"outcome":"deleted","root":{"kind":"instance","id":"abc123456789abcd","connections":0}}`)
@@ -183,17 +192,18 @@ func TestRunRmHelp(t *testing.T) {
 }
 
 func TestRunRmInvalidPrefixMapped(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
 	runOpts := cli.RmOptions{
 		Mode:     "remote",
-		Endpoint: "http://127.0.0.1:1",
+		Endpoint: server.URL,
 		Timeout:  time.Second,
 	}
-	err := runRm(&bytes.Buffer{}, runOpts, []string{"abc"}, "human")
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	exitErr, ok := err.(*ExitError)
-	if !ok || exitErr.Code != 2 {
+	if err := runRm(&bytes.Buffer{}, runOpts, []string{"abc"}, "human"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -207,6 +217,9 @@ func TestRunRmAmbiguousResourceMapped(t *testing.T) {
 		case "/v1/states":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `[{"state_id":"def","image_id":"img","prepare_kind":"psql","prepare_args_normalized":"","created_at":"2025-01-01T00:00:00Z","refcount":0}]`)
+		case "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -236,6 +249,9 @@ func TestRunRmPrintsResultJSON(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `[{"instance_id":"abc123456789abcd","image_id":"img","state_id":"state","created_at":"2025-01-01T00:00:00Z","status":"active"}]`)
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/states":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `[]`)
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/instances/"):

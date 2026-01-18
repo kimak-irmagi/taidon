@@ -237,6 +237,9 @@ func TestRunRmCommandJSON(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/states":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `[]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/instances/"):
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"dry_run":false,"outcome":"deleted","root":{"kind":"instance","id":"abc123456789abcd","connections":0}}`)
@@ -452,6 +455,215 @@ func TestRunProfileNotFound(t *testing.T) {
 	err = Run([]string{"status"})
 	if err == nil || !strings.Contains(err.Error(), "profile not found") {
 		t.Fatalf("expected profile not found, got %v", err)
+	}
+}
+
+func TestWriteJSONRejectsUnsupportedType(t *testing.T) {
+	err := writeJSON(io.Discard, struct {
+		Ch chan int `json:"ch"`
+	}{Ch: make(chan int)})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestRunArgsErrorPrintsUsage(t *testing.T) {
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() {
+		_ = w.Close()
+		os.Stderr = oldStderr
+	}()
+
+	err = Run([]string{"--timeout=bad", "status"})
+	_ = w.Close()
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	data, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read stderr: %v", readErr)
+	}
+	if !strings.Contains(string(data), "Usage:") {
+		t.Fatalf("expected usage output, got %q", string(data))
+	}
+}
+
+func TestRunInitCommandDryRun(t *testing.T) {
+	workspace := t.TempDir()
+	if err := Run([]string{"--workspace", workspace, "init", "--dry-run"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if dirExists(filepath.Join(workspace, ".sqlrs")) {
+		t.Fatalf("expected no workspace marker")
+	}
+}
+
+func TestRunConfigLoadError(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	dirs, err := paths.Resolve()
+	if err != nil {
+		t.Fatalf("resolve dirs: %v", err)
+	}
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), []byte("client: ["), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := Run([]string{"status"}); err == nil {
+		t.Fatalf("expected config error")
+	}
+}
+
+func TestRunDefaultsFromConfig(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	defer server.Close()
+
+	dirs, err := paths.Resolve()
+	if err != nil {
+		t.Fatalf("resolve dirs: %v", err)
+	}
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	configData := "defaultProfile: \"\"\nclient:\n  output: \"\"\norchestrator:\n  runDir: \"\"\nprofiles:\n  local:\n    mode: \"\"\n    endpoint: \"" + server.URL + "\"\n"
+	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), []byte(configData), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	workspace := filepath.Join(temp, "workspace")
+	if err := os.MkdirAll(filepath.Join(workspace, ".sqlrs"), 0o700); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, ".sqlrs", "config.yaml"), []byte(""), 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(workspace); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWd)
+	})
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		_ = w.Close()
+		os.Stdout = oldStdout
+	}()
+
+	if err := Run([]string{"status"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	_ = w.Close()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	if !strings.Contains(string(data), "workspace:") {
+		t.Fatalf("expected workspace output, got %q", string(data))
+	}
+}
+
+func TestRunInvalidClientTimeout(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	dirs, err := paths.Resolve()
+	if err != nil {
+		t.Fatalf("resolve dirs: %v", err)
+	}
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), []byte("client:\n  timeout: bad\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := Run([]string{"status"}); err == nil {
+		t.Fatalf("expected timeout error")
+	}
+}
+
+func TestRunInvalidStartupTimeout(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	dirs, err := paths.Resolve()
+	if err != nil {
+		t.Fatalf("resolve dirs: %v", err)
+	}
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), []byte("orchestrator:\n  startupTimeout: bad\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := Run([]string{"status"}); err == nil {
+		t.Fatalf("expected startup timeout error")
+	}
+}
+
+func TestRunStatusError(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	err := Run([]string{"--mode=remote", "--endpoint", server.URL, "status"})
+	if err == nil {
+		t.Fatalf("expected status error")
+	}
+}
+
+func TestRunPrepareColonMissingKind(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	err := Run([]string{"prepare:"})
+	if err == nil || !strings.Contains(err.Error(), "missing prepare kind") {
+		t.Fatalf("expected missing prepare kind error, got %v", err)
+	}
+}
+
+func TestRunPlanColonMissingKind(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	err := Run([]string{"plan:"})
+	if err == nil || !strings.Contains(err.Error(), "missing plan kind") {
+		t.Fatalf("expected missing plan kind error, got %v", err)
 	}
 }
 

@@ -101,3 +101,33 @@ flowchart TD
 - Same API contract as local `sqlrs` for prepare jobs (endpoint names TBD), but always async; watch via stream.
 - Can shard cache/store by org or region; runner instances stateless except per-job instance.
 - Future: pluggable executors beyond k8s; multi-region replication of cache/artifacts.
+
+## 10. Service Component Structure (Jobs/Tasks)
+
+### 10.1 Components and responsibilities
+
+- **Gateway**
+  - Exposes `GET /v1/prepare-jobs`, `DELETE /v1/prepare-jobs/{jobId}`, and `GET /v1/tasks`.
+  - Enforces authN/authZ and forwards to Orchestrator.
+- **Orchestrator**
+  - Owns the job registry and task queue view.
+  - Applies scheduling, quota, and deletion rules.
+- **Runner**
+  - Executes tasks and reports status transitions.
+  - Streams logs/events for observability.
+- **Control DB**
+  - Persists jobs/tasks metadata and status history.
+
+### 10.2 Key types and interfaces
+
+- `PrepareJobEntry`, `TaskEntry`
+  - List payloads for job/task queries.
+- `TaskStatus`
+  - `queued | running | succeeded | failed`.
+- `DeleteResult`
+  - Common deletion outcome shape for job removal.
+
+### 10.3 Data ownership
+
+- Control DB is the source of truth for jobs/tasks in shared deployments.
+- Orchestrator maintains in-memory queue state derived from Control DB for fast scheduling.

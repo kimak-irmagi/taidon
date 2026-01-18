@@ -14,10 +14,13 @@ type lsOptions struct {
 	IncludeNames     bool
 	IncludeInstances bool
 	IncludeStates    bool
+	IncludeJobs      bool
+	IncludeTasks     bool
 
 	FilterName     string
 	FilterInstance string
 	FilterState    string
+	FilterJob      string
 	FilterKind     string
 	FilterImage    string
 
@@ -38,6 +41,10 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	instancesShort := fs.Bool("i", false, "list instances")
 	states := fs.Bool("states", false, "list states")
 	statesShort := fs.Bool("s", false, "list states")
+	jobs := fs.Bool("jobs", false, "list jobs")
+	jobsShort := fs.Bool("j", false, "list jobs")
+	tasks := fs.Bool("tasks", false, "list tasks")
+	tasksShort := fs.Bool("t", false, "list tasks")
 	all := fs.Bool("all", false, "list all object types")
 
 	quiet := fs.Bool("quiet", false, "suppress headers and explanatory text")
@@ -47,6 +54,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	name := fs.String("name", "", "filter by name")
 	instance := fs.String("instance", "", "filter by instance id")
 	state := fs.String("state", "", "filter by state id")
+	job := fs.String("job", "", "filter by job id")
 	kind := fs.String("kind", "", "filter by prepare kind")
 	image := fs.String("image", "", "filter by base image")
 
@@ -68,12 +76,16 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	opts.IncludeNames = *names || *namesShort
 	opts.IncludeInstances = *instances || *instancesShort
 	opts.IncludeStates = *states || *statesShort
+	opts.IncludeJobs = *jobs || *jobsShort
+	opts.IncludeTasks = *tasks || *tasksShort
 	if *all {
 		opts.IncludeNames = true
 		opts.IncludeInstances = true
 		opts.IncludeStates = true
+		opts.IncludeJobs = true
+		opts.IncludeTasks = true
 	}
-	if !opts.IncludeNames && !opts.IncludeInstances && !opts.IncludeStates {
+	if !opts.IncludeNames && !opts.IncludeInstances && !opts.IncludeStates && !opts.IncludeJobs && !opts.IncludeTasks {
 		opts.IncludeNames = true
 		opts.IncludeInstances = true
 	}
@@ -81,6 +93,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	opts.FilterName = strings.TrimSpace(*name)
 	opts.FilterInstance = strings.TrimSpace(*instance)
 	opts.FilterState = strings.TrimSpace(*state)
+	opts.FilterJob = strings.TrimSpace(*job)
 	opts.FilterKind = strings.TrimSpace(*kind)
 	opts.FilterImage = strings.TrimSpace(*image)
 	opts.Quiet = *quiet
@@ -102,9 +115,12 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	runOpts.IncludeNames = opts.IncludeNames
 	runOpts.IncludeInstances = opts.IncludeInstances
 	runOpts.IncludeStates = opts.IncludeStates
+	runOpts.IncludeJobs = opts.IncludeJobs
+	runOpts.IncludeTasks = opts.IncludeTasks
 	runOpts.FilterName = opts.FilterName
 	runOpts.FilterInstance = opts.FilterInstance
 	runOpts.FilterState = opts.FilterState
+	runOpts.FilterJob = opts.FilterJob
 	runOpts.FilterKind = opts.FilterKind
 	runOpts.FilterImage = opts.FilterImage
 	runOpts.Quiet = opts.Quiet

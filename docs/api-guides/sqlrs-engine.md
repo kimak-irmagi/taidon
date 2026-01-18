@@ -213,6 +213,197 @@ This operation does not require authentication
 
 <h1 id="the-sqlrs-engine-api-prepare">prepare</h1>
 
+## listPrepareJobs
+
+<a id="opIdlistPrepareJobs"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/prepare-jobs \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/prepare-jobs HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/prepare-jobs',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/prepare-jobs',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/prepare-jobs', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/prepare-jobs', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/prepare-jobs");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/prepare-jobs", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/prepare-jobs`
+
+*List prepare jobs*
+
+Returns prepare jobs.
+
+<h3 id="listpreparejobs-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|job|query|string|false|Filter by job id (exact match).|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "job_id": "string",
+    "status": "queued",
+    "prepare_kind": "string",
+    "image_id": "string",
+    "plan_only": true,
+    "created_at": "2019-08-24T14:15:22Z",
+    "started_at": "2019-08-24T14:15:22Z",
+    "finished_at": "2019-08-24T14:15:22Z"
+  }
+]
+```
+
+<h3 id="listpreparejobs-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid filter|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 ## createPrepareJob
 
 <a id="opIdcreatePrepareJob"></a>
@@ -649,6 +840,209 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
+## deletePrepareJob
+
+<a id="opIddeletePrepareJob"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X DELETE http://127.0.0.1:{port}/v1/prepare-jobs/{jobId} \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+DELETE http://127.0.0.1:{port}/v1/prepare-jobs/{jobId} HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}',
+{
+  method: 'DELETE',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.delete 'http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.delete('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('DELETE','http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("DELETE");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("DELETE", "http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`DELETE /v1/prepare-jobs/{jobId}`
+
+*Delete a prepare job*
+
+Deletes a prepare job by id. This operation is idempotent.
+By default, jobs with started tasks are blocked unless `force` is set.
+
+<h3 id="deletepreparejob-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|jobId|path|string|true|none|
+|force|query|boolean|false|Allow deletion of jobs with started tasks.|
+|dry_run|query|boolean|false|Return the deletion tree without making changes.|
+
+#### Detailed descriptions
+
+**dry_run**: Return the deletion tree without making changes.
+When true, the response is always 200 and `outcome` indicates whether
+deletion would succeed.
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "dry_run": true,
+  "outcome": "deleted",
+  "root": {
+    "kind": "state",
+    "id": "string",
+    "connections": 0,
+    "blocked": "active_connections",
+    "children": [
+      {}
+    ]
+  }
+}
+```
+
+<h3 id="deletepreparejob-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK (deleted or dry-run result)|[DeleteResult](#schemadeleteresult)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|[ErrorResponse](#schemaerrorresponse)|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Blocked by safety rules (dry_run=false only)|[DeleteResult](#schemadeleteresult)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 ## streamPrepareJobEvents
 
 <a id="opIdstreamPrepareJobEvents"></a>
@@ -830,6 +1224,204 @@ Streams job events as NDJSON.
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+<h1 id="the-sqlrs-engine-api-tasks">tasks</h1>
+
+## listTasks
+
+<a id="opIdlistTasks"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/tasks \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/tasks HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/tasks',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/tasks',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/tasks', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/tasks', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/tasks");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/tasks", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/tasks`
+
+*List tasks*
+
+Returns task queue entries across jobs.
+
+<h3 id="listtasks-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|job|query|string|false|Filter by job id (exact match).|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "task_id": "string",
+    "job_id": "string",
+    "type": "plan",
+    "status": "queued",
+    "planner_kind": "string",
+    "input": {
+      "kind": "image",
+      "id": "string"
+    },
+    "task_hash": "string",
+    "output_state_id": "string",
+    "cached": true,
+    "instance_mode": "ephemeral"
+  }
+]
+```
+
+<h3 id="listtasks-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid filter|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2791,6 +3383,49 @@ or
 |status|succeeded|
 |status|failed|
 
+<h2 id="tocS_PrepareJobEntry">PrepareJobEntry</h2>
+<!-- backwards compatibility -->
+<a id="schemapreparejobentry"></a>
+<a id="schema_PrepareJobEntry"></a>
+<a id="tocSpreparejobentry"></a>
+<a id="tocspreparejobentry"></a>
+
+```json
+{
+  "job_id": "string",
+  "status": "queued",
+  "prepare_kind": "string",
+  "image_id": "string",
+  "plan_only": true,
+  "created_at": "2019-08-24T14:15:22Z",
+  "started_at": "2019-08-24T14:15:22Z",
+  "finished_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|job_id|string|true|none|none|
+|status|string|true|none|none|
+|prepare_kind|string|true|none|none|
+|image_id|string|true|none|none|
+|plan_only|boolean|false|none|True when the job computes a plan only.|
+|created_at|string(date-time)|false|none|none|
+|started_at|string(date-time)|false|none|none|
+|finished_at|string(date-time)|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|status|queued|
+|status|running|
+|status|succeeded|
+|status|failed|
+
 <h2 id="tocS_PrepareJobEvent">PrepareJobEvent</h2>
 <!-- backwards compatibility -->
 <a id="schemapreparejobevent"></a>
@@ -2875,6 +3510,60 @@ or
 |prepare_kind|string|true|none|none|
 |prepare_args_normalized|string|true|none|none|
 
+<h2 id="tocS_TaskEntry">TaskEntry</h2>
+<!-- backwards compatibility -->
+<a id="schemataskentry"></a>
+<a id="schema_TaskEntry"></a>
+<a id="tocStaskentry"></a>
+<a id="tocstaskentry"></a>
+
+```json
+{
+  "task_id": "string",
+  "job_id": "string",
+  "type": "plan",
+  "status": "queued",
+  "planner_kind": "string",
+  "input": {
+    "kind": "image",
+    "id": "string"
+  },
+  "task_hash": "string",
+  "output_state_id": "string",
+  "cached": true,
+  "instance_mode": "ephemeral"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|task_id|string|true|none|none|
+|job_id|string|true|none|none|
+|type|string|true|none|none|
+|status|string|true|none|none|
+|planner_kind|string|false|none|none|
+|input|[PreparePlanTaskInput](#schemaprepareplantaskinput)|false|none|none|
+|task_hash|string|false|none|none|
+|output_state_id|string|false|none|none|
+|cached|boolean|false|none|none|
+|instance_mode|string|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|plan|
+|type|state_execute|
+|type|prepare_instance|
+|status|queued|
+|status|running|
+|status|succeeded|
+|status|failed|
+|instance_mode|ephemeral|
+
 <h2 id="tocS_DeleteResult">DeleteResult</h2>
 <!-- backwards compatibility -->
 <a id="schemadeleteresult"></a>
@@ -2957,7 +3646,9 @@ or
 |---|---|
 |kind|state|
 |kind|instance|
+|kind|job|
 |blocked|active_connections|
+|blocked|active_tasks|
 |blocked|has_descendants|
 |blocked|blocked_by_descendant|
 

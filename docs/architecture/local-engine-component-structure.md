@@ -17,9 +17,12 @@ This document defines the internal component layout of the local sqlrs engine.
   - HTTP routing and handlers.
   - JSON/NDJSON encoding.
   - Uses auth + registry + prepare + store interfaces.
+  - Exposes job/task list endpoints and job deletion.
 - `internal/prepare`
   - Prepare job coordination (plan, cache lookup, execute, snapshot).
   - Handles `plan_only` jobs and task list output.
+  - Maintains in-memory job registry and task queue view.
+  - Supports job listing and deletion with force/dry-run.
 - `internal/deletion`
   - Builds deletion trees for instances and states.
   - Enforces recurse/force rules and executes removals.
@@ -49,6 +52,8 @@ This document defines the internal component layout of the local sqlrs engine.
 - `prepare.Manager`
   - Submits jobs and exposes status/events.
   - Handles `plan_only` by returning task lists.
+- `prepare.JobEntry`, `prepare.TaskEntry`
+  - List views for jobs and task queue entries.
 - `prepare.Request`, `prepare.Status`
   - Job request and status payloads (includes `tasks` for plan-only).
 - `prepare.PlanTask`, `prepare.TaskInput`
@@ -61,6 +66,7 @@ This document defines the internal component layout of the local sqlrs engine.
 ## 4. Data ownership
 
 - Persistent data (names/instances/states) lives in SQLite under `<StateDir>`.
+- Jobs and task queue entries live in memory and are not persisted.
 - In-memory structures are caches or request-scoped only.
 
 ## 5. Dependency diagram

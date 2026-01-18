@@ -29,10 +29,13 @@ type LsOptions struct {
 	IncludeNames     bool
 	IncludeInstances bool
 	IncludeStates    bool
+	IncludeJobs      bool
+	IncludeTasks     bool
 
 	FilterName     string
 	FilterInstance string
 	FilterState    string
+	FilterJob      string
 	FilterKind     string
 	FilterImage    string
 
@@ -42,9 +45,11 @@ type LsOptions struct {
 }
 
 type LsResult struct {
-	Names     *[]client.NameEntry     `json:"names,omitempty"`
-	Instances *[]client.InstanceEntry `json:"instances,omitempty"`
-	States    *[]client.StateEntry    `json:"states,omitempty"`
+	Names     *[]client.NameEntry       `json:"names,omitempty"`
+	Instances *[]client.InstanceEntry   `json:"instances,omitempty"`
+	States    *[]client.StateEntry      `json:"states,omitempty"`
+	Jobs      *[]client.PrepareJobEntry `json:"jobs,omitempty"`
+	Tasks     *[]client.TaskEntry       `json:"tasks,omitempty"`
 }
 
 type LsPrintOptions struct {
@@ -255,6 +260,34 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 		}
 	}
 
+	if opts.IncludeJobs {
+		if opts.Verbose {
+			fmt.Fprintln(os.Stderr, "requesting jobs")
+		}
+		jobs, err := cliClient.ListPrepareJobs(ctx, opts.FilterJob)
+		if err != nil {
+			return result, err
+		}
+		if jobs == nil {
+			jobs = []client.PrepareJobEntry{}
+		}
+		result.Jobs = &jobs
+	}
+
+	if opts.IncludeTasks {
+		if opts.Verbose {
+			fmt.Fprintln(os.Stderr, "requesting tasks")
+		}
+		tasks, err := cliClient.ListTasks(ctx, opts.FilterJob)
+		if err != nil {
+			return result, err
+		}
+		if tasks == nil {
+			tasks = []client.TaskEntry{}
+		}
+		result.Tasks = &tasks
+	}
+
 	return result, nil
 }
 
@@ -288,6 +321,26 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 			fmt.Fprintln(w, "States")
 		}
 		printStatesTable(w, *result.States, opts.NoHeader, opts.LongIDs)
+		sections++
+	}
+	if result.Jobs != nil {
+		if sections > 0 {
+			fmt.Fprintln(w)
+		}
+		if !opts.Quiet {
+			fmt.Fprintln(w, "Jobs")
+		}
+		printJobsTable(w, *result.Jobs, opts.NoHeader, opts.LongIDs)
+		sections++
+	}
+	if result.Tasks != nil {
+		if sections > 0 {
+			fmt.Fprintln(w)
+		}
+		if !opts.Quiet {
+			fmt.Fprintln(w, "Tasks")
+		}
+		printTasksTable(w, *result.Tasks, opts.NoHeader, opts.LongIDs)
 	}
 }
 
@@ -351,11 +404,57 @@ func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, long
 	_ = tw.Flush()
 }
 
+func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool) {
+	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
+	if !noHeader {
+		fmt.Fprintln(tw, "JOB_ID\tSTATUS\tPREPARE_KIND\tIMAGE_ID\tPLAN_ONLY\tCREATED\tSTARTED\tFINISHED")
+	}
+	for _, row := range rows {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			formatID(row.JobID, longIDs),
+			row.Status,
+			row.PrepareKind,
+			row.ImageID,
+			formatBool(row.PlanOnly),
+			optionalString(row.CreatedAt),
+			optionalString(row.StartedAt),
+			optionalString(row.FinishedAt),
+		)
+	}
+	_ = tw.Flush()
+}
+
+func printTasksTable(w io.Writer, rows []client.TaskEntry, noHeader bool, longIDs bool) {
+	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
+	if !noHeader {
+		fmt.Fprintln(tw, "TASK_ID\tJOB_ID\tTYPE\tSTATUS\tINPUT\tOUTPUT_STATE_ID\tCACHED")
+	}
+	for _, row := range rows {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			row.TaskID,
+			formatID(row.JobID, longIDs),
+			row.Type,
+			row.Status,
+			formatTaskInput(row.Input),
+			formatID(row.OutputStateID, longIDs),
+			formatCached(row.Cached),
+		)
+	}
+	_ = tw.Flush()
+}
+
 func optionalString(value *string) string {
 	if value == nil {
 		return ""
 	}
 	return *value
+}
+
+func formatBool(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func optionalInt64(value *int64) string {

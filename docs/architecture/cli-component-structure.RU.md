@@ -33,6 +33,10 @@
 
 ## 3. Ключевые типы и интерфейсы
 
+- `cli.LsOptions`, `cli.LsResult`
+  - Селекторы включают jobs/tasks и фильтр `job`.
+  - Результаты содержат опциональные списки jobs/tasks рядом с names/instances/states.
+
 - `cli.PrepareOptions`
   - Общие опции для prepare/plan (endpoint, auth, image id, args).
   - Дополняется флагом `PlanOnly` для `sqlrs plan`.
@@ -40,6 +44,10 @@
   - HTTP payload для `POST /v1/prepare-jobs` (включая `plan_only`).
 - `client.PrepareJobStatus`
   - Payload статуса с опциональным списком `tasks` для plan-only.
+- `client.PrepareJobEntry`
+  - Payload списка для `GET /v1/prepare-jobs`.
+- `client.TaskEntry`
+  - Payload списка для `GET /v1/tasks`.
 - `cli.PlanResult`
   - CLI-представление `tasks` для рендера.
 

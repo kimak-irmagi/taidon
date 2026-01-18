@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,5 +55,19 @@ func TestParseArgsMissingCommand(t *testing.T) {
 	_, _, err := ParseArgs([]string{"--profile", "p"})
 	if err == nil {
 		t.Fatalf("expected missing command error")
+	}
+}
+
+func TestParseArgsInvalidTimeout(t *testing.T) {
+	_, _, err := ParseArgs([]string{"--timeout", "bad", "status"})
+	if err == nil || !strings.Contains(err.Error(), "invalid timeout") {
+		t.Fatalf("expected invalid timeout error, got %v", err)
+	}
+}
+
+func TestParseArgsUnknownFlag(t *testing.T) {
+	_, _, err := ParseArgs([]string{"--unknown"})
+	if err == nil {
+		t.Fatalf("expected parse error")
 	}
 }

@@ -5,11 +5,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"sqlrs/cli/internal/cli"
 	"sqlrs/cli/internal/config"
+	"sqlrs/cli/internal/paths"
 )
 
 func TestRunPlanMissingImage(t *testing.T) {
@@ -74,5 +77,34 @@ func TestRunPlanVerboseImageSource(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "dbms.image=image (source: command line)") {
 		t.Fatalf("expected image source in stderr, got %q", stderr.String())
+	}
+}
+
+func TestRunPlanParseArgsError(t *testing.T) {
+	runOpts := cli.PrepareOptions{}
+	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image"}, "json")
+	if err == nil || !strings.Contains(err.Error(), "Missing value for --image") {
+		t.Fatalf("expected missing image value error, got %v", err)
+	}
+}
+
+func TestRunPlanResolveImageError(t *testing.T) {
+	temp := t.TempDir()
+	projectPath := filepath.Join(temp, ".sqlrs", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0o700); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte("dbms: ["), 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	cfg := config.LoadedConfig{
+		ProjectConfigPath: projectPath,
+		Paths:             paths.Dirs{ConfigDir: temp},
+	}
+	runOpts := cli.PrepareOptions{}
+	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, cfg, t.TempDir(), []string{"--", "-c", "select 1"}, "json")
+	if err == nil {
+		t.Fatalf("expected resolve image error")
 	}
 }

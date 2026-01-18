@@ -54,48 +54,48 @@ func NewHandler(opts Options) http.Handler {
 		if !auth.RequireBearer(w, r, opts.AuthToken) {
 			return
 		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		if opts.Prepare == nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		var req prepare.Request
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, prepare.ErrorResponse{
-				Code:    "invalid_argument",
-				Message: "invalid json payload",
-				Details: err.Error(),
-			}, http.StatusBadRequest)
-			return
-		}
-		accepted, err := opts.Prepare.Submit(r.Context(), req)
-		if err != nil {
-			resp := prepare.ToErrorResponse(err)
-			status := http.StatusInternalServerError
-			if _, ok := err.(prepare.ValidationError); ok {
-				status = http.StatusBadRequest
+		switch r.Method {
+		case http.MethodGet:
+			entries := opts.Prepare.ListJobs(readQueryValue(r, "job"))
+			_ = stream.WriteList(w, r, entries)
+		case http.MethodPost:
+			var req prepare.Request
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, prepare.ErrorResponse{
+					Code:    "invalid_argument",
+					Message: "invalid json payload",
+					Details: err.Error(),
+				}, http.StatusBadRequest)
+				return
 			}
-			if _, ok := err.(*prepare.ValidationError); ok {
-				status = http.StatusBadRequest
+			accepted, err := opts.Prepare.Submit(r.Context(), req)
+			if err != nil {
+				resp := prepare.ToErrorResponse(err)
+				status := http.StatusInternalServerError
+				if _, ok := err.(prepare.ValidationError); ok {
+					status = http.StatusBadRequest
+				}
+				if _, ok := err.(*prepare.ValidationError); ok {
+					status = http.StatusBadRequest
+				}
+				writeError(w, *resp, status)
+				return
 			}
-			writeError(w, *resp, status)
-			return
+			w.Header().Set("Location", accepted.StatusURL)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(accepted)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
-		w.Header().Set("Location", accepted.StatusURL)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(accepted)
 	})
 
 	mux.HandleFunc("/v1/prepare-jobs/", func(w http.ResponseWriter, r *http.Request) {
 		if !auth.RequireBearer(w, r, opts.AuthToken) {
-			return
-		}
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		if opts.Prepare == nil {
@@ -108,6 +108,10 @@ func NewHandler(opts Options) http.Handler {
 			return
 		}
 		if strings.HasSuffix(path, "/events") {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
 			jobID := strings.TrimSuffix(path, "/events")
 			if jobID == "" || strings.Contains(jobID, "/") {
 				http.NotFound(w, r)
@@ -120,12 +124,57 @@ func NewHandler(opts Options) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		status, ok := opts.Prepare.Get(path)
-		if !ok {
-			http.NotFound(w, r)
+		switch r.Method {
+		case http.MethodGet:
+			status, ok := opts.Prepare.Get(path)
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			writeJSON(w, status)
+		case http.MethodDelete:
+			force, err := parseBoolQuery(r, "force")
+			if err != nil {
+				writeErrorResponse(w, "invalid_argument", "invalid force", err.Error(), http.StatusBadRequest)
+				return
+			}
+			dryRun, err := parseBoolQuery(r, "dry_run")
+			if err != nil {
+				writeErrorResponse(w, "invalid_argument", "invalid dry_run", err.Error(), http.StatusBadRequest)
+				return
+			}
+			result, ok := opts.Prepare.Delete(path, deletion.DeleteOptions{
+				Force:  force,
+				DryRun: dryRun,
+			})
+			if !ok {
+				writeErrorResponse(w, "not_found", "job not found", "", http.StatusNotFound)
+				return
+			}
+			status := http.StatusOK
+			if !dryRun && result.Outcome == deletion.OutcomeBlocked {
+				status = http.StatusConflict
+			}
+			writeJSONStatus(w, result, status)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/v1/tasks", func(w http.ResponseWriter, r *http.Request) {
+		if !auth.RequireBearer(w, r, opts.AuthToken) {
 			return
 		}
-		writeJSON(w, status)
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if opts.Prepare == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		entries := opts.Prepare.ListTasks(readQueryValue(r, "job"))
+		_ = stream.WriteList(w, r, entries)
 	})
 
 	mux.HandleFunc("/v1/names", func(w http.ResponseWriter, r *http.Request) {

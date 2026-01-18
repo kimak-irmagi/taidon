@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store"
 )
@@ -73,6 +74,25 @@ func newErrorServer(t *testing.T, st store.Store) *httptest.Server {
 		InstanceID: "instance",
 		AuthToken:  "secret",
 		Registry:   reg,
+	})
+	return httptest.NewServer(handler)
+}
+
+func newDeleteErrorServer(t *testing.T, st store.Store) *httptest.Server {
+	t.Helper()
+	reg := registry.New(st)
+	deleteMgr, err := deletion.NewManager(deletion.Options{
+		Store: st,
+	})
+	if err != nil {
+		t.Fatalf("delete manager: %v", err)
+	}
+	handler := NewHandler(Options{
+		Version:    "test",
+		InstanceID: "instance",
+		AuthToken:  "secret",
+		Registry:   reg,
+		Deletion:   deleteMgr,
 	})
 	return httptest.NewServer(handler)
 }
@@ -221,8 +241,40 @@ func TestDeleteInstanceNilDeletion(t *testing.T) {
 	}
 }
 
+func TestDeleteInstanceInternalError(t *testing.T) {
+	server := newDeleteErrorServer(t, &errorStore{getInstanceErr: errors.New("boom")})
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/v1/instances/inst", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
 func TestDeleteStateNilDeletion(t *testing.T) {
 	server := newErrorServer(t, &errorStore{})
+	defer server.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/v1/states/state", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestDeleteStateInternalError(t *testing.T) {
+	server := newDeleteErrorServer(t, &errorStore{getStateErr: errors.New("boom")})
 	defer server.Close()
 
 	req, _ := http.NewRequest(http.MethodDelete, server.URL+"/v1/states/state", nil)

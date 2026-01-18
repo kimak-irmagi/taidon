@@ -33,6 +33,9 @@ This document defines the internal component layout of the sqlrs CLI.
 
 ## 3. Key types and interfaces
 
+- `cli.LsOptions`, `cli.LsResult`
+  - Selector flags include jobs/tasks and a `job` filter.
+  - Results include optional job/task lists alongside names/instances/states.
 - `cli.PrepareOptions`
   - Shared options for prepare/plan execution (endpoint, auth, image id, args).
   - Extended with `PlanOnly` for `sqlrs plan`.
@@ -40,6 +43,10 @@ This document defines the internal component layout of the sqlrs CLI.
   - HTTP payload for `POST /v1/prepare-jobs` (includes `plan_only`).
 - `client.PrepareJobStatus`
   - Status payload with optional `tasks` list for plan-only jobs.
+- `client.PrepareJobEntry`
+  - List payload for `GET /v1/prepare-jobs`.
+- `client.TaskEntry`
+  - List payload for `GET /v1/tasks`.
 - `cli.PlanResult`
   - CLI-facing view of `tasks` for rendering.
 

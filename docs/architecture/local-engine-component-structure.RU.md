@@ -17,9 +17,12 @@
   - Роутинг и handlers.
   - JSON/NDJSON кодирование.
   - Использует auth + registry + prepare + store interfaces.
+  - Экспортирует list endpoints для jobs/tasks и удаление job.
 - `internal/prepare`
   - Координация prepare jobs (plan, cache lookup, execute, snapshot).
   - Обрабатывает `plan_only` и выводит список задач.
+  - Держит in-memory реестр jobs и представление очереди tasks.
+  - Поддерживает list и deletion для jobs (force/dry-run).
 - `internal/deletion`
   - Строит дерево удаления для экземпляров и состояний.
   - Применяет правила recurse/force и выполняет удаление.
@@ -49,6 +52,8 @@
 - `prepare.Manager`
   - Принимает jobs и отдает статус/события.
   - Для `plan_only` возвращает список задач.
+- `prepare.JobEntry`, `prepare.TaskEntry`
+  - Представления списков для jobs и task queue.
 - `prepare.Request`, `prepare.Status`
   - Payload запроса и статуса (включая `tasks` для plan-only).
 - `prepare.PlanTask`, `prepare.TaskInput`

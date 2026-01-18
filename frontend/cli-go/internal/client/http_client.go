@@ -158,6 +158,30 @@ func (c *Client) GetPrepareJob(ctx context.Context, jobID string) (PrepareJobSta
 	return out, found, err
 }
 
+func (c *Client) ListPrepareJobs(ctx context.Context, jobID string) ([]PrepareJobEntry, error) {
+	var out []PrepareJobEntry
+	query := url.Values{}
+	addFilter(query, "job", jobID)
+	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/prepare-jobs", query), true, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) DeletePrepareJob(ctx context.Context, jobID string, opts DeleteOptions) (DeleteResult, int, error) {
+	return c.deleteWithOptions(ctx, "/v1/prepare-jobs/"+url.PathEscape(strings.TrimSpace(jobID)), opts, false)
+}
+
+func (c *Client) ListTasks(ctx context.Context, jobID string) ([]TaskEntry, error) {
+	var out []TaskEntry
+	query := url.Values{}
+	addFilter(query, "job", jobID)
+	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/tasks", query), true, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, useAuth bool, out any) error {
 	resp, err := c.doRequest(ctx, method, path, useAuth)
 	if err != nil {

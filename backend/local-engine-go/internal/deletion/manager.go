@@ -12,9 +12,10 @@ const (
 	OutcomeWouldDelete = "would_delete"
 	OutcomeBlocked     = "blocked"
 
-	BlockActiveConnections  = "active_connections"
-	BlockHasDescendants     = "has_descendants"
-	BlockBlockedDescendant  = "blocked_by_descendant"
+	BlockActiveConnections = "active_connections"
+	BlockActiveTasks       = "active_tasks"
+	BlockHasDescendants    = "has_descendants"
+	BlockBlockedDescendant = "blocked_by_descendant"
 )
 
 type Options struct {

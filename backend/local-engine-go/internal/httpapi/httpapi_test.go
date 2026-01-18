@@ -48,6 +48,24 @@ func TestAuthAndHealth(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestNameDetailRequiresAuth(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/names/dev", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("names request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
 func TestInstancesRequireAuth(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
@@ -71,6 +89,42 @@ func TestStatesRequireAuth(t *testing.T) {
 	defer cleanup()
 
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/states", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("states request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestInstanceDetailRequiresAuth(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/instances/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("instances request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestStateDetailRequiresAuth(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/states/state-1", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -165,6 +219,25 @@ func TestNamesNotFound(t *testing.T) {
 	defer cleanup()
 
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/names/", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("names request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestNameDetailNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/names/missing", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
