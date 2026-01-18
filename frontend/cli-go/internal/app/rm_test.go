@@ -16,6 +16,37 @@ func TestParseRmMissingPrefix(t *testing.T) {
 	}
 }
 
+func TestParseRmHelp(t *testing.T) {
+	_, showHelp, err := parseRmFlags([]string{"--help"})
+	if err != nil || !showHelp {
+		t.Fatalf("expected help, err=%v help=%v", err, showHelp)
+	}
+}
+
+func TestParseRmTooManyArgs(t *testing.T) {
+	_, _, err := parseRmFlags([]string{"abc", "def"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+}
+
+func TestParseRmEmptyPrefix(t *testing.T) {
+	_, _, err := parseRmFlags([]string{"  "})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+}
+
+func TestParseRmUnknownFlag(t *testing.T) {
+	_, _, err := parseRmFlags([]string{"--unknown"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+}
+
 func TestParseRmFlags(t *testing.T) {
 	opts, _, err := parseRmFlags([]string{"-r", "-f", "--dry-run", "abc12345"})
 	if err != nil {

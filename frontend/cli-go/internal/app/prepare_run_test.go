@@ -120,3 +120,65 @@ func TestRunPrepareVerboseImageSource(t *testing.T) {
 		t.Fatalf("unexpected request: %+v", gotRequest)
 	}
 }
+
+func TestRunPrepareHelp(t *testing.T) {
+	var stdout bytes.Buffer
+	if err := runPrepare(&stdout, io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, t.TempDir(), []string{"--help"}); err != nil {
+		t.Fatalf("runPrepare: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Usage:") {
+		t.Fatalf("expected usage output, got %q", stdout.String())
+	}
+}
+
+func TestRunPrepareRemoteRequiresEndpoint(t *testing.T) {
+	runOpts := cli.PrepareOptions{
+		Mode: "remote",
+	}
+	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image-1", "--", "-c", "select 1"})
+	if err == nil || !strings.Contains(err.Error(), "remote mode requires explicit endpoint") {
+		t.Fatalf("expected remote endpoint error, got %v", err)
+	}
+}
+
+func TestRunPrepareNormalizeArgsError(t *testing.T) {
+	err := runPrepare(&bytes.Buffer{}, io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image-1", "--", "-f"})
+	if err == nil || !strings.Contains(err.Error(), "Missing value for -f") {
+		t.Fatalf("expected missing file value, got %v", err)
+	}
+}
+
+func TestRunPrepareResolveImageError(t *testing.T) {
+	temp := t.TempDir()
+	projectDir := filepath.Join(temp, "project", ".sqlrs")
+	if err := os.MkdirAll(projectDir, 0o700); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	projectPath := filepath.Join(projectDir, "config.yaml")
+	if err := os.WriteFile(projectPath, []byte("dbms: ["), 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+	cfg := config.LoadedConfig{ProjectConfigPath: projectPath}
+
+	err := runPrepare(&bytes.Buffer{}, io.Discard, cli.PrepareOptions{}, cfg, temp, []string{"--", "-c", "select 1"})
+	if err == nil {
+		t.Fatalf("expected resolve image error")
+	}
+}
+
+func TestRunPrepareRemoteServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	runOpts := cli.PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}
+	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image-1", "--", "-c", "select 1"})
+	if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+		t.Fatalf("expected server error, got %v", err)
+	}
+}
