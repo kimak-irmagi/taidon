@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -157,6 +158,30 @@ func TestRemoveEngineStateError(t *testing.T) {
 	removeEngineState(nested)
 	if _, err := os.Stat(nested); err != nil {
 		t.Fatalf("expected directory to remain, got %v", err)
+	}
+}
+
+func TestSetupLoggingWritesToFile(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	logPath := filepath.Join(dir, "logs", "engine.log")
+
+	prevWriter := log.Writer()
+	t.Cleanup(func() { log.SetOutput(prevWriter) })
+
+	closeLog, err := setupLogging(statePath)
+	if err != nil {
+		t.Fatalf("setupLogging: %v", err)
+	}
+	log.Print("hello log")
+	closeLog()
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "hello log") {
+		t.Fatalf("expected log output, got %q", string(data))
 	}
 }
 
