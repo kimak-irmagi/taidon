@@ -12,8 +12,10 @@ flowchart LR
   PLAN["Prepare Planner"]
   EXEC["Prepare Executor"]
   CACHE[state-cache client]
-  SNAP[Snapshotter]
+  SNAP["Snapshot Manager"]
+  QSTORE["Job/Task Queue (SQLite)"]
   RUNTIME["Instance Runtime (Docker)"]
+  DBMS["DBMS Connector"]
   ADAPTER["Script System Adapter"]
   INST["Instance Manager"]
   CONN["Connection Tracker"]
@@ -26,6 +28,7 @@ flowchart LR
   CTRL --> EXEC
   CTRL --> CACHE
   CTRL --> SNAP
+  CTRL --> QSTORE
   CTRL --> RUNTIME
   CTRL --> ADAPTER
   CTRL --> INST
@@ -36,6 +39,8 @@ flowchart LR
   DEL --> CONN
   PLAN --> ADAPTER
   EXEC --> ADAPTER
+  EXEC --> DBMS
+  DBMS --> RUNTIME
   SNAP --> STORE
   INST --> STORE
   CACHE --> STORE
@@ -50,15 +55,21 @@ flowchart LR
 - Exposes list/delete endpoints for prepare jobs and list endpoints for tasks.
 - Prepare runs as async jobs; the CLI watches status/events and waits for completion.
   `plan_only` compute-only requests return task lists in job status.
+- Streams job events (including task status changes) to all connected NDJSON clients.
 
 ### 1.2 Prepare Controller
 
 - Coordinates a prepare job: plan steps, cache lookup, execute steps, snapshot states, create instance, persist metadata.
 - Enforces deadlines and cancellation; supervises child processes/containers.
-- Emits status transitions and structured events for streaming to the CLI.
-- Provides job/task snapshots for list endpoints and handles job deletion requests.
+- Emits status transitions and structured events (including task status) for streaming to the CLI.
+- Provides job/task snapshots for list endpoints, persists job/task state, and handles job deletion requests.
 
-### 1.3 Prepare Planner
+### 1.3 Job/Task Queue Store
+
+- Stores job/task status and event history in SQLite.
+- Supports recovery after restarts by reloading queued/running work.
+
+### 1.4 Prepare Planner
 
 - Builds an ordered list of prepare steps from `psql` scripts.
 - Each step is hashed (script-system specific) to form cache keys: `engine/version/base/step_hash/params`.
@@ -66,60 +77,68 @@ flowchart LR
 - The overall prepare input also produces a stable state fingerprint:
   `state_id = hash(prepare_kind + base_image_id + normalized_args + normalized_input_hashes + engine_version)`.
 
-### 1.4 Prepare Executor
+### 1.5 Prepare Executor
 
-- Executes a single prepare step in a instance using the selected script system adapter.
+- Executes a single prepare step in an instance using the selected script system adapter.
 - Captures structured logs/metrics for observability and cache planning.
+- Uses a DBMS connector to prepare for snapshots without stopping the container.
 
-### 1.5 Cache Client
+### 1.6 Cache Client
 
 - Talks to local state-cache index (SQLite) to lookup/store `key -> state_id`.
 - Knows current state store root; never exposes raw filesystem paths to callers.
 
-### 1.6 Snapshotter
+### 1.7 Snapshot Manager
 
-- Abstracts CoW/copy strategies (btrfs, VHDX+link-dest, rsync).
+- Selects the best available snapshot backend (OverlayFS, ZFS, Btrfs, copy-based fallback).
 - Exposes `Clone`, `Snapshot`, `Destroy` for states and instances.
-- Uses path resolver from State Store to locate `PGDATA` roots.
+- Uses path resolver from State Store to locate `PGDATA` roots and state directories.
 
-### 1.7 Instance Runtime
+### 1.8 DBMS Connector
+
+- Encapsulates DBMS-specific snapshot preparation and resume.
+- For Postgres, performs fast shutdown (`pg_ctl -m fast stop`) and restart.
+
+### 1.9 Instance Runtime
 
 - Manages DB containers via Docker (single-container per instance).
-- Applies mounts from Snapshotter, sets resource limits, statement timeout defaults.
+- Uses Docker CLI in the MVP; replaceable with a Docker Engine SDK adapter.
+- Applies mounts from Snapshot Manager, sets resource limits, statement timeout defaults.
 - Provides connection info to the controller.
 
-### 1.8 Script System Adapter
+### 1.10 Script System Adapter
 
 - Provides a common interface for script systems (currently `psql`).
 - Each adapter implements step planning + step execution + hashing rules.
+- `psql` execution runs on the host and connects to the container.
 - Liquibase execution is planned via external CLI (host binary or Docker runner); overhead is tracked and optimized if needed.
 
-### 1.9 Instance Manager
+### 1.11 Instance Manager
 
 - Maintains mutable instances derived from immutable states.
 - Creates ephemeral instances and returns DSNs.
 - Handles instance lifecycle (ephemeral) and TTL/GC metadata.
 
-### 1.10 Delete Controller
+### 1.12 Delete Controller
 
 - Builds deletion trees for instances and states.
 - Evaluates safety rules (active connections, descendants, flags).
 - Executes deletions when allowed; responses are idempotent.
 
-### 1.11 Connection Tracker
+### 1.13 Connection Tracker
 
 - Tracks active connections per instance.
 - Uses DB introspection (e.g., `pg_stat_activity`) on a periodic schedule.
 - Feeds TTL extension and deletion safety checks.
 
-### 1.12 State Store (Paths + Metadata)
+### 1.14 State Store (Paths + Metadata)
 
 - Resolves storage root (`~/.cache/sqlrs/state-store` or overridden).
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
 - Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
 - Stores `parent_state_id` to support state ancestry and recursive deletion.
 
-### 1.13 Telemetry/Audit
+### 1.15 Telemetry/Audit
 
 - Emits metrics: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
 - Writes audit events for prepare jobs and cache mutations.
@@ -134,7 +153,8 @@ sequenceDiagram
   participant API as Engine API
   participant CTRL as Prepare Controller
   participant CACHE as Cache
-  participant SNAP as Snapshotter
+  participant DBMS as "DBMS Connector"
+  participant SNAP as "Snapshot Manager"
   participant RT as Runtime (Docker)
   participant ADAPTER as Script Adapter
   participant INST as Instance Manager
@@ -161,7 +181,9 @@ sequenceDiagram
     else cache miss
       CTRL->>ADAPTER: execute step
       ADAPTER-->>CTRL: logs/status per step
+      CTRL->>DBMS: prepare for snapshot
       CTRL->>SNAP: snapshot new state
+      CTRL->>DBMS: resume after snapshot
       CTRL->>CACHE: store key->state_id
     end
   end
@@ -172,7 +194,7 @@ sequenceDiagram
   API-->>CLI: terminal status
 ```
 
-- Cancellation: controller cancels the prepare job; active DB work is interrupted; stream ends with `cancelled`.
+- Cancellation: controller cancels the prepare job; active DB work is interrupted; stream ends with `failed` plus a `cancelled` error.
 - Timeouts: controller enforces wall-clock deadline; DB statement_timeout is set per step.
 
 ### 2.2 Plan-only Flow
@@ -266,15 +288,15 @@ sequenceDiagram
 
 ## 3. Concurrency and Process Model
 
-- Single engine process; job queue with a small worker pool (configurable).
+- Single engine process; no explicit concurrency cap yet (configurable later).
 - One active instance per job; multiple jobs may run in parallel if resources allow.
 - Locking: per-store lock to prevent two engine instances from mutating the same store.
 
 ## 4. Persistence and Discovery
 
 - `engine.json` in the state directory: `{ pid, endpoint, socket_path|port, startedAt, lockfile, instanceId, authToken, version }`.
-- Cache metadata and state registry live in SQLite under the state store root.
-- No other persistent state outside the store; engine is otherwise disposable.
+- Cache metadata, state registry, and job/task queue state live in SQLite under the state store root.
+- Queue recovery replays queued/running work; tasks with existing output states are marked succeeded.
 
 ## 5. Error Handling
 

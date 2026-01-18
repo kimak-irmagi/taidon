@@ -842,10 +842,13 @@ components:
       properties:
         type:
           type: string
-          enum: [status, log, result, error]
+          enum: [status, log, result, error, task]
         ts:
           type: string
           format: date-time
+        task_id:
+          type: string
+          description: Present for task status events.
         status:
           type: string
           enum: [queued, running, succeeded, failed]

@@ -21,8 +21,23 @@
 - `internal/prepare`
   - Координация prepare jobs (plan, cache lookup, execute, snapshot).
   - Обрабатывает `plan_only` и выводит список задач.
-  - Держит in-memory реестр jobs и представление очереди tasks.
+  - Хранит состояние jobs/tasks и историю событий через очередь.
   - Поддерживает list и deletion для jobs (force/dry-run).
+- `internal/prepare/queue`
+  - SQLite-хранилище очереди jobs/tasks и событий.
+  - Поддерживает восстановление после рестарта.
+- `internal/executor`
+  - Последовательно исполняет задачи job и эмитит события.
+  - Вызывает менеджер снапшотов и DBMS-коннектор вокруг снапшотов.
+- `internal/runtime`
+  - Адаптер Docker runtime (CLI в MVP).
+  - Старт/стоп контейнеров и выполнение DBMS-команд.
+- `internal/snapshot`
+  - Интерфейс менеджера снапшотов и выбор backend.
+  - Реализует Clone/Snapshot/Destroy для каталогов state.
+- `internal/dbms`
+  - DBMS-специфичные хуки для подготовки и возобновления.
+  - Postgres использует `pg_ctl` для fast shutdown/restart.
 - `internal/deletion`
   - Строит дерево удаления для экземпляров и состояний.
   - Применяет правила recurse/force и выполняет удаление.
@@ -52,6 +67,8 @@
 - `prepare.Manager`
   - Принимает jobs и отдает статус/события.
   - Для `plan_only` возвращает список задач.
+- `queue.Store`
+  - Персистит jobs, tasks и события; поддерживает recovery запросы.
 - `prepare.JobEntry`, `prepare.TaskEntry`
   - Представления списков для jobs и task queue.
 - `prepare.Request`, `prepare.Status`
@@ -66,7 +83,8 @@
 ## 4. Владение данными
 
 - Персистентные данные (names/instances/states) живут в SQLite под `<StateDir>`.
-- In-memory структуры — только кэши или request-scoped данные.
+- Jobs, tasks и события jobs живут в SQLite под `<StateDir>`.
+- In-memory структуры - только кэши или request-scoped данные.
 
 ## 5. Диаграмма зависимостей
 
@@ -75,6 +93,11 @@ flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
   PREP["internal/prepare"]
+  QUEUE["internal/prepare/queue"]
+  EXEC["internal/executor"]
+  RT["internal/runtime"]
+  SNAP["internal/snapshot"]
+  DBMS["internal/dbms"]
   DEL["internal/deletion"]
   CONN["internal/conntrack"]
   AUTH["internal/auth"]
@@ -91,6 +114,11 @@ flowchart TD
   HTTP --> DEL
   HTTP --> REG
   HTTP --> STREAM
+  PREP --> QUEUE
+  PREP --> EXEC
+  EXEC --> RT
+  EXEC --> SNAP
+  EXEC --> DBMS
   DEL --> STORE
   DEL --> CONN
   PREP --> STORE

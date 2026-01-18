@@ -21,8 +21,23 @@ This document defines the internal component layout of the local sqlrs engine.
 - `internal/prepare`
   - Prepare job coordination (plan, cache lookup, execute, snapshot).
   - Handles `plan_only` jobs and task list output.
-  - Maintains in-memory job registry and task queue view.
+  - Persists job/task state and event history via the queue store.
   - Supports job listing and deletion with force/dry-run.
+- `internal/prepare/queue`
+  - SQLite-backed queue store for jobs, tasks, and events.
+  - Supports restart recovery by reloading queued/running work.
+- `internal/executor`
+  - Runs job tasks sequentially and emits task/job events.
+  - Invokes snapshot manager and DBMS connector around snapshots.
+- `internal/runtime`
+  - Docker runtime adapter (CLI-based in MVP).
+  - Starts/stops containers and executes DBMS control commands.
+- `internal/snapshot`
+  - Snapshot manager interface and backend selection.
+  - Implements Clone/Snapshot/Destroy for state directories.
+- `internal/dbms`
+  - DBMS-specific hooks for snapshot preparation and resume.
+  - Postgres implementation uses `pg_ctl` for fast shutdown/restart.
 - `internal/deletion`
   - Builds deletion trees for instances and states.
   - Enforces recurse/force rules and executes removals.
@@ -52,6 +67,8 @@ This document defines the internal component layout of the local sqlrs engine.
 - `prepare.Manager`
   - Submits jobs and exposes status/events.
   - Handles `plan_only` by returning task lists.
+- `queue.Store`
+  - Persists jobs, tasks, and events; supports recovery queries.
 - `prepare.JobEntry`, `prepare.TaskEntry`
   - List views for jobs and task queue entries.
 - `prepare.Request`, `prepare.Status`
@@ -66,7 +83,7 @@ This document defines the internal component layout of the local sqlrs engine.
 ## 4. Data ownership
 
 - Persistent data (names/instances/states) lives in SQLite under `<StateDir>`.
-- Jobs and task queue entries live in memory and are not persisted.
+- Jobs, tasks, and job events live in SQLite under `<StateDir>`.
 - In-memory structures are caches or request-scoped only.
 
 ## 5. Dependency diagram
@@ -76,6 +93,11 @@ flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
   PREP["internal/prepare"]
+  QUEUE["internal/prepare/queue"]
+  EXEC["internal/executor"]
+  RT["internal/runtime"]
+  SNAP["internal/snapshot"]
+  DBMS["internal/dbms"]
   DEL["internal/deletion"]
   CONN["internal/conntrack"]
   AUTH["internal/auth"]
@@ -92,6 +114,11 @@ flowchart TD
   HTTP --> DEL
   HTTP --> REG
   HTTP --> STREAM
+  PREP --> QUEUE
+  PREP --> EXEC
+  EXEC --> RT
+  EXEC --> SNAP
+  EXEC --> DBMS
   DEL --> STORE
   DEL --> CONN
   PREP --> STORE
