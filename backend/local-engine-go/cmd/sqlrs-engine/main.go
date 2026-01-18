@@ -89,6 +89,12 @@ func run(args []string) (int, error) {
 			return 1, fmt.Errorf("create run dir: %v", err)
 		}
 	}
+	closeLog, err := setupLogging(*statePath)
+	if err != nil {
+		log.Printf("engine log setup failed: %v", err)
+	} else {
+		defer closeLog()
+	}
 
 	listener, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
@@ -212,6 +218,7 @@ func run(args []string) (int, error) {
 func main() {
 	code, err := run(os.Args[1:])
 	if err != nil {
+		log.Printf("engine error: %v", err)
 		fmt.Fprintln(os.Stderr, err.Error())
 	}
 	if code != 0 {
@@ -249,4 +256,35 @@ func removeEngineState(path string) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		log.Printf("remove engine.json: %v", err)
 	}
+}
+
+func setupLogging(statePath string) (func(), error) {
+	logDir := filepath.Join(filepath.Dir(statePath), "logs")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		return nil, err
+	}
+	logPath := filepath.Join(logDir, "engine.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	output := io.Writer(logFile)
+	if isCharDevice(os.Stderr) {
+		output = io.MultiWriter(logFile, os.Stderr)
+	}
+	log.SetOutput(output)
+	return func() {
+		_ = logFile.Close()
+	}, nil
+}
+
+func isCharDevice(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }

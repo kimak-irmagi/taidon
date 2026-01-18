@@ -2,9 +2,13 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"sqlrs/cli/internal/client"
@@ -89,19 +93,46 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
+	tailer, err := startLogTail(logPath, os.Stderr)
+	if err != nil {
+		tailer = nil
+	}
+
 	logVerbose(opts.Verbose, "starting engine: %s", opts.DaemonPath)
 	if err := cmd.Start(); err != nil {
+		if tailer != nil {
+			tailer.Stop()
+		}
 		return ConnectResult{}, err
 	}
+
+	exitCh := make(chan error, 1)
+	go func() {
+		exitCh <- cmd.Wait()
+	}()
 
 	logVerbose(opts.Verbose, "waiting for engine to become healthy")
 	deadline := time.Now().Add(opts.StartupTimeout)
 	for {
+		select {
+		case err := <-exitCh:
+			if tailer != nil {
+				tailer.Stop()
+			}
+			return ConnectResult{}, formatEngineExit(err)
+		default:
+		}
 		if state, ok := loadHealthyState(ctx, enginePath, opts.ClientTimeout); ok {
+			if tailer != nil {
+				tailer.Stop()
+			}
 			logVerbose(opts.Verbose, "engine healthy at %s", state.Endpoint)
 			return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
 		}
 		if time.Now().After(deadline) {
+			if tailer != nil {
+				tailer.Stop()
+			}
 			return ConnectResult{}, fmt.Errorf("engine did not become healthy within startup timeout")
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -131,4 +162,78 @@ func loadHealthyState(ctx context.Context, enginePath string, timeout time.Durat
 func checkHealth(ctx context.Context, endpoint string, timeout time.Duration) (client.HealthResponse, error) {
 	client := client.New(endpoint, client.Options{Timeout: timeout})
 	return client.Health(ctx)
+}
+
+func formatEngineExit(err error) error {
+	if err == nil {
+		return fmt.Errorf("engine exited before becoming healthy (exit code 0)")
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return fmt.Errorf("engine exited before becoming healthy (exit code %d)", exitErr.ExitCode())
+	}
+	return fmt.Errorf("engine exited before becoming healthy: %v", err)
+}
+
+type logTail struct {
+	stop chan struct{}
+	done chan struct{}
+	once sync.Once
+}
+
+func (t *logTail) Stop() {
+	if t == nil {
+		return
+	}
+	t.once.Do(func() {
+		close(t.stop)
+		<-t.done
+	})
+}
+
+func startLogTail(path string, out io.Writer) (*logTail, error) {
+	if out == nil {
+		return nil, fmt.Errorf("log tail output is nil")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := file.Seek(0, io.SeekEnd); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+
+	tail := &logTail{
+		stop: make(chan struct{}),
+		done: make(chan struct{}),
+	}
+
+	go func() {
+		defer close(tail.done)
+		defer file.Close()
+
+		buf := make([]byte, 4096)
+		for {
+			select {
+			case <-tail.stop:
+				return
+			default:
+			}
+
+			n, err := file.Read(buf)
+			if n > 0 {
+				_, _ = out.Write(buf[:n])
+			}
+			if errors.Is(err, io.EOF) {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	return tail, nil
 }

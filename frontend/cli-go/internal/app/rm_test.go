@@ -59,3 +59,16 @@ func TestParseRmFlags(t *testing.T) {
 		t.Fatalf("unexpected id prefix: %q", opts.IDPrefix)
 	}
 }
+
+func TestParseRmFlagsAfterPrefix(t *testing.T) {
+	opts, _, err := parseRmFlags([]string{"abc12345", "--force", "--recurse"})
+	if err != nil {
+		t.Fatalf("parseRmFlags: %v", err)
+	}
+	if !opts.Recurse || !opts.Force {
+		t.Fatalf("unexpected rm flags: %+v", opts)
+	}
+	if opts.IDPrefix != "abc12345" {
+		t.Fatalf("unexpected id prefix: %q", opts.IDPrefix)
+	}
+}

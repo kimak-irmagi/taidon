@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"strings"
 	"testing"
 	"time"
@@ -190,4 +195,125 @@ func TestLogVerboseWrites(t *testing.T) {
 	if !strings.Contains(buf.String(), "hello world") {
 		t.Fatalf("unexpected output: %q", buf.String())
 	}
+}
+
+func TestFormatEngineExitNil(t *testing.T) {
+	err := formatEngineExit(nil)
+	if err == nil || !strings.Contains(err.Error(), "exit code 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFormatEngineExitCode(t *testing.T) {
+	cmd := exitCommand(7)
+	execErr := cmd.Run()
+	if execErr == nil {
+		t.Fatalf("expected exit error")
+	}
+	err := formatEngineExit(execErr)
+	if err == nil || !strings.Contains(err.Error(), "exit code 7") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFormatEngineExitMessage(t *testing.T) {
+	err := formatEngineExit(errors.New("boom"))
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestStartLogTailWritesOutput(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "engine.log")
+	if err := os.WriteFile(logPath, []byte(""), 0o600); err != nil {
+		t.Fatalf("create log: %v", err)
+	}
+
+	var out lockedBuffer
+	tailer, err := startLogTail(logPath, &out)
+	if err != nil {
+		t.Fatalf("startLogTail: %v", err)
+	}
+	defer tailer.Stop()
+
+	if err := appendLog(logPath, "hello\n"); err != nil {
+		t.Fatalf("append log: %v", err)
+	}
+
+	if err := waitForSubstring(&out, "hello", time.Second); err != nil {
+		t.Fatalf("expected tail output: %v", err)
+	}
+}
+
+func TestStartLogTailStopAllowsWrites(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "engine.log")
+	if err := os.WriteFile(logPath, []byte(""), 0o600); err != nil {
+		t.Fatalf("create log: %v", err)
+	}
+
+	var out lockedBuffer
+	tailer, err := startLogTail(logPath, &out)
+	if err != nil {
+		t.Fatalf("startLogTail: %v", err)
+	}
+	tailer.Stop()
+
+	if err := appendLog(logPath, "after\n"); err != nil {
+		t.Fatalf("append log after stop: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(data), "after") {
+		t.Fatalf("expected log to contain appended output")
+	}
+}
+
+func exitCommand(code int) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.Command("cmd.exe", "/c", "exit", "/b", fmt.Sprintf("%d", code))
+	}
+	return exec.Command("sh", "-c", fmt.Sprintf("exit %d", code))
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func appendLog(path, line string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(line)
+	return err
+}
+
+func waitForSubstring(buf *lockedBuffer, substr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(buf.String(), substr) {
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for %q", substr)
 }

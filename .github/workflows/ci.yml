@@ -131,6 +131,51 @@ jobs:
           echo "engine=$engine" >> "$GITHUB_OUTPUT"
           echo "cli=$cli" >> "$GITHUB_OUTPUT"
 
+      - name: Summarize low coverage
+        id: coverage-details
+        run: |
+          set -euo pipefail
+
+          summarize_funcs() {
+            local profile=$1
+            local limit=$2
+            go tool cover -func="$profile" \
+              | awk '$1 != "total:" {sub(/%/,"",$3); printf "%06.2f\t%s\t%s\n",$3,$1,$2}' \
+              | sort -n \
+              | head -n "$limit" \
+              | awk -F '\t' '{pct=$1+0; printf "- %s %s (%.1f%%)\n", $2, $3, pct}'
+          }
+
+          summarize_files() {
+            local profile=$1
+            local limit=$2
+            go tool cover -func="$profile" \
+              | awk '$1 != "total:" {split($1,a,":"); file=a[1]; sub(/%/,"",$3); sum[file]+=$3; count[file]++} END {for (f in sum){printf "%06.2f\t%s\n", sum[f]/count[f], f}}' \
+              | sort -n \
+              | head -n "$limit" \
+              | awk -F '\t' '{pct=$1+0; printf "- %s (%.1f%%)\n", $2, pct}'
+          }
+
+          engine_funcs=$(summarize_funcs backend/local-engine-go/coverage-engine.out 10 || true)
+          engine_files=$(summarize_files backend/local-engine-go/coverage-engine.out 10 || true)
+          cli_funcs=$(summarize_funcs frontend/cli-go/coverage-cli.out 10 || true)
+          cli_files=$(summarize_files frontend/cli-go/coverage-cli.out 10 || true)
+
+          emit() {
+            local name=$1
+            local value=$2
+            {
+              echo "$name<<EOF"
+              echo "$value"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          emit "engine_low_funcs" "${engine_funcs:-"- (no data)"}"
+          emit "engine_low_files" "${engine_files:-"- (no data)"}"
+          emit "cli_low_funcs" "${cli_funcs:-"- (no data)"}"
+          emit "cli_low_files" "${cli_files:-"- (no data)"}"
+
       - name: Find coverage comment
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: peter-evans/find-comment@v3
@@ -150,6 +195,18 @@ jobs:
             - cli: ${{ steps.coverage.outputs.cli }}
             - combined: ${{ steps.coverage.outputs.total }}
 
+            Lowest-covered engine files:
+            ${{ steps.coverage-details.outputs.engine_low_files }}
+
+            Lowest-covered engine functions:
+            ${{ steps.coverage-details.outputs.engine_low_funcs }}
+
+            Lowest-covered cli files:
+            ${{ steps.coverage-details.outputs.cli_low_files }}
+
+            Lowest-covered cli functions:
+            ${{ steps.coverage-details.outputs.cli_low_funcs }}
+
       - name: Update coverage comment
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.coverage-comment.outputs.comment-id != ''
         uses: peter-evans/create-or-update-comment@v4
@@ -161,6 +218,18 @@ jobs:
             - engine: ${{ steps.coverage.outputs.engine }}
             - cli: ${{ steps.coverage.outputs.cli }}
             - combined: ${{ steps.coverage.outputs.total }}
+
+            Lowest-covered engine files:
+            ${{ steps.coverage-details.outputs.engine_low_files }}
+
+            Lowest-covered engine functions:
+            ${{ steps.coverage-details.outputs.engine_low_funcs }}
+
+            Lowest-covered cli files:
+            ${{ steps.coverage-details.outputs.cli_low_files }}
+
+            Lowest-covered cli functions:
+            ${{ steps.coverage-details.outputs.cli_low_funcs }}
 
       - name: Upload coverage to Coveralls
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
