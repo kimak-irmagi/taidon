@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/store"
 )
 
@@ -138,6 +139,65 @@ func (m *Manager) Get(jobID string) (Status, bool) {
 	return j.snapshot(), true
 }
 
+func (m *Manager) ListJobs(jobID string) []JobEntry {
+	jobs := m.snapshotJobs(jobID)
+	if len(jobs) == 0 {
+		return []JobEntry{}
+	}
+	entries := make([]JobEntry, 0, len(jobs))
+	for _, j := range jobs {
+		entries = append(entries, j.entry())
+	}
+	return entries
+}
+
+func (m *Manager) ListTasks(jobID string) []TaskEntry {
+	jobs := m.snapshotJobs(jobID)
+	if len(jobs) == 0 {
+		return []TaskEntry{}
+	}
+	entries := []TaskEntry{}
+	for _, j := range jobs {
+		entries = append(entries, j.taskEntries()...)
+	}
+	return entries
+}
+
+func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.DeleteResult, bool) {
+	j, ok := m.getJob(jobID)
+	if !ok {
+		return deletion.DeleteResult{}, false
+	}
+	status := j.statusValue()
+	node := deletion.DeleteNode{
+		Kind: "job",
+		ID:   jobID,
+	}
+	blocked := false
+	if status == StatusRunning && !opts.Force {
+		node.Blocked = deletion.BlockActiveTasks
+		blocked = true
+	}
+	outcome := deletion.OutcomeDeleted
+	if blocked {
+		outcome = deletion.OutcomeBlocked
+	} else if opts.DryRun {
+		outcome = deletion.OutcomeWouldDelete
+	}
+	result := deletion.DeleteResult{
+		DryRun:  opts.DryRun,
+		Outcome: outcome,
+		Root:    node,
+	}
+	if blocked || opts.DryRun {
+		return result, true
+	}
+	m.mu.Lock()
+	delete(m.jobs, jobID)
+	m.mu.Unlock()
+	return result, true
+}
+
 func (m *Manager) EventsSince(jobID string, index int) ([]Event, bool, bool) {
 	j, ok := m.getJob(jobID)
 	if !ok {
@@ -152,6 +212,23 @@ func (m *Manager) getJob(jobID string) (*job, bool) {
 	defer m.mu.RUnlock()
 	j, ok := m.jobs[jobID]
 	return j, ok
+}
+
+func (m *Manager) snapshotJobs(jobID string) []*job {
+	if strings.TrimSpace(jobID) != "" {
+		j, ok := m.getJob(jobID)
+		if !ok {
+			return nil
+		}
+		return []*job{j}
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	jobs := make([]*job, 0, len(m.jobs))
+	for _, j := range m.jobs {
+		jobs = append(jobs, j)
+	}
+	return jobs
 }
 
 func (m *Manager) runJob(prepared preparedRequest, j *job) {
@@ -341,6 +418,45 @@ func (j *job) snapshot() Status {
 	return status
 }
 
+func (j *job) entry() JobEntry {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return JobEntry{
+		JobID:       j.id,
+		Status:      j.status,
+		PrepareKind: j.prepareKind,
+		ImageID:     j.imageID,
+		PlanOnly:    j.planOnly,
+		CreatedAt:   formatTime(j.createdAt),
+		StartedAt:   formatTimePtr(j.startedAt),
+		FinishedAt:  formatTimePtr(j.finishedAt),
+	}
+}
+
+func (j *job) taskEntries() []TaskEntry {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if len(j.tasks) == 0 {
+		return nil
+	}
+	entries := make([]TaskEntry, 0, len(j.tasks))
+	for _, task := range j.tasks {
+		entries = append(entries, TaskEntry{
+			TaskID:        task.TaskID,
+			JobID:         j.id,
+			Type:          task.Type,
+			Status:        j.status,
+			PlannerKind:   task.PlannerKind,
+			Input:         task.Input,
+			TaskHash:      task.TaskHash,
+			OutputStateID: task.OutputStateID,
+			Cached:        task.Cached,
+			InstanceMode:  task.InstanceMode,
+		})
+	}
+	return entries
+}
+
 func (j *job) eventsSince(index int) ([]Event, bool) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -353,6 +469,12 @@ func (j *job) eventsSince(index int) ([]Event, bool) {
 	events := append([]Event(nil), j.events[index:]...)
 	done := j.status == StatusSucceeded || j.status == StatusFailed
 	return events, done
+}
+
+func (j *job) statusValue() string {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.status
 }
 
 func (j *job) setStatus(status string, when time.Time) {

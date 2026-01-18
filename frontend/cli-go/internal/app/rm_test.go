@@ -2,7 +2,13 @@ package app
 
 import (
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	"sqlrs/cli/internal/cli"
 )
 
 func TestParseRmMissingPrefix(t *testing.T) {
@@ -70,5 +76,47 @@ func TestParseRmFlagsAfterPrefix(t *testing.T) {
 	}
 	if opts.IDPrefix != "abc12345" {
 		t.Fatalf("unexpected id prefix: %q", opts.IDPrefix)
+	}
+}
+
+func TestRunRmBlockedJobReturnsExitCode4(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/instances":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/states":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"img"}]`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"dry_run":false,"outcome":"blocked","root":{"kind":"job","id":"job-1","blocked":"active_tasks"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	err := runRm(io.Discard, cli.RmOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, []string{"job-1"}, "json")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 4 {
+		t.Fatalf("expected exit code 4, got %v", err)
+	}
+}
+
+func TestSplitRmArgsHonorsDoubleDash(t *testing.T) {
+	flags, positionals := splitRmArgs([]string{"--force", "--", "--not-flag", "abc12345"})
+	if len(flags) != 1 || flags[0] != "--force" {
+		t.Fatalf("unexpected flags: %+v", flags)
+	}
+	if len(positionals) != 2 || positionals[0] != "--not-flag" || positionals[1] != "abc12345" {
+		t.Fatalf("unexpected positionals: %+v", positionals)
 	}
 }

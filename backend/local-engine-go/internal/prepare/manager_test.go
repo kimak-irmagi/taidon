@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/store"
 )
 
@@ -265,6 +266,89 @@ func TestSubmitPlanOnlyCachedFlag(t *testing.T) {
 	}
 }
 
+func TestListJobsAndTasks(t *testing.T) {
+	store := &fakeStore{}
+	mgr, err := NewManager(Options{
+		Store:   store,
+		Version: "v1",
+		IDGen:   func() (string, error) { return "job-1", nil },
+		Async:   false,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	_, err = mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	jobs := mgr.ListJobs("")
+	if len(jobs) != 1 || jobs[0].JobID != "job-1" {
+		t.Fatalf("unexpected jobs: %+v", jobs)
+	}
+
+	tasks := mgr.ListTasks("job-1")
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	for _, task := range tasks {
+		if task.JobID != "job-1" {
+			t.Fatalf("unexpected task job id: %+v", task)
+		}
+	}
+}
+
+func TestDeleteJobRemovesEntry(t *testing.T) {
+	store := &fakeStore{}
+	mgr, err := NewManager(Options{
+		Store:   store,
+		Version: "v1",
+		IDGen:   func() (string, error) { return "job-1", nil },
+		Async:   false,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	_, err = mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	result, ok := mgr.Delete("job-1", deletion.DeleteOptions{})
+	if !ok || result.Outcome != deletion.OutcomeDeleted {
+		t.Fatalf("unexpected delete result: ok=%v result=%+v", ok, result)
+	}
+	if len(mgr.ListJobs("")) != 0 {
+		t.Fatalf("expected jobs to be removed")
+	}
+}
+
+func TestDeleteJobBlockedWithoutForce(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	mgr.jobs["job-1"] = &job{
+		id:     "job-1",
+		status: StatusRunning,
+	}
+	result, ok := mgr.Delete("job-1", deletion.DeleteOptions{})
+	if !ok || result.Outcome != deletion.OutcomeBlocked || result.Root.Blocked != deletion.BlockActiveTasks {
+		t.Fatalf("unexpected blocked result: ok=%v result=%+v", ok, result)
+	}
+}
+
 func TestSubmitCreateStateFails(t *testing.T) {
 	store := &fakeStore{createStateErr: errors.New("boom")}
 	mgr, err := NewManager(Options{
@@ -437,4 +521,157 @@ type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) {
 	return 0, errors.New("boom")
+}
+
+func TestNewManagerDefaultIDGen(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if mgr.idGen == nil {
+		t.Fatalf("expected id generator")
+	}
+}
+
+func TestSubmitAsyncRunsJob(t *testing.T) {
+	mgr, err := NewManager(Options{
+		Store:   &fakeStore{},
+		IDGen:   func() (string, error) { return "job-1", nil },
+		Async:   true,
+		Version: "v1",
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		status, ok := mgr.Get("job-1")
+		if ok && status.Status != StatusQueued {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("job did not start")
+}
+
+func TestListTasksMissingJob(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if tasks := mgr.ListTasks("missing"); len(tasks) != 0 {
+		t.Fatalf("expected no tasks, got %+v", tasks)
+	}
+}
+
+func TestDeleteUnknownJob(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, ok := mgr.Delete("missing", deletion.DeleteOptions{}); ok {
+		t.Fatalf("expected delete to miss")
+	}
+}
+
+func TestDeleteJobDryRun(t *testing.T) {
+	mgr, err := NewManager(Options{
+		Store: &fakeStore{},
+		IDGen: func() (string, error) { return "job-1", nil },
+		Async: false,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	result, ok := mgr.Delete("job-1", deletion.DeleteOptions{DryRun: true})
+	if !ok || result.Outcome != deletion.OutcomeWouldDelete {
+		t.Fatalf("unexpected delete result: ok=%v result=%+v", ok, result)
+	}
+}
+
+func TestListJobsMissingJob(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if jobs := mgr.ListJobs("missing"); len(jobs) != 0 {
+		t.Fatalf("expected no jobs, got %+v", jobs)
+	}
+}
+
+func TestPrepareRequestPsqlError(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-f"},
+	}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestIsStateCachedEmpty(t *testing.T) {
+	mgr, err := NewManager(Options{Store: &fakeStore{}})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	cached, err := mgr.isStateCached("")
+	if err != nil || cached {
+		t.Fatalf("expected empty cache result, cached=%v err=%v", cached, err)
+	}
+}
+
+func TestIsStateCachedError(t *testing.T) {
+	store := &fakeStore{getStateErr: errors.New("boom")}
+	mgr, err := NewManager(Options{Store: store})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	if _, err := mgr.isStateCached("state-1"); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestTaskEntriesEmpty(t *testing.T) {
+	j := &job{}
+	if entries := j.taskEntries(); entries != nil {
+		t.Fatalf("expected nil entries, got %+v", entries)
+	}
+}
+
+func TestSetTasksEmpty(t *testing.T) {
+	j := &job{}
+	j.setTasks(nil)
+	if j.tasks != nil {
+		t.Fatalf("expected tasks to be nil")
+	}
 }

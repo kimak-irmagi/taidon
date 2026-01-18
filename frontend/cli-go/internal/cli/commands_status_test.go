@@ -122,6 +122,44 @@ func TestRunStatusHealthError(t *testing.T) {
 	}
 }
 
+func TestRunStatusLocalAutostartDisabled(t *testing.T) {
+	_, err := RunStatus(context.Background(), StatusOptions{
+		Mode:      "local",
+		Endpoint:  "",
+		StateDir:  t.TempDir(),
+		Autostart: false,
+		Timeout:   time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "local engine is not running") {
+		t.Fatalf("expected autostart error, got %v", err)
+	}
+}
+
+func TestRunStatusRemoteVerbose(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	result, err := RunStatus(context.Background(), StatusOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+		Verbose:  true,
+	})
+	if err != nil {
+		t.Fatalf("RunStatus: %v", err)
+	}
+	if !result.OK {
+		t.Fatalf("expected ok result")
+	}
+}
+
 func TestPrintStatus(t *testing.T) {
 	result := StatusResult{
 		OK:       true,

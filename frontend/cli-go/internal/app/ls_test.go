@@ -13,7 +13,7 @@ func TestParseLsDefaults(t *testing.T) {
 	if showHelp {
 		t.Fatalf("expected showHelp false")
 	}
-	if !opts.IncludeNames || !opts.IncludeInstances || opts.IncludeStates {
+	if !opts.IncludeNames || !opts.IncludeInstances || opts.IncludeStates || opts.IncludeJobs || opts.IncludeTasks {
 		t.Fatalf("unexpected defaults: %+v", opts)
 	}
 }
@@ -23,7 +23,7 @@ func TestParseLsAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseLsFlags: %v", err)
 	}
-	if !opts.IncludeNames || !opts.IncludeInstances || !opts.IncludeStates {
+	if !opts.IncludeNames || !opts.IncludeInstances || !opts.IncludeStates || !opts.IncludeJobs || !opts.IncludeTasks {
 		t.Fatalf("expected all selectors enabled, got %+v", opts)
 	}
 }
@@ -46,5 +46,25 @@ func TestParseLsLong(t *testing.T) {
 	}
 	if !opts.LongIDs {
 		t.Fatalf("expected long ids flag true")
+	}
+}
+
+func TestParseLsJobsTasksAliases(t *testing.T) {
+	opts, _, err := parseLsFlags([]string{"-j", "-t"})
+	if err != nil {
+		t.Fatalf("parseLsFlags: %v", err)
+	}
+	if !opts.IncludeJobs || !opts.IncludeTasks {
+		t.Fatalf("expected jobs/tasks selectors enabled, got %+v", opts)
+	}
+}
+
+func TestParseLsJobFilter(t *testing.T) {
+	opts, _, err := parseLsFlags([]string{"--tasks", "--job", "job-1"})
+	if err != nil {
+		t.Fatalf("parseLsFlags: %v", err)
+	}
+	if opts.FilterJob != "job-1" {
+		t.Fatalf("unexpected job filter: %q", opts.FilterJob)
 	}
 }

@@ -14,8 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
+	"sqlrs/engine/internal/store"
 	"sqlrs/engine/internal/store/sqlite"
 )
 
@@ -41,7 +43,7 @@ func TestPrepareJobsMethodNotAllowed(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
 
-	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs", nil)
+	req, err := http.NewRequest(http.MethodPut, server.URL+"/v1/prepare-jobs", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -187,6 +189,24 @@ func TestPrepareJobStatusNotFoundPath(t *testing.T) {
 	}
 }
 
+func TestPrepareJobStatusRequiresAuth(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/job-1", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
 func TestPrepareJobEventsInvalidPath(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
@@ -203,6 +223,25 @@ func TestPrepareJobEventsInvalidPath(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobEventsMethodNotAllowed(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/prepare-jobs/job-1/events", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
 	}
 }
 
@@ -359,6 +398,239 @@ func TestPrepareJobsPlanOnly(t *testing.T) {
 	}
 }
 
+func TestPrepareJobsListAndFilter(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	jobID := submitPlanOnlyJob(t, server.URL, "secret")
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var entries []prepare.JobEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		t.Fatalf("decode jobs: %v", err)
+	}
+	if len(entries) == 0 || entries[0].JobID == "" {
+		t.Fatalf("expected job entries, got %+v", entries)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs?job="+jobID, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("filter jobs: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var filtered []prepare.JobEntry
+	if err := json.NewDecoder(resp.Body).Decode(&filtered); err != nil {
+		t.Fatalf("decode filtered: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].JobID != jobID {
+		t.Fatalf("unexpected filter result: %+v", filtered)
+	}
+}
+
+func TestPrepareJobsDelete(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	jobID := submitPlanOnlyJob(t, server.URL, "secret")
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/prepare-jobs/"+jobID, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var result deletion.DeleteResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode delete: %v", err)
+	}
+	if result.Outcome != deletion.OutcomeDeleted || result.Root.Kind != "job" {
+		t.Fatalf("unexpected delete result: %+v", result)
+	}
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/"+jobID, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobsDeleteDryRun(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	jobID := submitPlanOnlyJob(t, server.URL, "secret")
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/prepare-jobs/"+jobID+"?dry_run=true", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var result deletion.DeleteResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode delete: %v", err)
+	}
+	if !result.DryRun || result.Outcome != deletion.OutcomeWouldDelete {
+		t.Fatalf("unexpected dry-run result: %+v", result)
+	}
+}
+
+func TestPrepareJobsDeleteInvalidForce(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	jobID := submitPlanOnlyJob(t, server.URL, "secret")
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/prepare-jobs/"+jobID+"?force=nah", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobsDeleteInvalidDryRun(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	jobID := submitPlanOnlyJob(t, server.URL, "secret")
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/prepare-jobs/"+jobID+"?dry_run=nah", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobsDeleteNotFound(t *testing.T) {
+	server, cleanup := newTestServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/prepare-jobs/missing", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareJobsDeleteBlockedWithoutForce(t *testing.T) {
+	dir := t.TempDir()
+	st, err := sqlite.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+
+	blocker := newBlockingStore(st)
+	prep, err := prepare.NewManager(prepare.Options{
+		Store:   blocker,
+		Version: "test",
+		Async:   true,
+	})
+	if err != nil {
+		t.Fatalf("prepare manager: %v", err)
+	}
+	handler := NewHandler(Options{
+		Version:    "test",
+		InstanceID: "instance",
+		AuthToken:  "secret",
+		Prepare:    prep,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	jobID := submitPrepareJob(t, server.URL, "secret", false)
+	waitForChannel(t, blocker.started)
+
+	req, err := http.NewRequest(http.MethodDelete, server.URL+"/v1/prepare-jobs/"+jobID, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("delete job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409, got %d", resp.StatusCode)
+	}
+	var result deletion.DeleteResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode delete: %v", err)
+	}
+	if result.Outcome != deletion.OutcomeBlocked || result.Root.Blocked != deletion.BlockActiveTasks {
+		t.Fatalf("unexpected blocked result: %+v", result)
+	}
+
+	close(blocker.release)
+}
+
 func TestPrepareEventsWithoutFlusher(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://example/v1/prepare-jobs/job/events", nil)
 	writer := &noFlushWriter{}
@@ -388,6 +660,78 @@ func (w *noFlushWriter) Write(data []byte) (int, error) {
 
 func (w *noFlushWriter) WriteHeader(status int) {
 	w.code = status
+}
+
+func submitPlanOnlyJob(t *testing.T, baseURL, token string) string {
+	return submitPrepareJob(t, baseURL, token, true)
+}
+
+func submitPrepareJob(t *testing.T, baseURL, token string, planOnly bool) string {
+	t.Helper()
+	reqBody := prepare.Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    planOnly,
+	}
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/v1/prepare-jobs", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("submit job: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	}
+	var accepted prepare.Accepted
+	if err := json.NewDecoder(resp.Body).Decode(&accepted); err != nil {
+		t.Fatalf("decode accepted: %v", err)
+	}
+	if accepted.JobID == "" {
+		t.Fatalf("expected job_id")
+	}
+	return accepted.JobID
+}
+
+type blockingStore struct {
+	store.Store
+	started chan struct{}
+	release chan struct{}
+}
+
+func newBlockingStore(inner store.Store) *blockingStore {
+	return &blockingStore{
+		Store:   inner,
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (b *blockingStore) CreateState(ctx context.Context, entry store.StateCreate) error {
+	select {
+	case <-b.started:
+	default:
+		close(b.started)
+	}
+	<-b.release
+	return b.Store.CreateState(ctx, entry)
+}
+
+func waitForChannel(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for channel")
+	}
 }
 
 func pollPrepareStatus(baseURL, location, token string) (prepare.Status, error) {

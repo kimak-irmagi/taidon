@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -217,6 +218,71 @@ func TestCreatePrepareJobPlanOnly(t *testing.T) {
 	}
 }
 
+func TestListPrepareJobsAddsFilter(t *testing.T) {
+	var gotQuery url.Values
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListPrepareJobs(context.Background(), "job-1")
+	if err != nil {
+		t.Fatalf("ListPrepareJobs: %v", err)
+	}
+	if gotPath != "/v1/prepare-jobs" {
+		t.Fatalf("expected /v1/prepare-jobs, got %q", gotPath)
+	}
+	if gotQuery.Get("job") != "job-1" {
+		t.Fatalf("expected job filter, got %v", gotQuery.Encode())
+	}
+}
+
+func TestDeletePrepareJobAddsQuery(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"dry_run":true,"outcome":"would_delete","root":{"kind":"job","id":"job-1"}}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, status, err := cli.DeletePrepareJob(context.Background(), "job-1", DeleteOptions{Force: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("DeletePrepareJob: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d", status)
+	}
+	if gotQuery.Get("force") != "true" || gotQuery.Get("dry_run") != "true" {
+		t.Fatalf("unexpected query: %v", gotQuery.Encode())
+	}
+}
+
+func TestListTasksAddsFilter(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `[]`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListTasks(context.Background(), "job-1")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if gotQuery.Get("job") != "job-1" {
+		t.Fatalf("expected job filter, got %v", gotQuery.Encode())
+	}
+}
+
 func TestGetNameNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -374,5 +440,301 @@ func TestHTTPStatusErrorMessage(t *testing.T) {
 	err := (&HTTPStatusError{Status: "418 I'm a teapot"}).Error()
 	if !strings.Contains(err, "418 I'm a teapot") {
 		t.Fatalf("unexpected error message: %q", err)
+	}
+}
+
+func TestNormalizeBaseURLEmpty(t *testing.T) {
+	if normalizeBaseURL("") != "" {
+		t.Fatalf("expected empty base url")
+	}
+}
+
+func TestNormalizeBaseURLTrimsSlash(t *testing.T) {
+	if normalizeBaseURL("https://example.com/") != "https://example.com" {
+		t.Fatalf("expected trimmed base url")
+	}
+}
+
+func TestAppendQueryEmpty(t *testing.T) {
+	if appendQuery("/v1/names", url.Values{}) != "/v1/names" {
+		t.Fatalf("expected unmodified path")
+	}
+}
+
+func TestHealthInvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `not-json`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.Health(context.Background())
+	if err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+
+func TestGetNameServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, _, err := cli.GetName(context.Background(), "dev")
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("expected HTTPStatusError, got %v", err)
+	}
+}
+
+func TestDeletePrepareJobServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, `{"message":"bad","details":"info"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, _, err := cli.DeletePrepareJob(context.Background(), "job-1", DeleteOptions{})
+	if err == nil || !strings.Contains(err.Error(), "bad: info") {
+		t.Fatalf("expected error message, got %v", err)
+	}
+}
+
+func TestGetNameRedirectPreservesUserAgent(t *testing.T) {
+	var gotUserAgent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/names/dev":
+			w.Header().Set("Location", "/v1/names/real")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		case "/v1/names/real":
+			gotUserAgent = r.Header.Get("User-Agent")
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"name":"real","image_id":"img","state_id":"state","status":"active"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second, UserAgent: "TestUA"})
+	_, found, err := cli.GetName(context.Background(), "dev")
+	if err != nil {
+		t.Fatalf("GetName: %v", err)
+	}
+	if !found || gotUserAgent != "TestUA" {
+		t.Fatalf("expected user agent on redirect, got %q", gotUserAgent)
+	}
+}
+
+func TestRedirectLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", r.URL.Path)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, _, err := cli.GetName(context.Background(), "dev")
+	if err == nil || !strings.Contains(err.Error(), "stopped after 10 redirects") {
+		t.Fatalf("expected redirect limit error, got %v", err)
+	}
+}
+
+func TestDoRequestWithBodyNoContentType(t *testing.T) {
+	var gotContentType string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	resp, err := cli.doRequestWithBody(context.Background(), http.MethodPost, "/custom", false, strings.NewReader("payload"), "")
+	if err != nil {
+		t.Fatalf("doRequestWithBody: %v", err)
+	}
+	_ = resp.Body.Close()
+	if gotContentType != "" {
+		t.Fatalf("expected empty content type, got %q", gotContentType)
+	}
+}
+
+func TestParseErrorResponseEmptyBody(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Status:     "500 Internal Server Error",
+		Body:       io.NopCloser(strings.NewReader("")),
+	}
+	err := parseErrorResponse(resp)
+	if err == nil || !strings.Contains(err.Error(), "unexpected status") {
+		t.Fatalf("expected HTTPStatusError, got %v", err)
+	}
+}
+
+func TestNewDefaultsTimeoutAndRedirectNoVia(t *testing.T) {
+	cli := New("http://example.com", Options{})
+	if cli.http.Timeout != 30*time.Second {
+		t.Fatalf("expected default timeout, got %v", cli.http.Timeout)
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://example.com", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if err := cli.http.CheckRedirect(req, nil); err != nil {
+		t.Fatalf("redirect check: %v", err)
+	}
+}
+
+func TestListNamesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListNames(context.Background(), ListFilters{})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestListInstancesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListInstances(context.Background(), ListFilters{})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestListStatesError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListStates(context.Background(), ListFilters{})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestCreatePrepareJobRequestError(t *testing.T) {
+	cli := New("http://127.0.0.1:1", Options{Timeout: 50 * time.Millisecond})
+	_, err := cli.CreatePrepareJob(context.Background(), PrepareJobRequest{PrepareKind: "psql", ImageID: "img"})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestCreatePrepareJobDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, `not-json`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.CreatePrepareJob(context.Background(), PrepareJobRequest{PrepareKind: "psql", ImageID: "img"})
+	if err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+
+func TestListPrepareJobsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListPrepareJobs(context.Background(), "job-1")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestListTasksError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.ListTasks(context.Background(), "job-1")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestHealthRequestError(t *testing.T) {
+	cli := New("http://127.0.0.1:1", Options{Timeout: 50 * time.Millisecond})
+	_, err := cli.Health(context.Background())
+	if err == nil {
+		t.Fatalf("expected request error")
+	}
+}
+
+func TestDeleteStateRequestError(t *testing.T) {
+	cli := New("http://127.0.0.1:1", Options{Timeout: 50 * time.Millisecond})
+	_, _, err := cli.DeleteState(context.Background(), "state-1", DeleteOptions{})
+	if err == nil {
+		t.Fatalf("expected request error")
+	}
+}
+
+func TestDeleteStateDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `not-json`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, _, err := cli.DeleteState(context.Background(), "state-1", DeleteOptions{})
+	if err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+
+func TestDoRequestWithBodyUserAgent(t *testing.T) {
+	var gotUserAgent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserAgent = r.Header.Get("User-Agent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second, UserAgent: "TestUA"})
+	resp, err := cli.doRequestWithBody(context.Background(), http.MethodPost, "/custom", false, strings.NewReader("payload"), "application/json")
+	if err != nil {
+		t.Fatalf("doRequestWithBody: %v", err)
+	}
+	_ = resp.Body.Close()
+	if gotUserAgent != "TestUA" {
+		t.Fatalf("expected user agent, got %q", gotUserAgent)
+	}
+}
+
+func TestParseErrorResponseMessageOnly(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Status:     "400 Bad Request",
+		Body:       io.NopCloser(strings.NewReader(`{"message":"bad"}`)),
+	}
+	err := parseErrorResponse(resp)
+	if err == nil || err.Error() != "bad" {
+		t.Fatalf("expected message error, got %v", err)
 	}
 }

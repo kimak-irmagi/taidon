@@ -43,7 +43,7 @@ func (e *AmbiguousResourceError) Error() string {
 	if e == nil {
 		return ""
 	}
-	return fmt.Sprintf("ambiguous id prefix: %s matches both instance and state", e.Prefix)
+	return fmt.Sprintf("ambiguous id prefix: %s matches multiple resource types", e.Prefix)
 }
 
 func RunRm(ctx context.Context, opts RmOptions) (RmResult, error) {
@@ -87,17 +87,24 @@ func RunRm(ctx context.Context, opts RmOptions) (RmResult, error) {
 		}
 	}
 
-	normalized, err := normalizeIDPrefix("resource", opts.IDPrefix)
-	if err != nil {
-		return RmResult{}, err
+	cliClient := client.New(endpoint, client.Options{Timeout: opts.Timeout, AuthToken: authToken})
+
+	normalized := ""
+	instances := []client.InstanceEntry{}
+	states := []client.StateEntry{}
+	if prefix, err := normalizeIDPrefix("resource", opts.IDPrefix); err == nil {
+		normalized = prefix
+		instances, err = cliClient.ListInstances(ctx, client.ListFilters{IDPrefix: normalized})
+		if err != nil {
+			return RmResult{}, err
+		}
+		states, err = cliClient.ListStates(ctx, client.ListFilters{IDPrefix: normalized})
+		if err != nil {
+			return RmResult{}, err
+		}
 	}
 
-	cliClient := client.New(endpoint, client.Options{Timeout: opts.Timeout, AuthToken: authToken})
-	instances, err := cliClient.ListInstances(ctx, client.ListFilters{IDPrefix: normalized})
-	if err != nil {
-		return RmResult{}, err
-	}
-	states, err := cliClient.ListStates(ctx, client.ListFilters{IDPrefix: normalized})
+	jobs, err := cliClient.ListPrepareJobs(ctx, opts.IDPrefix)
 	if err != nil {
 		return RmResult{}, err
 	}
@@ -108,10 +115,23 @@ func RunRm(ctx context.Context, opts RmOptions) (RmResult, error) {
 	if len(states) > 1 {
 		return RmResult{}, &AmbiguousPrefixError{Kind: "state", Prefix: opts.IDPrefix}
 	}
-	if len(instances) == 1 && len(states) == 1 {
+	if len(jobs) > 1 {
+		return RmResult{}, &AmbiguousPrefixError{Kind: "job", Prefix: opts.IDPrefix}
+	}
+	matchCount := 0
+	if len(instances) == 1 {
+		matchCount++
+	}
+	if len(states) == 1 {
+		matchCount++
+	}
+	if len(jobs) == 1 {
+		matchCount++
+	}
+	if matchCount > 1 {
 		return RmResult{}, &AmbiguousResourceError{Prefix: opts.IDPrefix}
 	}
-	if len(instances) == 0 && len(states) == 0 {
+	if matchCount == 0 {
 		return RmResult{NoMatch: true}, nil
 	}
 
@@ -128,7 +148,15 @@ func RunRm(ctx context.Context, opts RmOptions) (RmResult, error) {
 		return RmResult{Delete: &result}, nil
 	}
 
-	result, _, err := cliClient.DeleteState(ctx, states[0].StateID, deleteOpts)
+	if len(states) == 1 {
+		result, _, err := cliClient.DeleteState(ctx, states[0].StateID, deleteOpts)
+		if err != nil {
+			return RmResult{}, err
+		}
+		return RmResult{Delete: &result}, nil
+	}
+
+	result, _, err := cliClient.DeletePrepareJob(ctx, jobs[0].JobID, deleteOpts)
 	if err != nil {
 		return RmResult{}, err
 	}
