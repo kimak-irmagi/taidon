@@ -96,6 +96,7 @@ func TestPrepareJobsInternalError(t *testing.T) {
 	reg := registry.New(st)
 	prep, err := prepare.NewManager(prepare.Options{
 		Store: st,
+		Queue: mustOpenQueue(t, filepath.Join(dir, "state.db")),
 		IDGen: func() (string, error) { return "", errors.New("boom") },
 		Async: false,
 	})
@@ -589,6 +590,7 @@ func TestPrepareJobsDeleteBlockedWithoutForce(t *testing.T) {
 	blocker := newBlockingStore(st)
 	prep, err := prepare.NewManager(prepare.Options{
 		Store:   blocker,
+		Queue:   mustOpenQueue(t, filepath.Join(dir, "state.db")),
 		Version: "test",
 		Async:   true,
 	})

@@ -16,6 +16,7 @@ import (
 	"sqlrs/engine/internal/conntrack"
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare"
+	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store"
 	"sqlrs/engine/internal/store/sqlite"
@@ -576,6 +577,7 @@ func newTestServer(t *testing.T) (*httptest.Server, func()) {
 	reg := registry.New(st)
 	prep, err := prepare.NewManager(prepare.Options{
 		Store:   st,
+		Queue:   mustOpenQueue(t, dbPath),
 		Version: "test",
 		Async:   false,
 	})
@@ -634,4 +636,16 @@ func seedHTTPData(db *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func mustOpenQueue(t *testing.T, path string) queue.Store {
+	t.Helper()
+	store, err := queue.Open(path)
+	if err != nil {
+		t.Fatalf("open queue: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+	return store
 }

@@ -24,6 +24,7 @@ import (
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/httpapi"
 	"sqlrs/engine/internal/prepare"
+	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store/sqlite"
 )
@@ -120,6 +121,12 @@ func run(args []string) (int, error) {
 	}
 	defer store.Close()
 
+	queueStore, err := queue.Open(filepath.Join(stateDir, "state.db"))
+	if err != nil {
+		return 1, fmt.Errorf("open queue db: %v", err)
+	}
+	defer queueStore.Close()
+
 	state := EngineState{
 		Endpoint:   listener.Addr().String(),
 		PID:        os.Getpid(),
@@ -138,11 +145,15 @@ func run(args []string) (int, error) {
 	reg := registry.New(store)
 	prepareMgr, err := prepare.NewManager(prepare.Options{
 		Store:   store,
+		Queue:   queueStore,
 		Version: *version,
 		Async:   true,
 	})
 	if err != nil {
 		return 1, fmt.Errorf("prepare manager: %v", err)
+	}
+	if err := prepareMgr.Recover(context.Background()); err != nil {
+		return 1, fmt.Errorf("prepare recovery: %v", err)
 	}
 
 	deleteMgr, err := deletion.NewManager(deletion.Options{

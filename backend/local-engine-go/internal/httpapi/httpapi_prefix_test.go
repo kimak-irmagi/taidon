@@ -196,6 +196,7 @@ func newPrefixTestServer(t *testing.T) (*httptest.Server, func()) {
 	reg := registry.New(st)
 	prep, err := prepare.NewManager(prepare.Options{
 		Store:   st,
+		Queue:   mustOpenQueue(t, dbPath),
 		Version: "test",
 		Async:   false,
 	})
