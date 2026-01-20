@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS instances (
 Notes:
 
 - `instance_id` uses the engine-defined id format.
+- `runtime_id` stores the runtime/container identifier used to stop or inspect the instance.
 - `status` is reserved for future use; current status is derived.
 
 ### 3.3 `names`

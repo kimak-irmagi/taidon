@@ -64,6 +64,7 @@ flowchart LR
 - Enforces deadlines and cancellation; supervises child processes/containers.
 - Emits status transitions and structured events (including task status) for streaming to the CLI.
 - Provides job/task snapshots for list endpoints, persists job/task state, and handles job deletion requests.
+- Resolves non-digest image references to canonical digests before planning; records a `resolve_image` task when resolution is required.
 
 ### 1.3 Job/Task Queue Store
 
@@ -76,7 +77,7 @@ flowchart LR
 - Each step is hashed (script-system specific) to form cache keys: `engine/version/base/step_hash/params`.
 - The output is a step chain, not head/tail; intermediate states may be materialized for cache reuse.
 - The overall prepare input also produces a stable state fingerprint:
-  `state_id = hash(prepare_kind + base_image_id + normalized_args + normalized_input_hashes + engine_version)`.
+  `state_id = hash(prepare_kind + base_image_id_resolved + normalized_args + normalized_input_hashes + engine_version)`.
 
 ### 1.5 Prepare Executor
 
@@ -172,6 +173,8 @@ sequenceDiagram
   API-->>CLI: job_id
   CLI->>API: watch status/events
   API->>CTRL: enqueue job
+  CTRL->>RUNTIME: resolve image reference
+  RUNTIME-->>CTRL: resolved digest
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   alt cache hit
@@ -219,6 +222,8 @@ sequenceDiagram
   API-->>CLI: job_id
   CLI->>API: watch status/events
   API->>CTRL: enqueue job
+  CTRL->>RUNTIME: resolve image reference
+  RUNTIME-->>CTRL: resolved digest
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   CACHE-->>CTRL: hit/miss

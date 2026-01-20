@@ -660,12 +660,14 @@ components:
     PreparePlanTask:
       oneOf:
         - $ref: "#/components/schemas/PreparePlanTaskPlan"
+        - $ref: "#/components/schemas/PreparePlanTaskResolveImage"
         - $ref: "#/components/schemas/PreparePlanTaskStateExecute"
         - $ref: "#/components/schemas/PreparePlanTaskPrepareInstance"
       discriminator:
         propertyName: type
         mapping:
           plan: "#/components/schemas/PreparePlanTaskPlan"
+          resolve_image: "#/components/schemas/PreparePlanTaskResolveImage"
           state_execute: "#/components/schemas/PreparePlanTaskStateExecute"
           prepare_instance: "#/components/schemas/PreparePlanTaskPrepareInstance"
     PreparePlanTaskInput:
@@ -694,6 +696,24 @@ components:
           type: string
           enum: [plan]
         planner_kind:
+          type: string
+    PreparePlanTaskResolveImage:
+      type: object
+      additionalProperties: false
+      required:
+        - task_id
+        - type
+        - image_id
+        - resolved_image_id
+      properties:
+        task_id:
+          type: string
+        type:
+          type: string
+          enum: [resolve_image]
+        image_id:
+          type: string
+        resolved_image_id:
           type: string
     PreparePlanTaskStateExecute:
       type: object
@@ -897,7 +917,7 @@ components:
           type: string
         type:
           type: string
-          enum: [plan, state_execute, prepare_instance]
+          enum: [plan, resolve_image, state_execute, prepare_instance]
         status:
           type: string
           enum: [queued, running, succeeded, failed]
@@ -914,6 +934,10 @@ components:
         instance_mode:
           type: string
           enum: [ephemeral]
+        image_id:
+          type: string
+        resolved_image_id:
+          type: string
     DeleteResult:
       type: object
       additionalProperties: false
@@ -946,6 +970,9 @@ components:
           format: int32
           minimum: 0
           description: Active connections (instances only).
+        runtime_id:
+          type: string
+          description: Runtime/container identifier for instance nodes.
         blocked:
           type: string
           enum: [active_connections, active_tasks, has_descendants, blocked_by_descendant]

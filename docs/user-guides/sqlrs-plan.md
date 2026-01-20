@@ -73,8 +73,9 @@ The base Docker image id is resolved in this order:
 2. Workspace config (`.sqlrs/config.yaml`, `dbms.image`)
 3. Global config (`$XDG_CONFIG_HOME/sqlrs/config.yaml`, `dbms.image`)
 
-The image id is treated as an opaque value and passed to Docker as-is.
-If no image id can be resolved, `plan` fails.
+If the resolved image id does not include a digest, the engine resolves it to a
+canonical digest (for example `postgres:15@sha256:...`) before planning. If the
+digest cannot be resolved, `plan` fails.
 
 Config key:
 
@@ -92,8 +93,12 @@ When `-v/--verbose` is set, sqlrs prints the resolved image id and its source.
 `plan` returns an ordered list of tasks. The current task types are:
 
 - `plan`: build the plan for the requested kind.
+- `resolve_image`: resolve a non-digest image reference to a canonical digest.
 - `state_execute`: apply a change block on a base image or state.
 - `prepare_instance`: create an ephemeral instance from the final state.
+
+The `resolve_image` task is only present when the requested image id does not
+already include a digest.
 
 Each `state_execute` task includes:
 
@@ -126,9 +131,15 @@ Use the global `--output` flag to select the format.
       "planner_kind": "psql"
     },
     {
+      "task_id": "resolve-image",
+      "type": "resolve_image",
+      "image_id": "postgres:17",
+      "resolved_image_id": "postgres:17@sha256:deadbeef"
+    },
+    {
       "task_id": "execute-0",
       "type": "state_execute",
-      "input": { "kind": "image", "id": "postgres:17" },
+      "input": { "kind": "image", "id": "postgres:17@sha256:deadbeef" },
       "task_hash": "2f9c...e18",
       "output_state_id": "8a1c...b42",
       "cached": false

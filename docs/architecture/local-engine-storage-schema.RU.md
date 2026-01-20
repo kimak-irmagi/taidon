@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS instances (
 
 Примечания:
 - `instance_id` использует формат id, определенный engine.
+- `runtime_id` хранит идентификатор runtime/контейнера для остановки или инспекции.
 - `status` зарезервирован; текущий статус вычисляется.
 
 ### 3.3 `names`

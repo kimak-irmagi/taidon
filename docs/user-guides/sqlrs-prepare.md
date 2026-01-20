@@ -88,8 +88,12 @@ The base Docker image id is resolved in this order:
 2. Workspace config (`.sqlrs/config.yaml`, `dbms.image`)
 3. Global config (`$XDG_CONFIG_HOME/sqlrs/config.yaml`, `dbms.image`)
 
-The image id is treated as an opaque value and passed to Docker as-is.
-If no image id can be resolved, `prepare` fails.
+If the resolved image id does not include a digest, the engine resolves it to a
+canonical digest (for example `postgres:15@sha256:...`) before planning or
+execution. If the digest cannot be resolved, `prepare` fails.
+
+When a digest resolution is required, the job includes a `resolve_image` task
+before any planning or execution.
 
 Config key:
 
@@ -124,7 +128,7 @@ For local profiles, the engine performs real execution:
 A **state** is identified by a fingerprint computed from:
 
 - `prepare kind`
-- `base image id`
+- resolved `base image id` (digest)
 - normalized `prepare arguments`
 - hashes of all input sources (files, inline SQL, stdin)
 - sqlrs engine version
@@ -134,7 +138,7 @@ Formally:
 ```text
 state_id = hash(
   prepare_kind +
-  base_image_id +
+  base_image_id_resolved +
   normalized_prepare_args +
   normalized_input_hashes +
   engine_version

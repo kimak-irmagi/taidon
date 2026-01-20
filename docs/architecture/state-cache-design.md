@@ -107,7 +107,7 @@ Taidon aims to snapshot "as often as possible" at safe boundaries.
 A State is uniquely identified by:
 
 - DBMS engine and version (e.g., `postgres:17`)
-- Base image/build identifier
+- Base image/build identifier (resolved to a digest when available)
 - Parent State (optional, for layered snapshots)
 - Change block hash (when derived from applying a known block)
 - Execution parameters affecting semantics (collation, extensions, locale, seed inputs, etc.)

@@ -64,6 +64,7 @@ flowchart LR
 - Навязывает дедлайны и отмену; управляет дочерними процессами/контейнерами.
 - Эмитит статусы и структурированные события (включая статус задач) для стрима в CLI.
 - Отдает снимки jobs/tasks для list endpoints, хранит состояния jobs/tasks и обрабатывает удаление job.
+- Разрешает образы без дайджеста в канонический дайджест перед планированием; добавляет задачу `resolve_image`, если резолв нужен.
 
 ### 1.3 Очередь jobs/tasks
 
@@ -76,7 +77,7 @@ flowchart LR
 - Каждый шаг хешируется (специфично для системы скриптов) для cache key: `engine/version/base/step_hash/params`.
 - На выходе цепочка шагов, а не head/tail; промежуточные состояния могут материализоваться для cache reuse.
 - Вход prepare также дает стабильный fingerprint состояния:
-  `state_id = hash(prepare_kind + base_image_id + normalized_args + normalized_input_hashes + engine_version)`.
+  `state_id = hash(prepare_kind + base_image_id_resolved + normalized_args + normalized_input_hashes + engine_version)`.
 
 ### 1.5 Исполнитель prepare
 
@@ -171,6 +172,8 @@ sequenceDiagram
   API-->>CLI: job_id
   CLI->>API: watch status/events
   API->>CTRL: enqueue job
+  CTRL->>RUNTIME: resolve image reference
+  RUNTIME-->>CTRL: resolved digest
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   alt cache hit
@@ -218,6 +221,8 @@ sequenceDiagram
   API-->>CLI: job_id
   CLI->>API: watch status/events
   API->>CTRL: enqueue job
+  CTRL->>RUNTIME: resolve image reference
+  RUNTIME-->>CTRL: resolved digest
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   CACHE-->>CTRL: hit/miss
