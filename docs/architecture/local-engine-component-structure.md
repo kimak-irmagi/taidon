@@ -31,13 +31,14 @@ This document defines the internal component layout of the local sqlrs engine.
   - Invokes snapshot manager and DBMS connector around snapshots.
 - `internal/runtime`
   - Docker runtime adapter (CLI-based in MVP).
-  - Starts/stops containers and executes DBMS control commands.
+  - Starts/stops containers; sets `PGDATA` and trust auth for Postgres images.
+  - Keeps warm containers after prepare until run orchestration decides to stop.
 - `internal/snapshot`
   - Snapshot manager interface and backend selection.
-  - Implements Clone/Snapshot/Destroy for state directories.
+  - OverlayFS-backed snapshots in the MVP, copy fallback.
 - `internal/dbms`
   - DBMS-specific hooks for snapshot preparation and resume.
-  - Postgres implementation uses `pg_ctl` for fast shutdown/restart.
+  - Postgres implementation uses `pg_ctl` for fast shutdown/restart without stopping the container.
 - `internal/deletion`
   - Builds deletion trees for instances and states.
   - Enforces recurse/force rules and executes removals.
@@ -85,6 +86,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - Persistent data (names/instances/states) lives in SQLite under `<StateDir>`.
 - Jobs, tasks, and job events live in SQLite under `<StateDir>`.
 - In-memory structures are caches or request-scoped only.
+- State store data lives under `<StateDir>/state-store`.
 
 ## 5. Dependency diagram
 

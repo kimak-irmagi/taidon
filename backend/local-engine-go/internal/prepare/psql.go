@@ -13,6 +13,7 @@ type psqlPrepared struct {
 	normalizedArgs []string
 	argsNormalized string
 	inputHashes    []inputHash
+	filePaths      []string
 }
 
 type inputHash struct {
@@ -23,6 +24,7 @@ type inputHash struct {
 func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 	normalized := append([]string{}, args...)
 	var inputHashes []inputHash
+	var filePaths []string
 	hasNoPsqlrc := false
 	hasOnErrorStop := false
 	usesStdin := false
@@ -55,7 +57,7 @@ func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 			continue
 		}
 
-		if handled, err := handleFileFlag(args, &i, stdin, &usesStdin, &inputHashes); err != nil {
+		if handled, err := handleFileFlag(args, &i, stdin, &usesStdin, &inputHashes, &filePaths); err != nil {
 			return psqlPrepared{}, err
 		} else if handled {
 			continue
@@ -91,6 +93,7 @@ func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 		normalizedArgs: normalized,
 		argsNormalized: strings.Join(normalized, " "),
 		inputHashes:    inputHashes,
+		filePaths:      filePaths,
 	}, nil
 }
 
@@ -158,7 +161,7 @@ func handleVarFlag(args []string, index *int, hasOnErrorStop *bool) (bool, error
 	}
 }
 
-func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, inputHashes *[]inputHash) (bool, error) {
+func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, inputHashes *[]inputHash, filePaths *[]string) (bool, error) {
 	arg := args[*index]
 	switch {
 	case arg == "-f" || arg == "--file":
@@ -166,7 +169,7 @@ func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, i
 			return true, ValidationError{Code: "invalid_argument", Message: "missing value for file flag", Details: arg}
 		}
 		path := args[*index+1]
-		if err := addFileHash(path, stdin, usesStdin, inputHashes); err != nil {
+		if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil {
 			return true, err
 		}
 		*index++
@@ -176,13 +179,13 @@ func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, i
 		if path == "" {
 			return true, ValidationError{Code: "invalid_argument", Message: "missing value for file flag", Details: arg}
 		}
-		if err := addFileHash(path, stdin, usesStdin, inputHashes); err != nil {
+		if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil {
 			return true, err
 		}
 		return true, nil
 	case strings.HasPrefix(arg, "-f") && len(arg) > 2:
 		path := arg[2:]
-		if err := addFileHash(path, stdin, usesStdin, inputHashes); err != nil {
+		if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -224,7 +227,7 @@ func handleCommandFlag(args []string, index *int, inputHashes *[]inputHash) (boo
 	}
 }
 
-func addFileHash(path string, stdin *string, usesStdin *bool, inputHashes *[]inputHash) error {
+func addFileHash(path string, stdin *string, usesStdin *bool, inputHashes *[]inputHash, filePaths *[]string) error {
 	if path == "-" {
 		*usesStdin = true
 		if stdin == nil {
@@ -250,6 +253,9 @@ func addFileHash(path string, stdin *string, usesStdin *bool, inputHashes *[]inp
 		Kind:  "file",
 		Value: hashContentBytes(data),
 	})
+	if filePaths != nil {
+		*filePaths = append(*filePaths, path)
+	}
 	return nil
 }
 

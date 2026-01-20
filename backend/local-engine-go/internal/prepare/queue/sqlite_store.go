@@ -363,6 +363,8 @@ func (s *SQLiteStore) CountEvents(ctx context.Context, jobID string) (int, error
 }
 
 func initDB(db *sql.DB) error {
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
 	}

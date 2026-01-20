@@ -37,6 +37,16 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+func New(db *sql.DB) (*Store, error) {
+	if db == nil {
+		return nil, fmt.Errorf("db is required")
+	}
+	if err := initDB(db); err != nil {
+		return nil, err
+	}
+	return &Store{db: db}, nil
+}
+
 func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
@@ -278,6 +288,8 @@ func (s *Store) DeleteState(ctx context.Context, stateID string) error {
 }
 
 func initDB(db *sql.DB) error {
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
 	}

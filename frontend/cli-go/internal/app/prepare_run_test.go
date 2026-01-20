@@ -44,7 +44,8 @@ func TestRunPrepareRemote(t *testing.T) {
 
 	cfg := config.LoadedConfig{}
 	var stdout bytes.Buffer
-	if err := runPrepare(&stdout, io.Discard, runOpts, cfg, t.TempDir(), []string{"--image", "image-1", "--", "-c", "select 1"}); err != nil {
+	cwd := t.TempDir()
+	if err := runPrepare(&stdout, io.Discard, runOpts, cfg, cwd, cwd, []string{"--image", "image-1", "--", "-c", "select 1"}); err != nil {
 		t.Fatalf("runPrepare: %v", err)
 	}
 	if !strings.Contains(stdout.String(), "DSN=postgres://sqlrs@local/instance/abc") {
@@ -62,7 +63,8 @@ func TestRunPrepareMissingImage(t *testing.T) {
 		Timeout:  time.Second,
 	}
 
-	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--", "-c", "select 1"})
+	cwd := t.TempDir()
+	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--", "-c", "select 1"})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -110,7 +112,7 @@ func TestRunPrepareVerboseImageSource(t *testing.T) {
 	cfg := config.LoadedConfig{Paths: paths.Dirs{ConfigDir: configDir}}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	if err := runPrepare(&stdout, &stderr, runOpts, cfg, temp, []string{"--", "-c", "select 1"}); err != nil {
+	if err := runPrepare(&stdout, &stderr, runOpts, cfg, temp, temp, []string{"--", "-c", "select 1"}); err != nil {
 		t.Fatalf("runPrepare: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "dbms.image=image-1") {
@@ -123,7 +125,8 @@ func TestRunPrepareVerboseImageSource(t *testing.T) {
 
 func TestRunPrepareHelp(t *testing.T) {
 	var stdout bytes.Buffer
-	if err := runPrepare(&stdout, io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, t.TempDir(), []string{"--help"}); err != nil {
+	cwd := t.TempDir()
+	if err := runPrepare(&stdout, io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, cwd, cwd, []string{"--help"}); err != nil {
 		t.Fatalf("runPrepare: %v", err)
 	}
 	if !strings.Contains(stdout.String(), "Usage:") {
@@ -135,14 +138,16 @@ func TestRunPrepareRemoteRequiresEndpoint(t *testing.T) {
 	runOpts := cli.PrepareOptions{
 		Mode: "remote",
 	}
-	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image-1", "--", "-c", "select 1"})
+	cwd := t.TempDir()
+	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--image", "image-1", "--", "-c", "select 1"})
 	if err == nil || !strings.Contains(err.Error(), "remote mode requires explicit endpoint") {
 		t.Fatalf("expected remote endpoint error, got %v", err)
 	}
 }
 
 func TestRunPrepareNormalizeArgsError(t *testing.T) {
-	err := runPrepare(&bytes.Buffer{}, io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image-1", "--", "-f"})
+	cwd := t.TempDir()
+	err := runPrepare(&bytes.Buffer{}, io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, cwd, cwd, []string{"--image", "image-1", "--", "-f"})
 	if err == nil || !strings.Contains(err.Error(), "Missing value for -f") {
 		t.Fatalf("expected missing file value, got %v", err)
 	}
@@ -160,7 +165,8 @@ func TestRunPrepareResolveImageError(t *testing.T) {
 	}
 	cfg := config.LoadedConfig{ProjectConfigPath: projectPath}
 
-	err := runPrepare(&bytes.Buffer{}, io.Discard, cli.PrepareOptions{}, cfg, temp, []string{"--", "-c", "select 1"})
+	workspaceRoot := filepath.Dir(filepath.Dir(projectPath))
+	err := runPrepare(&bytes.Buffer{}, io.Discard, cli.PrepareOptions{}, cfg, workspaceRoot, temp, []string{"--", "-c", "select 1"})
 	if err == nil {
 		t.Fatalf("expected resolve image error")
 	}
@@ -177,7 +183,8 @@ func TestRunPrepareRemoteServerError(t *testing.T) {
 		Endpoint: server.URL,
 		Timeout:  time.Second,
 	}
-	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image-1", "--", "-c", "select 1"})
+	cwd := t.TempDir()
+	err := runPrepare(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--image", "image-1", "--", "-c", "select 1"})
 	if err == nil || !strings.Contains(err.Error(), "unexpected status") {
 		t.Fatalf("expected server error, got %v", err)
 	}

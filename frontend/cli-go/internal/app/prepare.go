@@ -54,7 +54,7 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 	return opts, false, nil
 }
 
-func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, cwd string, args []string) error {
+func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) error {
 	parsed, showHelp, err := parsePrepareArgs(args)
 	if err != nil {
 		return err
@@ -75,7 +75,7 @@ func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config
 		fmt.Fprint(stderr, formatImageSource(imageID, source))
 	}
 
-	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, cwd, os.Stdin)
+	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin)
 	if err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func formatImageSource(imageID, source string) string {
 	return fmt.Sprintf("dbms.image=%s (source: %s)\n", imageID, source)
 }
 
-func normalizePsqlArgs(args []string, cwd string, stdin io.Reader) ([]string, *string, error) {
+func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io.Reader) ([]string, *string, error) {
 	normalized := make([]string, 0, len(args))
 	usesStdin := false
 
@@ -133,7 +133,7 @@ func normalizePsqlArgs(args []string, cwd string, stdin io.Reader) ([]string, *s
 			if i+1 >= len(args) {
 				return nil, nil, ExitErrorf(2, "Missing value for %s", arg)
 			}
-			path, useStdin, err := normalizeFilePath(args[i+1], cwd)
+			path, useStdin, err := normalizeFilePath(args[i+1], workspaceRoot, cwd)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -142,7 +142,7 @@ func normalizePsqlArgs(args []string, cwd string, stdin io.Reader) ([]string, *s
 			i++
 		case strings.HasPrefix(arg, "--file="):
 			value := strings.TrimPrefix(arg, "--file=")
-			path, useStdin, err := normalizeFilePath(value, cwd)
+			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -150,7 +150,7 @@ func normalizePsqlArgs(args []string, cwd string, stdin io.Reader) ([]string, *s
 			normalized = append(normalized, "--file="+path)
 		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
 			value := arg[2:]
-			path, useStdin, err := normalizeFilePath(value, cwd)
+			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -172,15 +172,43 @@ func normalizePsqlArgs(args []string, cwd string, stdin io.Reader) ([]string, *s
 	return normalized, &text, nil
 }
 
-func normalizeFilePath(path string, cwd string) (string, bool, error) {
+func normalizeFilePath(path string, workspaceRoot string, cwd string) (string, bool, error) {
 	if path == "-" {
 		return path, true, nil
 	}
 	if strings.TrimSpace(path) == "" {
 		return "", false, ExitErrorf(2, "File path is empty")
 	}
-	if filepath.IsAbs(path) {
-		return filepath.Clean(path), false, nil
+	root := strings.TrimSpace(workspaceRoot)
+	if root == "" {
+		root = cwd
 	}
-	return filepath.Clean(filepath.Join(cwd, path)), false, nil
+	root = filepath.Clean(root)
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	absPath := path
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(cwd, absPath)
+	}
+	absPath = filepath.Clean(absPath)
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = resolved
+	}
+	if root != "" && !isWithin(root, absPath) {
+		return "", false, ExitErrorf(2, "File path must be within workspace root: %s", absPath)
+	}
+	return absPath, false, nil
+}
+
+func isWithin(base, target string) bool {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
+		return true
+	}
+	prefix := ".." + string(os.PathSeparator)
+	return !strings.HasPrefix(rel, prefix) && rel != ".."
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,17 +16,21 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"sqlrs/engine/internal/conntrack"
+	"sqlrs/engine/internal/dbms"
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/httpapi"
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/registry"
+	engineRuntime "sqlrs/engine/internal/runtime"
+	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store/sqlite"
 )
 
@@ -55,6 +60,37 @@ func (a *activityTracker) IdleFor() time.Duration {
 	return time.Since(time.Unix(0, last))
 }
 
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(data []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	n, err := r.ResponseWriter.Write(data)
+	r.bytes += n
+	return n, err
+}
+
+type statusRecorderFlusher struct {
+	*statusRecorder
+	flusher http.Flusher
+}
+
+func (r *statusRecorderFlusher) Flush() {
+	if r.flusher != nil {
+		r.flusher.Flush()
+	}
+}
+
 var serveHTTP = func(server *http.Server, listener net.Listener) error {
 	return server.Serve(listener)
 }
@@ -63,6 +99,23 @@ var exitFn = os.Exit
 var randReader = rand.Reader
 var writeFileFn = os.WriteFile
 var renameFn = os.Rename
+var openDBFn = func(path string) (*sql.DB, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("sqlite path is empty")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	return sql.Open("sqlite", path)
+}
+var newStoreFn = sqlite.New
+var newQueueFn = queue.New
+var newPrepareManagerFn = prepare.NewManager
+var prepareRecoverFn = func(mgr *prepare.Manager) error {
+	return mgr.Recover(context.Background())
+}
+var newDeletionManagerFn = deletion.NewManager
+var isCharDeviceFn = isCharDevice
 
 func run(args []string) (int, error) {
 	fs := flag.NewFlagSet("sqlrs-engine", flag.ContinueOnError)
@@ -115,17 +168,25 @@ func run(args []string) (int, error) {
 	}
 
 	stateDir := filepath.Dir(*statePath)
-	store, err := sqlite.Open(filepath.Join(stateDir, "state.db"))
+	stateStoreRoot := filepath.Join(stateDir, "state-store")
+	if err := os.MkdirAll(stateStoreRoot, 0o700); err != nil {
+		return 1, fmt.Errorf("create state store root: %v", err)
+	}
+	db, err := openDBFn(filepath.Join(stateDir, "state.db"))
 	if err != nil {
 		return 1, fmt.Errorf("open state db: %v", err)
 	}
-	defer store.Close()
+	defer db.Close()
 
-	queueStore, err := queue.Open(filepath.Join(stateDir, "state.db"))
+	store, err := newStoreFn(db)
+	if err != nil {
+		return 1, fmt.Errorf("open state db: %v", err)
+	}
+
+	queueStore, err := newQueueFn(db)
 	if err != nil {
 		return 1, fmt.Errorf("open queue db: %v", err)
 	}
-	defer queueStore.Close()
 
 	state := EngineState{
 		Endpoint:   listener.Addr().String(),
@@ -143,20 +204,27 @@ func run(args []string) (int, error) {
 	activity := newActivityTracker()
 	activity.Touch()
 	reg := registry.New(store)
-	prepareMgr, err := prepare.NewManager(prepare.Options{
-		Store:   store,
-		Queue:   queueStore,
-		Version: *version,
-		Async:   true,
+	rt := engineRuntime.NewDocker(engineRuntime.Options{})
+	snap := snapshot.NewManager(snapshot.Options{PreferOverlay: true})
+	connector := dbms.NewPostgres(rt)
+	prepareMgr, err := newPrepareManagerFn(prepare.Options{
+		Store:          store,
+		Queue:          queueStore,
+		Runtime:        rt,
+		Snapshot:       snap,
+		DBMS:           connector,
+		StateStoreRoot: stateStoreRoot,
+		Version:        *version,
+		Async:          true,
 	})
 	if err != nil {
 		return 1, fmt.Errorf("prepare manager: %v", err)
 	}
-	if err := prepareMgr.Recover(context.Background()); err != nil {
+	if err := prepareRecoverFn(prepareMgr); err != nil {
 		return 1, fmt.Errorf("prepare recovery: %v", err)
 	}
 
-	deleteMgr, err := deletion.NewManager(deletion.Options{
+	deleteMgr, err := newDeletionManagerFn(deletion.Options{
 		Store: store,
 		Conn:  conntrack.Noop{},
 	})
@@ -176,7 +244,18 @@ func run(args []string) (int, error) {
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			activity.Touch()
-			mux.ServeHTTP(w, r)
+			start := time.Now()
+			rec := &statusRecorder{ResponseWriter: w}
+			writer := http.ResponseWriter(rec)
+			if flusher, ok := w.(http.Flusher); ok {
+				writer = &statusRecorderFlusher{statusRecorder: rec, flusher: flusher}
+			}
+			mux.ServeHTTP(writer, r)
+			status := rec.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			log.Printf("http request method=%s path=%s status=%d bytes=%d dur=%s remote=%s", r.Method, r.URL.RequestURI(), status, rec.bytes, time.Since(start).Truncate(time.Millisecond), r.RemoteAddr)
 		}),
 	}
 
@@ -280,7 +359,7 @@ func setupLogging(statePath string) (func(), error) {
 		return nil, err
 	}
 	output := io.Writer(logFile)
-	if isCharDevice(os.Stderr) {
+	if isCharDeviceFn(os.Stderr) {
 		output = io.MultiWriter(logFile, os.Stderr)
 	}
 	log.SetOutput(output)

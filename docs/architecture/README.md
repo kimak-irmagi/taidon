@@ -7,7 +7,7 @@ Entry points for Taidon architecture and service design.
 - [`local-deployment-architecture.md`](local-deployment-architecture.md) — local profile (thin CLI, ephemeral engine).
 - [`shared-deployment-architecture.md`](shared-deployment-architecture.md) — team/cloud profile (gateway/orchestrator, multi-tenant).
 - [`engine-internals.md`](engine-internals.md) — internal structure of the sqlrs engine.
-- [`runtime-snapshotting.md`](runtime-snapshotting.md) — runtime storage model, snapshot/backends (btrfs/VHDX/etc).
+- [`runtime-snapshotting.md`](runtime-snapshotting.md) — runtime storage model, snapshot/backends (OverlayFS/copy/etc).
 - [`state-cache-design.md`](state-cache-design.md) — cache keys, triggers, retention, local store layout.
 - [`sql-runner-api.md`](sql-runner-api.md) — runner API surface, timeouts, cancel, streaming.
 - [`liquibase-integration.md`](liquibase-integration.md) - Liquibase provider strategy and structured logs.

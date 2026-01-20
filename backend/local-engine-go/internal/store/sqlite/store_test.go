@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,6 +64,28 @@ func TestStoreListAndGet(t *testing.T) {
 	}
 	if !ok || state.RefCount != 2 {
 		t.Fatalf("unexpected state: %+v", state)
+	}
+}
+
+func TestNewRequiresDB(t *testing.T) {
+	if _, err := New(nil); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestNewUsesExistingDB(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	st, err := New(db)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if st.db != db {
+		t.Fatalf("expected store to use provided db")
 	}
 }
 

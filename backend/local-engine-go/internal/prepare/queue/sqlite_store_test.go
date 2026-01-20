@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -23,9 +24,9 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 
 	args := "args"
 	if err := store.UpdateJob(context.Background(), "job-1", JobUpdate{
-		Status:                strPtr("running"),
+		Status:                stringPtr("running"),
 		PrepareArgsNormalized: &args,
-		StartedAt:             strPtr("2026-01-19T00:01:00Z"),
+		StartedAt:             stringPtr("2026-01-19T00:01:00Z"),
 	}); err != nil {
 		t.Fatalf("UpdateJob: %v", err)
 	}
@@ -60,8 +61,8 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 	}
 
 	if err := store.UpdateTask(context.Background(), "job-1", "execute-0", TaskUpdate{
-		Status:    strPtr("running"),
-		StartedAt: strPtr("2026-01-19T00:02:00Z"),
+		Status:    stringPtr("running"),
+		StartedAt: stringPtr("2026-01-19T00:02:00Z"),
 	}); err != nil {
 		t.Fatalf("UpdateTask: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 		JobID:  "job-1",
 		Type:   "status",
 		Ts:     "2026-01-19T00:02:30Z",
-		Status: strPtr("running"),
+		Status: stringPtr("running"),
 	}); err != nil {
 		t.Fatalf("AppendEvent: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestSQLiteStoreListJobsByStatus(t *testing.T) {
 		}
 	}
 	if err := store.UpdateJob(context.Background(), "job-2", JobUpdate{
-		Status: strPtr("running"),
+		Status: stringPtr("running"),
 	}); err != nil {
 		t.Fatalf("UpdateJob: %v", err)
 	}
@@ -186,6 +187,93 @@ func TestSQLiteStoreClosedDatabase(t *testing.T) {
 	}
 }
 
+func TestOpenRequiresPath(t *testing.T) {
+	if _, err := Open(""); err == nil {
+		t.Fatalf("expected error for empty path")
+	}
+}
+
+func TestNewRequiresDB(t *testing.T) {
+	if _, err := New(nil); err == nil {
+		t.Fatalf("expected error for nil db")
+	}
+}
+
+func TestUpdateJobRequiresID(t *testing.T) {
+	store := newQueueStore(t)
+	if err := store.UpdateJob(context.Background(), "", JobUpdate{Status: stringPtr("running")}); err == nil {
+		t.Fatalf("expected error for empty job id")
+	}
+}
+
+func TestUpdateJobNoFields(t *testing.T) {
+	store := newQueueStore(t)
+	if err := store.UpdateJob(context.Background(), "job-1", JobUpdate{}); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestListJobsByStatusEmpty(t *testing.T) {
+	store := newQueueStore(t)
+	jobs, err := store.ListJobsByStatus(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListJobsByStatus: %v", err)
+	}
+	if jobs != nil {
+		t.Fatalf("expected nil jobs, got %+v", jobs)
+	}
+}
+
+func TestUpdateTaskRequiresIDs(t *testing.T) {
+	store := newQueueStore(t)
+	if err := store.UpdateTask(context.Background(), "", "", TaskUpdate{Status: stringPtr("running")}); err == nil {
+		t.Fatalf("expected error for empty ids")
+	}
+}
+
+func TestUpdateTaskNoFields(t *testing.T) {
+	store := newQueueStore(t)
+	if err := store.UpdateTask(context.Background(), "job-1", "task-1", TaskUpdate{}); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+}
+
+func TestJobSnapshotModeDefault(t *testing.T) {
+	if mode := jobSnapshotMode(""); mode != "always" {
+		t.Fatalf("unexpected snapshot mode: %s", mode)
+	}
+}
+
+func TestNullBoolAndBoolPtr(t *testing.T) {
+	if out := nullBool(nil); out.Valid {
+		t.Fatalf("expected null for nil bool")
+	}
+	if out := nullBool(boolPtrFromValue(true)); !out.Valid || out.Int64 != 1 {
+		t.Fatalf("unexpected nullBool result: %+v", out)
+	}
+	if out := boolPtr(sql.NullInt64{}); out != nil {
+		t.Fatalf("expected nil bool")
+	}
+}
+
+type errorScanner struct{}
+
+func (errorScanner) Scan(dest ...any) error {
+	return context.Canceled
+}
+
+func TestScanHelpersReturnErrors(t *testing.T) {
+	if _, err := scanJob(errorScanner{}); err == nil {
+		t.Fatalf("expected scanJob error")
+	}
+	if _, err := scanTask(errorScanner{}); err == nil {
+		t.Fatalf("expected scanTask error")
+	}
+	if _, err := scanEvent(errorScanner{}); err == nil {
+		t.Fatalf("expected scanEvent error")
+	}
+}
+
 func newQueueStore(t *testing.T) *SQLiteStore {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "state.db")
@@ -199,7 +287,7 @@ func newQueueStore(t *testing.T) *SQLiteStore {
 	return store
 }
 
-func strPtr(value string) *string {
+func stringPtr(value string) *string {
 	return &value
 }
 

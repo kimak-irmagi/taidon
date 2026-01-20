@@ -1,0 +1,19 @@
+client:
+    output: human
+    retries: 1
+    timeout: 30s
+defaultProfile: local
+orchestrator:
+    daemonPath: ..\..\dist\bin\sqlrs-engine.exe
+    idleTimeout: 120s
+    runDir: ${StateDir}/run
+    startupTimeout: 5s
+profiles:
+    local:
+        auth:
+            mode: fileToken
+        autostart: true
+        endpoint: auto
+        mode: local
+dbms:
+  image: postgres:17

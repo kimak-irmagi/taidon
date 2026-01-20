@@ -355,8 +355,8 @@ Taidon может работать в двух режимах, когда Liquib
 
 ### 12.3 Платформенные особенности
 
-- **Linux/macOS**: `~/.cache/sqlrs/state-store` (или `$XDG_CACHE_HOME/sqlrs/state-store`), нативная ФС; btrfs/zfs при наличии, иначе copy/rsync fallback. На macOS используется тот же путь для совместимости с XDG; допустимо добавить symlink из `~/Library/Caches/sqlrs`.
-- **Windows (WSL2)**: state store внутри WSL файловой системы (`$HOME/.cache/sqlrs/state-store`), чтобы сохранить POSIX perms и CoW performance; путь на Windows-хосте содержит только pointer/config. Если WSL kernel без btrfs, fallback на VHDX + copy/link-dest согласно runtime snapshotting.
+- **Linux/macOS (local engine)**: `<StateDir>/state-store`, нативная ФС; OverlayFS при наличии, иначе fallback на копирование.
+- **Windows (local engine)**: `<StateDir>/state-store`, fallback на копирование; WSL backend добавим позже.
 
 ### 12.4 Доступ и блокировки
 

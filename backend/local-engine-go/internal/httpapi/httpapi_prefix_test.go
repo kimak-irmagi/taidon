@@ -194,15 +194,7 @@ func newPrefixTestServer(t *testing.T) (*httptest.Server, func()) {
 	}
 
 	reg := registry.New(st)
-	prep, err := prepare.NewManager(prepare.Options{
-		Store:   st,
-		Queue:   mustOpenQueue(t, dbPath),
-		Version: "test",
-		Async:   false,
-	})
-	if err != nil {
-		t.Fatalf("prepare manager: %v", err)
-	}
+	prep := newPrepareManager(t, st, mustOpenQueue(t, dbPath))
 	handler := NewHandler(Options{
 		Version:    "test",
 		InstanceID: "instance",

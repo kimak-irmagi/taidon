@@ -28,6 +28,7 @@ Date: 2026-01-19
   - Execute psql inside the container to avoid host tooling.
   - Use the Docker Engine SDK instead of the Docker CLI.
 - Decision: Run one container per job and execute tasks sequentially. After each task, take a snapshot without stopping the container by using a DBMS connector (Postgres: fast shutdown with `pg_ctl`, then restart). Execute `psql` on the host and connect to the container. Use the Docker CLI in the MVP, behind a runtime interface for future SDK replacement. Default snapshot mode is "always" with a future job flag for none/always/final.
+- Superseded: ADR 0016 (execute `psql` inside the container with mounted scripts).
 - Rationale: Minimizes container churn, keeps psql file handling simple, provides safe snapshots without full container stop, and keeps the runtime adapter minimal while preserving extensibility.
 
 ## Decision Record 3: task status events in job streams

@@ -5,14 +5,17 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"sqlrs/engine/internal/dbms"
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare/queue"
+	"sqlrs/engine/internal/runtime"
+	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store"
 )
 
@@ -24,21 +27,31 @@ const (
 )
 
 type Options struct {
-	Store   store.Store
-	Queue   queue.Store
-	Version string
-	Now     func() time.Time
-	IDGen   func() (string, error)
-	Async   bool
+	Store          store.Store
+	Queue          queue.Store
+	Runtime        runtime.Runtime
+	Snapshot       snapshot.Manager
+	DBMS           dbms.Connector
+	StateStoreRoot string
+	Psql           psqlRunner
+	Version        string
+	Now            func() time.Time
+	IDGen          func() (string, error)
+	Async          bool
 }
 
 type Manager struct {
-	store   store.Store
-	queue   queue.Store
-	version string
-	now     func() time.Time
-	idGen   func() (string, error)
-	async   bool
+	store          store.Store
+	queue          queue.Store
+	runtime        runtime.Runtime
+	snapshot       snapshot.Manager
+	dbms           dbms.Connector
+	stateStoreRoot string
+	psql           psqlRunner
+	version        string
+	now            func() time.Time
+	idGen          func() (string, error)
+	async          bool
 
 	mu      sync.Mutex
 	running map[string]*jobRunner
@@ -48,6 +61,15 @@ type Manager struct {
 type jobRunner struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	mu     sync.Mutex
+	rt     *jobRuntime
+}
+
+type jobRuntime struct {
+	instance runtime.Instance
+	dataDir  string
+	cleanup  func() error
+	scriptMount *scriptMount
 }
 
 type preparedRequest struct {
@@ -55,6 +77,7 @@ type preparedRequest struct {
 	normalizedArgs []string
 	argsNormalized string
 	inputHashes    []inputHash
+	filePaths      []string
 }
 
 func NewManager(opts Options) (*Manager, error) {
@@ -63,6 +86,18 @@ func NewManager(opts Options) (*Manager, error) {
 	}
 	if opts.Queue == nil {
 		return nil, fmt.Errorf("queue is required")
+	}
+	if opts.Runtime == nil {
+		return nil, fmt.Errorf("runtime is required")
+	}
+	if opts.Snapshot == nil {
+		return nil, fmt.Errorf("snapshot manager is required")
+	}
+	if opts.DBMS == nil {
+		return nil, fmt.Errorf("dbms connector is required")
+	}
+	if strings.TrimSpace(opts.StateStoreRoot) == "" {
+		return nil, fmt.Errorf("state store root is required")
 	}
 	now := opts.Now
 	if now == nil {
@@ -74,15 +109,24 @@ func NewManager(opts Options) (*Manager, error) {
 			return randomHex(16)
 		}
 	}
+	psql := opts.Psql
+	if psql == nil {
+		psql = containerPsqlRunner{runtime: opts.Runtime}
+	}
 	return &Manager{
-		store:   opts.Store,
-		queue:   opts.Queue,
-		version: opts.Version,
-		now:     now,
-		idGen:   idGen,
-		async:   opts.Async,
-		running: map[string]*jobRunner{},
-		events:  newEventBus(),
+		store:          opts.Store,
+		queue:          opts.Queue,
+		runtime:        opts.Runtime,
+		snapshot:       opts.Snapshot,
+		dbms:           opts.DBMS,
+		stateStoreRoot: opts.StateStoreRoot,
+		psql:           psql,
+		version:        opts.Version,
+		now:            now,
+		idGen:          idGen,
+		async:          opts.Async,
+		running:        map[string]*jobRunner{},
+		events:         newEventBus(),
 	}, nil
 }
 
@@ -92,6 +136,7 @@ func (m *Manager) Recover(ctx context.Context) error {
 		return err
 	}
 	for _, job := range jobs {
+		m.logJob(job.JobID, "recover status=%s", job.Status)
 		prepared, err := m.prepareFromJob(job)
 		if err != nil {
 			errResp := errorResponse("internal_error", "cannot restore job request", err.Error())
@@ -137,6 +182,7 @@ func (m *Manager) Submit(ctx context.Context, req Request) (Accepted, error) {
 	if err := m.queue.CreateJob(ctx, job); err != nil {
 		return Accepted{}, err
 	}
+	m.logJob(jobID, "created kind=%s image=%s plan_only=%t", prepared.request.PrepareKind, prepared.request.ImageID, prepared.request.PlanOnly)
 	_ = m.appendEvent(jobID, Event{
 		Type:   "status",
 		Ts:     now,
@@ -160,12 +206,18 @@ func (m *Manager) Submit(ctx context.Context, req Request) (Accepted, error) {
 
 func (m *Manager) Get(jobID string) (Status, bool) {
 	job, ok, err := m.queue.GetJob(context.Background(), jobID)
-	if err != nil || !ok {
+	if err != nil {
+		m.logJob(jobID, "lookup failed error=%v", err)
+		return Status{}, false
+	}
+	if !ok {
+		m.logJob(jobID, "lookup missing")
 		return Status{}, false
 	}
 	tasks, err := m.queue.ListTasks(context.Background(), jobID)
 	if err != nil {
-		return Status{}, false
+		m.logJob(jobID, "task list failed error=%v", err)
+		tasks = nil
 	}
 	status := Status{
 		JobID:                 job.JobID,
@@ -244,6 +296,7 @@ func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.De
 		ID:   jobID,
 	}
 	if blocked && !opts.Force {
+		m.logJob(jobID, "delete blocked active_tasks=true")
 		node.Blocked = deletion.BlockActiveTasks
 		return deletion.DeleteResult{
 			DryRun:  opts.DryRun,
@@ -263,6 +316,7 @@ func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.De
 	}
 
 	if blocked && opts.Force {
+		m.logJob(jobID, "delete force cancel")
 		runner := m.getRunner(jobID)
 		if runner != nil {
 			runner.cancel()
@@ -273,6 +327,7 @@ func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.De
 	if err := m.queue.DeleteJob(context.Background(), jobID); err != nil {
 		return deletion.DeleteResult{}, false
 	}
+	m.logJob(jobID, "deleted")
 	return result, true
 }
 
@@ -339,7 +394,11 @@ func (m *Manager) prepareFromJob(job queue.JobRecord) (preparedRequest, error) {
 func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	runner := m.registerRunner(jobID, cancel)
+	jobSucceeded := false
 	defer func() {
+		if !jobSucceeded {
+			m.cleanupRuntime(ctx, runner)
+		}
 		close(runner.done)
 		m.unregisterRunner(jobID)
 	}()
@@ -358,6 +417,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 	_ = m.queue.UpdateJob(ctx, jobID, queue.JobUpdate{
 		PrepareArgsNormalized: &prepared.argsNormalized,
 	})
+	m.logJob(jobID, "running")
 
 	tasks, stateID, errResp := m.loadOrPlanTasks(ctx, jobID, prepared)
 	if errResp != nil {
@@ -370,7 +430,9 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 			_ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
 			return
 		}
-		_ = m.succeedPlan(jobID)
+		if err := m.succeedPlan(jobID); err == nil {
+			jobSucceeded = true
+		}
 		return
 	}
 
@@ -393,14 +455,14 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		switch task.Type {
 		case "plan":
 		case "state_execute":
-			if err := m.executeStateTask(ctx, prepared, task); err != nil {
+			if err := m.executeStateTask(ctx, jobID, prepared, task); err != nil {
 				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), err)
 				_ = m.failJob(jobID, err)
 				return
 			}
 			stateID = task.OutputStateID
 		case "prepare_instance":
-			result, errResp := m.createInstance(ctx, prepared, stateID)
+			result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
 			if errResp != nil {
 				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
 				_ = m.failJob(jobID, errResp)
@@ -410,7 +472,9 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 				_ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
 				return
 			}
-			_ = m.succeed(jobID, *result)
+			if err := m.succeed(jobID, *result); err == nil {
+				jobSucceeded = true
+			}
 			return
 		}
 		if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil); err != nil {
@@ -423,12 +487,14 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		_ = m.failJob(jobID, errorResponse("internal_error", "missing output state", ""))
 		return
 	}
-	result, errResp := m.createInstance(ctx, prepared, stateID)
+	result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
 	if errResp != nil {
 		_ = m.failJob(jobID, errResp)
 		return
 	}
-	_ = m.succeed(jobID, *result)
+	if err := m.succeed(jobID, *result); err == nil {
+		jobSucceeded = true
+	}
 }
 
 func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) {
@@ -441,10 +507,12 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 		if errResp != nil {
 			return nil, "", errResp
 		}
+		m.logJob(jobID, "planned tasks count=%d state_id=%s", len(tasks), stateID)
 		records := taskRecordsFromPlan(jobID, tasks)
 		if err := m.queue.ReplaceTasks(ctx, jobID, records); err != nil {
 			return nil, "", errorResponse("internal_error", "cannot store tasks", err.Error())
 		}
+		m.logJob(jobID, "stored tasks count=%d", len(tasks))
 		return taskStatesFromPlan(tasks), stateID, nil
 	}
 	states := taskStatesFromRecords(taskRecords)
@@ -466,67 +534,6 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 		}
 	}
 	return states, stateID, nil
-}
-
-func (m *Manager) executeStateTask(ctx context.Context, prepared preparedRequest, task taskState) *ErrorResponse {
-	stateID := task.OutputStateID
-	if stateID == "" {
-		return errorResponse("internal_error", "missing output state", "")
-	}
-	cached, err := m.isStateCached(stateID)
-	if err != nil {
-		return errorResponse("internal_error", "cannot check state cache", err.Error())
-	}
-	if !cached {
-		now := m.now().UTC().Format(time.RFC3339Nano)
-		var parentID *string
-		if task.Input != nil && task.Input.Kind == "state" {
-			parentID = &task.Input.ID
-		}
-		if err := m.store.CreateState(ctx, store.StateCreate{
-			StateID:               stateID,
-			ParentStateID:         parentID,
-			StateFingerprint:      stateID,
-			ImageID:               prepared.request.ImageID,
-			PrepareKind:           prepared.request.PrepareKind,
-			PrepareArgsNormalized: prepared.argsNormalized,
-			CreatedAt:             now,
-		}); err != nil {
-			if errors.Is(err, context.Canceled) {
-				return errorResponse("cancelled", "job cancelled", "")
-			}
-			return errorResponse("internal_error", "cannot store state", err.Error())
-		}
-	}
-	return nil
-}
-
-func (m *Manager) createInstance(ctx context.Context, prepared preparedRequest, stateID string) (*Result, *ErrorResponse) {
-	instanceID, err := randomHex(16)
-	if err != nil {
-		return nil, errorResponse("internal_error", "cannot generate instance id", err.Error())
-	}
-	created := m.now().UTC().Format(time.RFC3339Nano)
-	if err := m.store.CreateInstance(ctx, store.InstanceCreate{
-		InstanceID: instanceID,
-		StateID:    stateID,
-		ImageID:    prepared.request.ImageID,
-		CreatedAt:  created,
-	}); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil, errorResponse("cancelled", "job cancelled", "")
-		}
-		return nil, errorResponse("internal_error", "cannot store instance", err.Error())
-	}
-	result := Result{
-		DSN:                   buildDSN(instanceID),
-		InstanceID:            instanceID,
-		StateID:               stateID,
-		ImageID:               prepared.request.ImageID,
-		PrepareKind:           prepared.request.PrepareKind,
-		PrepareArgsNormalized: prepared.argsNormalized,
-	}
-	return &result, nil
 }
 
 func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
@@ -552,6 +559,7 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 		normalizedArgs: prepared.normalizedArgs,
 		argsNormalized: prepared.argsNormalized,
 		inputHashes:    prepared.inputHashes,
+		filePaths:      prepared.filePaths,
 	}, nil
 }
 
@@ -667,6 +675,7 @@ func (m *Manager) updateTaskStatus(ctx context.Context, jobID string, taskID str
 	if err := m.queue.UpdateTask(ctx, jobID, taskID, update); err != nil {
 		return err
 	}
+	m.logTask(jobID, taskID, "status=%s", status)
 	event := Event{
 		Type:   "task",
 		Ts:     m.now().UTC().Format(time.RFC3339Nano),
@@ -696,6 +705,7 @@ func (m *Manager) succeed(jobID string, result Result) error {
 	}); err != nil {
 		return err
 	}
+	m.logJob(jobID, "succeeded instance=%s state=%s", result.InstanceID, result.StateID)
 	return m.appendEvent(jobID, Event{
 		Type:   "result",
 		Ts:     now,
@@ -711,6 +721,7 @@ func (m *Manager) succeedPlan(jobID string) error {
 	}); err != nil {
 		return err
 	}
+	m.logJob(jobID, "succeeded plan_only=true")
 	return m.appendEvent(jobID, Event{
 		Type:   "status",
 		Ts:     now,
@@ -737,6 +748,11 @@ func (m *Manager) failJob(jobID string, errResp *ErrorResponse) error {
 		Status: StatusFailed,
 	}); err != nil {
 		return err
+	}
+	if errResp != nil {
+		m.logJob(jobID, "failed code=%s message=%s", errResp.Code, errResp.Message)
+	} else {
+		m.logJob(jobID, "failed")
 	}
 	return m.appendEvent(jobID, Event{
 		Type:  "error",
@@ -775,6 +791,36 @@ func (m *Manager) getRunner(jobID string) *jobRunner {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.running[jobID]
+}
+
+func (r *jobRunner) setRuntime(rt *jobRuntime) {
+	r.mu.Lock()
+	r.rt = rt
+	r.mu.Unlock()
+}
+
+func (r *jobRunner) getRuntime() *jobRuntime {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.rt
+}
+
+func (m *Manager) logJob(jobID string, format string, args ...any) {
+	if strings.TrimSpace(jobID) == "" {
+		log.Printf("prepare "+format, args...)
+		return
+	}
+	args = append([]any{jobID}, args...)
+	log.Printf("prepare job=%s "+format, args...)
+}
+
+func (m *Manager) logTask(jobID string, taskID string, format string, args ...any) {
+	if strings.TrimSpace(jobID) == "" || strings.TrimSpace(taskID) == "" {
+		log.Printf("prepare task "+format, args...)
+		return
+	}
+	args = append([]any{jobID, taskID}, args...)
+	log.Printf("prepare job=%s task=%s "+format, args...)
 }
 
 type taskState struct {
@@ -1017,8 +1063,8 @@ func (b *eventBus) notify(jobID string) {
 	}
 }
 
-func buildDSN(instanceID string) string {
-	return "postgres://sqlrs@local/instance/" + instanceID
+func buildDSN(host string, port int) string {
+	return fmt.Sprintf("postgres://sqlrs@%s:%d/postgres", host, port)
 }
 
 func formatTime(value time.Time) *string {

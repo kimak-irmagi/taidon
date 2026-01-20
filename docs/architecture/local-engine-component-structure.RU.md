@@ -31,13 +31,14 @@
   - Вызывает менеджер снапшотов и DBMS-коннектор вокруг снапшотов.
 - `internal/runtime`
   - Адаптер Docker runtime (CLI в MVP).
-  - Старт/стоп контейнеров и выполнение DBMS-команд.
+  - Старт/стоп контейнеров; задает `PGDATA` и trust auth для Postgres.
+  - Держит warm контейнеры после prepare до решения оркестрации run.
 - `internal/snapshot`
   - Интерфейс менеджера снапшотов и выбор backend.
-  - Реализует Clone/Snapshot/Destroy для каталогов state.
+  - OverlayFS в MVP, fallback на копирование.
 - `internal/dbms`
   - DBMS-специфичные хуки для подготовки и возобновления.
-  - Postgres использует `pg_ctl` для fast shutdown/restart.
+  - Postgres использует `pg_ctl` для fast shutdown/restart без остановки контейнера.
 - `internal/deletion`
   - Строит дерево удаления для экземпляров и состояний.
   - Применяет правила recurse/force и выполняет удаление.
@@ -85,6 +86,7 @@
 - Персистентные данные (names/instances/states) живут в SQLite под `<StateDir>`.
 - Jobs, tasks и события jobs живут в SQLite под `<StateDir>`.
 - In-memory структуры - только кэши или request-scoped данные.
+- Данные state store живут в `<StateDir>/state-store`.
 
 ## 5. Диаграмма зависимостей
 

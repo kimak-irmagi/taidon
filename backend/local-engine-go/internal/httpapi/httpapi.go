@@ -86,7 +86,7 @@ func NewHandler(opts Options) http.Handler {
 			}
 			w.Header().Set("Location", accepted.StatusURL)
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusAccepted)
+			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(accepted)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)

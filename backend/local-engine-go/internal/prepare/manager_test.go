@@ -5,12 +5,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"log"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare/queue"
+	engineRuntime "sqlrs/engine/internal/runtime"
+	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store"
 )
 
@@ -59,6 +64,19 @@ func (f *fakeStore) CreateState(ctx context.Context, entry store.StateCreate) er
 		return f.createStateErr
 	}
 	f.states = append(f.states, entry)
+	if f.statesByID == nil {
+		f.statesByID = map[string]store.StateEntry{}
+	}
+	f.statesByID[entry.StateID] = store.StateEntry{
+		StateID:       entry.StateID,
+		ParentStateID: entry.ParentStateID,
+		ImageID:       entry.ImageID,
+		PrepareKind:   entry.PrepareKind,
+		PrepareArgs:   entry.PrepareArgsNormalized,
+		CreatedAt:     entry.CreatedAt,
+		SizeBytes:     entry.SizeBytes,
+		RefCount:      0,
+	}
 	return nil
 }
 
@@ -111,6 +129,163 @@ type cancelStateStore struct {
 
 func (c *cancelStateStore) CreateState(ctx context.Context, entry store.StateCreate) error {
 	return ctx.Err()
+}
+
+type fakeRuntime struct {
+	instance    engineRuntime.Instance
+	initCalls   []engineRuntime.StartRequest
+	startCalls  []engineRuntime.StartRequest
+	stopCalls   []string
+	execCalls   []engineRuntime.ExecRequest
+	waitCalls   []time.Duration
+	noDefaults  bool
+	initErr     error
+	startErr    error
+	stopErr     error
+	execErr     error
+	waitErr     error
+	execOutput  string
+	initCreated bool
+}
+
+func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error {
+	f.initCalls = append(f.initCalls, engineRuntime.StartRequest{ImageID: imageID, DataDir: dataDir})
+	if f.initErr != nil {
+		return f.initErr
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return err
+	}
+	f.initCreated = true
+	return os.WriteFile(filepath.Join(dataDir, "PG_VERSION"), []byte("17"), 0o600)
+}
+
+func (f *fakeRuntime) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
+	f.startCalls = append(f.startCalls, req)
+	if f.startErr != nil {
+		return engineRuntime.Instance{}, f.startErr
+	}
+	instance := f.instance
+	if !f.noDefaults {
+		if instance.ID == "" {
+			instance.ID = "container-1"
+		}
+		if instance.Host == "" {
+			instance.Host = "127.0.0.1"
+		}
+		if instance.Port == 0 {
+			instance.Port = 5432
+		}
+	}
+	return instance, nil
+}
+
+func (f *fakeRuntime) Stop(ctx context.Context, id string) error {
+	f.stopCalls = append(f.stopCalls, id)
+	if f.stopErr != nil {
+		return f.stopErr
+	}
+	return nil
+}
+
+func (f *fakeRuntime) Exec(ctx context.Context, id string, req engineRuntime.ExecRequest) (string, error) {
+	f.execCalls = append(f.execCalls, req)
+	if f.execErr != nil {
+		return f.execOutput, f.execErr
+	}
+	return f.execOutput, nil
+}
+
+func (f *fakeRuntime) WaitForReady(ctx context.Context, id string, timeout time.Duration) error {
+	f.waitCalls = append(f.waitCalls, timeout)
+	if f.waitErr != nil {
+		return f.waitErr
+	}
+	return nil
+}
+
+type fakeSnapshot struct {
+	cloneCalls    []string
+	snapshotCalls []string
+	destroyCalls  []string
+	cloneErr      error
+	snapshotErr   error
+	destroyErr    error
+	mountDir      string
+}
+
+func (f *fakeSnapshot) Kind() string {
+	return "fake"
+}
+
+func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
+	f.cloneCalls = append(f.cloneCalls, srcDir)
+	if f.cloneErr != nil {
+		return snapshot.CloneResult{}, f.cloneErr
+	}
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return snapshot.CloneResult{}, err
+	}
+	mountDir := destDir
+	if f.mountDir != "" {
+		mountDir = f.mountDir
+	}
+	return snapshot.CloneResult{
+		MountDir: mountDir,
+		Cleanup: func() error {
+			f.destroyCalls = append(f.destroyCalls, destDir)
+			return nil
+		},
+	}, nil
+}
+
+func (f *fakeSnapshot) Snapshot(ctx context.Context, srcDir string, destDir string) error {
+	f.snapshotCalls = append(f.snapshotCalls, srcDir)
+	if f.snapshotErr != nil {
+		return f.snapshotErr
+	}
+	return os.MkdirAll(destDir, 0o700)
+}
+
+func (f *fakeSnapshot) Destroy(ctx context.Context, dir string) error {
+	f.destroyCalls = append(f.destroyCalls, dir)
+	if f.destroyErr != nil {
+		return f.destroyErr
+	}
+	return nil
+}
+
+type fakeDBMS struct {
+	prepareCalls int
+	resumeCalls  int
+	prepareErr   error
+	resumeErr    error
+}
+
+func (f *fakeDBMS) PrepareSnapshot(ctx context.Context, instance engineRuntime.Instance) error {
+	f.prepareCalls++
+	return f.prepareErr
+}
+
+func (f *fakeDBMS) ResumeSnapshot(ctx context.Context, instance engineRuntime.Instance) error {
+	f.resumeCalls++
+	return f.resumeErr
+}
+
+type fakePsqlRunner struct {
+	runs   []PsqlRunRequest
+	instances []engineRuntime.Instance
+	output string
+	err    error
+}
+
+func (f *fakePsqlRunner) Run(ctx context.Context, instance engineRuntime.Instance, req PsqlRunRequest) (string, error) {
+	f.runs = append(f.runs, req)
+	f.instances = append(f.instances, instance)
+	if f.err != nil {
+		return f.output, f.err
+	}
+	return f.output, nil
 }
 
 type faultQueueStore struct {
@@ -233,6 +408,61 @@ func TestNewManagerRequiresQueue(t *testing.T) {
 	}
 }
 
+func TestNewManagerRequiresRuntime(t *testing.T) {
+	queueStore := newQueueStore(t)
+	stateRoot := filepath.Join(t.TempDir(), "state-store")
+	if _, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: stateRoot,
+	}); err == nil {
+		t.Fatalf("expected error when runtime is nil")
+	}
+}
+
+func TestNewManagerRequiresSnapshot(t *testing.T) {
+	queueStore := newQueueStore(t)
+	stateRoot := filepath.Join(t.TempDir(), "state-store")
+	if _, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: stateRoot,
+	}); err == nil {
+		t.Fatalf("expected error when snapshot manager is nil")
+	}
+}
+
+func TestNewManagerRequiresDBMS(t *testing.T) {
+	queueStore := newQueueStore(t)
+	stateRoot := filepath.Join(t.TempDir(), "state-store")
+	if _, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		StateStoreRoot: stateRoot,
+	}); err == nil {
+		t.Fatalf("expected error when dbms connector is nil")
+	}
+}
+
+func TestNewManagerRequiresStateStoreRoot(t *testing.T) {
+	queueStore := newQueueStore(t)
+	if _, err := NewManager(Options{
+		Store:    &fakeStore{},
+		Queue:    queueStore,
+		Runtime:  &fakeRuntime{},
+		Snapshot: &fakeSnapshot{},
+		DBMS:     &fakeDBMS{},
+	}); err == nil {
+		t.Fatalf("expected error when state store root is empty")
+	}
+}
+
 func TestSubmitRejectsInvalidKind(t *testing.T) {
 	mgr := newManager(t, &fakeStore{})
 
@@ -253,12 +483,17 @@ func TestSubmitRejectsMissingImageID(t *testing.T) {
 func TestSubmitIDGenFails(t *testing.T) {
 	queueStore := newQueueStore(t)
 	mgr, err := NewManager(Options{
-		Store:   &fakeStore{},
-		Queue:   queueStore,
-		Version: "v1",
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: filepath.Join(t.TempDir(), "state-store"),
+		Version:        "v1",
 		IDGen: func() (string, error) {
 			return "", errors.New("boom")
 		},
+		Psql: &fakePsqlRunner{},
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -477,6 +712,30 @@ func TestListTasksErrorReturnsEmpty(t *testing.T) {
 
 	if tasks := mgr.ListTasks("job-1"); len(tasks) != 0 {
 		t.Fatalf("expected empty tasks, got %+v", tasks)
+	}
+}
+
+func TestGetListTasksErrorReturnsJob(t *testing.T) {
+	queueStore := newQueueStore(t)
+	faulty := &faultQueueStore{
+		Store: queueStore,
+		listTasks: func(context.Context, string) ([]queue.TaskRecord, error) {
+			return nil, errors.New("boom")
+		},
+	}
+	mgr := newManagerWithQueue(t, &fakeStore{}, faulty)
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusQueued)
+
+	status, ok := mgr.Get("job-1")
+	if !ok {
+		t.Fatalf("expected job to exist")
+	}
+	if status.JobID != "job-1" || status.Status != StatusQueued {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if len(status.Tasks) != 0 {
+		t.Fatalf("expected empty tasks, got %+v", status.Tasks)
 	}
 }
 
@@ -768,9 +1027,10 @@ func TestExecuteStateTaskCachedSkipsCreate(t *testing.T) {
 			TaskID:        "execute-0",
 			Type:          "state_execute",
 			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	if errResp := mgr.executeStateTask(context.Background(), prepared, task); errResp != nil {
+	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
 	if len(store.states) != 0 {
@@ -795,9 +1055,10 @@ func TestExecuteStateTaskCreateStateError(t *testing.T) {
 			TaskID:        "execute-0",
 			Type:          "state_execute",
 			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), prepared, task)
+	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
@@ -825,14 +1086,68 @@ func TestExecuteStateTaskCancelled(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	errResp := mgr.executeStateTask(ctx, prepared, task)
+	errResp := mgr.executeStateTask(ctx, "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "cancelled" {
 		t.Fatalf("expected cancelled error, got %+v", errResp)
 	}
 }
 
-func TestCreateInstanceErrors(t *testing.T) {
-	store := &fakeStore{createInstanceErr: errors.New("boom")}
+func TestExecuteStateTaskPsqlError(t *testing.T) {
+	store := &fakeStore{}
+	psql := &fakePsqlRunner{err: errors.New("boom"), output: "psql failed"}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{psql: psql})
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskSnapshotError(t *testing.T) {
+	store := &fakeStore{}
+	snap := &fakeSnapshot{snapshotErr: errors.New("boom")}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{snapshot: snap})
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskMissingOutputState(t *testing.T) {
+	store := &fakeStore{}
 	mgr := newManager(t, store)
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -842,7 +1157,331 @@ func TestCreateInstanceErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
-	if _, errResp := mgr.createInstance(context.Background(), prepared, "state-1"); errResp == nil || errResp.Code != "internal_error" {
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID: "execute-0",
+			Type:   "state_execute",
+			Input:  &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskMissingInput(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+		},
+	}
+	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskPrepareSnapshotError(t *testing.T) {
+	store := &fakeStore{}
+	connector := &fakeDBMS{prepareErr: errors.New("boom")}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{dbms: connector})
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskResumeSnapshotError(t *testing.T) {
+	store := &fakeStore{}
+	connector := &fakeDBMS{resumeErr: errors.New("boom")}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{dbms: connector})
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestCreateInstanceMissingState(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.createInstance(context.Background(), "job-1", prepared, "state-missing"); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestCreateInstanceMissingStateID(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.createInstance(context.Background(), "job-1", prepared, ""); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestCreateInstanceMissingConnectionInfo(t *testing.T) {
+	store := &fakeStore{statesByID: map[string]store.StateEntry{"state-1": {StateID: "state-1", ImageID: "image-1"}}}
+	runtime := &fakeRuntime{instance: engineRuntime.Instance{ID: "container-1"}, noDefaults: true}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.createInstance(context.Background(), "job-1", prepared, "state-1"); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeRejectsNilInput(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, nil); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeUnknownInputKind(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "other", ID: "x"}); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeMissingState(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "state", ID: "missing"}); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeMissingStateID(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "state", ID: ""}); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeGetStateError(t *testing.T) {
+	store := &fakeStore{getStateErr: errors.New("boom")}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "state", ID: "state-1"}); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeFromImageSuccess(t *testing.T) {
+	runtime := &fakeRuntime{}
+	snap := &fakeSnapshot{}
+	store := &fakeStore{}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime, snapshot: snap})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	rt, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "image", ID: "image-1"})
+	if errResp != nil {
+		t.Fatalf("startRuntime: %+v", errResp)
+	}
+	if rt == nil || rt.instance.ID == "" {
+		t.Fatalf("expected runtime instance")
+	}
+	if len(runtime.startCalls) != 1 {
+		t.Fatalf("expected runtime start call")
+	}
+	if len(snap.cloneCalls) != 1 {
+		t.Fatalf("expected clone call")
+	}
+}
+
+func TestEnsureRuntimeRequiresRunner(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.ensureRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "image", ID: "image-1"}, nil); errResp == nil || errResp.Code != "internal_error" {
+		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestRunnerForJobEphemeral(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	runner, ephemeral := mgr.runnerForJob("")
+	if runner == nil || !ephemeral {
+		t.Fatalf("expected ephemeral runner")
+	}
+}
+
+func TestEnsureBaseStateSkipsInit(t *testing.T) {
+	runtime := &fakeRuntime{}
+	store := &fakeStore{}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime})
+	baseDir := filepath.Join(t.TempDir(), "base")
+	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := mgr.ensureBaseState(context.Background(), "image-1", baseDir); err != nil {
+		t.Fatalf("ensureBaseState: %v", err)
+	}
+	if len(runtime.initCalls) != 0 {
+		t.Fatalf("expected no init calls, got %d", len(runtime.initCalls))
+	}
+}
+
+func TestEnsureBaseStateInitError(t *testing.T) {
+	runtime := &fakeRuntime{initErr: errors.New("boom")}
+	store := &fakeStore{}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime})
+	baseDir := filepath.Join(t.TempDir(), "base")
+	if err := mgr.ensureBaseState(context.Background(), "image-1", baseDir); err == nil {
+		t.Fatalf("expected init error")
+	}
+}
+
+func TestEnsureBaseStateRequiresDir(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	if err := mgr.ensureBaseState(context.Background(), "image-1", ""); err == nil {
+		t.Fatalf("expected error for empty base dir")
+	}
+}
+
+func TestCreateInstanceErrors(t *testing.T) {
+	store := &fakeStore{
+		createInstanceErr: errors.New("boom"),
+		statesByID: map[string]store.StateEntry{
+			"state-1": {StateID: "state-1", ImageID: "image-1"},
+		},
+	}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.createInstance(context.Background(), "job-1", prepared, "state-1"); errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
 }
@@ -860,7 +1499,7 @@ func TestCreateInstanceCancelled(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, errResp := mgr.createInstance(ctx, prepared, "state-1"); errResp == nil || errResp.Code != "cancelled" {
+	if _, errResp := mgr.createInstance(ctx, "job-1", prepared, "state-1"); errResp == nil || errResp.Code != "cancelled" {
 		t.Fatalf("expected cancelled error, got %+v", errResp)
 	}
 }
@@ -1213,8 +1852,13 @@ func (errorReader) Read([]byte) (int, error) {
 func TestNewManagerDefaultIDGen(t *testing.T) {
 	queueStore := newQueueStore(t)
 	mgr, err := NewManager(Options{
-		Store: &fakeStore{},
-		Queue: queueStore,
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: filepath.Join(t.TempDir(), "state-store"),
+		Psql:           &fakePsqlRunner{},
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -1634,7 +2278,8 @@ func TestRunJobSkipsSucceededTask(t *testing.T) {
 		t.Fatalf("ReplaceTasks: %v", err)
 	}
 
-	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	store := &fakeStore{statesByID: map[string]store.StateEntry{"state-1": {StateID: "state-1", ImageID: "image-1"}}}
+	mgr := newManagerWithQueue(t, store, queueStore)
 	prepared, err := mgr.prepareRequest(req)
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
@@ -1874,6 +2519,14 @@ func TestFailJobUpdateJobError(t *testing.T) {
 	}
 }
 
+type testDeps struct {
+	runtime   *fakeRuntime
+	snapshot  *fakeSnapshot
+	dbms      *fakeDBMS
+	psql      *fakePsqlRunner
+	stateRoot string
+}
+
 func newManager(t *testing.T, store store.Store) *Manager {
 	t.Helper()
 	return newManagerWithQueue(t, store, newQueueStore(t))
@@ -1881,14 +2534,43 @@ func newManager(t *testing.T, store store.Store) *Manager {
 
 func newManagerWithQueue(t *testing.T, store store.Store, queueStore queue.Store) *Manager {
 	t.Helper()
+	return newManagerWithDeps(t, store, queueStore, nil)
+}
+
+func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store, deps *testDeps) *Manager {
+	t.Helper()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if deps == nil {
+		deps = &testDeps{}
+	}
+	if deps.runtime == nil {
+		deps.runtime = &fakeRuntime{}
+	}
+	if deps.snapshot == nil {
+		deps.snapshot = &fakeSnapshot{}
+	}
+	if deps.dbms == nil {
+		deps.dbms = &fakeDBMS{}
+	}
+	if deps.psql == nil {
+		deps.psql = &fakePsqlRunner{}
+	}
+	stateRoot := deps.stateRoot
+	if stateRoot == "" {
+		stateRoot = filepath.Join(t.TempDir(), "state-store")
+	}
 	mgr, err := NewManager(Options{
-		Store:   store,
-		Queue:   queueStore,
-		Version: "v1",
-		Now:     func() time.Time { return now },
-		IDGen:   func() (string, error) { return "job-1", nil },
-		Async:   false,
+		Store:          store,
+		Queue:          queueStore,
+		Runtime:        deps.runtime,
+		Snapshot:       deps.snapshot,
+		DBMS:           deps.dbms,
+		StateStoreRoot: stateRoot,
+		Psql:           deps.psql,
+		Version:        "v1",
+		Now:            func() time.Time { return now },
+		IDGen:          func() (string, error) { return "job-1", nil },
+		Async:          false,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -1934,4 +2616,16 @@ func createJobRecord(t *testing.T, queueStore queue.Store, jobID string, req Req
 	}); err != nil {
 		t.Fatalf("CreateJob: %v", err)
 	}
+}
+
+func TestManagerLogHelpers(t *testing.T) {
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	mgr := &Manager{}
+	mgr.logJob("job-1", "created")
+	mgr.logJob("", "created")
+	mgr.logTask("job-1", "task-1", "status=%s", StatusQueued)
+	mgr.logTask("", "", "noop")
 }

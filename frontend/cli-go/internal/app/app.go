@@ -156,7 +156,7 @@ func Run(args []string) error {
 			StartupTimeout: startupTimeout,
 			Verbose:        opts.Verbose,
 		}
-		return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, cwd, cmd.Args)
+		return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
 	case "plan:psql":
 		runOpts := cli.PrepareOptions{
 			ProfileName:    profileName,
@@ -170,7 +170,7 @@ func Run(args []string) error {
 			StartupTimeout: startupTimeout,
 			Verbose:        opts.Verbose,
 		}
-		return runPlan(os.Stdout, os.Stderr, runOpts, cfgResult, cwd, cmd.Args, output)
+		return runPlan(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output)
 	case "status":
 		if len(cmd.Args) > 0 {
 			return fmt.Errorf("status does not accept arguments")

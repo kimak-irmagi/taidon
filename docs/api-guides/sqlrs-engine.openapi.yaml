@@ -86,8 +86,8 @@ paths:
             schema:
               $ref: "#/components/schemas/PrepareJobRequest"
       responses:
-        "202":
-          description: Accepted
+        "201":
+          description: Created
           headers:
             Location:
               schema:

@@ -94,15 +94,9 @@ func TestPrepareJobsInternalError(t *testing.T) {
 	defer st.Close()
 
 	reg := registry.New(st)
-	prep, err := prepare.NewManager(prepare.Options{
-		Store: st,
-		Queue: mustOpenQueue(t, filepath.Join(dir, "state.db")),
-		IDGen: func() (string, error) { return "", errors.New("boom") },
-		Async: false,
+	prep := newPrepareManager(t, st, mustOpenQueue(t, filepath.Join(dir, "state.db")), func(opts *prepare.Options) {
+		opts.IDGen = func() (string, error) { return "", errors.New("boom") }
 	})
-	if err != nil {
-		t.Fatalf("prepare manager: %v", err)
-	}
 	handler := NewHandler(Options{
 		Version:    "test",
 		InstanceID: "instance",
@@ -276,8 +270,8 @@ func TestPrepareJobsCreateAndEvents(t *testing.T) {
 		t.Fatalf("request: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
 	location := resp.Header.Get("Location")
 	if location == "" {
@@ -369,8 +363,8 @@ func TestPrepareJobsPlanOnly(t *testing.T) {
 		t.Fatalf("request: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
 
 	location := resp.Header.Get("Location")
@@ -588,15 +582,9 @@ func TestPrepareJobsDeleteBlockedWithoutForce(t *testing.T) {
 	defer st.Close()
 
 	blocker := newBlockingStore(st)
-	prep, err := prepare.NewManager(prepare.Options{
-		Store:   blocker,
-		Queue:   mustOpenQueue(t, filepath.Join(dir, "state.db")),
-		Version: "test",
-		Async:   true,
+	prep := newPrepareManager(t, blocker, mustOpenQueue(t, filepath.Join(dir, "state.db")), func(opts *prepare.Options) {
+		opts.Async = true
 	})
-	if err != nil {
-		t.Fatalf("prepare manager: %v", err)
-	}
 	handler := NewHandler(Options{
 		Version:    "test",
 		InstanceID: "instance",
@@ -690,8 +678,8 @@ func submitPrepareJob(t *testing.T, baseURL, token string, planOnly bool) string
 		t.Fatalf("submit job: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
 	}
 	var accepted prepare.Accepted
 	if err := json.NewDecoder(resp.Body).Decode(&accepted); err != nil {

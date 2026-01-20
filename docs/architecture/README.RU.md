@@ -7,7 +7,7 @@
 - [`local-deployment-architecture.RU.md`](local-deployment-architecture.RU.md) - локальный профиль (тонкий CLI, эфемерный engine).
 - [`shared-deployment-architecture.RU.md`](shared-deployment-architecture.RU.md) - team/cloud профиль (gateway/orchestrator, multi-tenant).
 - [`engine-internals.RU.md`](engine-internals.RU.md) - внутренняя структура sqlrs engine.
-- [`runtime-snapshotting.RU.md`](runtime-snapshotting.RU.md) - модель хранения, snapshot/backends (btrfs/VHDX/etc).
+- [`runtime-snapshotting.RU.md`](runtime-snapshotting.RU.md) - модель хранения, snapshot/backends (OverlayFS/копирование/etc).
 - [`state-cache-design.RU.md`](state-cache-design.RU.md) - cache keys, триггеры, retention, локальный layout.
 - [`sql-runner-api.RU.md`](sql-runner-api.RU.md) - поверхность API runner, таймауты, отмена, стриминг.
 - [`liquibase-integration.RU.md`](liquibase-integration.RU.md) - стратегия Liquibase провайдера и структурированные логи.

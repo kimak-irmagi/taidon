@@ -10,7 +10,7 @@ import (
 	"sqlrs/cli/internal/config"
 )
 
-func runPlan(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, cwd string, args []string, output string) error {
+func runPlan(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, output string) error {
 	parsed, showHelp, err := parsePrepareArgs(args)
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func runPlan(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.Lo
 		fmt.Fprint(stderr, formatImageSource(imageID, source))
 	}
 
-	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, cwd, os.Stdin)
+	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin)
 	if err != nil {
 		return err
 	}

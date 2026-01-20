@@ -54,6 +54,7 @@ flowchart LR
 - expose endpoints удаления экземпляров и состояний с опциями recurse/force/dry-run.
 - expose list endpoints для prepare jobs и tasks, а также удаление job.
 - Prepare выполняется как async job; CLI следит за статусом/событиями и ждет завершения.
+  `POST /v1/prepare-jobs` сохраняет запись job перед ответом `201 Created`.
   `plan_only`-запросы возвращают список задач в статусе job.
 - Стримит события job (включая изменения статуса задач) всем подключенным NDJSON-клиентам.
 
@@ -90,27 +91,31 @@ flowchart LR
 
 ### 1.7 Менеджер снапшотов
 
-- Выбирает лучший доступный backend (OverlayFS, ZFS, Btrfs, copy-based fallback).
+- Предпочитает OverlayFS на Linux; fallback — копирование.
+- Windows/WSL backend для снапшотов добавим позже.
 - Экспортирует `Clone`, `Snapshot`, `Destroy` для states и instances.
 - Использует path resolver из State Store, чтобы найти корни `PGDATA` и каталоги states.
 
 ### 1.8 DBMS-коннектор
 
 - Инкапсулирует подготовку СУБД к снапшоту и пробуждение после него.
-- Для Postgres делает fast shutdown (`pg_ctl -m fast stop`) и restart.
+- Для Postgres делает fast shutdown (`pg_ctl -m fast stop`) и restart, не останавливая контейнер.
+- `psql` запускается внутри контейнера; пути к скриптам монтируются read-only и
+  переписываются перед выполнением.
 
 ### 1.9 Instance Runtime
 
 - Управляет DB-контейнерами через Docker (один контейнер на instance).
 - Применяет монтирования от менеджера снапшотов, задает лимиты ресурсов, default statement timeout.
 - В MVP использует Docker CLI; позже можно заменить на SDK.
+- Устанавливает `PGDATA=/var/lib/postgresql/data` и `POSTGRES_HOST_AUTH_METHOD=trust`.
 - Возвращает connection info контроллеру.
 
 ### 1.10 Адаптер системы скриптов
 
 - Дает общий интерфейс для систем скриптов (сейчас только `psql`).
 - Каждый адаптер реализует planning, execution и правила хеширования шагов.
-- `psql` запускается на хосте и подключается к контейнеру.
+- `psql` запускается внутри контейнера и использует смонтированные пути к скриптам.
 - Liquibase планируется как внешний CLI (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
 
 ### 1.11 Менеджер экземпляров
@@ -118,6 +123,8 @@ flowchart LR
 - Ведет mutable экземпляры, производные от immutable states.
 - Создает эфемерные экземпляры и возвращает DSN.
 - Управляет жизненным циклом экземпляров (ephemeral) и метаданными TTL/GC.
+- Контейнеры остаются запущенными после prepare; экземпляры считаются warm, пока
+  оркестрация run не решит их остановить.
 
 ### 1.12 Контроллер удаления
 
@@ -133,7 +140,7 @@ flowchart LR
 
 ### 1.14 State Store (Paths + Metadata)
 
-- Разрешает корень хранилища (`~/.cache/sqlrs/state-store` или override).
+- Разрешает корень хранилища в `<StateDir>/state-store`.
 - Владеет metadata DB (SQLite WAL) и layout путей (`engines/<engine>/<version>/base|states/<uuid>`).
 - Пишет `engine.json` в state directory (endpoint + PID + auth token + lock) для discovery со стороны CLI.
 - Хранит `parent_state_id` для поддержки иерархии состояний и рекурсивного удаления.
@@ -142,6 +149,7 @@ flowchart LR
 
 - Эмитит метрики: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
 - Пишет audit events для prepare jobs и cache mutations.
+- Логгирует HTTP-запросы и ключевые этапы prepare (создание job, планирование, обновления статуса задач, завершение).
 
 ## 2. Потоки (local)
 
@@ -190,7 +198,6 @@ sequenceDiagram
   CTRL->>INST: create instance
   INST-->>CTRL: instance_id + DSN
   CTRL-->>API: status updates / events
-  CTRL->>SNAP: teardown instance (or keep warm by policy)
   API-->>CLI: terminal status
 ```
 
@@ -303,7 +310,8 @@ sequenceDiagram
 
 - Все долгие операции возвращают job id; ошибки фиксируются как terminal state с причиной и логами.
 - Cache writes идемпотентны по `state_id`; частичные snapshots помечаются failed и не переиспользуются без явной ссылки.
-- Если Docker/psql недоступны, API возвращает понятные ошибки; CLI их показывает и завершает с ненулевым кодом.
+- Если Docker недоступен или выполнение `psql` в контейнере падает, API возвращает
+  понятные ошибки; CLI их показывает и завершает с ненулевым кодом.
 
 ## 6. Точки эволюции
 

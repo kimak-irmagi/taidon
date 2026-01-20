@@ -71,7 +71,8 @@ prepared instance:
 
 ### SQL input sources
 
-- `-f`, `--file <path>`: SQL script file (absolute paths are passed to the engine).
+- `-f`, `--file <path>`: SQL script file. Relative paths are resolved from the CLI working
+  directory and sent as absolute paths; files must live under the workspace root.
 - `-c`, `--command <sql>`: inline SQL string.
 - `-f -`: read SQL from stdin; sqlrs reads stdin and passes it to the engine.
 
@@ -98,6 +99,23 @@ dbms:
 ```
 
 When `-v/--verbose` is set, sqlrs prints the resolved image id and its source.
+
+---
+
+## Local Execution (MVP)
+
+For local profiles, the engine performs real execution:
+
+- Requires Docker running locally; `psql` is executed inside the container.
+- Images must expose `PGDATA` at `/var/lib/postgresql/data` and allow trust auth
+  (`POSTGRES_HOST_AUTH_METHOD=trust`).
+- State data is stored under `<StateDir>/state-store` (outside containers).
+- Each task snapshots the DB state; the engine uses OverlayFS-based copy-on-write
+  when available and falls back to full copy.
+- The prepare container stays running after the job; the instance is recorded as
+  warm and a future `sqlrs run` will decide when to stop it.
+- When `-f/--file` inputs are present, the engine mounts the workspace scripts
+  root into the container and rewrites file arguments to the container path.
 
 ---
 

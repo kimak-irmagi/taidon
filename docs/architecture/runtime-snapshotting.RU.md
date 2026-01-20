@@ -38,10 +38,11 @@
 
 ### 3.2 Стратегия host-хранилища (по платформам)
 
-- **Linux (primary):** host-managed store на btrfs subvolumes (предпочтительно).
-- **Windows / WSL2:** host-managed VHDX; использовать btrfs внутри при наличии, иначе fallback на `copy/link-dest`.
+- **Linux (primary):** host-managed state store на OverlayFS.
+- **Windows / WSL2:** backend снапшотов добавим позже; сейчас fallback на полное копирование.
 
 Runtime код не раскрывает конкретные пути: engine/adapter сам разрешает data dirs и передает mounts в runtime.
+Для локального engine корень state store - `<StateDir>/state-store`.
 
 ---
 
@@ -50,8 +51,9 @@ Runtime код не раскрывает конкретные пути: engine/a
 ### 4.1 Docker-based Runtime (локальный MVP)
 
 - Docker используется как слой выполнения экземпляров.
-- Каждый экземпляр — один DB контейнер.
-- Контейнеры краткоживущие и disposable.
+- Каждый экземпляр - один DB контейнер.
+- Контейнеры могут оставаться запущенными после prepare (warm экземпляры) до
+  решения оркестрации run об остановке.
 
 ### 4.2 Образы
 
@@ -100,20 +102,12 @@ Base states хранятся как **CoW-способные файловые н
 
 ### 6.1 Основной бэкенд (MVP)
 
-- **btrfs subvolume snapshots** (Linux хосты; WSL2 при наличии btrfs внутри VHDX)
-
-Результат:
-
-- быстрые clone/snapshot
-- дешевые ветвления
-- хорошая локальная поддержка Linux
+- **OverlayFS слои** (Linux хосты) для copy-on-write снапшотов.
 
 ### 6.2 Fallback бэкенд
 
-- Windows/WSL2 без btrfs: VHDX + `copy/link-dest` snapshotting
-- Любой хост без CoW FS: рекурсивное копирование / rsync-based snapshotting
-
-Используется при отсутствии CoW FS.
+- Любой хост без OverlayFS: рекурсивное копирование (MVP).
+- Windows/WSL2 backend добавим позже.
 
 ### 6.3 Плагинный интерфейс snapshotter
 
@@ -125,16 +119,16 @@ Destroy(state_or_sandbox)
 
 Варианты реализации:
 
-- `BtrfsSnapshotter`
+- `OverlayFSSnapshotter`
 - `CopySnapshotter`
-- (future) `ZfsSnapshotter`, `CsiSnapshotter`
+- (future) `BtrfsSnapshotter`, `ZfsSnapshotter`, `CsiSnapshotter`
 
 ---
 
 ## 7. Layout состояний
 
 ```text
-state-store/
+<StateDir>/state-store/
   engines/
     postgres/
       15/
@@ -143,35 +137,32 @@ state-store/
       17/
         base/
         states/<uuid>/
-  metadata/
-    state.db
 ```
 
 - Каждое состояние неизменяемо после создания.
 - Песочницы используют writable clones состояний.
+- Метаданные живут в `<StateDir>/state.db`.
 
 ---
 
 ## 8. Режимы консистентности снапшотов
 
-### 8.1 Crash-consistent (по умолчанию)
+### 8.1 DBMS-assisted clean snapshot (по умолчанию)
 
-- Снапшот файловой системы без остановки БД.
-- Полагается на crash recovery БД при следующем запуске.
-- Самый быстрый и приемлемый для большинства сценариев.
-- Дефолт для интерактивной разработки и учебных экземпляров.
-
-### 8.2 Clean snapshot (опционально)
-
-- DB контейнер корректно останавливается.
-- Снимается snapshot.
-- Контейнер может быть перезапущен при необходимости.
+- СУБД ставится на паузу через коннектор (Postgres: `pg_ctl -m fast stop`), контейнер остается запущенным.
+- Менеджер снапшотов делает snapshot.
+- СУБД запускается обратно.
 
 Используется для:
 
 - CI/CD
 - строгой воспроизводимости
 - Может запрашиваться политикой или флагом запуска.
+
+### 8.2 Crash-consistent (опционально)
+
+- Снапшот файловой системы без координации с БД.
+- Полагается на crash recovery БД при следующем запуске.
 
 ---
 
@@ -198,9 +189,8 @@ state-store/
 
 ### 9.4 Teardown и cooldown
 
-- После использования экземпляр входит в cooldown период.
-- Если экземпляр переиспользуется, контейнер может быть оставлен warm.
-- Иначе контейнер останавливается и экземпляр уничтожается.
+- После prepare контейнер остается запущенным, экземпляр записывается как warm.
+  Оркестрация run решает, когда останавливать warm экземпляры.
 
 ---
 
@@ -225,7 +215,7 @@ state-store/
 
 ### Phase 1 (MVP)
 
-- Docker + btrfs
+- Docker + OverlayFS
 - Postgres 15 & 17
 - Локальный state store
 
@@ -234,6 +224,7 @@ state-store/
 - Remote/shared cache
 - ZFS / send-receive
 - Pre-warmed pinned states
+- Windows/WSL backend для снапшотов
 
 ### Phase 3
 

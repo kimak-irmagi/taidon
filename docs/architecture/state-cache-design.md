@@ -355,8 +355,8 @@ To keep keys meaningful:
 
 ### 12.3 Platform specifics
 
-- **Linux/macOS**: `~/.cache/sqlrs/state-store` (or `$XDG_CACHE_HOME/sqlrs/state-store`), using native filesystem; btrfs/zfs if present, otherwise copy/rsync fallback. macOS uses the same path for consistency with XDG; acceptable to add a symlink from `~/Library/Caches/sqlrs` if needed.
-- **Windows (WSL2)**: state store inside the WSL filesystem (`$HOME/.cache/sqlrs/state-store`) to keep POSIX perms and CoW performance; host Windows path only holds a pointer/config. If WSL kernel lacks btrfs, fall back to VHDX + copy/link-dest as per runtime snapshotting.
+- **Linux/macOS (local engine)**: `<StateDir>/state-store`, using native filesystem; OverlayFS when available, otherwise copy fallback.
+- **Windows (local engine)**: `<StateDir>/state-store`, copy fallback; WSL backend is added later.
 
 ### 12.4 Access and locking
 

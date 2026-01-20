@@ -1,17 +1,23 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"sqlrs/engine/internal/deletion"
+	"sqlrs/engine/internal/prepare"
+	"sqlrs/engine/internal/prepare/queue"
 )
 
 func TestActivityTrackerIdleFor(t *testing.T) {
@@ -244,6 +250,18 @@ func TestRunServeError(t *testing.T) {
 	}
 }
 
+func TestServeHTTPDefault(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})}
+	_ = listener.Close()
+	if err := serveHTTP(server, listener); err == nil {
+		t.Fatalf("expected serveHTTP error")
+	}
+}
+
 func TestRunRandomHexError(t *testing.T) {
 	prevReader := randReader
 	randReader = errorReader{}
@@ -272,22 +290,77 @@ func TestRunAuthTokenError(t *testing.T) {
 }
 
 func TestRunOpenStateDBError(t *testing.T) {
-	previousServe := serveHTTP
-	serveHTTP = func(server *http.Server, listener net.Listener) error {
-		_ = listener.Close()
-		return http.ErrServerClosed
+	prevOpen := openDBFn
+	openDBFn = func(string) (*sql.DB, error) {
+		return nil, errors.New("boom")
 	}
-	t.Cleanup(func() { serveHTTP = previousServe })
+	t.Cleanup(func() { openDBFn = prevOpen })
 
 	dir := t.TempDir()
-	blocker := filepath.Join(dir, "blocked")
-	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	statePath := filepath.Join(blocker, "engine.json")
+	statePath := filepath.Join(dir, "engine.json")
 	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
 	if code != 1 || err == nil || !strings.Contains(err.Error(), "open state db") {
 		t.Fatalf("expected state db error, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunOpenQueueDBError(t *testing.T) {
+	prevNew := newQueueFn
+	newQueueFn = func(*sql.DB) (*queue.SQLiteStore, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { newQueueFn = prevNew })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "open queue db") {
+		t.Fatalf("expected queue db error, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunPrepareManagerError(t *testing.T) {
+	prevNew := newPrepareManagerFn
+	newPrepareManagerFn = func(prepare.Options) (*prepare.Manager, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { newPrepareManagerFn = prevNew })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "prepare manager") {
+		t.Fatalf("expected prepare manager error, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunPrepareRecoverError(t *testing.T) {
+	prevRecover := prepareRecoverFn
+	prepareRecoverFn = func(*prepare.Manager) error {
+		return errors.New("boom")
+	}
+	t.Cleanup(func() { prepareRecoverFn = prevRecover })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "prepare recovery") {
+		t.Fatalf("expected prepare recovery error, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunDeletionManagerError(t *testing.T) {
+	prevNew := newDeletionManagerFn
+	newDeletionManagerFn = func(deletion.Options) (*deletion.Manager, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { newDeletionManagerFn = prevNew })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "delete manager") {
+		t.Fatalf("expected delete manager error, got code=%d err=%v", code, err)
 	}
 }
 
@@ -348,6 +421,82 @@ func TestRunIdleTimeoutShutdown(t *testing.T) {
 	}
 }
 
+func TestSetupLoggingSuccess(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	prev := log.Writer()
+	cleanup, err := setupLogging(statePath)
+	if err != nil {
+		t.Fatalf("setupLogging: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanup()
+		log.SetOutput(prev)
+	})
+	if _, err := os.Stat(filepath.Join(dir, "logs", "engine.log")); err != nil {
+		t.Fatalf("expected log file, got %v", err)
+	}
+}
+
+func TestSetupLoggingRejectsLogDirFile(t *testing.T) {
+	dir := t.TempDir()
+	logDir := filepath.Join(dir, "logs")
+	if err := os.WriteFile(logDir, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if _, err := setupLogging(filepath.Join(dir, "engine.json")); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestSetupLoggingRejectsLogFileDir(t *testing.T) {
+	dir := t.TempDir()
+	logDir := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	logPath := filepath.Join(logDir, "engine.log")
+	if err := os.MkdirAll(logPath, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := setupLogging(filepath.Join(dir, "engine.json")); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestSetupLoggingCharDevice(t *testing.T) {
+	prevFn := isCharDeviceFn
+	isCharDeviceFn = func(*os.File) bool { return true }
+	t.Cleanup(func() { isCharDeviceFn = prevFn })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	cleanup, err := setupLogging(statePath)
+	if err != nil {
+		t.Fatalf("setupLogging: %v", err)
+	}
+	t.Cleanup(cleanup)
+}
+
+func TestIsCharDeviceBehaviors(t *testing.T) {
+	if isCharDevice(nil) {
+		t.Fatalf("expected false for nil file")
+	}
+	file, err := os.CreateTemp(t.TempDir(), "char-test-*")
+	if err != nil {
+		t.Fatalf("create temp: %v", err)
+	}
+	if isCharDevice(file) {
+		t.Fatalf("expected false for regular file")
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if isCharDevice(file) {
+		t.Fatalf("expected false for closed file")
+	}
+}
+
 func TestRunSuccess(t *testing.T) {
 	previousServe := serveHTTP
 	called := false
@@ -372,6 +521,25 @@ func TestRunSuccess(t *testing.T) {
 	}
 }
 
+func TestRunHandlerLogsRequest(t *testing.T) {
+	previousServe := serveHTTP
+	serveHTTP = func(server *http.Server, listener net.Listener) error {
+		req := httptest.NewRequest(http.MethodGet, "http://example/v1/health", nil)
+		writer := &flushWriter{}
+		server.Handler.ServeHTTP(writer, req)
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
+	t.Cleanup(func() { serveHTTP = previousServe })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=0"})
+	if err != nil || code != 0 {
+		t.Fatalf("expected success, got code=%d err=%v", code, err)
+	}
+}
+
 func TestMainUsesExitCode(t *testing.T) {
 	prevExit := exitFn
 	exitCode := 0
@@ -387,6 +555,48 @@ func TestMainUsesExitCode(t *testing.T) {
 	main()
 	if exitCode != 2 {
 		t.Fatalf("expected exit code 2, got %d", exitCode)
+	}
+}
+
+func TestStatusRecorderWriteDefaults(t *testing.T) {
+	rec := &statusRecorder{ResponseWriter: httptest.NewRecorder()}
+	if rec.status != 0 {
+		t.Fatalf("expected zero status, got %d", rec.status)
+	}
+	n, err := rec.Write([]byte("ok"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if n != 2 || rec.bytes != 2 {
+		t.Fatalf("expected 2 bytes, got n=%d bytes=%d", n, rec.bytes)
+	}
+	if rec.status != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.status)
+	}
+}
+
+func TestStatusRecorderWriteHeader(t *testing.T) {
+	rec := &statusRecorder{ResponseWriter: httptest.NewRecorder()}
+	rec.WriteHeader(http.StatusNotFound)
+	_, err := rec.Write([]byte("x"))
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if rec.status != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.status)
+	}
+	if rec.bytes != 1 {
+		t.Fatalf("expected 1 byte, got %d", rec.bytes)
+	}
+}
+
+func TestStatusRecorderFlusher(t *testing.T) {
+	writer := &flushWriter{}
+	rec := &statusRecorder{ResponseWriter: writer}
+	wrapped := &statusRecorderFlusher{statusRecorder: rec, flusher: writer}
+	wrapped.Flush()
+	if !writer.flushed {
+		t.Fatalf("expected flush to be called")
 	}
 }
 
@@ -410,4 +620,27 @@ func (r *sequenceReader) Read(p []byte) (int, error) {
 		p[i] = 0x1
 	}
 	return len(p), nil
+}
+
+type flushWriter struct {
+	header  http.Header
+	flushed bool
+}
+
+func (w *flushWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *flushWriter) Write(data []byte) (int, error) {
+	return len(data), nil
+}
+
+func (w *flushWriter) WriteHeader(status int) {
+}
+
+func (w *flushWriter) Flush() {
+	w.flushed = true
 }

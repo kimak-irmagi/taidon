@@ -56,7 +56,8 @@ preparation:
 
 ### SQL input sources
 
-- `-f`, `--file <path>`: SQL script file (absolute paths are passed to the engine).
+- `-f`, `--file <path>`: SQL script file. Relative paths are resolved from the CLI working
+  directory and sent as absolute paths; files must live under the workspace root.
 - `-c`, `--command <sql>`: inline SQL string.
 - `-f -`: read SQL from stdin; sqlrs reads stdin and passes it to the engine.
 

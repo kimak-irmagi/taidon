@@ -87,7 +87,7 @@ func TestNormalizePsqlArgsAbsoluteAndStdin(t *testing.T) {
 	args := []string{"-f", "init.sql", "-f", "-"}
 	stdin := bytes.NewBufferString("select 1;")
 
-	normalized, stdinValue, err := normalizePsqlArgs(args, cwd, stdin)
+	normalized, stdinValue, err := normalizePsqlArgs(args, cwd, cwd, stdin)
 	if err != nil {
 		t.Fatalf("normalize args: %v", err)
 	}

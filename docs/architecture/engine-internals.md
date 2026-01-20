@@ -54,6 +54,7 @@ flowchart LR
 - Exposes delete endpoints for instances and states with recurse/force/dry-run options.
 - Exposes list/delete endpoints for prepare jobs and list endpoints for tasks.
 - Prepare runs as async jobs; the CLI watches status/events and waits for completion.
+  `POST /v1/prepare-jobs` persists the job record before returning `201 Created`.
   `plan_only` compute-only requests return task lists in job status.
 - Streams job events (including task status changes) to all connected NDJSON clients.
 
@@ -90,27 +91,32 @@ flowchart LR
 
 ### 1.7 Snapshot Manager
 
-- Selects the best available snapshot backend (OverlayFS, ZFS, Btrfs, copy-based fallback).
+- Prefers OverlayFS on Linux; falls back to copy-based snapshots.
+- Windows/WSL snapshot backend is added later.
 - Exposes `Clone`, `Snapshot`, `Destroy` for states and instances.
 - Uses path resolver from State Store to locate `PGDATA` roots and state directories.
 
 ### 1.8 DBMS Connector
 
 - Encapsulates DBMS-specific snapshot preparation and resume.
-- For Postgres, performs fast shutdown (`pg_ctl -m fast stop`) and restart.
+- For Postgres, performs fast shutdown (`pg_ctl -m fast stop`) and restart while the
+  container stays up.
+- `psql` execution runs inside the container; script paths are mounted read-only and
+  rewritten before execution.
 
 ### 1.9 Instance Runtime
 
 - Manages DB containers via Docker (single-container per instance).
 - Uses Docker CLI in the MVP; replaceable with a Docker Engine SDK adapter.
 - Applies mounts from Snapshot Manager, sets resource limits, statement timeout defaults.
+- Sets `PGDATA=/var/lib/postgresql/data` and `POSTGRES_HOST_AUTH_METHOD=trust`.
 - Provides connection info to the controller.
 
 ### 1.10 Script System Adapter
 
 - Provides a common interface for script systems (currently `psql`).
 - Each adapter implements step planning + step execution + hashing rules.
-- `psql` execution runs on the host and connects to the container.
+- `psql` execution runs inside the container and uses mounted script paths.
 - Liquibase execution is planned via external CLI (host binary or Docker runner); overhead is tracked and optimized if needed.
 
 ### 1.11 Instance Manager
@@ -118,6 +124,8 @@ flowchart LR
 - Maintains mutable instances derived from immutable states.
 - Creates ephemeral instances and returns DSNs.
 - Handles instance lifecycle (ephemeral) and TTL/GC metadata.
+- Containers stay running after prepare; instances are recorded as warm until
+  run orchestration decides to stop them.
 
 ### 1.12 Delete Controller
 
@@ -133,7 +141,7 @@ flowchart LR
 
 ### 1.14 State Store (Paths + Metadata)
 
-- Resolves storage root (`~/.cache/sqlrs/state-store` or overridden).
+- Resolves storage root under `<StateDir>/state-store`.
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
 - Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
 - Stores `parent_state_id` to support state ancestry and recursive deletion.
@@ -142,6 +150,7 @@ flowchart LR
 
 - Emits metrics: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
 - Writes audit events for prepare jobs and cache mutations.
+- Logs HTTP requests and prepare lifecycle events (job creation, task planning, task status updates, completion).
 
 ## 2. Flows (Local)
 
@@ -190,7 +199,6 @@ sequenceDiagram
   CTRL->>INST: create instance
   INST-->>CTRL: instance_id + DSN
   CTRL-->>API: status updates / events
-  CTRL->>SNAP: teardown instance (or keep warm by policy)
   API-->>CLI: terminal status
 ```
 
@@ -302,7 +310,7 @@ sequenceDiagram
 
 - All long ops return a prepare job id; failures are terminal states with reason and logs.
 - Cache writes are idempotent per `state_id`; partial snapshots are marked failed and not reused unless explicitly referenced.
-- If Docker/psql unavailable, API returns actionable errors; CLI surfaces them and exits non-zero.
+- If Docker is unavailable or container `psql` execution fails, API returns actionable errors; CLI surfaces them and exits non-zero.
 
 ## 6. Evolution Hooks
 
