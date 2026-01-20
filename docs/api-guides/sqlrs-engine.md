@@ -598,7 +598,7 @@ an instance; the plan tasks are returned in the job status.
 
 > Example responses
 
-> 202 Response
+> 201 Response
 
 ```json
 {
@@ -613,7 +613,7 @@ an instance; the plan tasks are returned in the job status.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|202|[Accepted](https://tools.ietf.org/html/rfc7231#section-6.3.3)|Accepted|[PrepareJobAccepted](#schemapreparejobaccepted)|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[PrepareJobAccepted](#schemapreparejobaccepted)|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
@@ -622,7 +622,7 @@ an instance; the plan tasks are returned in the job status.
 
 |Status|Header|Type|Format|Description|
 |---|---|---|---|---|
-|202|Location|string||Canonical job status URL.|
+|201|Location|string||Canonical job status URL.|
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -3437,6 +3437,7 @@ or
 {
   "type": "status",
   "ts": "2019-08-24T14:15:22Z",
+  "task_id": "string",
   "status": "queued",
   "message": "string",
   "result": {
@@ -3462,6 +3463,7 @@ or
 |---|---|---|---|---|
 |type|string|true|none|none|
 |ts|string(date-time)|true|none|none|
+|task_id|string|false|none|Present for task status events.|
 |status|string|false|none|none|
 |message|string|false|none|none|
 |result|[PrepareJobResult](#schemapreparejobresult)|false|none|none|
@@ -3475,6 +3477,7 @@ or
 |type|log|
 |type|result|
 |type|error|
+|type|task|
 |status|queued|
 |status|running|
 |status|succeeded|
