@@ -288,11 +288,16 @@ func (m *Manager) createInstance(ctx context.Context, jobID string, prepared pre
 	}
 	createdAt := m.now().UTC().Format(time.RFC3339Nano)
 	status := store.InstanceStatusActive
+	var runtimeID *string
+	if strings.TrimSpace(rt.instance.ID) != "" {
+		runtimeID = strPtr(rt.instance.ID)
+	}
 	if err := m.store.CreateInstance(ctx, store.InstanceCreate{
 		InstanceID: instanceID,
 		StateID:    stateID,
 		ImageID:    prepared.request.ImageID,
 		CreatedAt:  createdAt,
+		RuntimeID:  runtimeID,
 		Status:     &status,
 	}); err != nil {
 		if ctx.Err() != nil {
@@ -404,9 +409,9 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	m.logJob(jobID, "runtime started container=%s host=%s port=%d snapshot=%s", instance.ID, instance.Host, instance.Port, m.snapshot.Kind())
 
 	return &jobRuntime{
-		instance: instance,
-		dataDir:  clone.MountDir,
-		cleanup:  clone.Cleanup,
+		instance:    instance,
+		dataDir:     clone.MountDir,
+		cleanup:     clone.Cleanup,
 		scriptMount: rtScriptMount,
 	}, nil
 }

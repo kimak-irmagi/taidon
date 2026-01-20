@@ -5,7 +5,9 @@ import (
 	"errors"
 	"sort"
 	"testing"
+	"time"
 
+	"sqlrs/engine/internal/runtime"
 	"sqlrs/engine/internal/store"
 )
 
@@ -35,6 +37,47 @@ type fakeStore struct {
 	getStateErr       error
 	deleteInstanceErr error
 	deleteStateErr    error
+}
+
+type fakeRuntime struct {
+	stopCalls []string
+	stopErr   error
+}
+
+func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error {
+	if f.stopErr != nil {
+		return f.stopErr
+	}
+	return nil
+}
+
+func (f *fakeRuntime) Start(ctx context.Context, req runtime.StartRequest) (runtime.Instance, error) {
+	if f.stopErr != nil {
+		return runtime.Instance{}, f.stopErr
+	}
+	return runtime.Instance{}, nil
+}
+
+func (f *fakeRuntime) Stop(ctx context.Context, id string) error {
+	f.stopCalls = append(f.stopCalls, id)
+	if f.stopErr != nil {
+		return f.stopErr
+	}
+	return nil
+}
+
+func (f *fakeRuntime) Exec(ctx context.Context, id string, req runtime.ExecRequest) (string, error) {
+	if f.stopErr != nil {
+		return "", f.stopErr
+	}
+	return "", nil
+}
+
+func (f *fakeRuntime) WaitForReady(ctx context.Context, id string, timeout time.Duration) error {
+	if f.stopErr != nil {
+		return f.stopErr
+	}
+	return nil
 }
 
 func newFakeStore() *fakeStore {
@@ -218,6 +261,38 @@ func TestDeleteInstanceForceDeletes(t *testing.T) {
 	}
 }
 
+func TestDeleteInstanceStopsRuntime(t *testing.T) {
+	st := newFakeStore()
+	st.instances["inst-1"] = store.InstanceEntry{
+		InstanceID: "inst-1",
+		StateID:    "state-1",
+		RuntimeID:  strPtr("container-1"),
+	}
+
+	fake := &fakeRuntime{}
+	mgr, err := NewManager(Options{
+		Store:   st,
+		Runtime: fake,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	_, found, err := mgr.DeleteInstance(context.Background(), "inst-1", DeleteOptions{Force: true})
+	if err != nil {
+		t.Fatalf("DeleteInstance: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected instance to be found")
+	}
+	if len(fake.stopCalls) != 1 || fake.stopCalls[0] != "container-1" {
+		t.Fatalf("expected runtime stop for container-1, got %+v", fake.stopCalls)
+	}
+	if _, ok := st.instances["inst-1"]; ok {
+		t.Fatalf("expected instance to be deleted")
+	}
+}
+
 func TestDeleteStateNonRecurseBlocked(t *testing.T) {
 	st := newFakeStore()
 	st.states["root"] = store.StateEntry{StateID: "root"}
@@ -352,6 +427,47 @@ func TestDeleteStateRecurseForceDeletes(t *testing.T) {
 	}
 	if len(st.states) != 0 || len(st.instances) != 0 {
 		t.Fatalf("expected all resources deleted")
+	}
+}
+
+func TestDeleteStateRecurseStopsRuntime(t *testing.T) {
+	parent := "root"
+	st := newFakeStore()
+	st.states["root"] = store.StateEntry{StateID: "root"}
+	st.states["child"] = store.StateEntry{StateID: "child", ParentStateID: &parent}
+	st.instances["inst-1"] = store.InstanceEntry{
+		InstanceID: "inst-1",
+		StateID:    "child",
+		RuntimeID:  strPtr("container-1"),
+	}
+
+	fake := &fakeRuntime{}
+	mgr, err := NewManager(Options{
+		Store:   st,
+		Runtime: fake,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	result, found, err := mgr.DeleteState(context.Background(), "root", DeleteOptions{Recurse: true, Force: true})
+	if err != nil {
+		t.Fatalf("DeleteState: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected state to be found")
+	}
+	if result.Outcome != OutcomeDeleted {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if len(fake.stopCalls) != 1 || fake.stopCalls[0] != "container-1" {
+		t.Fatalf("expected runtime stop for container-1, got %+v", fake.stopCalls)
+	}
+	if len(st.instances) != 0 {
+		t.Fatalf("expected all instances deleted")
+	}
+	if len(st.states) != 0 {
+		t.Fatalf("expected all states deleted")
 	}
 }
 
@@ -506,4 +622,8 @@ func findNode(root DeleteNode, kind, id string) *DeleteNode {
 		}
 	}
 	return nil
+}
+
+func strPtr(value string) *string {
+	return &value
 }

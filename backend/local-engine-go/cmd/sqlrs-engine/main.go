@@ -225,8 +225,9 @@ func run(args []string) (int, error) {
 	}
 
 	deleteMgr, err := newDeletionManagerFn(deletion.Options{
-		Store: store,
-		Conn:  conntrack.Noop{},
+		Store:   store,
+		Conn:    conntrack.Noop{},
+		Runtime: rt,
 	})
 	if err != nil {
 		return 1, fmt.Errorf("delete manager: %v", err)

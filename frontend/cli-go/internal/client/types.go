@@ -158,5 +158,6 @@ type DeleteNode struct {
 	ID          string       `json:"id"`
 	Connections *int         `json:"connections,omitempty"`
 	Blocked     string       `json:"blocked,omitempty"`
+	RuntimeID   *string      `json:"runtime_id,omitempty"`
 	Children    []DeleteNode `json:"children,omitempty"`
 }

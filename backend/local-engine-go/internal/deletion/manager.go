@@ -2,8 +2,10 @@ package deletion
 
 import (
 	"context"
+	"strings"
 
 	"sqlrs/engine/internal/conntrack"
+	"sqlrs/engine/internal/runtime"
 	"sqlrs/engine/internal/store"
 )
 
@@ -19,13 +21,15 @@ const (
 )
 
 type Options struct {
-	Store store.Store
-	Conn  conntrack.Tracker
+	Store   store.Store
+	Conn    conntrack.Tracker
+	Runtime runtime.Runtime
 }
 
 type Manager struct {
-	store store.Store
-	conn  conntrack.Tracker
+	store   store.Store
+	conn    conntrack.Tracker
+	runtime runtime.Runtime
 }
 
 type DeleteOptions struct {
@@ -45,6 +49,7 @@ type DeleteNode struct {
 	ID          string       `json:"id"`
 	Connections *int         `json:"connections,omitempty"`
 	Blocked     string       `json:"blocked,omitempty"`
+	RuntimeID   *string      `json:"runtime_id,omitempty"`
 	Children    []DeleteNode `json:"children,omitempty"`
 }
 
@@ -56,11 +61,11 @@ func NewManager(opts Options) (*Manager, error) {
 	if tracker == nil {
 		tracker = conntrack.Noop{}
 	}
-	return &Manager{store: opts.Store, conn: tracker}, nil
+	return &Manager{store: opts.Store, conn: tracker, runtime: opts.Runtime}, nil
 }
 
 func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts DeleteOptions) (DeleteResult, bool, error) {
-	_, ok, err := m.store.GetInstance(ctx, instanceID)
+	entry, ok, err := m.store.GetInstance(ctx, instanceID)
 	if err != nil {
 		return DeleteResult{}, false, err
 	}
@@ -76,6 +81,7 @@ func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts De
 		Kind:        "instance",
 		ID:          instanceID,
 		Connections: &connections,
+		RuntimeID:   entry.RuntimeID,
 	}
 	blocked := false
 	if connections > 0 && !opts.Force {
@@ -90,6 +96,9 @@ func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts De
 	}
 	if blocked || opts.DryRun {
 		return result, true, nil
+	}
+	if err := m.stopRuntime(ctx, entry.RuntimeID); err != nil {
+		return DeleteResult{}, true, err
 	}
 	if err := m.store.DeleteInstance(ctx, instanceID); err != nil {
 		return DeleteResult{}, true, err
@@ -191,6 +200,7 @@ func (m *Manager) buildStateNode(ctx context.Context, stateID string, opts Delet
 			Kind:        "instance",
 			ID:          entry.InstanceID,
 			Connections: &connections,
+			RuntimeID:   entry.RuntimeID,
 		}
 		if connections > 0 && !opts.Force {
 			child.Blocked = BlockActiveConnections
@@ -228,6 +238,9 @@ func (m *Manager) deleteTree(ctx context.Context, node DeleteNode) error {
 	}
 	switch node.Kind {
 	case "instance":
+		if err := m.stopRuntime(ctx, node.RuntimeID); err != nil {
+			return err
+		}
 		return m.store.DeleteInstance(ctx, node.ID)
 	case "state":
 		return m.store.DeleteState(ctx, node.ID)
@@ -244,6 +257,17 @@ func outcomeFor(blocked bool, dryRun bool) string {
 		return OutcomeWouldDelete
 	}
 	return OutcomeDeleted
+}
+
+func (m *Manager) stopRuntime(ctx context.Context, runtimeID *string) error {
+	if m.runtime == nil || runtimeID == nil {
+		return nil
+	}
+	id := strings.TrimSpace(*runtimeID)
+	if id == "" {
+		return nil
+	}
+	return m.runtime.Stop(ctx, id)
 }
 
 type storeError string

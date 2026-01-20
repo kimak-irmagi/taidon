@@ -29,6 +29,7 @@ type InstanceEntry struct {
 	Name       *string `json:"name,omitempty"`
 	CreatedAt  string  `json:"created_at"`
 	ExpiresAt  *string `json:"expires_at,omitempty"`
+	RuntimeID  *string `json:"runtime_id,omitempty"`
 	Status     string  `json:"status"`
 }
 
@@ -62,6 +63,7 @@ type InstanceCreate struct {
 	CreatedAt  string
 	ExpiresAt  *string
 	Status     *string
+	RuntimeID  *string
 }
 
 type NameFilters struct {
@@ -71,9 +73,9 @@ type NameFilters struct {
 }
 
 type InstanceFilters struct {
-	StateID   string
-	ImageID   string
-	IDPrefix  string
+	StateID  string
+	ImageID  string
+	IDPrefix string
 }
 
 type StateFilters struct {

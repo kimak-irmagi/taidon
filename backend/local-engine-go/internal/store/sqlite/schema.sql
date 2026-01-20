@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS instances (
   image_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   expires_at TEXT,
+  runtime_id TEXT,
   status TEXT,
   FOREIGN KEY(state_id) REFERENCES states(state_id)
 );
