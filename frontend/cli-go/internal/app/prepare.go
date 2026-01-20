@@ -184,16 +184,16 @@ func normalizeFilePath(path string, workspaceRoot string, cwd string) (string, b
 		root = cwd
 	}
 	root = filepath.Clean(root)
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
-	}
 	absPath := path
 	if !filepath.IsAbs(absPath) {
 		absPath = filepath.Join(cwd, absPath)
 	}
 	absPath = filepath.Clean(absPath)
-	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
-		absPath = resolved
+	if rootResolved, rootErr := filepath.EvalSymlinks(root); rootErr == nil {
+		if pathResolved, pathErr := filepath.EvalSymlinks(absPath); pathErr == nil {
+			root = rootResolved
+			absPath = pathResolved
+		}
 	}
 	if root != "" && !isWithin(root, absPath) {
 		return "", false, ExitErrorf(2, "File path must be within workspace root: %s", absPath)
