@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -45,9 +43,7 @@ func (execRunner) Run(ctx context.Context, name string, args []string, stdin *st
 	if stdin != nil {
 		cmd.Stdin = strings.NewReader(*stdin)
 	}
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	}
+	hideWindow(cmd)
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
