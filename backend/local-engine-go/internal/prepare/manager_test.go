@@ -273,10 +273,10 @@ func (f *fakeDBMS) ResumeSnapshot(ctx context.Context, instance engineRuntime.In
 }
 
 type fakePsqlRunner struct {
-	runs   []PsqlRunRequest
+	runs      []PsqlRunRequest
 	instances []engineRuntime.Instance
-	output string
-	err    error
+	output    string
+	err       error
 }
 
 func (f *fakePsqlRunner) Run(ctx context.Context, instance engineRuntime.Instance, req PsqlRunRequest) (string, error) {
@@ -1887,12 +1887,12 @@ func TestSubmitAsyncRunsJob(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		status, ok := mgr.Get("job-1")
-		if ok && status.Status != StatusQueued {
+		if ok && status.Status != StatusQueued && status.Status != StatusRunning {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("job did not start")
+	t.Fatalf("job did not finish")
 }
 
 func TestDeleteUnknownJob(t *testing.T) {
