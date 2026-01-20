@@ -224,18 +224,6 @@ func resolveExistingPath(value string) string {
 	return path
 }
 
-func isWithin(base, target string) bool {
-	rel, err := filepath.Rel(base, target)
-	if err != nil {
-		return false
-	}
-	if rel == "." {
-		return true
-	}
-	prefix := ".." + string(os.PathSeparator)
-	return !strings.HasPrefix(rel, prefix) && rel != ".."
-}
-
 func validateConfig(path string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

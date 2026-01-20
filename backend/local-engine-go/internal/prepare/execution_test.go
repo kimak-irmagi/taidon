@@ -3,7 +3,6 @@ package prepare
 import (
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 )
 
