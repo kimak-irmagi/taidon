@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS instances (
   created_at TEXT NOT NULL,
   expires_at TEXT,
   runtime_id TEXT,
+  runtime_dir TEXT,
   status TEXT,
   FOREIGN KEY(state_id) REFERENCES states(state_id)
 );
@@ -74,6 +75,7 @@ Notes:
 
 - `instance_id` uses the engine-defined id format.
 - `runtime_id` stores the runtime/container identifier used to stop or inspect the instance.
+- `runtime_dir` stores the absolute path to the per-job runtime data directory for cleanup.
 - `status` is reserved for future use; current status is derived.
 
 ### 3.3 `names`

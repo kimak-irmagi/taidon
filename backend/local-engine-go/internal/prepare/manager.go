@@ -68,6 +68,7 @@ type jobRunner struct {
 type jobRuntime struct {
 	instance runtime.Instance
 	dataDir  string
+	runtimeDir string
 	cleanup  func() error
 	scriptMount *scriptMount
 }

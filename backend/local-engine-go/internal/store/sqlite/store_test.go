@@ -67,6 +67,27 @@ func TestStoreListAndGet(t *testing.T) {
 	}
 }
 
+func TestInstanceRuntimeDirPersisted(t *testing.T) {
+	st := openTestStore(t)
+	created := time.Now().UTC().Format(time.RFC3339Nano)
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+
+	exec(t, st, `INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"state-1", "state-1", "image-1", "psql", "args", created)
+	exec(t, st, `INSERT INTO instances (instance_id, state_id, image_id, created_at, runtime_dir)
+		VALUES (?, ?, ?, ?, ?)`,
+		"dddddddddddddddddddddddddddddddd", "state-1", "image-1", created, runtimeDir)
+
+	entry, ok, err := st.GetInstance(context.Background(), "dddddddddddddddddddddddddddddddd")
+	if err != nil {
+		t.Fatalf("GetInstance: %v", err)
+	}
+	if !ok || entry.RuntimeDir == nil || *entry.RuntimeDir != runtimeDir {
+		t.Fatalf("unexpected runtime dir: %+v", entry.RuntimeDir)
+	}
+}
+
 func TestNewRequiresDB(t *testing.T) {
 	if _, err := New(nil); err == nil {
 		t.Fatalf("expected error")

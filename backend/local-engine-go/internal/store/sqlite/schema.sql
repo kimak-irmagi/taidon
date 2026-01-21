@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS instances (
   created_at TEXT NOT NULL,
   expires_at TEXT,
   runtime_id TEXT,
+  runtime_dir TEXT,
   status TEXT,
   FOREIGN KEY(state_id) REFERENCES states(state_id)
 );

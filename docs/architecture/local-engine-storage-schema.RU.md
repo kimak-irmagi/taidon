@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS instances (
   created_at TEXT NOT NULL,
   expires_at TEXT,
   runtime_id TEXT,
+  runtime_dir TEXT,
   status TEXT,
   FOREIGN KEY(state_id) REFERENCES states(state_id)
 );
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS instances (
 Примечания:
 - `instance_id` использует формат id, определенный engine.
 - `runtime_id` хранит идентификатор runtime/контейнера для остановки или инспекции.
+- `runtime_dir` хранит абсолютный путь к runtime директории job для очистки.
 - `status` зарезервирован; текущий статус вычисляется.
 
 ### 3.3 `names`

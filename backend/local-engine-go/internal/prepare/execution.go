@@ -306,12 +306,17 @@ func (m *Manager) createInstance(ctx context.Context, jobID string, prepared pre
 	if strings.TrimSpace(rt.instance.ID) != "" {
 		runtimeID = strPtr(rt.instance.ID)
 	}
+	var runtimeDir *string
+	if strings.TrimSpace(rt.runtimeDir) != "" {
+		runtimeDir = strPtr(rt.runtimeDir)
+	}
 	if err := m.store.CreateInstance(ctx, store.InstanceCreate{
 		InstanceID: instanceID,
 		StateID:    stateID,
 		ImageID:    imageID,
 		CreatedAt:  createdAt,
 		RuntimeID:  runtimeID,
+		RuntimeDir: runtimeDir,
 		Status:     &status,
 	}); err != nil {
 		if ctx.Err() != nil {
@@ -428,6 +433,7 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	return &jobRuntime{
 		instance:    instance,
 		dataDir:     clone.MountDir,
+		runtimeDir:  runtimeDir,
 		cleanup:     clone.Cleanup,
 		scriptMount: rtScriptMount,
 	}, nil

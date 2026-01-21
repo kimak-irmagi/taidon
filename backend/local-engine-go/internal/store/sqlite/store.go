@@ -137,7 +137,7 @@ WHERE n.name = ?`
 func (s *Store) ListInstances(ctx context.Context, filters store.InstanceFilters) ([]store.InstanceEntry, error) {
 	query := strings.Builder{}
 	query.WriteString(`
-SELECT i.instance_id, i.image_id, i.state_id, i.created_at, i.expires_at, i.runtime_id,
+SELECT i.instance_id, i.image_id, i.state_id, i.created_at, i.expires_at, i.runtime_id, i.runtime_dir,
        pn.name,
        (SELECT COUNT(1) FROM names n WHERE n.instance_id = i.instance_id) as name_count
 FROM instances i
@@ -170,7 +170,7 @@ WHERE 1=1`)
 
 func (s *Store) GetInstance(ctx context.Context, instanceID string) (store.InstanceEntry, bool, error) {
 	query := `
-SELECT i.instance_id, i.image_id, i.state_id, i.created_at, i.expires_at, i.runtime_id,
+SELECT i.instance_id, i.image_id, i.state_id, i.created_at, i.expires_at, i.runtime_id, i.runtime_dir,
        pn.name,
        (SELECT COUNT(1) FROM names n WHERE n.instance_id = i.instance_id) as name_count
 FROM instances i
@@ -264,8 +264,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 func (s *Store) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
 	query := `
-INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, runtime_id, status)
-VALUES (?, ?, ?, ?, ?, ?, ?)`
+INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, runtime_id, runtime_dir, status)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
 		entry.InstanceID,
 		entry.StateID,
@@ -273,6 +273,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`
 		entry.CreatedAt,
 		entry.ExpiresAt,
 		entry.RuntimeID,
+		entry.RuntimeDir,
 		entry.Status,
 	)
 	return err
@@ -300,6 +301,9 @@ func initDB(db *sql.DB) error {
 	if err := ensureRuntimeIDColumn(db); err != nil {
 		return err
 	}
+	if err := ensureRuntimeDirColumn(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(SchemaSQL())
 	return err
 }
@@ -321,6 +325,19 @@ func ensureParentStateColumn(db *sql.DB) error {
 
 func ensureRuntimeIDColumn(db *sql.DB) error {
 	if _, err := db.Exec("ALTER TABLE instances ADD COLUMN runtime_id TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureRuntimeDirColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE instances ADD COLUMN runtime_dir TEXT"); err != nil {
 		if strings.Contains(err.Error(), "duplicate column name") {
 			return nil
 		} else if strings.Contains(err.Error(), "no such table") {
@@ -400,9 +417,10 @@ func scanInstance(scanner interface {
 	var entry store.InstanceEntry
 	var expiresAt sql.NullString
 	var runtimeID sql.NullString
+	var runtimeDir sql.NullString
 	var name sql.NullString
 	var nameCount int
-	if err := scanner.Scan(&entry.InstanceID, &entry.ImageID, &entry.StateID, &entry.CreatedAt, &expiresAt, &runtimeID, &name, &nameCount); err != nil {
+	if err := scanner.Scan(&entry.InstanceID, &entry.ImageID, &entry.StateID, &entry.CreatedAt, &expiresAt, &runtimeID, &runtimeDir, &name, &nameCount); err != nil {
 		return store.InstanceEntry{}, err
 	}
 	entry.Status = store.InstanceStatusActive
@@ -414,6 +432,9 @@ func scanInstance(scanner interface {
 	}
 	if runtimeID.Valid {
 		entry.RuntimeID = strPtr(runtimeID.String)
+	}
+	if runtimeDir.Valid {
+		entry.RuntimeDir = strPtr(runtimeDir.String)
 	}
 	if name.Valid {
 		entry.Name = strPtr(name.String)

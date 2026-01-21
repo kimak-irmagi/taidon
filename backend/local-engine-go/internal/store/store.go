@@ -30,6 +30,7 @@ type InstanceEntry struct {
 	CreatedAt  string  `json:"created_at"`
 	ExpiresAt  *string `json:"expires_at,omitempty"`
 	RuntimeID  *string `json:"runtime_id,omitempty"`
+	RuntimeDir *string `json:"-"`
 	Status     string  `json:"status"`
 }
 
@@ -64,6 +65,7 @@ type InstanceCreate struct {
 	ExpiresAt  *string
 	Status     *string
 	RuntimeID  *string
+	RuntimeDir *string
 }
 
 type NameFilters struct {

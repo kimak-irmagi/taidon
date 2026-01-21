@@ -127,6 +127,8 @@ flowchart LR
 - Handles instance lifecycle (ephemeral) and TTL/GC metadata.
 - Containers stay running after prepare; instances are recorded as warm until
   run orchestration decides to stop them.
+- Instance deletion removes the recorded runtime data directory to avoid
+  leaking per-job runtime data under the state store.
 
 ### 1.12 Delete Controller
 

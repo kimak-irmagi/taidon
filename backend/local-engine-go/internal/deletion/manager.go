@@ -2,6 +2,7 @@ package deletion
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"sqlrs/engine/internal/conntrack"
@@ -50,6 +51,7 @@ type DeleteNode struct {
 	Connections *int         `json:"connections,omitempty"`
 	Blocked     string       `json:"blocked,omitempty"`
 	RuntimeID   *string      `json:"runtime_id,omitempty"`
+	RuntimeDir  *string      `json:"-"`
 	Children    []DeleteNode `json:"children,omitempty"`
 }
 
@@ -82,6 +84,7 @@ func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts De
 		ID:          instanceID,
 		Connections: &connections,
 		RuntimeID:   entry.RuntimeID,
+		RuntimeDir:  entry.RuntimeDir,
 	}
 	blocked := false
 	if connections > 0 && !opts.Force {
@@ -98,6 +101,9 @@ func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts De
 		return result, true, nil
 	}
 	if err := m.stopRuntime(ctx, entry.RuntimeID); err != nil {
+		return DeleteResult{}, true, err
+	}
+	if err := removeRuntimeDir(entry.RuntimeDir); err != nil {
 		return DeleteResult{}, true, err
 	}
 	if err := m.store.DeleteInstance(ctx, instanceID); err != nil {
@@ -201,6 +207,7 @@ func (m *Manager) buildStateNode(ctx context.Context, stateID string, opts Delet
 			ID:          entry.InstanceID,
 			Connections: &connections,
 			RuntimeID:   entry.RuntimeID,
+			RuntimeDir:  entry.RuntimeDir,
 		}
 		if connections > 0 && !opts.Force {
 			child.Blocked = BlockActiveConnections
@@ -241,6 +248,9 @@ func (m *Manager) deleteTree(ctx context.Context, node DeleteNode) error {
 		if err := m.stopRuntime(ctx, node.RuntimeID); err != nil {
 			return err
 		}
+		if err := removeRuntimeDir(node.RuntimeDir); err != nil {
+			return err
+		}
 		return m.store.DeleteInstance(ctx, node.ID)
 	case "state":
 		return m.store.DeleteState(ctx, node.ID)
@@ -268,6 +278,17 @@ func (m *Manager) stopRuntime(ctx context.Context, runtimeID *string) error {
 		return nil
 	}
 	return m.runtime.Stop(ctx, id)
+}
+
+func removeRuntimeDir(runtimeDir *string) error {
+	if runtimeDir == nil {
+		return nil
+	}
+	dir := strings.TrimSpace(*runtimeDir)
+	if dir == "" {
+		return nil
+	}
+	return os.RemoveAll(dir)
 }
 
 type storeError string

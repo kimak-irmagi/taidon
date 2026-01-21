@@ -3,6 +3,8 @@ package deletion
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -270,10 +272,15 @@ func TestDeleteInstanceForceDeletes(t *testing.T) {
 
 func TestDeleteInstanceStopsRuntime(t *testing.T) {
 	st := newFakeStore()
+	dir := filepath.Join(t.TempDir(), "runtime-dir")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	st.instances["inst-1"] = store.InstanceEntry{
 		InstanceID: "inst-1",
 		StateID:    "state-1",
 		RuntimeID:  strPtr("container-1"),
+		RuntimeDir: strPtr(dir),
 	}
 
 	fake := &fakeRuntime{}
@@ -294,6 +301,9 @@ func TestDeleteInstanceStopsRuntime(t *testing.T) {
 	}
 	if len(fake.stopCalls) != 1 || fake.stopCalls[0] != "container-1" {
 		t.Fatalf("expected runtime stop for container-1, got %+v", fake.stopCalls)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime dir to be removed")
 	}
 	if _, ok := st.instances["inst-1"]; ok {
 		t.Fatalf("expected instance to be deleted")
@@ -442,10 +452,15 @@ func TestDeleteStateRecurseStopsRuntime(t *testing.T) {
 	st := newFakeStore()
 	st.states["root"] = store.StateEntry{StateID: "root"}
 	st.states["child"] = store.StateEntry{StateID: "child", ParentStateID: &parent}
+	dir := filepath.Join(t.TempDir(), "runtime-dir")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	st.instances["inst-1"] = store.InstanceEntry{
 		InstanceID: "inst-1",
 		StateID:    "child",
 		RuntimeID:  strPtr("container-1"),
+		RuntimeDir: strPtr(dir),
 	}
 
 	fake := &fakeRuntime{}
@@ -469,6 +484,9 @@ func TestDeleteStateRecurseStopsRuntime(t *testing.T) {
 	}
 	if len(fake.stopCalls) != 1 || fake.stopCalls[0] != "container-1" {
 		t.Fatalf("expected runtime stop for container-1, got %+v", fake.stopCalls)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime dir to be removed")
 	}
 	if len(st.instances) != 0 {
 		t.Fatalf("expected all instances deleted")

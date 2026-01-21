@@ -1685,6 +1685,34 @@ func TestCreateInstanceCancelled(t *testing.T) {
 	}
 }
 
+func TestCreateInstanceStoresRuntimeDir(t *testing.T) {
+	stateRoot := filepath.Join(t.TempDir(), "state-store")
+	store := &fakeStore{
+		statesByID: map[string]store.StateEntry{
+			"state-1": {StateID: "state-1", ImageID: "image-1"},
+		},
+	}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{stateRoot: stateRoot})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if _, errResp := mgr.createInstance(context.Background(), "job-1", prepared, "state-1"); errResp != nil {
+		t.Fatalf("createInstance: %+v", errResp)
+	}
+	if len(store.instances) != 1 {
+		t.Fatalf("expected instance create, got %+v", store.instances)
+	}
+	expected := filepath.Join(stateRoot, "jobs", "job-1", "runtime")
+	if store.instances[0].RuntimeDir == nil || *store.instances[0].RuntimeDir != expected {
+		t.Fatalf("unexpected runtime dir: %+v", store.instances[0].RuntimeDir)
+	}
+}
+
 func TestEventFromRecordParsesPayloads(t *testing.T) {
 	result := Result{DSN: "dsn", InstanceID: "i", StateID: "s", ImageID: "img", PrepareKind: "psql", PrepareArgsNormalized: "args"}
 	resultJSON, err := json.Marshal(result)
