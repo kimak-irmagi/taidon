@@ -124,8 +124,16 @@ func TestFindProjectConfigUsesCwd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindProjectConfig: %v", err)
 	}
-	if found != configPath {
-		t.Fatalf("expected %q, got %q", configPath, found)
+	expected, err := filepath.EvalSymlinks(configPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	actual, err := filepath.EvalSymlinks(found)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if actual != expected {
+		t.Fatalf("expected %q, got %q", expected, actual)
 	}
 }
 

@@ -53,6 +53,36 @@ func TestLookupDBMSImageMissing(t *testing.T) {
 	}
 }
 
+func TestLookupDBMSImageInvalidType(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("dbms:\n  image: 123\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, ok, err := LookupDBMSImage(path)
+	if err != nil {
+		t.Fatalf("LookupDBMSImage: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected invalid type to return ok=false")
+	}
+}
+
+func TestLookupDBMSImageWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("dbms:\n  image: \"   \"\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, ok, err := LookupDBMSImage(path)
+	if err != nil {
+		t.Fatalf("LookupDBMSImage: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected whitespace image to return ok=false")
+	}
+}
+
 func TestNormalizeMap(t *testing.T) {
 	input := map[any]any{
 		"key": map[any]any{
