@@ -19,8 +19,13 @@ type Options struct {
 }
 
 func NewManager(opts Options) Manager {
-	if opts.PreferOverlay && overlaySupported() {
-		return newOverlayManager()
+	if opts.PreferOverlay && overlaySupportedFn() {
+		return newOverlayManagerFn()
 	}
 	return CopyManager{}
 }
+
+var (
+	overlaySupportedFn  = overlaySupported
+	newOverlayManagerFn = newOverlayManager
+)

@@ -45,6 +45,67 @@ func TestBuildPsqlExecArgsPrependsConnectionFlags(t *testing.T) {
 	}
 }
 
+func TestRewritePsqlFileArgsMissingValueForFileFlag(t *testing.T) {
+	_, _, err := rewritePsqlFileArgs([]string{"-f"}, &scriptMount{HostRoot: t.TempDir(), ContainerRoot: containerScriptsRoot})
+	if err == nil {
+		t.Fatalf("expected error for missing file value")
+	}
+}
+
+func TestRewritePsqlFileArgsSupportsLongAndShortForms(t *testing.T) {
+	root := t.TempDir()
+	path := writeSQLAt(t, root, "init.sql", "select 1;")
+	mount := &scriptMount{
+		HostRoot:      root,
+		ContainerRoot: containerScriptsRoot,
+	}
+	args := []string{"--file=" + path, "-f" + path}
+	rewritten, _, err := rewritePsqlFileArgs(args, mount)
+	if err != nil {
+		t.Fatalf("rewritePsqlFileArgs: %v", err)
+	}
+	if rewritten[0] != "--file="+containerScriptsRoot+"/init.sql" {
+		t.Fatalf("unexpected rewrite: %+v", rewritten)
+	}
+	if rewritten[1] != "-f"+containerScriptsRoot+"/init.sql" {
+		t.Fatalf("unexpected rewrite: %+v", rewritten)
+	}
+}
+
+func TestMapScriptPathErrors(t *testing.T) {
+	root := t.TempDir()
+	mount := &scriptMount{
+		HostRoot:      root,
+		ContainerRoot: containerScriptsRoot,
+	}
+	if _, err := mapScriptPath("rel.sql", mount); err == nil {
+		t.Fatalf("expected error for relative path")
+	}
+	outside := filepath.Join(t.TempDir(), "outside.sql")
+	if _, err := mapScriptPath(outside, mount); err == nil {
+		t.Fatalf("expected error for path outside root")
+	}
+	if _, err := mapScriptPath(outside, nil); err == nil {
+		t.Fatalf("expected error for missing mount")
+	}
+}
+
+func TestScriptMountForFilesCommonDirError(t *testing.T) {
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	pathA := writeSQLAt(t, rootA, "a.sql", "select 1;")
+	pathB := writeSQLAt(t, rootB, "b.sql", "select 1;")
+	if _, err := scriptMountForFiles([]string{pathA, pathB}); err == nil {
+		t.Fatalf("expected error for divergent roots")
+	}
+}
+
+func TestRuntimeMountsFromNil(t *testing.T) {
+	if mounts := runtimeMountsFrom(nil); mounts != nil {
+		t.Fatalf("expected nil mounts, got %+v", mounts)
+	}
+}
+
 func writeSQLAt(t *testing.T, dir string, name string, contents string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
