@@ -362,6 +362,7 @@ To keep keys meaningful:
 
 - Single-writer (engine process) with SQLite WAL; concurrent readers allowed.
 - Per-store lock file to prevent multiple engine daemons from mutating the same store concurrently.
+- Base initialization uses a per-base directory lock + marker (`base/.init.lock`, `base/.init.ok`) so only one job runs `initdb` per base image at a time. Competing jobs wait for the marker or the lock to clear.
 
 ---
 
