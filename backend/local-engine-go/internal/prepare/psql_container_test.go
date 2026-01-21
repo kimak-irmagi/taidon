@@ -90,13 +90,16 @@ func TestMapScriptPathErrors(t *testing.T) {
 	}
 }
 
-func TestScriptMountForFilesCommonDirError(t *testing.T) {
-	rootA := t.TempDir()
-	rootB := t.TempDir()
-	pathA := writeSQLAt(t, rootA, "a.sql", "select 1;")
-	pathB := writeSQLAt(t, rootB, "b.sql", "select 1;")
-	if _, err := scriptMountForFiles([]string{pathA, pathB}); err == nil {
-		t.Fatalf("expected error for divergent roots")
+func TestScriptMountForFilesCommonDir(t *testing.T) {
+	root := t.TempDir()
+	pathA := writeSQLAt(t, filepath.Join(root, "a"), "a.sql", "select 1;")
+	pathB := writeSQLAt(t, filepath.Join(root, "b"), "b.sql", "select 1;")
+	mount, err := scriptMountForFiles([]string{pathA, pathB})
+	if err != nil {
+		t.Fatalf("scriptMountForFiles: %v", err)
+	}
+	if mount == nil || mount.HostRoot != root {
+		t.Fatalf("unexpected mount: %+v", mount)
 	}
 }
 

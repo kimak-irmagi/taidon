@@ -615,7 +615,7 @@ func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *Erro
 		})
 	}
 	tasks = append(tasks,
-		{
+		PlanTask{
 			TaskID: "execute-0",
 			Type:   "state_execute",
 			Input: &TaskInput{
@@ -626,7 +626,7 @@ func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *Erro
 			OutputStateID: stateID,
 			Cached:        &cachedFlag,
 		},
-		{
+		PlanTask{
 			TaskID: "prepare-instance",
 			Type:   "prepare_instance",
 			Input: &TaskInput{
