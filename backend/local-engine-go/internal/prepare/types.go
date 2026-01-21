@@ -45,6 +45,7 @@ type Event struct {
 	Type    string         `json:"type"`
 	Ts      string         `json:"ts"`
 	Status  string         `json:"status,omitempty"`
+	TaskID  string         `json:"task_id,omitempty"`
 	Message string         `json:"message,omitempty"`
 	Result  *Result        `json:"result,omitempty"`
 	Error   *ErrorResponse `json:"error,omitempty"`
@@ -69,6 +70,8 @@ type PlanTask struct {
 	Type          string     `json:"type"`
 	PlannerKind   string     `json:"planner_kind,omitempty"`
 	Input         *TaskInput `json:"input,omitempty"`
+	ImageID       string     `json:"image_id,omitempty"`
+	ResolvedImageID string   `json:"resolved_image_id,omitempty"`
 	TaskHash      string     `json:"task_hash,omitempty"`
 	OutputStateID string     `json:"output_state_id,omitempty"`
 	Cached        *bool      `json:"cached,omitempty"`
@@ -82,6 +85,8 @@ type TaskEntry struct {
 	Status        string     `json:"status"`
 	PlannerKind   string     `json:"planner_kind,omitempty"`
 	Input         *TaskInput `json:"input,omitempty"`
+	ImageID       string     `json:"image_id,omitempty"`
+	ResolvedImageID string   `json:"resolved_image_id,omitempty"`
 	TaskHash      string     `json:"task_hash,omitempty"`
 	OutputStateID string     `json:"output_state_id,omitempty"`
 	Cached        *bool      `json:"cached,omitempty"`

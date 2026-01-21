@@ -38,10 +38,11 @@ Containers are **stateless executors**.
 
 ### 3.2 Host Storage Strategy (by platform)
 
-- **Linux (primary):** host-managed store on btrfs subvolumes (preferred).
-- **Windows / WSL2:** host-managed VHDX; use btrfs inside if available, otherwise `copy/link-dest` fallback.
+- **Linux (primary):** host-managed state store with OverlayFS copy-on-write.
+- **Windows / WSL2:** snapshot backend added later; initial fallback is full copy.
 
 Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
+For local engine, the state store root is `<StateDir>/state-store`.
 
 ---
 
@@ -51,7 +52,8 @@ Runtime code does not expose concrete paths: engine/adapter resolves data dirs i
 
 - Docker is used as the instance execution layer.
 - Each instance runs a single DB container.
-- Containers are short-lived and disposable.
+- Containers may stay running after prepare (warm instances) until run
+  orchestration decides to stop them.
 
 ### 4.2 Images
 
@@ -100,7 +102,7 @@ Base states are stored as **CoW-capable filesystem datasets** and treated like a
 
 ### 6.1 Primary Backend (MVP)
 
-- **btrfs subvolume snapshots** (Linux hosts; WSL2 if btrfs is available inside VHDX)
+- **OverlayFS layers** (Linux hosts) for copy-on-write snapshots.
 
 Rationale:
 
@@ -110,8 +112,8 @@ Rationale:
 
 ### 6.2 Fallback Backend
 
-- Windows/WSL2 without btrfs: VHDX + `copy/link-dest` snapshotting
-- Any host without CoW FS: recursive copy / rsync-based snapshotting
+- Any host without OverlayFS: recursive copy (MVP).
+- Windows/WSL2 snapshot backend is added later.
 
 Used when CoW FS is unavailable.
 
@@ -125,16 +127,16 @@ Destroy(state_or_sandbox)
 
 Implementation variants:
 
-- `BtrfsSnapshotter`
+- `OverlayFSSnapshotter`
 - `CopySnapshotter`
-- (future) `ZfsSnapshotter`, `CsiSnapshotter`
+- (future) `BtrfsSnapshotter`, `ZfsSnapshotter`, `CsiSnapshotter`
 
 ---
 
 ## 7. State Layout
 
 ```text
-state-store/
+<StateDir>/state-store/
   engines/
     postgres/
       15/
@@ -143,35 +145,32 @@ state-store/
       17/
         base/
         states/<uuid>/
-  metadata/
-    state.db
 ```
 
 - Each state is immutable once created.
 - Instances use writable clones of states.
+- Metadata lives in `<StateDir>/state.db`.
 
 ---
 
 ## 8. Snapshot Consistency Modes
 
-### 8.1 Crash-Consistent (Default)
+### 8.1 DBMS-Assisted Clean Snapshot (Default)
 
-- Filesystem snapshot without stopping the DB.
-- Relies on DB crash recovery on next start.
-- Fastest and acceptable for most workflows.
-- Default for interactive development and education instances.
-
-### 8.2 Clean Snapshot (Optional)
-
-- DB container is stopped gracefully.
-- Snapshot is taken.
-- Container may be restarted if needed.
+- DBMS is paused via a connector (Postgres: `pg_ctl -m fast stop`) while the container stays up.
+- Snapshot is taken by the snapshot manager.
+- DBMS is restarted after snapshot.
 
 Used for:
 
 - CI/CD
 - strict reproducibility
 - Can be requested by policy or per-run flag.
+
+### 8.2 Crash-Consistent (Optional)
+
+- Filesystem snapshot without DB coordination.
+- Relies on DB crash recovery on next start.
 
 ---
 
@@ -198,9 +197,8 @@ After a successful step:
 
 ### 9.4 Teardown and Cooldown
 
-- After use, instance enters a cooldown period.
-- If reused, container may be kept warm.
-- Otherwise, container is stopped and instance destroyed.
+- After prepare, the container stays running and the instance is recorded as warm.
+  Run orchestration will decide when to stop warm instances.
 
 ---
 
@@ -225,7 +223,7 @@ This prevents accidental coupling to a single engine or layout.
 
 ### Phase 1 (MVP)
 
-- Docker + btrfs
+- Docker + OverlayFS
 - Postgres 15 & 17
 - Local state store
 
@@ -234,6 +232,7 @@ This prevents accidental coupling to a single engine or layout.
 - Remote/shared cache
 - ZFS / send-receive
 - Pre-warmed pinned states
+- Windows/WSL snapshot backend
 
 ### Phase 3
 

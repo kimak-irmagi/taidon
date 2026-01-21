@@ -598,7 +598,7 @@ an instance; the plan tasks are returned in the job status.
 
 > Example responses
 
-> 202 Response
+> 201 Response
 
 ```json
 {
@@ -613,7 +613,7 @@ an instance; the plan tasks are returned in the job status.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|202|[Accepted](https://tools.ietf.org/html/rfc7231#section-6.3.3)|Accepted|[PrepareJobAccepted](#schemapreparejobaccepted)|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[PrepareJobAccepted](#schemapreparejobaccepted)|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
@@ -622,7 +622,7 @@ an instance; the plan tasks are returned in the job status.
 
 |Status|Header|Type|Format|Description|
 |---|---|---|---|---|
-|202|Location|string||Canonical job status URL.|
+|201|Location|string||Canonical job status URL.|
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -1020,6 +1020,7 @@ deletion would succeed.
     "kind": "state",
     "id": "string",
     "connections": 0,
+    "runtime_id": "string",
     "blocked": "active_connections",
     "children": [
       {}
@@ -1410,7 +1411,9 @@ Returns task queue entries across jobs.
     "task_hash": "string",
     "output_state_id": "string",
     "cached": true,
-    "instance_mode": "ephemeral"
+    "instance_mode": "ephemeral",
+    "image_id": "string",
+    "resolved_image_id": "string"
   }
 ]
 ```
@@ -2383,6 +2386,7 @@ deletion would succeed.
     "kind": "state",
     "id": "string",
     "connections": 0,
+    "runtime_id": "string",
     "blocked": "active_connections",
     "children": [
       {}
@@ -2973,6 +2977,7 @@ deletion would succeed.
     "kind": "state",
     "id": "string",
     "connections": 0,
+    "runtime_id": "string",
     "blocked": "active_connections",
     "children": [
       {}
@@ -3112,6 +3117,12 @@ xor
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
+|*anonymous*|[PreparePlanTaskResolveImage](#schemaprepareplantaskresolveimage)|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
 |*anonymous*|[PreparePlanTaskStateExecute](#schemaprepareplantaskstateexecute)|false|none|none|
 
 xor
@@ -3178,6 +3189,38 @@ xor
 |Property|Value|
 |---|---|
 |type|plan|
+
+<h2 id="tocS_PreparePlanTaskResolveImage">PreparePlanTaskResolveImage</h2>
+<!-- backwards compatibility -->
+<a id="schemaprepareplantaskresolveimage"></a>
+<a id="schema_PreparePlanTaskResolveImage"></a>
+<a id="tocSprepareplantaskresolveimage"></a>
+<a id="tocsprepareplantaskresolveimage"></a>
+
+```json
+{
+  "task_id": "string",
+  "type": "resolve_image",
+  "image_id": "string",
+  "resolved_image_id": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|task_id|string|true|none|none|
+|type|string|true|none|none|
+|image_id|string|true|none|none|
+|resolved_image_id|string|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|resolve_image|
 
 <h2 id="tocS_PreparePlanTaskStateExecute">PreparePlanTaskStateExecute</h2>
 <!-- backwards compatibility -->
@@ -3437,6 +3480,7 @@ or
 {
   "type": "status",
   "ts": "2019-08-24T14:15:22Z",
+  "task_id": "string",
   "status": "queued",
   "message": "string",
   "result": {
@@ -3462,6 +3506,7 @@ or
 |---|---|---|---|---|
 |type|string|true|none|none|
 |ts|string(date-time)|true|none|none|
+|task_id|string|false|none|Present for task status events.|
 |status|string|false|none|none|
 |message|string|false|none|none|
 |result|[PrepareJobResult](#schemapreparejobresult)|false|none|none|
@@ -3475,6 +3520,7 @@ or
 |type|log|
 |type|result|
 |type|error|
+|type|task|
 |status|queued|
 |status|running|
 |status|succeeded|
@@ -3531,7 +3577,9 @@ or
   "task_hash": "string",
   "output_state_id": "string",
   "cached": true,
-  "instance_mode": "ephemeral"
+  "instance_mode": "ephemeral",
+  "image_id": "string",
+  "resolved_image_id": "string"
 }
 
 ```
@@ -3550,12 +3598,15 @@ or
 |output_state_id|string|false|none|none|
 |cached|boolean|false|none|none|
 |instance_mode|string|false|none|none|
+|image_id|string|false|none|none|
+|resolved_image_id|string|false|none|none|
 
 #### Enumerated Values
 
 |Property|Value|
 |---|---|
 |type|plan|
+|type|resolve_image|
 |type|state_execute|
 |type|prepare_instance|
 |status|queued|
@@ -3579,6 +3630,7 @@ or
     "kind": "state",
     "id": "string",
     "connections": 0,
+    "runtime_id": "string",
     "blocked": "active_connections",
     "children": [
       {}
@@ -3616,12 +3668,14 @@ or
   "kind": "state",
   "id": "string",
   "connections": 0,
+  "runtime_id": "string",
   "blocked": "active_connections",
   "children": [
     {
       "kind": "state",
       "id": "string",
       "connections": 0,
+      "runtime_id": "string",
       "blocked": "active_connections",
       "children": []
     }
@@ -3637,6 +3691,7 @@ or
 |kind|string|true|none|none|
 |id|string|true|none|none|
 |connections|integer(int32)|false|none|Active connections (instances only).|
+|runtime_id|string|false|none|Runtime/container identifier for instance nodes.|
 |blocked|string|false|none|Reason the node cannot be deleted.|
 |children|[[DeleteTreeNode](#schemadeletetreenode)]|false|none|none|
 

@@ -71,7 +71,8 @@ prepared instance:
 
 ### SQL input sources
 
-- `-f`, `--file <path>`: SQL script file (absolute paths are passed to the engine).
+- `-f`, `--file <path>`: SQL script file. Relative paths are resolved from the CLI working
+  directory and sent as absolute paths; files must live under the workspace root.
 - `-c`, `--command <sql>`: inline SQL string.
 - `-f -`: read SQL from stdin; sqlrs reads stdin and passes it to the engine.
 
@@ -87,8 +88,12 @@ The base Docker image id is resolved in this order:
 2. Workspace config (`.sqlrs/config.yaml`, `dbms.image`)
 3. Global config (`$XDG_CONFIG_HOME/sqlrs/config.yaml`, `dbms.image`)
 
-The image id is treated as an opaque value and passed to Docker as-is.
-If no image id can be resolved, `prepare` fails.
+If the resolved image id does not include a digest, the engine resolves it to a
+canonical digest (for example `postgres:15@sha256:...`) before planning or
+execution. If the digest cannot be resolved, `prepare` fails.
+
+When a digest resolution is required, the job includes a `resolve_image` task
+before any planning or execution.
 
 Config key:
 
@@ -101,12 +106,29 @@ When `-v/--verbose` is set, sqlrs prints the resolved image id and its source.
 
 ---
 
+## Local Execution (MVP)
+
+For local profiles, the engine performs real execution:
+
+- Requires Docker running locally; `psql` is executed inside the container.
+- Images must expose `PGDATA` at `/var/lib/postgresql/data` and allow trust auth
+  (`POSTGRES_HOST_AUTH_METHOD=trust`).
+- State data is stored under `<StateDir>/state-store` (outside containers).
+- Each task snapshots the DB state; the engine uses OverlayFS-based copy-on-write
+  when available and falls back to full copy.
+- The prepare container stays running after the job; the instance is recorded as
+  warm and a future `sqlrs run` will decide when to stop it.
+- When `-f/--file` inputs are present, the engine mounts the workspace scripts
+  root into the container and rewrites file arguments to the container path.
+
+---
+
 ## State Identification
 
 A **state** is identified by a fingerprint computed from:
 
 - `prepare kind`
-- `base image id`
+- resolved `base image id` (digest)
 - normalized `prepare arguments`
 - hashes of all input sources (files, inline SQL, stdin)
 - sqlrs engine version
@@ -116,7 +138,7 @@ Formally:
 ```text
 state_id = hash(
   prepare_kind +
-  base_image_id +
+  base_image_id_resolved +
   normalized_prepare_args +
   normalized_input_hashes +
   engine_version

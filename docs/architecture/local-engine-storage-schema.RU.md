@@ -62,15 +62,17 @@ CREATE TABLE IF NOT EXISTS instances (
   image_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   expires_at TEXT,
+  runtime_id TEXT,
+  runtime_dir TEXT,
   status TEXT,
   FOREIGN KEY(state_id) REFERENCES states(state_id)
-);
-CREATE INDEX IF NOT EXISTS idx_instances_state ON instances(state_id);
 ```
 <!--ref:end-->
 
 Примечания:
 - `instance_id` использует формат id, определенный engine.
+- `runtime_id` хранит идентификатор runtime/контейнера для остановки или инспекции.
+- `runtime_dir` хранит абсолютный путь к runtime директории job для очистки.
 - `status` зарезервирован; текущий статус вычисляется.
 
 ### 3.3 `names`
@@ -79,6 +81,8 @@ CREATE INDEX IF NOT EXISTS idx_instances_state ON instances(state_id);
 [`schema.sql`](../../backend/local-engine-go/internal/store/sqlite/schema.sql#L30-L42)
 <!--ref:body-->
 ```sql
+CREATE INDEX IF NOT EXISTS idx_instances_state ON instances(state_id);
+CREATE INDEX IF NOT EXISTS idx_instances_image ON instances(image_id);
 CREATE INDEX IF NOT EXISTS idx_instances_expires ON instances(expires_at);
 
 CREATE TABLE IF NOT EXISTS names (
@@ -90,8 +94,6 @@ CREATE TABLE IF NOT EXISTS names (
   last_used_at TEXT,
   is_primary INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_names_instance ON names(instance_id);
-CREATE INDEX IF NOT EXISTS idx_names_state ON names(state_id);
 ```
 <!--ref:end-->
 

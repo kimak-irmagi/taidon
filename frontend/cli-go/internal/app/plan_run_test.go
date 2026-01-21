@@ -17,7 +17,8 @@ import (
 
 func TestRunPlanMissingImage(t *testing.T) {
 	runOpts := cli.PrepareOptions{}
-	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--", "-c", "select 1"}, "json")
+	cwd := t.TempDir()
+	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--", "-c", "select 1"}, "json")
 	if err == nil || !strings.Contains(err.Error(), "Missing base image id") {
 		t.Fatalf("expected missing image error, got %v", err)
 	}
@@ -26,7 +27,8 @@ func TestRunPlanMissingImage(t *testing.T) {
 func TestRunPlanHelp(t *testing.T) {
 	var stdout bytes.Buffer
 	runOpts := cli.PrepareOptions{}
-	if err := runPlan(&stdout, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--help"}, "json"); err != nil {
+	cwd := t.TempDir()
+	if err := runPlan(&stdout, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--help"}, "json"); err != nil {
 		t.Fatalf("runPlan: %v", err)
 	}
 	if !strings.Contains(stdout.String(), "Usage:") {
@@ -36,7 +38,8 @@ func TestRunPlanHelp(t *testing.T) {
 
 func TestRunPlanRemoteRequiresEndpoint(t *testing.T) {
 	runOpts := cli.PrepareOptions{Mode: "remote"}
-	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image", "--", "-c", "select 1"}, "json")
+	cwd := t.TempDir()
+	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--image", "image", "--", "-c", "select 1"}, "json")
 	if err == nil || !strings.Contains(err.Error(), "remote mode requires explicit endpoint") {
 		t.Fatalf("expected remote endpoint error, got %v", err)
 	}
@@ -44,7 +47,8 @@ func TestRunPlanRemoteRequiresEndpoint(t *testing.T) {
 
 func TestRunPlanNormalizeArgsError(t *testing.T) {
 	runOpts := cli.PrepareOptions{}
-	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image", "--", "-f"}, "json")
+	cwd := t.TempDir()
+	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--image", "image", "--", "-f"}, "json")
 	if err == nil || !strings.Contains(err.Error(), "Missing value for -f") {
 		t.Fatalf("expected missing file value, got %v", err)
 	}
@@ -72,7 +76,8 @@ func TestRunPlanVerboseImageSource(t *testing.T) {
 		Endpoint: server.URL,
 		Verbose:  true,
 	}
-	if err := runPlan(&bytes.Buffer{}, &stderr, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image", "image", "--", "-c", "select 1"}, "json"); err != nil {
+	cwd := t.TempDir()
+	if err := runPlan(&bytes.Buffer{}, &stderr, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--image", "image", "--", "-c", "select 1"}, "json"); err != nil {
 		t.Fatalf("runPlan: %v", err)
 	}
 	if !strings.Contains(stderr.String(), "dbms.image=image (source: command line)") {
@@ -82,7 +87,8 @@ func TestRunPlanVerboseImageSource(t *testing.T) {
 
 func TestRunPlanParseArgsError(t *testing.T) {
 	runOpts := cli.PrepareOptions{}
-	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, t.TempDir(), []string{"--image"}, "json")
+	cwd := t.TempDir()
+	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--image"}, "json")
 	if err == nil || !strings.Contains(err.Error(), "Missing value for --image") {
 		t.Fatalf("expected missing image value error, got %v", err)
 	}
@@ -103,7 +109,8 @@ func TestRunPlanResolveImageError(t *testing.T) {
 		Paths:             paths.Dirs{ConfigDir: temp},
 	}
 	runOpts := cli.PrepareOptions{}
-	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, cfg, t.TempDir(), []string{"--", "-c", "select 1"}, "json")
+	workspaceRoot := filepath.Dir(filepath.Dir(projectPath))
+	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, cfg, workspaceRoot, temp, []string{"--", "-c", "select 1"}, "json")
 	if err == nil {
 		t.Fatalf("expected resolve image error")
 	}

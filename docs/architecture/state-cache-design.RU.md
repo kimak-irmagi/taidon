@@ -107,7 +107,7 @@ Taidon стремится делать snapshot "как можно чаще" н�
 State уникально определяется:
 
 - DBMS engine и версия (например, `postgres:17`)
-- Base image/build identifier
+- Base image/build identifier (по возможности резолвится в дайджест)
 - Parent State (опционально, для layered snapshots)
 - Change block hash (когда получено из применения известного блока)
 - Execution параметры, влияющие на семантику (collation, extensions, locale, seed inputs и т.п.)
@@ -355,13 +355,14 @@ Taidon может работать в двух режимах, когда Liquib
 
 ### 12.3 Платформенные особенности
 
-- **Linux/macOS**: `~/.cache/sqlrs/state-store` (или `$XDG_CACHE_HOME/sqlrs/state-store`), нативная ФС; btrfs/zfs при наличии, иначе copy/rsync fallback. На macOS используется тот же путь для совместимости с XDG; допустимо добавить symlink из `~/Library/Caches/sqlrs`.
-- **Windows (WSL2)**: state store внутри WSL файловой системы (`$HOME/.cache/sqlrs/state-store`), чтобы сохранить POSIX perms и CoW performance; путь на Windows-хосте содержит только pointer/config. Если WSL kernel без btrfs, fallback на VHDX + copy/link-dest согласно runtime snapshotting.
+- **Linux/macOS (local engine)**: `<StateDir>/state-store`, нативная ФС; OverlayFS при наличии, иначе fallback на копирование.
+- **Windows (local engine)**: `<StateDir>/state-store`, fallback на копирование; WSL backend добавим позже.
 
 ### 12.4 Доступ и блокировки
 
 - Single-writer (engine process) с SQLite WAL; concurrent readers разрешены.
 - Per-store lock file для предотвращения одновременной модификации одним store двумя engine daemon.
+- Инициализация base использует lock + marker на каталог base (`base/.init.lock`, `base/.init.ok`), чтобы только один job выполнял `initdb` для одного образа. Конкурирующие job ждут появления marker или освобождения lock.
 
 ---
 

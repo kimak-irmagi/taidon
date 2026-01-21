@@ -29,6 +29,22 @@ func TestEnsureParentStateColumnDuplicate(t *testing.T) {
 	}
 }
 
+func TestEnsureRuntimeDirColumnDuplicate(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec("CREATE TABLE instances (instance_id TEXT PRIMARY KEY, runtime_dir TEXT)"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	if err := ensureRuntimeDirColumn(db); err != nil {
+		t.Fatalf("ensureRuntimeDirColumn: %v", err)
+	}
+}
+
 func TestInitDBClosedDatabase(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"sqlrs/engine/internal/auth"
 	"sqlrs/engine/internal/deletion"
@@ -87,7 +86,7 @@ func NewHandler(opts Options) http.Handler {
 			}
 			w.Header().Set("Location", accepted.StatusURL)
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusAccepted)
+			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(accepted)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -480,7 +479,11 @@ func streamPrepareEvents(w http.ResponseWriter, r *http.Request, mgr *prepare.Ma
 	enc := json.NewEncoder(w)
 	index := 0
 	for {
-		events, ok, done := mgr.EventsSince(jobID, index)
+		events, ok, done, err := mgr.EventsSince(jobID, index)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -493,10 +496,10 @@ func streamPrepareEvents(w http.ResponseWriter, r *http.Request, mgr *prepare.Ma
 		if done {
 			return
 		}
-		select {
-		case <-r.Context().Done():
-			return
-		case <-time.After(200 * time.Millisecond):
+		if len(events) == 0 {
+			if err := mgr.WaitForEvent(r.Context(), jobID, index); err != nil {
+				return
+			}
 		}
 	}
 }

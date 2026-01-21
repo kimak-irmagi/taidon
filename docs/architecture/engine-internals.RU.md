@@ -12,8 +12,10 @@ flowchart LR
   PLAN["Планировщик prepare"]
   EXEC["Исполнитель prepare"]
   CACHE[Клиент кэша состояний]
-  SNAP[Менеджер снапшотов]
+  SNAP["Менеджер снапшотов"]
+  QSTORE["Очередь jobs/tasks (SQLite)"]
   RUNTIME["Рантайм экземпляров (Docker)"]
+  DBMS["DBMS-коннектор"]
   ADAPTER["Адаптер системы скриптов"]
   INST["Менеджер экземпляров"]
   CONN["Трекинг подключений"]
@@ -26,6 +28,7 @@ flowchart LR
   CTRL --> EXEC
   CTRL --> CACHE
   CTRL --> SNAP
+  CTRL --> QSTORE
   CTRL --> RUNTIME
   CTRL --> ADAPTER
   CTRL --> INST
@@ -36,6 +39,8 @@ flowchart LR
   DEL --> CONN
   PLAN --> ADAPTER
   EXEC --> ADAPTER
+  EXEC --> DBMS
+  DBMS --> RUNTIME
   SNAP --> STORE
   INST --> STORE
   CACHE --> STORE
@@ -49,80 +54,105 @@ flowchart LR
 - expose endpoints удаления экземпляров и состояний с опциями recurse/force/dry-run.
 - expose list endpoints для prepare jobs и tasks, а также удаление job.
 - Prepare выполняется как async job; CLI следит за статусом/событиями и ждет завершения.
+  `POST /v1/prepare-jobs` сохраняет запись job перед ответом `201 Created`.
   `plan_only`-запросы возвращают список задач в статусе job.
+- Стримит события job (включая изменения статуса задач) всем подключенным NDJSON-клиентам.
 
 ### 1.2 Prepare Controller
 
 - Координирует prepare job: plan steps, cache lookup, execute steps, snapshot states, создание экземпляра, persist metadata.
 - Навязывает дедлайны и отмену; управляет дочерними процессами/контейнерами.
-- Эмитит статусы и структурированные события для стрима в CLI.
-- Отдает снимки jobs/tasks для list endpoints и обрабатывает удаление job.
+- Эмитит статусы и структурированные события (включая статус задач) для стрима в CLI.
+- Отдает снимки jobs/tasks для list endpoints, хранит состояния jobs/tasks и обрабатывает удаление job.
+- Разрешает образы без дайджеста в канонический дайджест перед планированием; добавляет задачу `resolve_image`, если резолв нужен.
 
-### 1.3 Планировщик prepare
+### 1.3 Очередь jobs/tasks
+
+- Хранит статусы jobs/tasks и историю событий в SQLite.
+- Поддерживает восстановление после рестарта по queued/running записям.
+
+### 1.4 Планировщик prepare
 
 - Строит упорядоченный список шагов prepare из `psql` скриптов.
 - Каждый шаг хешируется (специфично для системы скриптов) для cache key: `engine/version/base/step_hash/params`.
 - На выходе цепочка шагов, а не head/tail; промежуточные состояния могут материализоваться для cache reuse.
 - Вход prepare также дает стабильный fingerprint состояния:
-  `state_id = hash(prepare_kind + base_image_id + normalized_args + normalized_input_hashes + engine_version)`.
+  `state_id = hash(prepare_kind + base_image_id_resolved + normalized_args + normalized_input_hashes + engine_version)`.
 
-### 1.4 Исполнитель prepare
+### 1.5 Исполнитель prepare
 
 - Выполняет один prepare шаг в instance через выбранный адаптер системы скриптов.
 - Собирает структурированные логи/метрики для observability и cache planning.
+- Использует DBMS-коннектор для подготовки к снапшоту без остановки контейнера.
 
-### 1.5 Cache Client
+### 1.6 Cache Client
 
 - Общается с локальным state-cache индексом (SQLite) для lookup/store `key -> state_id`.
 - Знает текущий корень state store; никогда не отдает наружу raw filesystem paths.
 
-### 1.6 Snapshotter
+### 1.7 Менеджер снапшотов
 
-- Абстрагирует CoW/copy стратегии (btrfs, VHDX+link-dest, rsync).
+- Предпочитает OverlayFS на Linux; fallback — копирование.
+- Windows/WSL backend для снапшотов добавим позже.
 - Экспортирует `Clone`, `Snapshot`, `Destroy` для states и instances.
-- Использует path resolver из State Store, чтобы найти корни `PGDATA`.
+- Использует path resolver из State Store, чтобы найти корни `PGDATA` и каталоги states.
 
-### 1.7 Instance Runtime
+### 1.8 DBMS-коннектор
+
+- Инкапсулирует подготовку СУБД к снапшоту и пробуждение после него.
+- Для Postgres делает fast shutdown (`pg_ctl -m fast stop`) и restart, не останавливая контейнер.
+- `psql` запускается внутри контейнера; пути к скриптам монтируются read-only и
+  переписываются перед выполнением.
+
+### 1.9 Instance Runtime
 
 - Управляет DB-контейнерами через Docker (один контейнер на instance).
-- Применяет монтирования от Snapshotter, задает лимиты ресурсов, default statement timeout.
+- Применяет монтирования от менеджера снапшотов, задает лимиты ресурсов, default statement timeout.
+- В MVP использует Docker CLI; позже можно заменить на SDK.
+- Устанавливает `PGDATA=/var/lib/postgresql/data` и `POSTGRES_HOST_AUTH_METHOD=trust`.
 - Возвращает connection info контроллеру.
 
-### 1.8 Адаптер системы скриптов
+### 1.10 Адаптер системы скриптов
 
 - Дает общий интерфейс для систем скриптов (сейчас только `psql`).
 - Каждый адаптер реализует planning, execution и правила хеширования шагов.
+- `psql` запускается внутри контейнера и использует смонтированные пути к скриптам.
 - Liquibase планируется как внешний CLI (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
 
-### 1.9 Менеджер экземпляров
+### 1.11 Менеджер экземпляров
 
 - Ведет mutable экземпляры, производные от immutable states.
 - Создает эфемерные экземпляры и возвращает DSN.
 - Управляет жизненным циклом экземпляров (ephemeral) и метаданными TTL/GC.
+- Контейнеры остаются запущенными после prepare; экземпляры считаются warm, пока
+  оркестрация run не решит их остановить.
+- При удалении экземпляра удаляется сохраненная runtime-директория, чтобы не
+  копить per-job данные под state store.
 
-### 1.10 Контроллер удаления
+### 1.12 Контроллер удаления
 
 - Строит дерево удаления для экземпляров и состояний.
 - Проверяет правила безопасности (активные подключения, потомки, флаги).
 - Выполняет удаление при разрешении; ответы идемпотентны.
 
-### 1.11 Трекинг подключений
+### 1.13 Трекинг подключений
 
 - Отслеживает активные подключения на уровне экземпляров.
 - Использует introspection в БД (например, `pg_stat_activity`) по расписанию.
 - Используется для продления TTL и проверок удаления.
 
-### 1.12 State Store (Paths + Metadata)
+### 1.14 State Store (Paths + Metadata)
 
-- Разрешает корень хранилища (`~/.cache/sqlrs/state-store` или override).
+- Разрешает корень хранилища в `<StateDir>/state-store`.
 - Владеет metadata DB (SQLite WAL) и layout путей (`engines/<engine>/<version>/base|states/<uuid>`).
 - Пишет `engine.json` в state directory (endpoint + PID + auth token + lock) для discovery со стороны CLI.
 - Хранит `parent_state_id` для поддержки иерархии состояний и рекурсивного удаления.
 
-### 1.13 Telemetry/Audit
+### 1.15 Telemetry/Audit
 
 - Эмитит метрики: cache hit/miss, planning latency, instance bind/exec durations, snapshot size/time.
 - Пишет audit events для prepare jobs и cache mutations.
+- Логгирует HTTP-запросы и ключевые этапы prepare (создание job, планирование, обновления статуса задач, завершение).
 
 ## 2. Потоки (local)
 
@@ -134,7 +164,8 @@ sequenceDiagram
   participant API as Engine API
   participant CTRL as Prepare Controller
   participant CACHE as Cache
-  participant SNAP as Snapshotter
+  participant DBMS as "DBMS-коннектор"
+  participant SNAP as "Менеджер снапшотов"
   participant RT as Runtime (Docker)
   participant ADAPTER as Script Adapter
   participant INST as Instance Manager
@@ -143,6 +174,8 @@ sequenceDiagram
   API-->>CLI: job_id
   CLI->>API: watch status/events
   API->>CTRL: enqueue job
+  CTRL->>RUNTIME: resolve image reference
+  RUNTIME-->>CTRL: resolved digest
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   alt cache hit
@@ -161,18 +194,19 @@ sequenceDiagram
     else cache miss
       CTRL->>ADAPTER: execute step
       ADAPTER-->>CTRL: logs/status per step
+      CTRL->>DBMS: prepare for snapshot
       CTRL->>SNAP: snapshot new state
+      CTRL->>DBMS: resume after snapshot
       CTRL->>CACHE: store key->state_id
     end
   end
   CTRL->>INST: create instance
   INST-->>CTRL: instance_id + DSN
   CTRL-->>API: status updates / events
-  CTRL->>SNAP: teardown instance (or keep warm by policy)
   API-->>CLI: terminal status
 ```
 
-- Отмена: контроллер отменяет prepare job, прерывает активную работу с БД, завершает стрим со статусом `cancelled`.
+- Отмена: контроллер отменяет prepare job, прерывает активную работу с БД, завершает стрим со статусом `failed` и ошибкой `cancelled`.
 - Таймауты: контроллер ограничивает wall-clock; `statement_timeout` задается на шаг.
 
 ### 2.2 Plan-only Flow
@@ -189,6 +223,8 @@ sequenceDiagram
   API-->>CLI: job_id
   CLI->>API: watch status/events
   API->>CTRL: enqueue job
+  CTRL->>RUNTIME: resolve image reference
+  RUNTIME-->>CTRL: resolved digest
   CTRL->>ADAPTER: plan steps
   CTRL->>CACHE: lookup(key)
   CACHE-->>CTRL: hit/miss
@@ -267,21 +303,22 @@ sequenceDiagram
 
 ## 3. Конкурентность и процессная модель
 
-- Один процесс engine; очередь job с небольшим пулом воркеров (настраиваемо).
+- Один процесс engine; явного лимита на параллельность пока нет (настраиваем позже).
 - Один активный экземпляр на job; несколько job могут выполняться параллельно при наличии ресурсов.
 - Лок: per-store lock, чтобы два экземпляра engine не писали в один store.
 
 ## 4. Персистентность и discovery
 
 - `engine.json` в state directory: `{ pid, endpoint, socket_path|port, startedAt, lockfile, instanceId, authToken, version }`.
-- Cache metadata и реестр states живут в SQLite под корнем state store.
-- Другой персистентности нет; engine в остальном disposable.
+- Cache metadata, реестр states и очередь jobs/tasks живут в SQLite под корнем state store.
+- Восстановление очереди повторно ставит queued/running задачи, а задачи с готовым state помечает как succeeded.
 
 ## 5. Обработка ошибок
 
 - Все долгие операции возвращают job id; ошибки фиксируются как terminal state с причиной и логами.
 - Cache writes идемпотентны по `state_id`; частичные snapshots помечаются failed и не переиспользуются без явной ссылки.
-- Если Docker/psql недоступны, API возвращает понятные ошибки; CLI их показывает и завершает с ненулевым кодом.
+- Если Docker недоступен или выполнение `psql` в контейнере падает, API возвращает
+  понятные ошибки; CLI их показывает и завершает с ненулевым кодом.
 
 ## 6. Точки эволюции
 

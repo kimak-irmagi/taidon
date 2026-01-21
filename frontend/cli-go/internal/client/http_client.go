@@ -141,7 +141,7 @@ func (c *Client) CreatePrepareJob(ctx context.Context, req PrepareJobRequest) (P
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusAccepted {
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusCreated {
 		return out, parseErrorResponse(resp)
 	}
 	decoder := json.NewDecoder(resp.Body)

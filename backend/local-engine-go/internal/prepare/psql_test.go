@@ -22,6 +22,9 @@ func TestPreparePsqlArgsAddsDefaults(t *testing.T) {
 	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
 		t.Fatalf("expected file hash, got %+v", out.inputHashes)
 	}
+	if len(out.filePaths) != 1 || out.filePaths[0] != path {
+		t.Fatalf("expected file path tracking, got %+v", out.filePaths)
+	}
 }
 
 func TestPreparePsqlArgsRespectsProvidedDefaults(t *testing.T) {

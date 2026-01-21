@@ -34,14 +34,12 @@ flowchart LR
   ENG["sqlrs engine process"]
   DOCKER["Docker Engine"]
   DB["DB Container"]
-  PS["psql runner"]
   STATE["State dir (engine.json)"]
   STORE["state store"]
 
   U --> CLI
   CLI -->|spawn / connect| ENG
   ENG --> DOCKER
-  ENG --> PS
   DOCKER --> DB
   ENG --> STORE
   CLI -. discovery .-> STATE
@@ -85,7 +83,7 @@ CLI намеренно **тонкий** и без состояния.
 - Оркестрация Docker-контейнеров
 - Snapshotting и управление состояниями
 - Cache rewind и eviction
-- Выполнение скриптов через `psql`
+- Выполнение скриптов через `psql` внутри контейнера
 - Connection / proxy слой (если нужен)
 - Трекинг подключений для TTL и безопасного удаления
 - IPC/API для CLI и будущих IDE-интеграций
@@ -130,7 +128,7 @@ CLI намеренно **тонкий** и без состояния.
 
 ### 5.1 Долгие операции: async jobs, sync CLI
 
-- Engine выполняет prepare как асинхронные job; `POST /v1/prepare-jobs` отвечает `202 Accepted` с job id.
+- Engine выполняет prepare как асинхронные job; `POST /v1/prepare-jobs` отвечает `201 Created` с job id.
 - CLI сразу начинает наблюдать job через статус/стрим и завершает работу после терминального статуса.
 - У CLI пока нет detach-режима; `--watch/--no-watch` — future extension.
 
@@ -138,12 +136,9 @@ CLI намеренно **тонкий** и без состояния.
 
 ## 6. Взаимодействие с psql
 
-Engine делегирует выполнение скриптов `psql`:
-
-- system-installed `psql`
-- Docker-based `psql` runner (опционально)
-
-`psql` вызывается как внешний процесс (host binary или Docker runner); накладные расходы измеряются и оптимизируются при необходимости.
+Engine выполняет `psql` внутри DB-контейнера через `docker exec`.
+При наличии файловых входов он монтирует корень скриптов read-only и
+переписывает `-f` аргументы на путь внутри контейнера.
 
 Интеграция Liquibase планируется; детали провайдера описаны в
 [`liquibase-integration.RU.md`](liquibase-integration.RU.md).
@@ -153,7 +148,7 @@ Engine делегирует выполнение скриптов `psql`:
 ## 6. Взаимодействие с Docker
 
 - Docker обязателен в MVP
-- Engine управляет DB-контейнерами и опциональными `psql` runner-контейнерами
+- Engine управляет DB-контейнерами и выполняет `psql` через `docker exec`
 - Все persistent data directories монтируются из host-managed хранилища
 - Engine проверяет доступность Docker на старте; CLI выводит понятные ошибки, если Docker недоступен
 

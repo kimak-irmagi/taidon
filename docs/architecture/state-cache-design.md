@@ -107,7 +107,7 @@ Taidon aims to snapshot "as often as possible" at safe boundaries.
 A State is uniquely identified by:
 
 - DBMS engine and version (e.g., `postgres:17`)
-- Base image/build identifier
+- Base image/build identifier (resolved to a digest when available)
 - Parent State (optional, for layered snapshots)
 - Change block hash (when derived from applying a known block)
 - Execution parameters affecting semantics (collation, extensions, locale, seed inputs, etc.)
@@ -355,13 +355,14 @@ To keep keys meaningful:
 
 ### 12.3 Platform specifics
 
-- **Linux/macOS**: `~/.cache/sqlrs/state-store` (or `$XDG_CACHE_HOME/sqlrs/state-store`), using native filesystem; btrfs/zfs if present, otherwise copy/rsync fallback. macOS uses the same path for consistency with XDG; acceptable to add a symlink from `~/Library/Caches/sqlrs` if needed.
-- **Windows (WSL2)**: state store inside the WSL filesystem (`$HOME/.cache/sqlrs/state-store`) to keep POSIX perms and CoW performance; host Windows path only holds a pointer/config. If WSL kernel lacks btrfs, fall back to VHDX + copy/link-dest as per runtime snapshotting.
+- **Linux/macOS (local engine)**: `<StateDir>/state-store`, using native filesystem; OverlayFS when available, otherwise copy fallback.
+- **Windows (local engine)**: `<StateDir>/state-store`, copy fallback; WSL backend is added later.
 
 ### 12.4 Access and locking
 
 - Single-writer (engine process) with SQLite WAL; concurrent readers allowed.
 - Per-store lock file to prevent multiple engine daemons from mutating the same store concurrently.
+- Base initialization uses a per-base directory lock + marker (`base/.init.lock`, `base/.init.ok`) so only one job runs `initdb` per base image at a time. Competing jobs wait for the marker or the lock to clear.
 
 ---
 

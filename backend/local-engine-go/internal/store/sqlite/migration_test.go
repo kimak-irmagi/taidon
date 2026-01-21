@@ -41,6 +41,9 @@ func TestOpenMigratesParentStateColumn(t *testing.T) {
 	if !hasColumn(t, verifyDB, "states", "parent_state_id") {
 		t.Fatalf("expected parent_state_id column after migration")
 	}
+	if !hasColumn(t, verifyDB, "instances", "runtime_dir") {
+		t.Fatalf("expected runtime_dir column after migration")
+	}
 }
 
 func seedLegacySchema(db *sql.DB) error {
