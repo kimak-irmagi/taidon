@@ -2,6 +2,7 @@ package prepare
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -436,13 +437,69 @@ func (m *Manager) ensureBaseState(ctx context.Context, imageID string, baseDir s
 	if strings.TrimSpace(baseDir) == "" {
 		return fmt.Errorf("base dir is required")
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, "PG_VERSION")); err == nil {
+	if initMarkerExists(baseDir) {
 		return nil
 	}
 	if err := os.MkdirAll(baseDir, 0o700); err != nil {
 		return err
 	}
-	return m.runtime.InitBase(ctx, imageID, baseDir)
+	if err := withInitLock(ctx, baseDir, func() error {
+		if initMarkerExists(baseDir) {
+			return nil
+		}
+		if _, err := os.Stat(filepath.Join(baseDir, "PG_VERSION")); err == nil {
+			return writeInitMarker(baseDir)
+		}
+		if err := m.runtime.InitBase(ctx, imageID, baseDir); err != nil {
+			return err
+		}
+		return writeInitMarker(baseDir)
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+const (
+	baseInitMarkerName = ".init.ok"
+	baseInitLockName   = ".init.lock"
+)
+
+func initMarkerExists(baseDir string) bool {
+	_, err := os.Stat(filepath.Join(baseDir, baseInitMarkerName))
+	return err == nil
+}
+
+func writeInitMarker(baseDir string) error {
+	path := filepath.Join(baseDir, baseInitMarkerName)
+	return os.WriteFile(path, []byte("ok"), 0o600)
+}
+
+func withInitLock(ctx context.Context, baseDir string, fn func() error) error {
+	if fn == nil {
+		return fmt.Errorf("lock callback is required")
+	}
+	lockPath := filepath.Join(baseDir, baseInitLockName)
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_ = f.Close()
+			defer os.Remove(lockPath)
+			return fn()
+		}
+		if errors.Is(err, os.ErrExist) {
+			if initMarkerExists(baseDir) {
+				_ = os.Remove(lockPath)
+				return nil
+			}
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		return err
+	}
 }
 
 func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) {
