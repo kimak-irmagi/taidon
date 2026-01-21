@@ -96,3 +96,30 @@ func TestCopyDirRejectsFileSource(t *testing.T) {
 		t.Fatalf("expected error for file source")
 	}
 }
+
+func TestCopyDirCopiesSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires privileges on Windows")
+	}
+	src := t.TempDir()
+	target := filepath.Join(src, "target.txt")
+	if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := filepath.Join(src, "link.txt")
+	if err := os.Symlink("target.txt", link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	dest := filepath.Join(t.TempDir(), "dest")
+	if err := copyDir(context.Background(), src, dest); err != nil {
+		t.Fatalf("copyDir: %v", err)
+	}
+	copied := filepath.Join(dest, "link.txt")
+	info, err := os.Lstat(copied)
+	if err != nil {
+		t.Fatalf("stat link: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected symlink, got mode %v", info.Mode())
+	}
+}

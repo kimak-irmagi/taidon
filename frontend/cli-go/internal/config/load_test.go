@@ -88,3 +88,18 @@ func TestLoadResolvesDaemonPathRelativeToProjectConfig(t *testing.T) {
 		t.Fatalf("expected daemonPath %q, got %q", expected, result.Config.Orchestrator.DaemonPath)
 	}
 }
+
+func TestReadConfigMapNonMap(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("- item\n- item2\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	data, err := readConfigMap(path)
+	if err != nil {
+		t.Fatalf("readConfigMap: %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("expected empty map, got %+v", data)
+	}
+}

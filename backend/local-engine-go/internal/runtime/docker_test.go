@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -403,6 +404,58 @@ func TestIsDockerUnavailableOutput(t *testing.T) {
 	if isDockerUnavailableOutput("boom", errors.New("fail")) {
 		t.Fatalf("expected unavailable false for unrelated error")
 	}
+}
+
+func TestExecRunnerRun(t *testing.T) {
+	runner := execRunner{}
+	cmd, args := shellCommand("echo ok")
+	output, err := runner.Run(context.Background(), cmd, args, nil)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if !strings.Contains(output, "ok") {
+		t.Fatalf("expected output to include ok, got %q", output)
+	}
+}
+
+func TestExecRunnerRunError(t *testing.T) {
+	runner := execRunner{}
+	cmd, args := shellCommand("echo err 1>&2 && exit 1")
+	output, err := runner.Run(context.Background(), cmd, args, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(strings.ToLower(output), "err") {
+		t.Fatalf("expected stderr in output, got %q", output)
+	}
+}
+
+func TestIsInitdbPermissionOutput(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{name: "empty", output: "", want: false},
+		{name: "initdb-permissions", output: "initdb: error: could not change permissions of directory", want: true},
+		{name: "chown-not-permitted", output: "chown: changing ownership of '/var/lib/postgresql/data/pgdata': Operation not permitted", want: true},
+		{name: "chmod-not-permitted", output: "chmod: changing permissions of '/var/lib/postgresql/data/pgdata': Operation not permitted", want: true},
+		{name: "generic-permissions", output: "Operation not permitted: permissions data", want: true},
+		{name: "pgdata-path", output: "operation not permitted " + PostgresDataDir, want: true},
+		{name: "unrelated", output: "permission denied for user", want: false},
+	}
+	for _, testCase := range cases {
+		if got := isInitdbPermissionOutput(testCase.output); got != testCase.want {
+			t.Fatalf("%s: expected %v, got %v", testCase.name, testCase.want, got)
+		}
+	}
+}
+
+func shellCommand(command string) (string, []string) {
+	if runtime.GOOS == "windows" {
+		return "cmd", []string{"/c", command}
+	}
+	return "sh", []string{"-c", command}
 }
 
 func containsArg(args []string, key string, value string) bool {

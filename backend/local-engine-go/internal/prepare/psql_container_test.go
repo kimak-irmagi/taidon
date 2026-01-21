@@ -109,6 +109,60 @@ func TestRuntimeMountsFromNil(t *testing.T) {
 	}
 }
 
+func TestRewritePsqlFileArgsWithoutMount(t *testing.T) {
+	args := []string{"-c", "select 1"}
+	rewritten, workdir, err := rewritePsqlFileArgs(args, nil)
+	if err != nil {
+		t.Fatalf("rewritePsqlFileArgs: %v", err)
+	}
+	if workdir != "" {
+		t.Fatalf("expected empty workdir, got %q", workdir)
+	}
+	if len(rewritten) != len(args) || rewritten[0] != args[0] || rewritten[1] != args[1] {
+		t.Fatalf("unexpected args: %+v", rewritten)
+	}
+}
+
+func TestMapScriptPathStdin(t *testing.T) {
+	mapped, err := mapScriptPath("-", nil)
+	if err != nil {
+		t.Fatalf("mapScriptPath: %v", err)
+	}
+	if mapped != "-" {
+		t.Fatalf("unexpected mapped path: %s", mapped)
+	}
+}
+
+func TestCommonDirEmpty(t *testing.T) {
+	if _, err := commonDir(nil); err == nil {
+		t.Fatalf("expected error for empty paths")
+	}
+}
+
+func TestScriptMountForFilesEmpty(t *testing.T) {
+	mount, err := scriptMountForFiles(nil)
+	if err != nil {
+		t.Fatalf("scriptMountForFiles: %v", err)
+	}
+	if mount != nil {
+		t.Fatalf("expected nil mount, got %+v", mount)
+	}
+}
+
+func TestRuntimeMountsFrom(t *testing.T) {
+	mount := &scriptMount{
+		HostRoot:      t.TempDir(),
+		ContainerRoot: containerScriptsRoot,
+	}
+	mounts := runtimeMountsFrom(mount)
+	if len(mounts) != 1 {
+		t.Fatalf("expected one mount, got %+v", mounts)
+	}
+	if mounts[0].HostPath != mount.HostRoot || mounts[0].ContainerPath != mount.ContainerRoot || !mounts[0].ReadOnly {
+		t.Fatalf("unexpected mount: %+v", mounts[0])
+	}
+}
+
 func writeSQLAt(t *testing.T, dir string, name string, contents string) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {

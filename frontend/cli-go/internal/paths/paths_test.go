@@ -96,6 +96,39 @@ func TestFindProjectConfig(t *testing.T) {
 	}
 }
 
+func TestFindProjectConfigUsesCwd(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".sqlrs")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(""), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	child := filepath.Join(root, "child")
+	if err := os.MkdirAll(child, 0o700); err != nil {
+		t.Fatalf("mkdir child: %v", err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(wd)
+	})
+	if err := os.Chdir(child); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	found, err := FindProjectConfig("")
+	if err != nil {
+		t.Fatalf("FindProjectConfig: %v", err)
+	}
+	if found != configPath {
+		t.Fatalf("expected %q, got %q", configPath, found)
+	}
+}
+
 func TestGetenvOr(t *testing.T) {
 	t.Setenv("SQLRS_TEST_ENV", "value")
 	if got := getenvOr("SQLRS_TEST_ENV", "fallback"); got != "value" {

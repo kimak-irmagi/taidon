@@ -90,3 +90,32 @@ func TestExecRunnerIncludesOutputOnError(t *testing.T) {
 		t.Fatalf("expected stderr in error, got %v", err)
 	}
 }
+
+func TestNewOverlayManagerKind(t *testing.T) {
+	manager := newOverlayManager()
+	if manager.Kind() != "overlayfs" {
+		t.Fatalf("expected overlayfs manager, got %s", manager.Kind())
+	}
+}
+
+func TestOverlaySupportedMissingMount(t *testing.T) {
+	t.Setenv("PATH", "")
+	if overlaySupported() {
+		t.Fatalf("expected overlay unsupported without mount binary")
+	}
+}
+
+func TestOverlayManagerSnapshotCopies(t *testing.T) {
+	manager := overlayManager{runner: &fakeRunner{}}
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	dest := filepath.Join(t.TempDir(), "snapshot")
+	if err := manager.Snapshot(context.Background(), src, dest); err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "file.txt")); err != nil {
+		t.Fatalf("expected snapshot file: %v", err)
+	}
+}

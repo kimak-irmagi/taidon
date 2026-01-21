@@ -204,6 +204,50 @@ func TestNewRequiresDB(t *testing.T) {
 	}
 }
 
+func TestNewWithDB(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	store, err := New(db)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestEnsureTaskImageColumnsNoTable(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if err := ensureTaskImageColumns(db); err != nil {
+		t.Fatalf("ensureTaskImageColumns: %v", err)
+	}
+}
+
+func TestEnsureTaskImageColumnsDuplicate(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE prepare_tasks (image_id TEXT, resolved_image_id TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := ensureTaskImageColumns(db); err != nil {
+		t.Fatalf("ensureTaskImageColumns: %v", err)
+	}
+}
+
 func TestUpdateJobRequiresID(t *testing.T) {
 	store := newQueueStore(t)
 	if err := store.UpdateJob(context.Background(), "", JobUpdate{Status: stringPtr("running")}); err == nil {
