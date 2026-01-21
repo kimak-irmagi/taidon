@@ -175,54 +175,6 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		return nil
 	}
 
-	runner, ephemeral := m.runnerForJob(jobID)
-	if runner == nil {
-		return errorResponse("internal_error", "job runner missing", "")
-	}
-	if ephemeral {
-		defer m.cleanupRuntime(context.Background(), runner)
-	}
-
-	rt, errResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
-	if errResp != nil {
-		return errResp
-	}
-
-	psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
-	if err != nil {
-		return errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
-	}
-	output, err := m.psql.Run(ctx, rt.instance, PsqlRunRequest{
-		Args:    psqlArgs,
-		Env:     map[string]string{},
-		Stdin:   prepared.request.Stdin,
-		WorkDir: workdir,
-	})
-	if err != nil {
-		if ctx.Err() != nil {
-			return errorResponse("cancelled", "task cancelled", "")
-		}
-		details := strings.TrimSpace(output)
-		if details == "" {
-			details = err.Error()
-		}
-		return errorResponse("internal_error", "psql execution failed", details)
-	}
-	if ctx.Err() != nil {
-		return errorResponse("cancelled", "task cancelled", "")
-	}
-
-	if err := m.dbms.PrepareSnapshot(ctx, rt.instance); err != nil {
-		return errorResponse("internal_error", "snapshot prepare failed", err.Error())
-	}
-	resumed := false
-	defer func() {
-		if resumed {
-			return
-		}
-		_ = m.dbms.ResumeSnapshot(context.Background(), rt.instance)
-	}()
-
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
 		return errorResponse("internal_error", "resolved image id is required", "")
@@ -234,31 +186,120 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 	if err := os.MkdirAll(paths.statesDir, 0o700); err != nil {
 		return errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
-	if err := m.snapshot.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil {
-		return errorResponse("internal_error", "snapshot failed", err.Error())
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		return errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
-	if err := m.dbms.ResumeSnapshot(ctx, rt.instance); err != nil {
-		return errorResponse("internal_error", "snapshot resume failed", err.Error())
-	}
-	resumed = true
 
-	parentID := parentStateID(task.Input)
-	createdAt := m.now().UTC().Format(time.RFC3339Nano)
-	entry := store.StateCreate{
-		StateID:               task.OutputStateID,
-		ParentStateID:         parentID,
-		StateFingerprint:      task.OutputStateID,
-		ImageID:               imageID,
-		PrepareKind:           prepared.request.PrepareKind,
-		PrepareArgsNormalized: prepared.argsNormalized,
-		CreatedAt:             createdAt,
+	runner, ephemeral := m.runnerForJob(jobID)
+	if runner == nil {
+		return errorResponse("internal_error", "job runner missing", "")
 	}
-	if err := m.store.CreateState(ctx, entry); err != nil {
+	if ephemeral {
+		defer m.cleanupRuntime(context.Background(), runner)
+	}
+
+	var errResp *ErrorResponse
+	lockErr := withStateBuildLock(ctx, paths.stateDir, func() error {
+		cached, err := m.isStateCached(task.OutputStateID)
+		if err != nil {
+			errResp = errorResponse("internal_error", "cannot check state cache", err.Error())
+			return errStateBuildFailed
+		}
+		if cached || stateBuildMarkerExists(paths.stateDir) {
+			m.logTask(jobID, task.TaskID, "cached output_state=%s", task.OutputStateID)
+			return nil
+		}
+
+		rt, innerResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+		if innerResp != nil {
+			errResp = innerResp
+			return errStateBuildFailed
+		}
+
+		psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
+		if err != nil {
+			errResp = errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
+			return errStateBuildFailed
+		}
+		output, err := m.psql.Run(ctx, rt.instance, PsqlRunRequest{
+			Args:    psqlArgs,
+			Env:     map[string]string{},
+			Stdin:   prepared.request.Stdin,
+			WorkDir: workdir,
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				errResp = errorResponse("cancelled", "task cancelled", "")
+				return errStateBuildFailed
+			}
+			details := strings.TrimSpace(output)
+			if details == "" {
+				details = err.Error()
+			}
+			errResp = errorResponse("internal_error", "psql execution failed", details)
+			return errStateBuildFailed
+		}
+		if ctx.Err() != nil {
+			errResp = errorResponse("cancelled", "task cancelled", "")
+			return errStateBuildFailed
+		}
+
+		if err := m.dbms.PrepareSnapshot(ctx, rt.instance); err != nil {
+			errResp = errorResponse("internal_error", "snapshot prepare failed", err.Error())
+			return errStateBuildFailed
+		}
+		resumed := false
+		defer func() {
+			if resumed {
+				return
+			}
+			_ = m.dbms.ResumeSnapshot(context.Background(), rt.instance)
+		}()
+
+		if err := m.snapshot.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil {
+			errResp = errorResponse("internal_error", "snapshot failed", err.Error())
+			return errStateBuildFailed
+		}
+		if err := m.dbms.ResumeSnapshot(ctx, rt.instance); err != nil {
+			errResp = errorResponse("internal_error", "snapshot resume failed", err.Error())
+			return errStateBuildFailed
+		}
+		resumed = true
+
+		parentID := parentStateID(task.Input)
+		createdAt := m.now().UTC().Format(time.RFC3339Nano)
+		entry := store.StateCreate{
+			StateID:               task.OutputStateID,
+			ParentStateID:         parentID,
+			StateFingerprint:      task.OutputStateID,
+			ImageID:               imageID,
+			PrepareKind:           prepared.request.PrepareKind,
+			PrepareArgsNormalized: prepared.argsNormalized,
+			CreatedAt:             createdAt,
+		}
+		if err := m.store.CreateState(ctx, entry); err != nil {
+			if ctx.Err() != nil {
+				errResp = errorResponse("cancelled", "task cancelled", "")
+				return errStateBuildFailed
+			}
+			_ = m.snapshot.Destroy(context.Background(), paths.stateDir)
+			errResp = errorResponse("internal_error", "cannot store state", err.Error())
+			return errStateBuildFailed
+		}
+		if err := writeStateBuildMarker(paths.stateDir); err != nil {
+			errResp = errorResponse("internal_error", "cannot write state marker", err.Error())
+			return errStateBuildFailed
+		}
+		return nil
+	})
+	if errResp != nil {
+		return errResp
+	}
+	if lockErr != nil {
 		if ctx.Err() != nil {
 			return errorResponse("cancelled", "task cancelled", "")
 		}
-		_ = m.snapshot.Destroy(context.Background(), paths.stateDir)
-		return errorResponse("internal_error", "cannot store state", err.Error())
+		return errorResponse("internal_error", "cannot acquire state build lock", lockErr.Error())
 	}
 	return nil
 }
@@ -498,6 +539,50 @@ func withInitLock(ctx context.Context, baseDir string, fn func() error) error {
 		}
 		if errors.Is(err, os.ErrExist) {
 			if initMarkerExists(baseDir) {
+				_ = os.Remove(lockPath)
+				return nil
+			}
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		return err
+	}
+}
+
+const (
+	stateBuildMarkerName = ".build.ok"
+	stateBuildLockName   = ".build.lock"
+)
+
+var errStateBuildFailed = errors.New("state build failed")
+
+func stateBuildMarkerExists(stateDir string) bool {
+	_, err := os.Stat(filepath.Join(stateDir, stateBuildMarkerName))
+	return err == nil
+}
+
+func writeStateBuildMarker(stateDir string) error {
+	path := filepath.Join(stateDir, stateBuildMarkerName)
+	return os.WriteFile(path, []byte("ok"), 0o600)
+}
+
+func withStateBuildLock(ctx context.Context, stateDir string, fn func() error) error {
+	if fn == nil {
+		return fmt.Errorf("lock callback is required")
+	}
+	lockPath := filepath.Join(stateDir, stateBuildLockName)
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_ = f.Close()
+			defer os.Remove(lockPath)
+			return fn()
+		}
+		if errors.Is(err, os.ErrExist) {
+			if stateBuildMarkerExists(stateDir) {
 				_ = os.Remove(lockPath)
 				return nil
 			}

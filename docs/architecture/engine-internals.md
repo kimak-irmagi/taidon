@@ -129,6 +129,8 @@ flowchart LR
   run orchestration decides to stop them.
 - Instance deletion removes the recorded runtime data directory to avoid
   leaking per-job runtime data under the state store.
+- State creation is serialized with per-state filesystem locks so concurrent
+  prepare jobs wait for the first builder to finish and then reuse the state.
 
 ### 1.12 Delete Controller
 

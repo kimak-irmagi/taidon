@@ -21,7 +21,7 @@ func (c *PostgresConnector) PrepareSnapshot(ctx context.Context, instance runtim
 	}
 	_, err := c.Runtime.Exec(ctx, instance.ID, runtime.ExecRequest{
 		User: "postgres",
-		Args: []string{"pg_ctl", "-D", "/var/lib/postgresql/data", "-m", "fast", "-w", "stop"},
+		Args: []string{"pg_ctl", "-D", runtime.PostgresDataDir, "-m", "fast", "-w", "stop"},
 	})
 	return err
 }
@@ -33,7 +33,7 @@ func (c *PostgresConnector) ResumeSnapshot(ctx context.Context, instance runtime
 	_, err := c.Runtime.Exec(ctx, instance.ID, runtime.ExecRequest{
 		User: "postgres",
 		Args: []string{
-			"pg_ctl", "-D", "/var/lib/postgresql/data",
+			"pg_ctl", "-D", runtime.PostgresDataDir,
 			"-o", "-c listen_addresses=* -p 5432",
 			"-w", "start",
 		},

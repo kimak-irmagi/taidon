@@ -12,7 +12,6 @@ import (
 
 const (
 	defaultDockerBinary = "docker"
-	pgDataDir           = "/var/lib/postgresql/data"
 )
 
 type Options struct {
@@ -78,14 +77,14 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	args := []string{
 		"run", "--rm",
 		"-u", "postgres",
-		"-v", fmt.Sprintf("%s:%s", dataDir, pgDataDir),
+		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
 		"initdb",
 		"--username=sqlrs",
 		"--auth=trust",
 		"--auth-host=trust",
 		"--auth-local=trust",
-		"-D", pgDataDir,
+		"-D", PostgresDataDir,
 	}
 	output, err := r.run(ctx, args, nil)
 	if err != nil {
@@ -146,18 +145,27 @@ func (r *DockerRuntime) inspectImageDigest(ctx context.Context, imageID string) 
 func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, dataDir string) error {
 	args := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, pgDataDir),
+		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
-		"chown", "-R", "postgres:postgres", pgDataDir,
+		"mkdir", "-p", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
 	}
 	args = []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, pgDataDir),
+		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
-		"chmod", "0700", pgDataDir,
+		"chown", "-R", "postgres:postgres", PostgresDataDir,
+	}
+	if err := r.runPermissionCommand(ctx, args); err != nil {
+		return err
+	}
+	args = []string{
+		"run", "--rm",
+		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		imageID,
+		"chmod", "0700", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
@@ -192,8 +200,8 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 	args := []string{
 		"run", "-d", "--rm",
 		"-p", "0:5432",
-		"-v", fmt.Sprintf("%s:%s", req.DataDir, pgDataDir),
-		"-e", "PGDATA=" + pgDataDir,
+		"-v", fmt.Sprintf("%s:%s", req.DataDir, PostgresDataDirRoot),
+		"-e", "PGDATA=" + PostgresDataDir,
 		"-e", "POSTGRES_HOST_AUTH_METHOD=trust",
 	}
 	for _, mount := range req.Mounts {
@@ -225,7 +233,7 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 	if _, err := r.Exec(ctx, containerID, ExecRequest{
 		User: "postgres",
 		Args: []string{
-			"pg_ctl", "-D", pgDataDir,
+			"pg_ctl", "-D", PostgresDataDir,
 			"-o", "-c listen_addresses=* -p 5432",
 			"-w", "start",
 		},
@@ -424,7 +432,7 @@ func isInitdbPermissionOutput(output string) bool {
 	if strings.Contains(combined, "operation not permitted") && strings.Contains(combined, "permissions") && strings.Contains(combined, "data") {
 		return true
 	}
-	if strings.Contains(combined, "operation not permitted") && strings.Contains(combined, pgDataDir) {
+	if strings.Contains(combined, "operation not permitted") && strings.Contains(combined, PostgresDataDir) {
 		return true
 	}
 	return false
