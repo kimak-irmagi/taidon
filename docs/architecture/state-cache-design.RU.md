@@ -363,6 +363,7 @@ Taidon может работать в двух режимах, когда Liquib
 - Single-writer (engine process) с SQLite WAL; concurrent readers разрешены.
 - Per-store lock file для предотвращения одновременной модификации одним store двумя engine daemon.
 - Инициализация base использует lock + marker на каталог base (`base/.init.lock`, `base/.init.ok`), чтобы только один job выполнял `initdb` для одного образа. Конкурирующие job ждут появления marker или освобождения lock.
+- Снапшот state использует lock + marker (`states/<state_id>/.build.lock`, `states/<state_id>/.build.ok`), чтобы только один job строил данный state. Остальные job ждут появления marker или освобождения lock.
 
 ---
 

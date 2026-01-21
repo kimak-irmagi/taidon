@@ -44,6 +44,7 @@ func TestDockerRuntimeStart(t *testing.T) {
 		responses: []runResponse{
 			{output: ""},
 			{output: ""},
+			{output: ""},
 			{output: "container-1\n"},
 			{output: ""},
 			{output: "accepting connections\n"},
@@ -65,31 +66,28 @@ func TestDockerRuntimeStart(t *testing.T) {
 	if len(runner.calls) == 0 {
 		t.Fatalf("expected docker run to be called")
 	}
-	if len(runner.calls) < 3 {
+	if len(runner.calls) < 4 {
 		t.Fatalf("expected docker run calls, got %+v", runner.calls)
 	}
-	if !containsArg(runner.calls[2].args, "--name", "sqlrs-test") {
-		t.Fatalf("expected container name in args: %v", runner.calls[2].args)
+	if !containsArg(runner.calls[3].args, "--name", "sqlrs-test") {
+		t.Fatalf("expected container name in args: %v", runner.calls[3].args)
 	}
+	foundMkdir := false
 	foundChown := false
-	for _, arg := range runner.calls[0].args {
-		if arg == "chown" {
-			foundChown = true
-			break
-		}
-	}
-	if !foundChown {
-		t.Fatalf("expected chown call, got %+v", runner.calls[0].args)
-	}
 	foundChmod := false
-	for _, arg := range runner.calls[1].args {
-		if arg == "chmod" {
+	for _, call := range runner.calls[:3] {
+		if containsArg(call.args, "mkdir", "-p") {
+			foundMkdir = true
+		}
+		if containsArg(call.args, "chown", "-R") {
+			foundChown = true
+		}
+		if containsArg(call.args, "chmod", "0700") {
 			foundChmod = true
-			break
 		}
 	}
-	if !foundChmod {
-		t.Fatalf("expected chmod call, got %+v", runner.calls[1].args)
+	if !foundMkdir || !foundChown || !foundChmod {
+		t.Fatalf("expected mkdir/chown/chmod calls, got %+v", runner.calls[:3])
 	}
 }
 
@@ -104,46 +102,42 @@ func TestDockerRuntimeInitBaseRejectsEmpty(t *testing.T) {
 }
 
 func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
-	runner := &fakeRunner{responses: []runResponse{{output: ""}, {output: ""}, {output: ""}}}
+	runner := &fakeRunner{responses: []runResponse{{output: ""}, {output: ""}, {output: ""}, {output: ""}}}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	if err := rt.InitBase(context.Background(), "image", "/data"); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) < 3 || runner.calls[0].args[0] != "run" || runner.calls[1].args[0] != "run" || runner.calls[2].args[0] != "run" {
+	if len(runner.calls) < 4 || runner.calls[0].args[0] != "run" || runner.calls[1].args[0] != "run" || runner.calls[2].args[0] != "run" || runner.calls[3].args[0] != "run" {
 		t.Fatalf("expected docker run calls, got %+v", runner.calls)
 	}
-	if !containsArg(runner.calls[0].args, "chown", "-R") {
+	if !containsArg(runner.calls[0].args, "mkdir", "-p") {
 		found := false
 		for _, arg := range runner.calls[0].args {
-			if arg == "chown" {
+			if arg == "mkdir" {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Fatalf("expected chown call, got %+v", runner.calls[0].args)
+			t.Fatalf("expected mkdir call, got %+v", runner.calls[0].args)
 		}
 	}
-	found := false
-	for _, arg := range runner.calls[1].args {
-		if arg == "chmod" {
-			found = true
-			break
-		}
+	if !containsArg(runner.calls[1].args, "chown", "-R") {
+		t.Fatalf("expected chown call, got %+v", runner.calls[1].args)
 	}
-	if !found {
-		t.Fatalf("expected chmod call, got %+v", runner.calls[1].args)
+	if !containsArg(runner.calls[2].args, "chmod", "0700") {
+		t.Fatalf("expected chmod call, got %+v", runner.calls[2].args)
 	}
-	if !containsArg(runner.calls[2].args, "initdb", "--username=sqlrs") {
+	if !containsArg(runner.calls[3].args, "initdb", "--username=sqlrs") {
 		found := false
-		for _, arg := range runner.calls[2].args {
+		for _, arg := range runner.calls[3].args {
 			if arg == "initdb" {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Fatalf("expected initdb call, got %+v", runner.calls[2].args)
+			t.Fatalf("expected initdb call, got %+v", runner.calls[3].args)
 		}
 	}
 }
@@ -160,7 +154,7 @@ func TestDockerRuntimeInitBaseDockerUnavailable(t *testing.T) {
 
 func TestDockerRuntimeInitBasePermissionError(t *testing.T) {
 	runner := &fakeRunner{responses: []runResponse{
-		{output: "chown: changing ownership of '/var/lib/postgresql/data': Operation not permitted", err: errors.New("fail")},
+		{output: "chown: changing ownership of '/var/lib/postgresql/data/pgdata': Operation not permitted", err: errors.New("fail")},
 	}}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	if err := rt.InitBase(context.Background(), "image", "/data"); err == nil || !strings.Contains(err.Error(), "permissions are not supported") {
@@ -181,6 +175,7 @@ func TestDockerRuntimeStartRejectsEmptyInputs(t *testing.T) {
 func TestDockerRuntimeStartRunError(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
+			{output: ""},
 			{output: ""},
 			{output: ""},
 			{output: "boom\n", err: errors.New("fail")},
@@ -208,6 +203,7 @@ func TestDockerRuntimeStartEmptyContainerID(t *testing.T) {
 			{output: ""},
 			{output: ""},
 			{output: ""},
+			{output: ""},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
@@ -219,6 +215,7 @@ func TestDockerRuntimeStartEmptyContainerID(t *testing.T) {
 func TestDockerRuntimeStartExecError(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
+			{output: ""},
 			{output: ""},
 			{output: ""},
 			{output: "container-1\n"},
@@ -234,6 +231,7 @@ func TestDockerRuntimeStartExecError(t *testing.T) {
 func TestDockerRuntimeStartPortParseError(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
+			{output: ""},
 			{output: ""},
 			{output: ""},
 			{output: "container-1\n"},

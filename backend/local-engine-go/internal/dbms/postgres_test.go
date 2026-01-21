@@ -51,6 +51,9 @@ func TestPostgresConnectorPrepareSnapshot(t *testing.T) {
 	if len(args) == 0 || args[0] != "pg_ctl" {
 		t.Fatalf("unexpected exec args: %v", args)
 	}
+	if !hasArgs(args, "-D", runtime.PostgresDataDir) {
+		t.Fatalf("expected pgdata path %q in args: %v", runtime.PostgresDataDir, args)
+	}
 }
 
 func TestPostgresConnectorResumeSnapshot(t *testing.T) {
@@ -66,6 +69,9 @@ func TestPostgresConnectorResumeSnapshot(t *testing.T) {
 	if len(args) == 0 || args[0] != "pg_ctl" {
 		t.Fatalf("unexpected exec args: %v", args)
 	}
+	if !hasArgs(args, "-D", runtime.PostgresDataDir) {
+		t.Fatalf("expected pgdata path %q in args: %v", runtime.PostgresDataDir, args)
+	}
 }
 
 func TestPostgresConnectorRequiresRuntime(t *testing.T) {
@@ -76,4 +82,13 @@ func TestPostgresConnectorRequiresRuntime(t *testing.T) {
 	if err := connector.ResumeSnapshot(context.Background(), runtime.Instance{}); err == nil {
 		t.Fatalf("expected error without runtime")
 	}
+}
+
+func hasArgs(args []string, flag string, value string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
 }
