@@ -27,6 +27,8 @@ type TaskRecord struct {
 	PlannerKind   *string
 	InputKind     *string
 	InputID       *string
+	ImageID       *string
+	ResolvedImageID *string
 	TaskHash      *string
 	OutputStateID *string
 	Cached        *bool

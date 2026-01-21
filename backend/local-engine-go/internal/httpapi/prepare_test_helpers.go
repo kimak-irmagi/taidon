@@ -23,6 +23,10 @@ func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir stri
 	return os.WriteFile(filepath.Join(dataDir, "PG_VERSION"), []byte("17"), 0o600)
 }
 
+func (f *fakeRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
+	return imageID + "@sha256:resolved", nil
+}
+
 func (f *fakeRuntime) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
 	return engineRuntime.Instance{ID: "container-1", Host: "127.0.0.1", Port: 5432}, nil
 }

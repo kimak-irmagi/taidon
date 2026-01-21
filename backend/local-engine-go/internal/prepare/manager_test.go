@@ -138,14 +138,17 @@ type fakeRuntime struct {
 	stopCalls   []string
 	execCalls   []engineRuntime.ExecRequest
 	waitCalls   []time.Duration
+	resolveCalls []string
 	noDefaults  bool
 	initErr     error
+	resolveErr  error
 	startErr    error
 	stopErr     error
 	execErr     error
 	waitErr     error
 	execOutput  string
 	initCreated bool
+	resolvedImage string
 }
 
 func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error {
@@ -178,6 +181,17 @@ func (f *fakeRuntime) Start(ctx context.Context, req engineRuntime.StartRequest)
 		}
 	}
 	return instance, nil
+}
+
+func (f *fakeRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
+	f.resolveCalls = append(f.resolveCalls, imageID)
+	if f.resolveErr != nil {
+		return "", f.resolveErr
+	}
+	if f.resolvedImage != "" {
+		return f.resolvedImage, nil
+	}
+	return imageID + "@sha256:resolved", nil
 }
 
 func (f *fakeRuntime) Stop(ctx context.Context, id string) error {
@@ -555,8 +569,8 @@ func TestSubmitStoresStateAndInstance(t *testing.T) {
 	}
 
 	tasks := mgr.ListTasks(accepted.JobID)
-	if len(tasks) != 3 {
-		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	if len(tasks) != 4 {
+		t.Fatalf("expected 4 tasks, got %d", len(tasks))
 	}
 	for _, task := range tasks {
 		if task.Status != StatusSucceeded {
@@ -609,8 +623,8 @@ func TestSubmitPlanOnlyBuildsTasks(t *testing.T) {
 	if status.PrepareArgsNormalized == "" {
 		t.Fatalf("expected normalized args")
 	}
-	if len(status.Tasks) != 3 {
-		t.Fatalf("expected 3 tasks, got %d", len(status.Tasks))
+	if len(status.Tasks) != 4 {
+		t.Fatalf("expected 4 tasks, got %d", len(status.Tasks))
 	}
 
 	tasks := mgr.ListTasks(accepted.JobID)
@@ -633,11 +647,14 @@ func TestSubmitPlanOnlyCachedFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
 	taskHash, errResp := mgr.computeTaskHash(prepared)
 	if errResp != nil {
 		t.Fatalf("computeTaskHash: %+v", errResp)
 	}
-	stateID, errResp := mgr.computeOutputStateID("image", prepared.request.ImageID, taskHash)
+	stateID, errResp := mgr.computeOutputStateID("image", prepared.effectiveImageID(), taskHash)
 	if errResp != nil {
 		t.Fatalf("computeOutputStateID: %+v", errResp)
 	}
@@ -656,9 +673,173 @@ func TestSubmitPlanOnlyCachedFlag(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected job to exist")
 	}
-	if len(status.Tasks) < 2 || status.Tasks[1].Cached == nil || !*status.Tasks[1].Cached {
+	if len(status.Tasks) < 3 || status.Tasks[2].Cached == nil || !*status.Tasks[2].Cached {
 		t.Fatalf("expected cached true, got %+v", status.Tasks)
 	}
+}
+
+func TestPrepareResolvesImageDigestRequired(t *testing.T) {
+	runtime := &fakeRuntime{}
+	store := &fakeStore{}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime})
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if len(runtime.resolveCalls) != 1 || runtime.resolveCalls[0] != "image-1" {
+		t.Fatalf("expected resolve call for image-1, got %+v", runtime.resolveCalls)
+	}
+}
+
+func TestPrepareResolveImageFailureFailsJob(t *testing.T) {
+	runtime := &fakeRuntime{resolveErr: errors.New("boom")}
+	store := &fakeStore{}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime})
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	status, ok := mgr.Get("job-1")
+	if !ok || status.Status != StatusFailed || status.Error == nil || status.Error.Message != "cannot resolve image" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if len(store.states) != 0 || len(store.instances) != 0 {
+		t.Fatalf("expected no state or instance creation")
+	}
+	if tasks := mgr.ListTasks("job-1"); len(tasks) != 0 {
+		t.Fatalf("expected no tasks, got %+v", tasks)
+	}
+}
+
+func TestPlanIncludesResolveImageTask(t *testing.T) {
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{runtime: &fakeRuntime{}})
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	tasks := mgr.ListTasks("job-1")
+	if len(tasks) != 4 {
+		t.Fatalf("expected 4 tasks, got %d", len(tasks))
+	}
+	found := false
+	for _, task := range tasks {
+		if task.Type == "resolve_image" {
+			found = true
+			if task.ImageID != "image-1" || task.ResolvedImageID == "" {
+				t.Fatalf("unexpected resolve task: %+v", task)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected resolve_image task, got %+v", tasks)
+	}
+}
+
+func TestPlanSkipsResolveImageTaskWhenDigestProvided(t *testing.T) {
+	runtime := &fakeRuntime{}
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{runtime: runtime})
+	imageID := "image-1@sha256:abc"
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     imageID,
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	tasks := mgr.ListTasks("job-1")
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	for _, task := range tasks {
+		if task.Type == "resolve_image" {
+			t.Fatalf("unexpected resolve_image task: %+v", tasks)
+		}
+	}
+	if len(runtime.resolveCalls) != 0 {
+		t.Fatalf("expected no resolve calls, got %+v", runtime.resolveCalls)
+	}
+}
+
+func TestStateIDUsesResolvedImageID(t *testing.T) {
+	runtime := &fakeRuntime{resolvedImage: "image-1@sha256:resolved"}
+	store := &fakeStore{}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime})
+
+	req := Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
+	taskHash, errResp := mgr.computeTaskHash(prepared)
+	if errResp != nil {
+		t.Fatalf("computeTaskHash: %+v", errResp)
+	}
+	expectedStateID, errResp := mgr.computeOutputStateID("image", prepared.effectiveImageID(), taskHash)
+	if errResp != nil {
+		t.Fatalf("computeOutputStateID: %+v", errResp)
+	}
+
+	if _, err := mgr.Submit(context.Background(), req); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if len(store.states) != 1 {
+		t.Fatalf("expected one state, got %+v", store.states)
+	}
+	if store.states[0].StateID != expectedStateID {
+		t.Fatalf("unexpected state id: %s", store.states[0].StateID)
+	}
+	if store.states[0].ImageID != prepared.effectiveImageID() {
+		t.Fatalf("unexpected image id: %s", store.states[0].ImageID)
+	}
+}
+
+func TestResolveImageTaskStatusReported(t *testing.T) {
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{runtime: &fakeRuntime{}})
+
+	if _, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+		PlanOnly:    true,
+	}); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	tasks := mgr.ListTasks("job-1")
+	for _, task := range tasks {
+		if task.Type == "resolve_image" {
+			if task.Status != StatusSucceeded {
+				t.Fatalf("expected resolve_image succeeded, got %+v", task)
+			}
+			if task.ImageID != "image-1" || task.ResolvedImageID == "" {
+				t.Fatalf("unexpected resolve task data: %+v", task)
+			}
+			return
+		}
+	}
+	t.Fatalf("resolve_image task missing: %+v", tasks)
 }
 
 func TestListJobsAndTasks(t *testing.T) {
@@ -680,8 +861,8 @@ func TestListJobsAndTasks(t *testing.T) {
 	}
 
 	tasks := mgr.ListTasks("job-1")
-	if len(tasks) != 3 {
-		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	if len(tasks) != 4 {
+		t.Fatalf("expected 4 tasks, got %d", len(tasks))
 	}
 }
 
@@ -2081,6 +2262,9 @@ func TestBuildPlanCacheError(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
+	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
 	}
 	if _, _, errResp := mgr.buildPlan(prepared); errResp == nil {
 		t.Fatalf("expected error")

@@ -53,6 +53,8 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 			Position: 1,
 			Type:     "state_execute",
 			Status:   "queued",
+			ImageID:  stringPtr("image-1"),
+			ResolvedImageID: stringPtr("image-1@sha256:resolved"),
 			Cached:   boolPtrFromValue(true),
 		},
 	}
@@ -73,6 +75,9 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 	}
 	if len(taskRows) != 2 || taskRows[1].Status != "running" {
 		t.Fatalf("unexpected tasks: %+v", taskRows)
+	}
+	if taskRows[1].ImageID == nil || taskRows[1].ResolvedImageID == nil {
+		t.Fatalf("expected image fields to roundtrip: %+v", taskRows[1])
 	}
 
 	if _, err := store.AppendEvent(context.Background(), EventRecord{

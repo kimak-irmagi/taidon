@@ -219,8 +219,8 @@ func (s *SQLiteStore) ReplaceTasks(ctx context.Context, jobID string, tasks []Ta
 		return nil
 	}
 	query := `
-INSERT INTO prepare_tasks (job_id, task_id, position, type, status, planner_kind, input_kind, input_id, task_hash, output_state_id, cached, instance_mode, started_at, finished_at, error_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT INTO prepare_tasks (job_id, task_id, position, type, status, planner_kind, input_kind, input_id, image_id, resolved_image_id, task_hash, output_state_id, cached, instance_mode, started_at, finished_at, error_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	for _, task := range tasks {
 		_, err := s.db.ExecContext(ctx, query,
 			task.JobID,
@@ -231,6 +231,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			nullString(task.PlannerKind),
 			nullString(task.InputKind),
 			nullString(task.InputID),
+			nullString(task.ImageID),
+			nullString(task.ResolvedImageID),
 			nullString(task.TaskHash),
 			nullString(task.OutputStateID),
 			nullBool(task.Cached),
@@ -249,7 +251,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 func (s *SQLiteStore) ListTasks(ctx context.Context, jobID string) ([]TaskRecord, error) {
 	query := strings.Builder{}
 	query.WriteString(`
-SELECT job_id, task_id, position, type, status, planner_kind, input_kind, input_id, task_hash, output_state_id, cached, instance_mode, started_at, finished_at, error_json
+SELECT job_id, task_id, position, type, status, planner_kind, input_kind, input_id, image_id, resolved_image_id, task_hash, output_state_id, cached, instance_mode, started_at, finished_at, error_json
 FROM prepare_tasks
 WHERE 1=1`)
 	args := []any{}
@@ -368,8 +370,32 @@ func initDB(db *sql.DB) error {
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
 	}
+	if err := ensureTaskImageColumns(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(SchemaSQL())
 	return err
+}
+
+func ensureTaskImageColumns(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE prepare_tasks ADD COLUMN image_id TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	if _, err := db.Exec("ALTER TABLE prepare_tasks ADD COLUMN resolved_image_id TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
 }
 
 func scanJob(scanner interface {
@@ -419,6 +445,8 @@ func scanTask(scanner interface {
 	var plannerKind sql.NullString
 	var inputKind sql.NullString
 	var inputID sql.NullString
+	var imageID sql.NullString
+	var resolvedImageID sql.NullString
 	var taskHash sql.NullString
 	var outputStateID sql.NullString
 	var cached sql.NullInt64
@@ -435,6 +463,8 @@ func scanTask(scanner interface {
 		&plannerKind,
 		&inputKind,
 		&inputID,
+		&imageID,
+		&resolvedImageID,
 		&taskHash,
 		&outputStateID,
 		&cached,
@@ -448,6 +478,8 @@ func scanTask(scanner interface {
 	record.PlannerKind = strPtr(plannerKind)
 	record.InputKind = strPtr(inputKind)
 	record.InputID = strPtr(inputID)
+	record.ImageID = strPtr(imageID)
+	record.ResolvedImageID = strPtr(resolvedImageID)
 	record.TaskHash = strPtr(taskHash)
 	record.OutputStateID = strPtr(outputStateID)
 	record.Cached = boolPtr(cached)

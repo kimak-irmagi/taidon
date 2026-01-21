@@ -51,6 +51,13 @@ func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir stri
 	return nil
 }
 
+func (f *fakeRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
+	if f.stopErr != nil {
+		return "", f.stopErr
+	}
+	return imageID, nil
+}
+
 func (f *fakeRuntime) Start(ctx context.Context, req runtime.StartRequest) (runtime.Instance, error) {
 	if f.stopErr != nil {
 		return runtime.Instance{}, f.stopErr

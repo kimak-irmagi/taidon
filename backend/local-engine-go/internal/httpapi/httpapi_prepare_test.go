@@ -385,10 +385,10 @@ func TestPrepareJobsPlanOnly(t *testing.T) {
 	if status.PrepareArgsNormalized == "" {
 		t.Fatalf("expected normalized args")
 	}
-	if len(status.Tasks) != 3 {
+	if len(status.Tasks) != 4 {
 		t.Fatalf("expected tasks, got %d", len(status.Tasks))
 	}
-	if status.Tasks[1].Cached == nil {
+	if status.Tasks[2].Cached == nil {
 		t.Fatalf("expected cached flag")
 	}
 }

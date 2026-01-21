@@ -319,6 +319,72 @@ func TestDockerRuntimeWaitForReadyTimeout(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeResolveImageWithDigest(t *testing.T) {
+	runner := &fakeRunner{}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	imageID := "image-1@sha256:abc"
+	resolved, err := rt.ResolveImage(context.Background(), imageID)
+	if err != nil {
+		t.Fatalf("ResolveImage: %v", err)
+	}
+	if resolved != imageID {
+		t.Fatalf("unexpected resolved image: %s", resolved)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("expected no runner calls, got %+v", runner.calls)
+	}
+}
+
+func TestDockerRuntimeResolveImageInspectSuccess(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{{output: "repo@sha256:abc\n"}},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	resolved, err := rt.ResolveImage(context.Background(), "image-1")
+	if err != nil {
+		t.Fatalf("ResolveImage: %v", err)
+	}
+	if resolved != "repo@sha256:abc" {
+		t.Fatalf("unexpected resolved image: %s", resolved)
+	}
+	if len(runner.calls) != 1 || runner.calls[0].args[0] != "image" {
+		t.Fatalf("expected image inspect call, got %+v", runner.calls)
+	}
+}
+
+func TestDockerRuntimeResolveImagePullOnInspectError(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: "no such image\n", err: errors.New("fail")},
+			{output: "pulled\n"},
+			{output: "repo@sha256:resolved\n"},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	resolved, err := rt.ResolveImage(context.Background(), "image-1")
+	if err != nil {
+		t.Fatalf("ResolveImage: %v", err)
+	}
+	if resolved != "repo@sha256:resolved" {
+		t.Fatalf("unexpected resolved image: %s", resolved)
+	}
+	if len(runner.calls) != 3 || runner.calls[1].args[0] != "pull" {
+		t.Fatalf("expected inspect, pull, inspect calls, got %+v", runner.calls)
+	}
+}
+
+func TestDockerRuntimeResolveImageDockerUnavailable(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: "Cannot connect to the Docker daemon", err: errors.New("fail")},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.ResolveImage(context.Background(), "image-1"); err == nil || !strings.Contains(err.Error(), "docker is not running") {
+		t.Fatalf("expected docker unavailable error, got %v", err)
+	}
+}
+
 func TestParseHostPort(t *testing.T) {
 	port, err := parseHostPort("0.0.0.0:5432\n")
 	if err != nil || port != 5432 {

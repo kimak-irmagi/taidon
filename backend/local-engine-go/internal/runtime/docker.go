@@ -100,6 +100,49 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	return nil
 }
 
+func (r *DockerRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
+	imageID = strings.TrimSpace(imageID)
+	if imageID == "" {
+		return "", fmt.Errorf("image id is required")
+	}
+	if strings.Contains(imageID, "@") {
+		return imageID, nil
+	}
+	resolved, err := r.inspectImageDigest(ctx, imageID)
+	if err == nil && strings.TrimSpace(resolved) != "" {
+		return strings.TrimSpace(resolved), nil
+	}
+	if err != nil && isDockerUnavailable(err) {
+		return "", fmt.Errorf("docker is not running: %w", err)
+	}
+	if _, pullErr := r.run(ctx, []string{"pull", imageID}, nil); pullErr != nil {
+		if isDockerUnavailable(pullErr) {
+			return "", fmt.Errorf("docker is not running: %w", pullErr)
+		}
+		return "", fmt.Errorf("docker pull failed: %w", pullErr)
+	}
+	resolved, err = r.inspectImageDigest(ctx, imageID)
+	if err != nil {
+		if isDockerUnavailable(err) {
+			return "", fmt.Errorf("docker is not running: %w", err)
+		}
+		return "", fmt.Errorf("docker inspect failed: %w", err)
+	}
+	resolved = strings.TrimSpace(resolved)
+	if resolved == "" {
+		return "", fmt.Errorf("image digest is empty")
+	}
+	return resolved, nil
+}
+
+func (r *DockerRuntime) inspectImageDigest(ctx context.Context, imageID string) (string, error) {
+	out, err := r.run(ctx, []string{"image", "inspect", "--format", "{{index .RepoDigests 0}}", imageID}, nil)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, dataDir string) error {
 	args := []string{
 		"run", "--rm",

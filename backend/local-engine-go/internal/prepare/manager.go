@@ -78,6 +78,7 @@ type preparedRequest struct {
 	argsNormalized string
 	inputHashes    []inputHash
 	filePaths      []string
+	resolvedImageID string
 }
 
 func NewManager(opts Options) (*Manager, error) {
@@ -454,6 +455,15 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		}
 		switch task.Type {
 		case "plan":
+		case "resolve_image":
+			if strings.TrimSpace(task.ResolvedImageID) != "" && strings.TrimSpace(prepared.resolvedImageID) == "" {
+				prepared.resolvedImageID = task.ResolvedImageID
+			}
+			if errResp := m.ensureResolvedImageID(ctx, jobID, &prepared, nil); errResp != nil {
+				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
+				_ = m.failJob(jobID, errResp)
+				return
+			}
 		case "state_execute":
 			if err := m.executeStateTask(ctx, jobID, prepared, task); err != nil {
 				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), err)
@@ -501,6 +511,9 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 	taskRecords, err := m.queue.ListTasks(ctx, jobID)
 	if err != nil {
 		return nil, "", errorResponse("internal_error", "cannot load tasks", err.Error())
+	}
+	if errResp := m.ensureResolvedImageID(ctx, jobID, &prepared, taskRecords); errResp != nil {
+		return nil, "", errResp
 	}
 	if len(taskRecords) == 0 {
 		tasks, stateID, errResp := m.buildPlan(prepared)
@@ -554,12 +567,17 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 	if err != nil {
 		return preparedRequest{}, err
 	}
+	resolvedImageID := ""
+	if hasImageDigest(imageID) {
+		resolvedImageID = imageID
+	}
 	return preparedRequest{
 		request:        req,
 		normalizedArgs: prepared.normalizedArgs,
 		argsNormalized: prepared.argsNormalized,
 		inputHashes:    prepared.inputHashes,
 		filePaths:      prepared.filePaths,
+		resolvedImageID: resolvedImageID,
 	}, nil
 }
 
@@ -568,7 +586,11 @@ func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *Erro
 	if errResp != nil {
 		return nil, "", errResp
 	}
-	stateID, errResp := m.computeOutputStateID("image", prepared.request.ImageID, taskHash)
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return nil, "", errorResponse("internal_error", "resolved image id is required", "")
+	}
+	stateID, errResp := m.computeOutputStateID("image", imageID, taskHash)
 	if errResp != nil {
 		return nil, "", errResp
 	}
@@ -578,18 +600,27 @@ func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *Erro
 	}
 	cachedFlag := cached
 
-	tasks := []PlanTask{
-		{
-			TaskID:      "plan",
-			Type:        "plan",
-			PlannerKind: prepared.request.PrepareKind,
-		},
+	tasks := make([]PlanTask, 0, 3)
+	tasks = append(tasks, PlanTask{
+		TaskID:      "plan",
+		Type:        "plan",
+		PlannerKind: prepared.request.PrepareKind,
+	})
+	if needsImageResolve(prepared.request.ImageID) {
+		tasks = append(tasks, PlanTask{
+			TaskID:          "resolve-image",
+			Type:            "resolve_image",
+			ImageID:         prepared.request.ImageID,
+			ResolvedImageID: imageID,
+		})
+	}
+	tasks = append(tasks,
 		{
 			TaskID: "execute-0",
 			Type:   "state_execute",
 			Input: &TaskInput{
 				Kind: "image",
-				ID:   prepared.request.ImageID,
+				ID:   imageID,
 			},
 			TaskHash:      taskHash,
 			OutputStateID: stateID,
@@ -604,7 +635,7 @@ func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *Erro
 			},
 			InstanceMode: "ephemeral",
 		},
-	}
+	)
 	return tasks, stateID, nil
 }
 
@@ -862,6 +893,8 @@ func taskRecordsFromPlan(jobID string, tasks []PlanTask) []queue.TaskRecord {
 			PlannerKind:   nullableString(task.PlannerKind),
 			InputKind:     nullableString(taskInputKind(task.Input)),
 			InputID:       nullableString(taskInputID(task.Input)),
+			ImageID:       nullableString(task.ImageID),
+			ResolvedImageID: nullableString(task.ResolvedImageID),
 			TaskHash:      nullableString(task.TaskHash),
 			OutputStateID: nullableString(task.OutputStateID),
 			Cached:        task.Cached,
@@ -892,6 +925,8 @@ func planTaskFromRecord(task queue.TaskRecord) PlanTask {
 		Type:          task.Type,
 		PlannerKind:   valueOrEmpty(task.PlannerKind),
 		Input:         input,
+		ImageID:       valueOrEmpty(task.ImageID),
+		ResolvedImageID: valueOrEmpty(task.ResolvedImageID),
 		TaskHash:      valueOrEmpty(task.TaskHash),
 		OutputStateID: valueOrEmpty(task.OutputStateID),
 		Cached:        task.Cached,
@@ -914,6 +949,8 @@ func taskEntryFromRecord(task queue.TaskRecord) TaskEntry {
 		Status:        task.Status,
 		PlannerKind:   valueOrEmpty(task.PlannerKind),
 		Input:         input,
+		ImageID:       valueOrEmpty(task.ImageID),
+		ResolvedImageID: valueOrEmpty(task.ResolvedImageID),
 		TaskHash:      valueOrEmpty(task.TaskHash),
 		OutputStateID: valueOrEmpty(task.OutputStateID),
 		Cached:        task.Cached,
@@ -1014,6 +1051,70 @@ func nullableString(value string) *string {
 
 func strPtr(value string) *string {
 	return &value
+}
+
+func (p preparedRequest) effectiveImageID() string {
+	if strings.TrimSpace(p.resolvedImageID) != "" {
+		return p.resolvedImageID
+	}
+	return p.request.ImageID
+}
+
+func hasImageDigest(imageID string) bool {
+	imageID = strings.TrimSpace(imageID)
+	if imageID == "" {
+		return false
+	}
+	at := strings.LastIndex(imageID, "@")
+	return at != -1 && at+1 < len(imageID)
+}
+
+func needsImageResolve(imageID string) bool {
+	return !hasImageDigest(imageID)
+}
+
+func (m *Manager) ensureResolvedImageID(ctx context.Context, jobID string, prepared *preparedRequest, tasks []queue.TaskRecord) *ErrorResponse {
+	if prepared == nil {
+		return errorResponse("internal_error", "prepared request is required", "")
+	}
+	if strings.TrimSpace(prepared.resolvedImageID) != "" {
+		return nil
+	}
+	if resolved := resolvedImageFromTasks(tasks); resolved != "" {
+		prepared.resolvedImageID = resolved
+		return nil
+	}
+	if len(tasks) > 0 {
+		prepared.resolvedImageID = prepared.request.ImageID
+		return nil
+	}
+	if !needsImageResolve(prepared.request.ImageID) {
+		prepared.resolvedImageID = prepared.request.ImageID
+		return nil
+	}
+	resolved, err := m.runtime.ResolveImage(ctx, prepared.request.ImageID)
+	if err != nil {
+		return errorResponse("internal_error", "cannot resolve image", err.Error())
+	}
+	resolved = strings.TrimSpace(resolved)
+	if resolved == "" {
+		return errorResponse("internal_error", "resolved image id is required", "")
+	}
+	prepared.resolvedImageID = resolved
+	return nil
+}
+
+func resolvedImageFromTasks(tasks []queue.TaskRecord) string {
+	for _, task := range tasks {
+		if task.Type != "resolve_image" {
+			continue
+		}
+		resolved := valueOrEmpty(task.ResolvedImageID)
+		if strings.TrimSpace(resolved) != "" {
+			return resolved
+		}
+	}
+	return ""
 }
 
 var errJobNotFound = fmt.Errorf("job not found")

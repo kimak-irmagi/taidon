@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS prepare_tasks (
   planner_kind TEXT,
   input_kind TEXT,
   input_id TEXT,
+  image_id TEXT,
+  resolved_image_id TEXT,
   task_hash TEXT,
   output_state_id TEXT,
   cached INTEGER,

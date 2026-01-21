@@ -34,6 +34,7 @@ type Mount struct {
 
 type Runtime interface {
 	InitBase(ctx context.Context, imageID string, dataDir string) error
+	ResolveImage(ctx context.Context, imageID string) (string, error)
 	Start(ctx context.Context, req StartRequest) (Instance, error)
 	Stop(ctx context.Context, id string) error
 	Exec(ctx context.Context, id string, req ExecRequest) (string, error)

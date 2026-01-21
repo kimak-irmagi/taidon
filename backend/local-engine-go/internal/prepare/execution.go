@@ -77,15 +77,20 @@ func parseImageID(imageID string) (string, string) {
 		return "unknown", "latest"
 	}
 	tag := ""
+	digest := ""
 	if at := strings.Index(imageID, "@"); at != -1 {
 		if at+1 < len(imageID) {
-			tag = imageID[at+1:]
+			digest = imageID[at+1:]
 		}
 		imageID = imageID[:at]
 	}
-	if colon := strings.LastIndex(imageID, ":"); colon != -1 && colon > strings.LastIndex(imageID, "/") {
-		tag = imageID[colon+1:]
-		imageID = imageID[:colon]
+	if digest == "" {
+		if colon := strings.LastIndex(imageID, ":"); colon != -1 && colon > strings.LastIndex(imageID, "/") {
+			tag = imageID[colon+1:]
+			imageID = imageID[:colon]
+		}
+	} else {
+		tag = digest
 	}
 	engine := imageID
 	if slash := strings.LastIndex(engine, "/"); slash != -1 {
@@ -217,7 +222,11 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		_ = m.dbms.ResumeSnapshot(context.Background(), rt.instance)
 	}()
 
-	paths, err := resolveStatePaths(m.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return errorResponse("internal_error", "resolved image id is required", "")
+	}
+	paths, err := resolveStatePaths(m.stateStoreRoot, imageID, task.OutputStateID)
 	if err != nil {
 		return errorResponse("internal_error", "cannot resolve state paths", err.Error())
 	}
@@ -238,7 +247,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		StateID:               task.OutputStateID,
 		ParentStateID:         parentID,
 		StateFingerprint:      task.OutputStateID,
-		ImageID:               prepared.request.ImageID,
+		ImageID:               imageID,
 		PrepareKind:           prepared.request.PrepareKind,
 		PrepareArgsNormalized: prepared.argsNormalized,
 		CreatedAt:             createdAt,
@@ -289,13 +298,17 @@ func (m *Manager) createInstance(ctx context.Context, jobID string, prepared pre
 	createdAt := m.now().UTC().Format(time.RFC3339Nano)
 	status := store.InstanceStatusActive
 	var runtimeID *string
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return nil, errorResponse("internal_error", "resolved image id is required", "")
+	}
 	if strings.TrimSpace(rt.instance.ID) != "" {
 		runtimeID = strPtr(rt.instance.ID)
 	}
 	if err := m.store.CreateInstance(ctx, store.InstanceCreate{
 		InstanceID: instanceID,
 		StateID:    stateID,
-		ImageID:    prepared.request.ImageID,
+		ImageID:    imageID,
 		CreatedAt:  createdAt,
 		RuntimeID:  runtimeID,
 		Status:     &status,
@@ -309,7 +322,7 @@ func (m *Manager) createInstance(ctx context.Context, jobID string, prepared pre
 		DSN:                   buildDSN(rt.instance.Host, rt.instance.Port),
 		InstanceID:            instanceID,
 		StateID:               stateID,
-		ImageID:               prepared.request.ImageID,
+		ImageID:               imageID,
 		PrepareKind:           prepared.request.PrepareKind,
 		PrepareArgsNormalized: prepared.argsNormalized,
 	}
@@ -339,7 +352,10 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		return nil, errorResponse("internal_error", "task input is required", "")
 	}
 
-	imageID := prepared.request.ImageID
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return nil, errorResponse("internal_error", "resolved image id is required", "")
+	}
 	var srcDir string
 	switch input.Kind {
 	case "image":
