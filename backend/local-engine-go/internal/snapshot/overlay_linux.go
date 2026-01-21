@@ -76,11 +76,11 @@ func (m overlayManager) Kind() string {
 }
 
 func (m overlayManager) Clone(ctx context.Context, srcDir string, destDir string) (CloneResult, error) {
-	srcDir = filepath.Clean(srcDir)
-	destDir = filepath.Clean(destDir)
 	if srcDir == "" || destDir == "" {
 		return CloneResult{}, fmt.Errorf("source and destination are required")
 	}
+	srcDir = filepath.Clean(srcDir)
+	destDir = filepath.Clean(destDir)
 	upper := filepath.Join(destDir, "upper")
 	work := filepath.Join(destDir, "work")
 	merged := filepath.Join(destDir, "merged")
