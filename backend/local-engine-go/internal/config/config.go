@@ -291,6 +291,12 @@ func parsePath(path string) ([]pathSegment, error) {
 		ch := path[i]
 		switch ch {
 		case '.':
+			if key.Len() == 0 {
+				if len(segments) == 0 || !segments[len(segments)-1].isIndex {
+					return nil, ErrInvalidPath
+				}
+				continue
+			}
 			if err := flushKey(); err != nil {
 				return nil, err
 			}

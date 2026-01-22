@@ -214,8 +214,10 @@ paths:
           content:
             application/x-ndjson:
               schema:
-                type: string
+                type: array
                 description: Newline-delimited JSON stream of PrepareJobEvent objects.
+                items:
+                  $ref: "#/components/schemas/PrepareJobEvent"
         "401":
           description: Unauthorized
         "400":
@@ -813,8 +815,8 @@ components:
       additionalProperties: true
       description: JSON Schema for config validation.
     JSONValue:
-      nullable: true
       oneOf:
+        - type: "null"
         - type: string
         - type: number
         - type: integer

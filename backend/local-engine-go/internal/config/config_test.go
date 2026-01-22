@@ -56,7 +56,7 @@ func TestConfigLoadOverridesFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get override: %v", err)
 	}
-	if value != 5 {
+	if got, ok := asInt(value); !ok || got != 5 {
 		t.Fatalf("expected override 5, got %#v", value)
 	}
 }
@@ -117,7 +117,7 @@ func TestConfigSetArrayIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if value != 3 {
+	if got, ok := asInt(value); !ok || got != 3 {
 		t.Fatalf("expected 3, got %#v", value)
 	}
 }
