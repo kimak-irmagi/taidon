@@ -44,7 +44,9 @@ Each subproject (`frontend/*`, `backend/*`, `docs`, `research`) has its own setu
 
 Before pushing changes:
 
-- follow the tooling described in that module’s README  
+- follow the tooling described in that module’s README
+- follow the rules described in the AGENTS.md files. Those work for humans as good
+  as for the AI agents.
 - run its tests and linters  
 - make sure you do not break other modules  
 

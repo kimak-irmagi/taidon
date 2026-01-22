@@ -88,6 +88,46 @@ func TestInstanceRuntimeDirPersisted(t *testing.T) {
 	}
 }
 
+func TestEnsureRuntimeColumnsMissingTable(t *testing.T) {
+	db := openMemoryDB(t)
+	if err := ensureRuntimeIDColumn(db); err != nil {
+		t.Fatalf("ensureRuntimeIDColumn: %v", err)
+	}
+	if err := ensureRuntimeDirColumn(db); err != nil {
+		t.Fatalf("ensureRuntimeDirColumn: %v", err)
+	}
+}
+
+func TestEnsureRuntimeColumnsDuplicate(t *testing.T) {
+	db := openMemoryDB(t)
+	execSQL(t, db, `CREATE TABLE instances (instance_id TEXT, runtime_id TEXT, runtime_dir TEXT)`)
+	if err := ensureRuntimeIDColumn(db); err != nil {
+		t.Fatalf("ensureRuntimeIDColumn: %v", err)
+	}
+	if err := ensureRuntimeDirColumn(db); err != nil {
+		t.Fatalf("ensureRuntimeDirColumn: %v", err)
+	}
+}
+
+func openMemoryDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Close()
+	})
+	return db
+}
+
+func execSQL(t *testing.T, db *sql.DB, stmt string) {
+	t.Helper()
+	if _, err := db.Exec(stmt); err != nil {
+		t.Fatalf("exec %s: %v", stmt, err)
+	}
+}
+
 func TestNewRequiresDB(t *testing.T) {
 	if _, err := New(nil); err == nil {
 		t.Fatalf("expected error")

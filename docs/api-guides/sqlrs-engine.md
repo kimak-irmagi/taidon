@@ -1221,10 +1221,50 @@ Streams job events as NDJSON.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|Inline|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
+
+<h3 id="streampreparejobevents-responseschema">Response Schema</h3>
+
+Status Code **200**
+
+*Newline-delimited JSON stream of PrepareJobEvent objects.*
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[PrepareJobEvent](#schemapreparejobevent)]|false|none|Newline-delimited JSON stream of PrepareJobEvent objects.|
+|» type|string|true|none|none|
+|» ts|string(date-time)|true|none|none|
+|» task_id|string|false|none|Present for task status events.|
+|» status|string|false|none|none|
+|» message|string|false|none|none|
+|» result|[PrepareJobResult](#schemapreparejobresult)|false|none|none|
+|»» dsn|string|true|none|DSN for the prepared instance.|
+|»» instance_id|string|true|none|none|
+|»» state_id|string|true|none|none|
+|»» image_id|string|true|none|none|
+|»» prepare_kind|string|true|none|none|
+|»» prepare_args_normalized|string|true|none|none|
+|» error|[ErrorResponse](#schemaerrorresponse)|false|none|none|
+|»» code|string|true|none|none|
+|»» message|string|true|none|none|
+|»» details|string|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|status|
+|type|log|
+|type|result|
+|type|error|
+|type|task|
+|status|queued|
+|status|running|
+|status|succeeded|
+|status|failed|
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -1424,6 +1464,761 @@ Returns task queue entries across jobs.
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid filter|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+<h1 id="the-sqlrs-engine-api-config">config</h1>
+
+## getConfig
+
+<a id="opIdgetConfig"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/config \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/config HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/config',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/config',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/config', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/config', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/config");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/config", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/config`
+
+*Get server config*
+
+Returns the server configuration.
+When `path` is provided, returns the value at that path.
+When `effective` is true, defaults are applied before returning the value.
+
+<h3 id="getconfig-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|path|query|string|false|JS-style path (e.g. `orchestrator.jobs.maxIdentical`).|
+|effective|query|boolean|false|Return value after applying defaults.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "path": "string",
+  "value": {}
+}
+```
+
+<h3 id="getconfig-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Config value or full config object.|Inline|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid path|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Path not found|None|
+
+<h3 id="getconfig-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## setConfig
+
+<a id="opIdsetConfig"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X PATCH http://127.0.0.1:{port}/v1/config \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+PATCH http://127.0.0.1:{port}/v1/config HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Accept: application/json
+
+```
+
+```javascript
+const inputBody = '{
+  "path": "string",
+  "value": {}
+}';
+const headers = {
+  'Content-Type':'application/json',
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/config',
+{
+  method: 'PATCH',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/json',
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.patch 'http://127.0.0.1:{port}/v1/config',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.patch('http://127.0.0.1:{port}/v1/config', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('PATCH','http://127.0.0.1:{port}/v1/config', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/config");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("PATCH");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/json"},
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("PATCH", "http://127.0.0.1:{port}/v1/config", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`PATCH /v1/config`
+
+*Set config value*
+
+Sets a configuration value by path.
+The value is validated against the server schema and semantic rules.
+
+> Body parameter
+
+```json
+{
+  "path": "string",
+  "value": {}
+}
+```
+
+<h3 id="setconfig-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[ConfigSetRequest](#schemaconfigsetrequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "path": "string",
+  "value": {}
+}
+```
+
+<h3 id="setconfig-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Updated config value.|[ConfigValue](#schemaconfigvalue)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid value|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## removeConfig
+
+<a id="opIdremoveConfig"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X DELETE http://127.0.0.1:{port}/v1/config?path=string \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+DELETE http://127.0.0.1:{port}/v1/config?path=string HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/config?path=string',
+{
+  method: 'DELETE',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.delete 'http://127.0.0.1:{port}/v1/config',
+  params: {
+  'path' => 'string'
+}, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.delete('http://127.0.0.1:{port}/v1/config', params={
+  'path': 'string'
+}, headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('DELETE','http://127.0.0.1:{port}/v1/config', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/config?path=string");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("DELETE");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("DELETE", "http://127.0.0.1:{port}/v1/config", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`DELETE /v1/config`
+
+*Remove config value*
+
+Removes a configuration value by path.
+
+<h3 id="removeconfig-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|path|query|string|true|JS-style path (e.g. `orchestrator.jobs.maxIdentical`).|
+|effective|query|boolean|false|Return value after applying defaults.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "path": "string",
+  "value": {}
+}
+```
+
+<h3 id="removeconfig-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Updated config value.|[ConfigValue](#schemaconfigvalue)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid path|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Path not found|None|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## getConfigSchema
+
+<a id="opIdgetConfigSchema"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/config/schema \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/config/schema HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/config/schema',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/config/schema',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/config/schema', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/config/schema', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/config/schema");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/config/schema", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/config/schema`
+
+*Get config schema*
+
+Returns the JSON Schema for server config validation.
+
+> Example responses
+
+> 200 Response
+
+```json
+{}
+```
+
+<h3 id="getconfigschema-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|JSON Schema|[ConfigSchema](#schemaconfigschema)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 
 <aside class="warning">
@@ -3088,6 +3883,142 @@ bearerAuth
 |Property|Value|
 |---|---|
 |prepare_kind|psql|
+
+<h2 id="tocS_ConfigSetRequest">ConfigSetRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemaconfigsetrequest"></a>
+<a id="schema_ConfigSetRequest"></a>
+<a id="tocSconfigsetrequest"></a>
+<a id="tocsconfigsetrequest"></a>
+
+```json
+{
+  "path": "string",
+  "value": {}
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|path|string|true|none|JS-style path (e.g. `orchestrator.jobs.maxIdentical`).|
+|value|[JSONValue](#schemajsonvalue)|true|none|none|
+
+<h2 id="tocS_ConfigValue">ConfigValue</h2>
+<!-- backwards compatibility -->
+<a id="schemaconfigvalue"></a>
+<a id="schema_ConfigValue"></a>
+<a id="tocSconfigvalue"></a>
+<a id="tocsconfigvalue"></a>
+
+```json
+{
+  "path": "string",
+  "value": {}
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|path|string|true|none|none|
+|value|[JSONValue](#schemajsonvalue)|true|none|none|
+
+<h2 id="tocS_ConfigMap">ConfigMap</h2>
+<!-- backwards compatibility -->
+<a id="schemaconfigmap"></a>
+<a id="schema_ConfigMap"></a>
+<a id="tocSconfigmap"></a>
+<a id="tocsconfigmap"></a>
+
+```json
+{}
+
+```
+
+Full server config object.
+
+### Properties
+
+*None*
+
+<h2 id="tocS_ConfigSchema">ConfigSchema</h2>
+<!-- backwards compatibility -->
+<a id="schemaconfigschema"></a>
+<a id="schema_ConfigSchema"></a>
+<a id="tocSconfigschema"></a>
+<a id="tocsconfigschema"></a>
+
+```json
+{}
+
+```
+
+JSON Schema for config validation.
+
+### Properties
+
+*None*
+
+<h2 id="tocS_JSONValue">JSONValue</h2>
+<!-- backwards compatibility -->
+<a id="schemajsonvalue"></a>
+<a id="schema_JSONValue"></a>
+<a id="tocSjsonvalue"></a>
+<a id="tocsjsonvalue"></a>
+
+```json
+{}
+
+```
+
+### Properties
+
+oneOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|null|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|string|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|number|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|integer|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|boolean|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|object|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[any]|false|none|none|
 
 <h2 id="tocS_PreparePlanTask">PreparePlanTask</h2>
 <!-- backwards compatibility -->

@@ -116,6 +116,8 @@ CLI намеренно **тонкий** и без состояния.
 - `POST /v1/prepare-jobs` - старт prepare job (plan/execute steps, snapshot states, создание экземпляра); `plan_only` считает только задачи
 - `GET /v1/prepare-jobs/{jobId}` - статус job
 - `GET /v1/prepare-jobs/{jobId}/events` - стрим событий job (NDJSON)
+- `GET /v1/config` / `PATCH /v1/config` - чтение/запись server config
+- `GET /v1/config/schema` - схема конфигурации
 - список names/instances/states (JSON array или NDJSON через `Accept`)
 - `GET /v1/names/{name}` - чтение name binding
 - `GET /v1/instances/{instanceId}` - чтение экземпляра (если найдено по имени, engine отвечает 307 redirect на канонический URL по id)

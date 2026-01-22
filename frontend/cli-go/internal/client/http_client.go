@@ -182,6 +182,72 @@ func (c *Client) ListTasks(ctx context.Context, jobID string) ([]TaskEntry, erro
 	return out, nil
 }
 
+func (c *Client) GetConfig(ctx context.Context, path string, effective bool) (any, error) {
+	query := url.Values{}
+	addFilter(query, "path", path)
+	if effective {
+		query.Set("effective", "true")
+	}
+	if strings.TrimSpace(path) == "" {
+		var out map[string]any
+		if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/config", query), true, &out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	var out ConfigValue
+	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/config", query), true, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) SetConfig(ctx context.Context, req ConfigValue) (ConfigValue, error) {
+	var out ConfigValue
+	body, err := json.Marshal(req)
+	if err != nil {
+		return out, err
+	}
+	resp, err := c.doRequestWithBody(ctx, http.MethodPatch, "/v1/config", true, bytes.NewReader(body), "application/json")
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out, parseErrorResponse(resp)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func (c *Client) RemoveConfig(ctx context.Context, path string) (ConfigValue, error) {
+	var out ConfigValue
+	query := url.Values{}
+	addFilter(query, "path", path)
+	resp, err := c.doRequest(ctx, http.MethodDelete, appendQuery("/v1/config", query), true)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out, parseErrorResponse(resp)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func (c *Client) GetConfigSchema(ctx context.Context) (any, error) {
+	var out map[string]any
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/config/schema", true, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) doJSON(ctx context.Context, method, path string, useAuth bool, out any) error {
 	resp, err := c.doRequest(ctx, method, path, useAuth)
 	if err != nil {

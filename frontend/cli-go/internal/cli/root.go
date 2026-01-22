@@ -84,6 +84,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  plan:psql  Compute a prepare plan with psql")
 	fmt.Fprintln(w, "  prepare:psql  Prepare a database state with psql")
 	fmt.Fprintln(w, "  status   Check service health")
+	fmt.Fprintln(w, "  config   Manage server config")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Global flags:")
 	fmt.Fprintln(w, "  --profile <name>        Config profile")

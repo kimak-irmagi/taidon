@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS prepare_jobs (
   plan_only INTEGER NOT NULL DEFAULT 0,
   snapshot_mode TEXT NOT NULL DEFAULT 'always',
   prepare_args_normalized TEXT,
+  signature TEXT,
   request_json TEXT,
   created_at TEXT NOT NULL,
   started_at TEXT,

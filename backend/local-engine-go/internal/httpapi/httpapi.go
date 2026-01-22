@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"sqlrs/engine/internal/auth"
+	"sqlrs/engine/internal/config"
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
@@ -23,6 +25,7 @@ type Options struct {
 	Registry   *registry.Registry
 	Prepare    *prepare.Manager
 	Deletion   *deletion.Manager
+	Config     config.Store
 }
 
 type healthResponse struct {
@@ -47,6 +50,102 @@ func NewHandler(opts Options) http.Handler {
 			PID:        os.Getpid(),
 		}
 		writeJSON(w, resp)
+	})
+
+	mux.HandleFunc("/v1/config/schema", func(w http.ResponseWriter, r *http.Request) {
+		if !auth.RequireBearer(w, r, opts.AuthToken) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if opts.Config == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, opts.Config.Schema())
+	})
+
+	mux.HandleFunc("/v1/config", func(w http.ResponseWriter, r *http.Request) {
+		if !auth.RequireBearer(w, r, opts.AuthToken) {
+			return
+		}
+		if opts.Config == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			path := readQueryValue(r, "path")
+			effective, err := parseBoolQuery(r, "effective")
+			if err != nil {
+				writeErrorResponse(w, "invalid_argument", "invalid effective", err.Error(), http.StatusBadRequest)
+				return
+			}
+			value, err := opts.Config.Get(path, effective)
+			if err != nil {
+				if errors.Is(err, config.ErrInvalidPath) {
+					writeErrorResponse(w, "invalid_argument", "invalid path", err.Error(), http.StatusBadRequest)
+					return
+				}
+				if errors.Is(err, config.ErrPathNotFound) {
+					writeErrorResponse(w, "not_found", "path not found", err.Error(), http.StatusNotFound)
+					return
+				}
+				writeErrorResponse(w, "internal_error", "cannot read config", err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if path == "" {
+				writeJSON(w, value)
+				return
+			}
+			writeJSON(w, config.Value{Path: path, Value: value})
+		case http.MethodPatch:
+			var req config.Value
+			decoder := json.NewDecoder(r.Body)
+			decoder.UseNumber()
+			if err := decoder.Decode(&req); err != nil {
+				writeErrorResponse(w, "invalid_argument", "invalid json payload", err.Error(), http.StatusBadRequest)
+				return
+			}
+			if strings.TrimSpace(req.Path) == "" {
+				writeErrorResponse(w, "invalid_argument", "path is required", "", http.StatusBadRequest)
+				return
+			}
+			value, err := opts.Config.Set(req.Path, req.Value)
+			if err != nil {
+				if errors.Is(err, config.ErrInvalidPath) || errors.Is(err, config.ErrInvalidValue) {
+					writeErrorResponse(w, "invalid_argument", "invalid config value", err.Error(), http.StatusBadRequest)
+					return
+				}
+				writeErrorResponse(w, "internal_error", "cannot update config", err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, config.Value{Path: req.Path, Value: value})
+		case http.MethodDelete:
+			path := readQueryValue(r, "path")
+			if path == "" {
+				writeErrorResponse(w, "invalid_argument", "path is required", "", http.StatusBadRequest)
+				return
+			}
+			value, err := opts.Config.Remove(path)
+			if err != nil {
+				if errors.Is(err, config.ErrInvalidPath) {
+					writeErrorResponse(w, "invalid_argument", "invalid path", err.Error(), http.StatusBadRequest)
+					return
+				}
+				if errors.Is(err, config.ErrPathNotFound) {
+					writeErrorResponse(w, "not_found", "path not found", err.Error(), http.StatusNotFound)
+					return
+				}
+				writeErrorResponse(w, "internal_error", "cannot update config", err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, config.Value{Path: path, Value: value})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	})
 
 	mux.HandleFunc("/v1/prepare-jobs", func(w http.ResponseWriter, r *http.Request) {

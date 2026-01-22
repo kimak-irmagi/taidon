@@ -15,8 +15,8 @@ type fakeRunner struct {
 }
 
 type runCall struct {
-	name string
-	args []string
+	name  string
+	args  []string
 	stdin *string
 }
 
@@ -318,6 +318,42 @@ func TestDockerRuntimeWaitForReadyTimeout(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeWaitForReadySuccess(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: "accepting connections\n"},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.WaitForReady(context.Background(), "container-1", time.Second); err != nil {
+		t.Fatalf("WaitForReady: %v", err)
+	}
+}
+
+func TestDockerRuntimeRunPermissionCommandDockerUnavailable(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{err: DockerUnavailableError{Message: "daemon unavailable"}},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.runPermissionCommand(context.Background(), []string{"run"}); err == nil || !strings.Contains(err.Error(), "docker is not running") {
+		t.Fatalf("expected docker unavailable error, got %v", err)
+	}
+}
+
+func TestDockerRuntimeRunPermissionCommandPermissionError(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: "chmod: operation not permitted", err: errors.New("exit 1")},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.runPermissionCommand(context.Background(), []string{"run"}); err == nil || !strings.Contains(err.Error(), "permissions") {
+		t.Fatalf("expected permission error, got %v", err)
+	}
+}
+
 func TestDockerRuntimeResolveImageWithDigest(t *testing.T) {
 	runner := &fakeRunner{}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
@@ -403,6 +439,12 @@ func TestIsDockerUnavailableOutput(t *testing.T) {
 	}
 	if isDockerUnavailableOutput("boom", errors.New("fail")) {
 		t.Fatalf("expected unavailable false for unrelated error")
+	}
+	if isDockerUnavailableOutput("", nil) {
+		t.Fatalf("expected unavailable false for empty output")
+	}
+	if !isDockerUnavailableOutput("failed to connect to the docker api", errors.New("fail")) {
+		t.Fatalf("expected unavailable for docker api string")
 	}
 }
 

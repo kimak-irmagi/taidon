@@ -116,6 +116,8 @@ Key engine endpoints (logical):
 - `POST /v1/prepare-jobs` - start prepare job (plan/execute steps, snapshot states, create instance); `plan_only` computes tasks only
 - `GET /v1/prepare-jobs/{jobId}` - job status
 - `GET /v1/prepare-jobs/{jobId}/events` - job event stream (NDJSON)
+- `GET /v1/config` / `PATCH /v1/config` - server configuration read/write
+- `GET /v1/config/schema` - configuration schema
 - list names/instances/states (JSON array or NDJSON via `Accept`)
 - `GET /v1/names/{name}` - read name binding
 - `GET /v1/instances/{instanceId}` - read instance (supports name alias with 307 redirect to the canonical id URL when resolved by name)

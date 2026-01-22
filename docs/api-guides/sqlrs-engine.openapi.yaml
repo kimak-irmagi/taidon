@@ -214,8 +214,10 @@ paths:
           content:
             application/x-ndjson:
               schema:
-                type: string
+                type: array
                 description: Newline-delimited JSON stream of PrepareJobEvent objects.
+                items:
+                  $ref: "#/components/schemas/PrepareJobEvent"
         "401":
           description: Unauthorized
         "400":
@@ -258,6 +260,130 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+  /v1/config:
+    get:
+      operationId: getConfig
+      summary: Get server config
+      description: |
+        Returns the server configuration.
+        When `path` is provided, returns the value at that path.
+        When `effective` is true, defaults are applied before returning the value.
+      tags:
+        - config
+      parameters:
+        - in: query
+          name: path
+          required: false
+          schema:
+            type: string
+          description: JS-style path (e.g. `orchestrator.jobs.maxIdentical`).
+        - in: query
+          name: effective
+          required: false
+          schema:
+            type: boolean
+          description: Return value after applying defaults.
+      responses:
+        "200":
+          description: Config value or full config object.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ConfigValue"
+                  - $ref: "#/components/schemas/ConfigMap"
+        "400":
+          description: Invalid path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Path not found
+    patch:
+      operationId: setConfig
+      summary: Set config value
+      description: |
+        Sets a configuration value by path.
+        The value is validated against the server schema and semantic rules.
+      tags:
+        - config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigSetRequest"
+      responses:
+        "200":
+          description: Updated config value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigValue"
+        "400":
+          description: Invalid value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+    delete:
+      operationId: removeConfig
+      summary: Remove config value
+      description: |
+        Removes a configuration value by path.
+      tags:
+        - config
+      parameters:
+        - in: query
+          name: path
+          required: true
+          schema:
+            type: string
+          description: JS-style path (e.g. `orchestrator.jobs.maxIdentical`).
+        - in: query
+          name: effective
+          required: false
+          schema:
+            type: boolean
+          description: Return value after applying defaults.
+      responses:
+        "200":
+          description: Updated config value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigValue"
+        "400":
+          description: Invalid path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Path not found
+  /v1/config/schema:
+    get:
+      operationId: getConfigSchema
+      summary: Get config schema
+      description: Returns the JSON Schema for server config validation.
+      tags:
+        - config
+      responses:
+        "200":
+          description: JSON Schema
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfigSchema"
         "401":
           description: Unauthorized
   /v1/names:
@@ -657,6 +783,48 @@ components:
         plan_only:
           type: boolean
           description: When true, only the plan is computed and no instance is created.
+    ConfigSetRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - value
+      properties:
+        path:
+          type: string
+          description: JS-style path (e.g. `orchestrator.jobs.maxIdentical`).
+        value:
+          $ref: "#/components/schemas/JSONValue"
+    ConfigValue:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - value
+      properties:
+        path:
+          type: string
+        value:
+          $ref: "#/components/schemas/JSONValue"
+    ConfigMap:
+      type: object
+      additionalProperties: true
+      description: Full server config object.
+    ConfigSchema:
+      type: object
+      additionalProperties: true
+      description: JSON Schema for config validation.
+    JSONValue:
+      oneOf:
+        - type: "null"
+        - type: string
+        - type: number
+        - type: integer
+        - type: boolean
+        - type: object
+          additionalProperties: true
+        - type: array
+          items: {}
     PreparePlanTask:
       oneOf:
         - $ref: "#/components/schemas/PreparePlanTaskPlan"

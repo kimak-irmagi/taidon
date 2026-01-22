@@ -10,6 +10,7 @@ type JobRecord struct {
 	PlanOnly              bool
 	SnapshotMode          string
 	PrepareArgsNormalized *string
+	Signature             *string
 	RequestJSON           *string
 	CreatedAt             string
 	StartedAt             *string
@@ -19,23 +20,23 @@ type JobRecord struct {
 }
 
 type TaskRecord struct {
-	JobID         string
-	TaskID        string
-	Position      int
-	Type          string
-	Status        string
-	PlannerKind   *string
-	InputKind     *string
-	InputID       *string
-	ImageID       *string
+	JobID           string
+	TaskID          string
+	Position        int
+	Type            string
+	Status          string
+	PlannerKind     *string
+	InputKind       *string
+	InputID         *string
+	ImageID         *string
 	ResolvedImageID *string
-	TaskHash      *string
-	OutputStateID *string
-	Cached        *bool
-	InstanceMode  *string
-	StartedAt     *string
-	FinishedAt    *string
-	ErrorJSON     *string
+	TaskHash        *string
+	OutputStateID   *string
+	Cached          *bool
+	InstanceMode    *string
+	StartedAt       *string
+	FinishedAt      *string
+	ErrorJSON       *string
 }
 
 type EventRecord struct {
@@ -54,6 +55,7 @@ type JobUpdate struct {
 	Status                *string
 	SnapshotMode          *string
 	PrepareArgsNormalized *string
+	Signature             *string
 	RequestJSON           *string
 	StartedAt             *string
 	FinishedAt            *string
@@ -74,6 +76,7 @@ type Store interface {
 	GetJob(ctx context.Context, jobID string) (JobRecord, bool, error)
 	ListJobs(ctx context.Context, jobID string) ([]JobRecord, error)
 	ListJobsByStatus(ctx context.Context, statuses []string) ([]JobRecord, error)
+	ListJobsBySignature(ctx context.Context, signature string, statuses []string) ([]JobRecord, error)
 	DeleteJob(ctx context.Context, jobID string) error
 
 	ReplaceTasks(ctx context.Context, jobID string, tasks []TaskRecord) error

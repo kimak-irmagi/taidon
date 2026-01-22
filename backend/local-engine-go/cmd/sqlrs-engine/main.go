@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"sqlrs/engine/internal/config"
 	"sqlrs/engine/internal/conntrack"
 	"sqlrs/engine/internal/dbms"
 	"sqlrs/engine/internal/deletion"
@@ -207,6 +208,10 @@ func run(args []string) (int, error) {
 	rt := engineRuntime.NewDocker(engineRuntime.Options{})
 	snap := snapshot.NewManager(snapshot.Options{PreferOverlay: true})
 	connector := dbms.NewPostgres(rt)
+	configMgr, err := config.NewManager(config.Options{StateStoreRoot: stateStoreRoot})
+	if err != nil {
+		return 1, fmt.Errorf("config manager: %v", err)
+	}
 	prepareMgr, err := newPrepareManagerFn(prepare.Options{
 		Store:          store,
 		Queue:          queueStore,
@@ -214,6 +219,7 @@ func run(args []string) (int, error) {
 		Snapshot:       snap,
 		DBMS:           connector,
 		StateStoreRoot: stateStoreRoot,
+		Config:         configMgr,
 		Version:        *version,
 		Async:          true,
 	})
@@ -225,9 +231,10 @@ func run(args []string) (int, error) {
 	}
 
 	deleteMgr, err := newDeletionManagerFn(deletion.Options{
-		Store:   store,
-		Conn:    conntrack.Noop{},
-		Runtime: rt,
+		Store:          store,
+		Conn:           conntrack.Noop{},
+		Runtime:        rt,
+		StateStoreRoot: stateStoreRoot,
 	})
 	if err != nil {
 		return 1, fmt.Errorf("delete manager: %v", err)
@@ -240,6 +247,7 @@ func run(args []string) (int, error) {
 		Registry:   reg,
 		Prepare:    prepareMgr,
 		Deletion:   deleteMgr,
+		Config:     configMgr,
 	})
 
 	server := &http.Server{
