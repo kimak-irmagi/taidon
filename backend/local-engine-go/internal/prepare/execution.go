@@ -205,9 +205,19 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			errResp = errorResponse("internal_error", "cannot check state cache", err.Error())
 			return errStateBuildFailed
 		}
-		if cached || stateBuildMarkerExists(paths.stateDir) {
+		if cached {
 			m.logTask(jobID, task.TaskID, "cached output_state=%s", task.OutputStateID)
 			return nil
+		}
+		if stateBuildMarkerExists(paths.stateDir) {
+			if err := os.RemoveAll(paths.stateDir); err != nil {
+				errResp = errorResponse("internal_error", "cannot reset state dir", err.Error())
+				return errStateBuildFailed
+			}
+			if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+				errResp = errorResponse("internal_error", "cannot create state dir", err.Error())
+				return errStateBuildFailed
+			}
 		}
 
 		rt, innerResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)

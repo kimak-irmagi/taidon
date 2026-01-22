@@ -337,9 +337,17 @@ func TestDeleteStateNonRecurseBlocked(t *testing.T) {
 
 func TestDeleteStateNonRecurseDeletes(t *testing.T) {
 	st := newFakeStore()
-	st.states["root"] = store.StateEntry{StateID: "root"}
+	statesRoot := t.TempDir()
+	st.states["root"] = store.StateEntry{StateID: "root", ImageID: "postgres:17"}
+	stateDir, err := stateDirFor(statesRoot, "postgres:17", "root")
+	if err != nil {
+		t.Fatalf("stateDirFor: %v", err)
+	}
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 
-	mgr, err := NewManager(Options{Store: st})
+	mgr, err := NewManager(Options{Store: st, StateStoreRoot: statesRoot})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -356,6 +364,9 @@ func TestDeleteStateNonRecurseDeletes(t *testing.T) {
 	}
 	if _, ok := st.states["root"]; ok {
 		t.Fatalf("expected state to be deleted")
+	}
+	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {
+		t.Fatalf("expected state dir to be removed")
 	}
 }
 
@@ -420,13 +431,29 @@ func TestDeleteStateRecurseBlockedByConnections(t *testing.T) {
 func TestDeleteStateRecurseForceDeletes(t *testing.T) {
 	parent := "root"
 	st := newFakeStore()
-	st.states["root"] = store.StateEntry{StateID: "root"}
-	st.states["child"] = store.StateEntry{StateID: "child", ParentStateID: &parent}
+	statesRoot := t.TempDir()
+	st.states["root"] = store.StateEntry{StateID: "root", ImageID: "postgres:17"}
+	st.states["child"] = store.StateEntry{StateID: "child", ParentStateID: &parent, ImageID: "postgres:17"}
+	rootDir, err := stateDirFor(statesRoot, "postgres:17", "root")
+	if err != nil {
+		t.Fatalf("stateDirFor root: %v", err)
+	}
+	childDir, err := stateDirFor(statesRoot, "postgres:17", "child")
+	if err != nil {
+		t.Fatalf("stateDirFor child: %v", err)
+	}
+	if err := os.MkdirAll(rootDir, 0o700); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	if err := os.MkdirAll(childDir, 0o700); err != nil {
+		t.Fatalf("mkdir child: %v", err)
+	}
 	st.instances["inst-1"] = store.InstanceEntry{InstanceID: "inst-1", StateID: "child"}
 
 	mgr, err := NewManager(Options{
-		Store: st,
-		Conn:  fakeConn{counts: map[string]int{"inst-1": 2}},
+		Store:          st,
+		Conn:           fakeConn{counts: map[string]int{"inst-1": 2}},
+		StateStoreRoot: statesRoot,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -444,6 +471,12 @@ func TestDeleteStateRecurseForceDeletes(t *testing.T) {
 	}
 	if len(st.states) != 0 || len(st.instances) != 0 {
 		t.Fatalf("expected all resources deleted")
+	}
+	if _, err := os.Stat(rootDir); !os.IsNotExist(err) {
+		t.Fatalf("expected root state dir to be removed")
+	}
+	if _, err := os.Stat(childDir); !os.IsNotExist(err) {
+		t.Fatalf("expected child state dir to be removed")
 	}
 }
 

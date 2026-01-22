@@ -26,6 +26,8 @@ This document defines the internal component layout of the local sqlrs engine.
 - `internal/prepare/queue`
   - SQLite-backed queue store for jobs, tasks, and events.
   - Supports restart recovery by reloading queued/running work.
+  - Trims completed prepare jobs beyond the per-signature retention limit from config (`orchestrator.jobs.maxIdentical`).
+  - Removes `state-store/jobs/<job_id>` when jobs are deleted.
 - `internal/executor`
   - Runs job tasks sequentially and emits task/job events.
   - Invokes snapshot manager and DBMS connector around snapshots.

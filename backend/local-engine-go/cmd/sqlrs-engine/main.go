@@ -225,9 +225,10 @@ func run(args []string) (int, error) {
 	}
 
 	deleteMgr, err := newDeletionManagerFn(deletion.Options{
-		Store:   store,
-		Conn:    conntrack.Noop{},
-		Runtime: rt,
+		Store:          store,
+		Conn:           conntrack.Noop{},
+		Runtime:        rt,
+		StateStoreRoot: stateStoreRoot,
 	})
 	if err != nil {
 		return 1, fmt.Errorf("delete manager: %v", err)

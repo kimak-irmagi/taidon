@@ -70,6 +70,8 @@ flowchart LR
 
 - Stores job/task status and event history in SQLite.
 - Supports recovery after restarts by reloading queued/running work.
+- Trims completed prepare jobs beyond the per-signature retention limit from config (`orchestrator.jobs.maxIdentical`).
+- Job deletion removes `state-store/jobs/<job_id>` to prevent orphaned folders.
 
 ### 1.4 Prepare Planner
 

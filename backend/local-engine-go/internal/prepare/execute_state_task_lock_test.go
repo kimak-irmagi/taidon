@@ -137,6 +137,58 @@ func TestExecuteStateTaskCreatesBuildMarker(t *testing.T) {
 	}
 }
 
+func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
+	store := &fakeStore{}
+	snap := &fakeSnapshot{}
+	mgr := newManagerWithSnapshot(t, store, snap)
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	stalePath := filepath.Join(paths.stateDir, "stale.txt")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0o600); err != nil {
+		t.Fatalf("write stale: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, stateBuildMarkerName), []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+
+	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if len(snap.snapshotCalls) != 1 {
+		t.Fatalf("expected snapshot, got %+v", snap.snapshotCalls)
+	}
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("expected stale file to be removed")
+	}
+	if len(store.states) != 1 {
+		t.Fatalf("expected state to be stored, got %+v", store.states)
+	}
+}
+
 func newManagerWithSnapshot(t *testing.T, store *fakeStore, snap snapshot.Manager) *Manager {
 	t.Helper()
 	mgr, err := NewManager(Options{

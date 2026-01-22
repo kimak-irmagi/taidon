@@ -70,6 +70,8 @@ flowchart LR
 
 - Хранит статусы jobs/tasks и историю событий в SQLite.
 - Поддерживает восстановление после рестарта по queued/running записям.
+- Удаляет завершенные prepare jobs сверх лимита на сигнатуру из конфига (`orchestrator.jobs.maxIdentical`).
+- При удалении job очищает `state-store/jobs/<job_id>`, чтобы не оставались orphaned папки.
 
 ### 1.4 Планировщик prepare
 

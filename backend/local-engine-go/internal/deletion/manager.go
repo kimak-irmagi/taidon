@@ -3,6 +3,7 @@ package deletion
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"sqlrs/engine/internal/conntrack"
@@ -22,15 +23,17 @@ const (
 )
 
 type Options struct {
-	Store   store.Store
-	Conn    conntrack.Tracker
-	Runtime runtime.Runtime
+	Store          store.Store
+	Conn           conntrack.Tracker
+	Runtime        runtime.Runtime
+	StateStoreRoot string
 }
 
 type Manager struct {
-	store   store.Store
-	conn    conntrack.Tracker
-	runtime runtime.Runtime
+	store          store.Store
+	conn           conntrack.Tracker
+	runtime        runtime.Runtime
+	stateStoreRoot string
 }
 
 type DeleteOptions struct {
@@ -52,6 +55,7 @@ type DeleteNode struct {
 	Blocked     string       `json:"blocked,omitempty"`
 	RuntimeID   *string      `json:"runtime_id,omitempty"`
 	RuntimeDir  *string      `json:"-"`
+	ImageID     *string      `json:"-"`
 	Children    []DeleteNode `json:"children,omitempty"`
 }
 
@@ -63,7 +67,12 @@ func NewManager(opts Options) (*Manager, error) {
 	if tracker == nil {
 		tracker = conntrack.Noop{}
 	}
-	return &Manager{store: opts.Store, conn: tracker, runtime: opts.Runtime}, nil
+	return &Manager{
+		store:          opts.Store,
+		conn:           tracker,
+		runtime:        opts.Runtime,
+		stateStoreRoot: strings.TrimSpace(opts.StateStoreRoot),
+	}, nil
 }
 
 func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts DeleteOptions) (DeleteResult, bool, error) {
@@ -113,7 +122,7 @@ func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts De
 }
 
 func (m *Manager) DeleteState(ctx context.Context, stateID string, opts DeleteOptions) (DeleteResult, bool, error) {
-	_, ok, err := m.store.GetState(ctx, stateID)
+	entry, ok, err := m.store.GetState(ctx, stateID)
 	if err != nil {
 		return DeleteResult{}, false, err
 	}
@@ -129,6 +138,7 @@ func (m *Manager) DeleteState(ctx context.Context, stateID string, opts DeleteOp
 		node := DeleteNode{
 			Kind: "state",
 			ID:   stateID,
+			ImageID: strPtr(entry.ImageID),
 		}
 		if hasDescendants {
 			node.Blocked = BlockHasDescendants
@@ -146,6 +156,9 @@ func (m *Manager) DeleteState(ctx context.Context, stateID string, opts DeleteOp
 		}
 		if opts.DryRun {
 			return result, true, nil
+		}
+		if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
+			return DeleteResult{}, true, err
 		}
 		if err := m.store.DeleteState(ctx, stateID); err != nil {
 			return DeleteResult{}, true, err
@@ -187,9 +200,17 @@ func (m *Manager) hasDescendants(ctx context.Context, stateID string) (bool, err
 }
 
 func (m *Manager) buildStateNode(ctx context.Context, stateID string, opts DeleteOptions) (DeleteNode, bool, error) {
+	entry, ok, err := m.store.GetState(ctx, stateID)
+	if err != nil {
+		return DeleteNode{}, false, err
+	}
+	if !ok {
+		return DeleteNode{}, false, storeError("state not found")
+	}
 	node := DeleteNode{
-		Kind: "state",
-		ID:   stateID,
+		Kind:    "state",
+		ID:      stateID,
+		ImageID: strPtr(entry.ImageID),
 	}
 
 	blocked := false
@@ -253,6 +274,9 @@ func (m *Manager) deleteTree(ctx context.Context, node DeleteNode) error {
 		}
 		return m.store.DeleteInstance(ctx, node.ID)
 	case "state":
+		if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
+			return err
+		}
 		return m.store.DeleteState(ctx, node.ID)
 	default:
 		return nil
@@ -289,6 +313,63 @@ func removeRuntimeDir(runtimeDir *string) error {
 		return nil
 	}
 	return os.RemoveAll(dir)
+}
+
+func (m *Manager) removeStateDir(imageID *string, stateID string) error {
+	if m == nil {
+		return nil
+	}
+	if strings.TrimSpace(m.stateStoreRoot) == "" {
+		return nil
+	}
+	if strings.TrimSpace(stateID) == "" {
+		return nil
+	}
+	img := ""
+	if imageID != nil {
+		img = *imageID
+	}
+	path, err := stateDirFor(m.stateStoreRoot, img, stateID)
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(path)
+}
+
+func stateDirFor(root string, imageID string, stateID string) (string, error) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return "", storeError("state store root is required")
+	}
+	engineID, version := parseImageID(imageID)
+	if strings.TrimSpace(stateID) == "" {
+		return "", storeError("state id is required")
+	}
+	return filepath.Join(root, "engines", engineID, version, "states", stateID), nil
+}
+
+func parseImageID(imageID string) (string, string) {
+	imageID = strings.TrimSpace(imageID)
+	if imageID == "" {
+		return "unknown", "latest"
+	}
+	tag := ""
+	withoutDigest := imageID
+	if at := strings.Index(imageID, "@"); at >= 0 {
+		withoutDigest = imageID[:at]
+	}
+	if colon := strings.LastIndex(withoutDigest, ":"); colon >= 0 {
+		tag = withoutDigest[colon+1:]
+		withoutDigest = withoutDigest[:colon]
+	}
+	if strings.TrimSpace(tag) == "" {
+		tag = "latest"
+	}
+	engineID := strings.ReplaceAll(withoutDigest, "/", "_")
+	if engineID == "" {
+		engineID = "unknown"
+	}
+	return engineID, tag
 }
 
 type storeError string
