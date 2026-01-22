@@ -55,6 +55,11 @@ type PrepareJobRequest struct {
 	PlanOnly    bool     `json:"plan_only,omitempty"`
 }
 
+type ConfigValue struct {
+	Path  string `json:"path"`
+	Value any    `json:"value"`
+}
+
 type PrepareJobAccepted struct {
 	JobID     string `json:"job_id"`
 	StatusURL string `json:"status_url"`

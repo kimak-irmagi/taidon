@@ -65,6 +65,7 @@ flowchart LR
 - Emits status transitions and structured events (including task status) for streaming to the CLI.
 - Provides job/task snapshots for list endpoints, persists job/task state, and handles job deletion requests.
 - Resolves non-digest image references to canonical digests before planning; records a `resolve_image` task when resolution is required.
+- Serves server configuration (`/v1/config`) and validates updates against the built-in schema.
 
 ### 1.3 Job/Task Queue Store
 

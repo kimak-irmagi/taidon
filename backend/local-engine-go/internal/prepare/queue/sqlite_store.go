@@ -53,8 +53,8 @@ func (s *SQLiteStore) Close() error {
 
 func (s *SQLiteStore) CreateJob(ctx context.Context, job JobRecord) error {
 	query := `
-INSERT INTO prepare_jobs (job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, request_json, created_at, started_at, finished_at, result_json, error_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT INTO prepare_jobs (job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, signature, request_json, created_at, started_at, finished_at, result_json, error_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
 		job.JobID,
 		job.Status,
@@ -63,6 +63,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		boolToInt(job.PlanOnly),
 		jobSnapshotMode(job.SnapshotMode),
 		nullString(job.PrepareArgsNormalized),
+		nullString(job.Signature),
 		nullString(job.RequestJSON),
 		job.CreatedAt,
 		nullString(job.StartedAt),
@@ -90,6 +91,10 @@ func (s *SQLiteStore) UpdateJob(ctx context.Context, jobID string, update JobUpd
 	if update.PrepareArgsNormalized != nil {
 		sets = append(sets, "prepare_args_normalized = ?")
 		args = append(args, *update.PrepareArgsNormalized)
+	}
+	if update.Signature != nil {
+		sets = append(sets, "signature = ?")
+		args = append(args, *update.Signature)
 	}
 	if update.RequestJSON != nil {
 		sets = append(sets, "request_json = ?")
@@ -122,7 +127,7 @@ func (s *SQLiteStore) UpdateJob(ctx context.Context, jobID string, update JobUpd
 
 func (s *SQLiteStore) GetJob(ctx context.Context, jobID string) (JobRecord, bool, error) {
 	query := `
-SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, request_json,
+SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, signature, request_json,
        created_at, started_at, finished_at, result_json, error_json
 FROM prepare_jobs
 WHERE job_id = ?`
@@ -140,7 +145,7 @@ WHERE job_id = ?`
 func (s *SQLiteStore) ListJobs(ctx context.Context, jobID string) ([]JobRecord, error) {
 	query := strings.Builder{}
 	query.WriteString(`
-SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, request_json,
+SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, signature, request_json,
        created_at, started_at, finished_at, result_json, error_json
 FROM prepare_jobs
 WHERE 1=1`)
@@ -173,7 +178,7 @@ func (s *SQLiteStore) ListJobsByStatus(ctx context.Context, statuses []string) (
 	}
 	query := strings.Builder{}
 	query.WriteString(`
-SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, request_json,
+SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, signature, request_json,
        created_at, started_at, finished_at, result_json, error_json
 FROM prepare_jobs
 WHERE status IN (`)
@@ -186,6 +191,49 @@ WHERE status IN (`)
 		args = append(args, status)
 	}
 	query.WriteString(") ORDER BY created_at")
+	rows, err := s.db.QueryContext(ctx, query.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []JobRecord
+	for rows.Next() {
+		record, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *SQLiteStore) ListJobsBySignature(ctx context.Context, signature string, statuses []string) ([]JobRecord, error) {
+	if strings.TrimSpace(signature) == "" {
+		return nil, nil
+	}
+	query := strings.Builder{}
+	query.WriteString(`
+SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare_args_normalized, signature, request_json,
+       created_at, started_at, finished_at, result_json, error_json
+FROM prepare_jobs
+WHERE signature = ?`)
+	args := []any{signature}
+	if len(statuses) > 0 {
+		query.WriteString(" AND status IN (")
+		for i, status := range statuses {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			args = append(args, status)
+		}
+		query.WriteString(")")
+	}
+	query.WriteString(" ORDER BY COALESCE(finished_at, created_at) DESC")
 	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, err
@@ -373,6 +421,9 @@ func initDB(db *sql.DB) error {
 	if err := ensureTaskImageColumns(db); err != nil {
 		return err
 	}
+	if err := ensureJobSignatureColumn(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(SchemaSQL())
 	return err
 }
@@ -398,6 +449,18 @@ func ensureTaskImageColumns(db *sql.DB) error {
 	return nil
 }
 
+func ensureJobSignatureColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE prepare_jobs ADD COLUMN signature TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func scanJob(scanner interface {
 	Scan(dest ...any) error
 }) (JobRecord, error) {
@@ -405,6 +468,7 @@ func scanJob(scanner interface {
 	var planOnly int
 	var snapshotMode string
 	var argsNormalized sql.NullString
+	var signature sql.NullString
 	var requestJSON sql.NullString
 	var startedAt sql.NullString
 	var finishedAt sql.NullString
@@ -418,6 +482,7 @@ func scanJob(scanner interface {
 		&planOnly,
 		&snapshotMode,
 		&argsNormalized,
+		&signature,
 		&requestJSON,
 		&record.CreatedAt,
 		&startedAt,
@@ -430,6 +495,7 @@ func scanJob(scanner interface {
 	record.PlanOnly = planOnly != 0
 	record.SnapshotMode = snapshotMode
 	record.PrepareArgsNormalized = strPtr(argsNormalized)
+	record.Signature = strPtr(signature)
 	record.RequestJSON = strPtr(requestJSON)
 	record.StartedAt = strPtr(startedAt)
 	record.FinishedAt = strPtr(finishedAt)

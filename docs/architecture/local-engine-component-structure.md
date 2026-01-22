@@ -16,8 +16,13 @@ This document defines the internal component layout of the local sqlrs engine.
 - `internal/httpapi`
   - HTTP routing and handlers.
   - JSON/NDJSON encoding.
-  - Uses auth + registry + prepare + store interfaces.
+  - Uses auth + registry + prepare + store + config interfaces.
   - Exposes job/task list endpoints and job deletion.
+- `internal/config`
+  - Loads defaults + persisted overrides on startup.
+  - Provides get/set/rm with path resolution and schema validation.
+  - Persists JSON atomically next to the state store.
+  - Exposes the config schema to HTTP handlers.
 - `internal/prepare`
   - Prepare job coordination (plan, cache lookup, execute, snapshot).
   - Handles `plan_only` jobs and task list output.
@@ -78,6 +83,10 @@ This document defines the internal component layout of the local sqlrs engine.
   - Job request and status payloads (includes `tasks` for plan-only).
 - `prepare.PlanTask`, `prepare.TaskInput`
   - Task descriptions and input references for planning/execution.
+- `config.Manager`
+  - Get/set/remove config values and return schema.
+- `config.Value`, `config.Schema`
+  - JSON values and schema representation.
 - `store.Store`
   - Interface for names/instances/states persistence.
 - `deletion.Manager`
@@ -89,6 +98,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - Jobs, tasks, and job events live in SQLite under `<StateDir>`.
 - In-memory structures are caches or request-scoped only.
 - State store data lives under `<StateDir>/state-store`.
+- Server config is stored in `<StateDir>/state-store/config.json` and mirrored in memory.
 
 ## 5. Dependency diagram
 
@@ -110,16 +120,20 @@ flowchart TD
   STORE["internal/store (interfaces)"]
   SQLITE["internal/store/sqlite"]
   STREAM["internal/stream (ndjson)"]
+  CFG["internal/config"]
 
   CMD --> HTTP
   CMD --> SQLITE
+  CMD --> CFG
   HTTP --> AUTH
   HTTP --> PREP
   HTTP --> DEL
   HTTP --> REG
   HTTP --> STREAM
+  HTTP --> CFG
   PREP --> QUEUE
   PREP --> EXEC
+  PREP --> CFG
   EXEC --> RT
   EXEC --> SNAP
   EXEC --> DBMS

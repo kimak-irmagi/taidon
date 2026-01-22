@@ -681,7 +681,3 @@ func findNode(root DeleteNode, kind, id string) *DeleteNode {
 	}
 	return nil
 }
-
-func strPtr(value string) *string {
-	return &value
-}

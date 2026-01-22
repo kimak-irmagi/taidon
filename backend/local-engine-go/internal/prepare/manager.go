@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"sqlrs/engine/internal/config"
 	"sqlrs/engine/internal/dbms"
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare/queue"
@@ -33,6 +36,7 @@ type Options struct {
 	Snapshot       snapshot.Manager
 	DBMS           dbms.Connector
 	StateStoreRoot string
+	Config         config.Store
 	Psql           psqlRunner
 	Version        string
 	Now            func() time.Time
@@ -47,6 +51,7 @@ type Manager struct {
 	snapshot       snapshot.Manager
 	dbms           dbms.Connector
 	stateStoreRoot string
+	config         config.Store
 	psql           psqlRunner
 	version        string
 	now            func() time.Time
@@ -66,19 +71,19 @@ type jobRunner struct {
 }
 
 type jobRuntime struct {
-	instance runtime.Instance
-	dataDir  string
-	runtimeDir string
-	cleanup  func() error
+	instance    runtime.Instance
+	dataDir     string
+	runtimeDir  string
+	cleanup     func() error
 	scriptMount *scriptMount
 }
 
 type preparedRequest struct {
-	request        Request
-	normalizedArgs []string
-	argsNormalized string
-	inputHashes    []inputHash
-	filePaths      []string
+	request         Request
+	normalizedArgs  []string
+	argsNormalized  string
+	inputHashes     []inputHash
+	filePaths       []string
 	resolvedImageID string
 }
 
@@ -122,6 +127,7 @@ func NewManager(opts Options) (*Manager, error) {
 		snapshot:       opts.Snapshot,
 		dbms:           opts.DBMS,
 		stateStoreRoot: opts.StateStoreRoot,
+		config:         opts.Config,
 		psql:           psql,
 		version:        opts.Version,
 		now:            now,
@@ -329,6 +335,10 @@ func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.De
 	if err := m.queue.DeleteJob(context.Background(), jobID); err != nil {
 		return deletion.DeleteResult{}, false
 	}
+	if err := m.removeJobDir(jobID); err != nil {
+		m.logJob(jobID, "delete cleanup failed: %v", err)
+		return deletion.DeleteResult{}, false
+	}
 	m.logJob(jobID, "deleted")
 	return result, true
 }
@@ -517,6 +527,9 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 		return nil, "", errResp
 	}
 	if len(taskRecords) == 0 {
+		if errResp := m.updateJobSignature(ctx, jobID, prepared); errResp != nil {
+			return nil, "", errResp
+		}
 		tasks, stateID, errResp := m.buildPlan(prepared)
 		if errResp != nil {
 			return nil, "", errResp
@@ -527,6 +540,7 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 			return nil, "", errorResponse("internal_error", "cannot store tasks", err.Error())
 		}
 		m.logJob(jobID, "stored tasks count=%d", len(tasks))
+		m.trimCompletedJobs(ctx, prepared)
 		return taskStatesFromPlan(tasks), stateID, nil
 	}
 	states := taskStatesFromRecords(taskRecords)
@@ -548,6 +562,68 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 		}
 	}
 	return states, stateID, nil
+}
+
+func (m *Manager) updateJobSignature(ctx context.Context, jobID string, prepared preparedRequest) *ErrorResponse {
+	signature, errResp := m.computeJobSignature(prepared)
+	if errResp != nil {
+		return errResp
+	}
+	if err := m.queue.UpdateJob(ctx, jobID, queue.JobUpdate{Signature: &signature}); err != nil {
+		return errorResponse("internal_error", "cannot update job signature", err.Error())
+	}
+	return nil
+}
+
+func (m *Manager) computeJobSignature(prepared preparedRequest) (string, *ErrorResponse) {
+	taskHash, errResp := m.computeTaskHash(prepared)
+	if errResp != nil {
+		return "", errResp
+	}
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return "", errorResponse("internal_error", "resolved image id is required", "")
+	}
+	hasher := newStateHasher()
+	hasher.write("task_hash", taskHash)
+	hasher.write("image_id", imageID)
+	hasher.write("plan_only", fmt.Sprintf("%t", prepared.request.PlanOnly))
+	signature := hasher.sum()
+	if signature == "" {
+		return "", errorResponse("internal_error", "cannot compute job signature", "")
+	}
+	return signature, nil
+}
+
+func (m *Manager) trimCompletedJobs(ctx context.Context, prepared preparedRequest) {
+	limit := maxIdenticalJobs(m.config)
+	if limit <= 0 {
+		return
+	}
+	signature, errResp := m.computeJobSignature(prepared)
+	if errResp != nil {
+		m.logJob("", "job retention skipped: %s", errResp.Message)
+		return
+	}
+	jobs, err := m.queue.ListJobsBySignature(ctx, signature, []string{StatusSucceeded, StatusFailed})
+	if err != nil {
+		m.logJob("", "job retention failed: %v", err)
+		return
+	}
+	if len(jobs) <= limit {
+		return
+	}
+	for i := limit; i < len(jobs); i++ {
+		jobID := jobs[i].JobID
+		if err := m.queue.DeleteJob(ctx, jobID); err != nil {
+			m.logJob(jobID, "job retention delete failed: %v", err)
+			continue
+		}
+		if err := m.removeJobDir(jobID); err != nil {
+			m.logJob(jobID, "job retention cleanup failed: %v", err)
+		}
+		m.logJob(jobID, "retention deleted")
+	}
 }
 
 func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
@@ -573,11 +649,11 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 		resolvedImageID = imageID
 	}
 	return preparedRequest{
-		request:        req,
-		normalizedArgs: prepared.normalizedArgs,
-		argsNormalized: prepared.argsNormalized,
-		inputHashes:    prepared.inputHashes,
-		filePaths:      prepared.filePaths,
+		request:         req,
+		normalizedArgs:  prepared.normalizedArgs,
+		argsNormalized:  prepared.argsNormalized,
+		inputHashes:     prepared.inputHashes,
+		filePaths:       prepared.filePaths,
 		resolvedImageID: resolvedImageID,
 	}, nil
 }
@@ -886,20 +962,20 @@ func taskRecordsFromPlan(jobID string, tasks []PlanTask) []queue.TaskRecord {
 	records := make([]queue.TaskRecord, 0, len(tasks))
 	for i, task := range tasks {
 		records = append(records, queue.TaskRecord{
-			JobID:         jobID,
-			TaskID:        task.TaskID,
-			Position:      i,
-			Type:          task.Type,
-			Status:        StatusQueued,
-			PlannerKind:   nullableString(task.PlannerKind),
-			InputKind:     nullableString(taskInputKind(task.Input)),
-			InputID:       nullableString(taskInputID(task.Input)),
-			ImageID:       nullableString(task.ImageID),
+			JobID:           jobID,
+			TaskID:          task.TaskID,
+			Position:        i,
+			Type:            task.Type,
+			Status:          StatusQueued,
+			PlannerKind:     nullableString(task.PlannerKind),
+			InputKind:       nullableString(taskInputKind(task.Input)),
+			InputID:         nullableString(taskInputID(task.Input)),
+			ImageID:         nullableString(task.ImageID),
 			ResolvedImageID: nullableString(task.ResolvedImageID),
-			TaskHash:      nullableString(task.TaskHash),
-			OutputStateID: nullableString(task.OutputStateID),
-			Cached:        task.Cached,
-			InstanceMode:  nullableString(task.InstanceMode),
+			TaskHash:        nullableString(task.TaskHash),
+			OutputStateID:   nullableString(task.OutputStateID),
+			Cached:          task.Cached,
+			InstanceMode:    nullableString(task.InstanceMode),
 		})
 	}
 	return records
@@ -922,16 +998,16 @@ func planTaskFromRecord(task queue.TaskRecord) PlanTask {
 		}
 	}
 	return PlanTask{
-		TaskID:        task.TaskID,
-		Type:          task.Type,
-		PlannerKind:   valueOrEmpty(task.PlannerKind),
-		Input:         input,
-		ImageID:       valueOrEmpty(task.ImageID),
+		TaskID:          task.TaskID,
+		Type:            task.Type,
+		PlannerKind:     valueOrEmpty(task.PlannerKind),
+		Input:           input,
+		ImageID:         valueOrEmpty(task.ImageID),
 		ResolvedImageID: valueOrEmpty(task.ResolvedImageID),
-		TaskHash:      valueOrEmpty(task.TaskHash),
-		OutputStateID: valueOrEmpty(task.OutputStateID),
-		Cached:        task.Cached,
-		InstanceMode:  valueOrEmpty(task.InstanceMode),
+		TaskHash:        valueOrEmpty(task.TaskHash),
+		OutputStateID:   valueOrEmpty(task.OutputStateID),
+		Cached:          task.Cached,
+		InstanceMode:    valueOrEmpty(task.InstanceMode),
 	}
 }
 
@@ -944,18 +1020,18 @@ func taskEntryFromRecord(task queue.TaskRecord) TaskEntry {
 		}
 	}
 	return TaskEntry{
-		TaskID:        task.TaskID,
-		JobID:         task.JobID,
-		Type:          task.Type,
-		Status:        task.Status,
-		PlannerKind:   valueOrEmpty(task.PlannerKind),
-		Input:         input,
-		ImageID:       valueOrEmpty(task.ImageID),
+		TaskID:          task.TaskID,
+		JobID:           task.JobID,
+		Type:            task.Type,
+		Status:          task.Status,
+		PlannerKind:     valueOrEmpty(task.PlannerKind),
+		Input:           input,
+		ImageID:         valueOrEmpty(task.ImageID),
 		ResolvedImageID: valueOrEmpty(task.ResolvedImageID),
-		TaskHash:      valueOrEmpty(task.TaskHash),
-		OutputStateID: valueOrEmpty(task.OutputStateID),
-		Cached:        task.Cached,
-		InstanceMode:  valueOrEmpty(task.InstanceMode),
+		TaskHash:        valueOrEmpty(task.TaskHash),
+		OutputStateID:   valueOrEmpty(task.OutputStateID),
+		Cached:          task.Cached,
+		InstanceMode:    valueOrEmpty(task.InstanceMode),
 	}
 }
 
@@ -1048,6 +1124,71 @@ func nullableString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+const defaultMaxIdenticalJobs = 2
+
+func maxIdenticalJobs(cfg config.Store) int {
+	if cfg == nil {
+		return defaultMaxIdenticalJobs
+	}
+	value, err := cfg.Get("orchestrator.jobs.maxIdentical", true)
+	if err != nil {
+		return defaultMaxIdenticalJobs
+	}
+	if value == nil {
+		return defaultMaxIdenticalJobs
+	}
+	if num, ok := configValueToInt(value); ok && num >= 0 {
+		return num
+	}
+	return defaultMaxIdenticalJobs
+}
+
+func configValueToInt(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float32:
+		if v != float32(int(v)) {
+			return 0, false
+		}
+		return int(v), true
+	case float64:
+		if v != float64(int(v)) {
+			return 0, false
+		}
+		return int(v), true
+	case json.Number:
+		if strings.ContainsAny(string(v), ".eE") {
+			return 0, false
+		}
+		parsed, err := v.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(parsed), true
+	default:
+		return 0, false
+	}
+}
+
+func (m *Manager) removeJobDir(jobID string) error {
+	if m == nil {
+		return nil
+	}
+	if strings.TrimSpace(m.stateStoreRoot) == "" {
+		return nil
+	}
+	if strings.TrimSpace(jobID) == "" {
+		return nil
+	}
+	path := filepath.Join(m.stateStoreRoot, "jobs", jobID)
+	return os.RemoveAll(path)
 }
 
 func strPtr(value string) *string {

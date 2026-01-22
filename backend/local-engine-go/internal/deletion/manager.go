@@ -136,8 +136,8 @@ func (m *Manager) DeleteState(ctx context.Context, stateID string, opts DeleteOp
 			return DeleteResult{}, true, err
 		}
 		node := DeleteNode{
-			Kind: "state",
-			ID:   stateID,
+			Kind:    "state",
+			ID:      stateID,
 			ImageID: strPtr(entry.ImageID),
 		}
 		if hasDescendants {
@@ -370,6 +370,10 @@ func parseImageID(imageID string) (string, string) {
 		engineID = "unknown"
 	}
 	return engineID, tag
+}
+
+func strPtr(value string) *string {
+	return &value
 }
 
 type storeError string

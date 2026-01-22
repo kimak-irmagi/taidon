@@ -16,8 +16,13 @@
 - `internal/httpapi`
   - Роутинг и handlers.
   - JSON/NDJSON кодирование.
-  - Использует auth + registry + prepare + store interfaces.
+  - Использует auth + registry + prepare + store + config interfaces.
   - Экспортирует list endpoints для jobs/tasks и удаление job.
+- `internal/config`
+  - Загружает дефолты + сохраненные overrides при старте.
+  - Предоставляет get/set/rm с path resolve и валидацией схемы.
+  - Сохраняет JSON атомарно рядом со state store.
+  - Экспортирует схему для HTTP handlers.
 - `internal/prepare`
   - Координация prepare jobs (plan, cache lookup, execute, snapshot).
   - Обрабатывает `plan_only` и выводит список задач.
@@ -78,6 +83,10 @@
   - Payload запроса и статуса (включая `tasks` для plan-only).
 - `prepare.PlanTask`, `prepare.TaskInput`
   - Описания задач и входов для planning/execute.
+- `config.Manager`
+  - Get/set/remove конфиг значений и схема.
+- `config.Value`, `config.Schema`
+  - Представление JSON значений и схемы.
 - `store.Store`
   - Интерфейс хранения names/instances/states.
 - `deletion.Manager`
@@ -89,6 +98,7 @@
 - Jobs, tasks и события jobs живут в SQLite под `<StateDir>`.
 - In-memory структуры - только кэши или request-scoped данные.
 - Данные state store живут в `<StateDir>/state-store`.
+- Server config хранится в `<StateDir>/state-store/config.json` и дублируется в памяти.
 
 ## 5. Диаграмма зависимостей
 
@@ -110,16 +120,20 @@ flowchart TD
   STORE["internal/store (interfaces)"]
   SQLITE["internal/store/sqlite"]
   STREAM["internal/stream (ndjson)"]
+  CFG["internal/config"]
 
   CMD --> HTTP
   CMD --> SQLITE
+  CMD --> CFG
   HTTP --> AUTH
   HTTP --> PREP
   HTTP --> DEL
   HTTP --> REG
   HTTP --> STREAM
+  HTTP --> CFG
   PREP --> QUEUE
   PREP --> EXEC
+  PREP --> CFG
   EXEC --> RT
   EXEC --> SNAP
   EXEC --> DBMS

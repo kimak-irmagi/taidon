@@ -208,6 +208,20 @@ func Run(args []string) error {
 			return fmt.Errorf("service unhealthy")
 		}
 		return nil
+	case "config":
+		runOpts := cli.ConfigOptions{
+			ProfileName:    profileName,
+			Mode:           mode,
+			Endpoint:       profile.Endpoint,
+			Autostart:      profile.Autostart,
+			DaemonPath:     daemonPath,
+			RunDir:         runDir,
+			StateDir:       dirs.StateDir,
+			Timeout:        timeout,
+			StartupTimeout: startupTimeout,
+			Verbose:        opts.Verbose,
+		}
+		return runConfig(os.Stdout, runOpts, cmd.Args, output)
 	case "prepare":
 		return fmt.Errorf("missing prepare kind (consider prepare:psql)")
 	case "plan":

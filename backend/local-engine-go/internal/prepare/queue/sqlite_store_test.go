@@ -10,12 +10,14 @@ import (
 func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 	store := newQueueStore(t)
 
+	signature := "sig-1"
 	job := JobRecord{
 		JobID:       "job-1",
 		Status:      "queued",
 		PrepareKind: "psql",
 		ImageID:     "image-1",
 		PlanOnly:    true,
+		Signature:   &signature,
 		CreatedAt:   "2026-01-19T00:00:00Z",
 	}
 	if err := store.CreateJob(context.Background(), job); err != nil {
@@ -38,6 +40,9 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 	if !ok || record.Status != "running" || record.PrepareArgsNormalized == nil {
 		t.Fatalf("unexpected job record: %+v", record)
 	}
+	if record.Signature == nil || *record.Signature != signature {
+		t.Fatalf("expected signature to roundtrip: %+v", record.Signature)
+	}
 
 	tasks := []TaskRecord{
 		{
@@ -48,14 +53,14 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 			Status:   "queued",
 		},
 		{
-			JobID:    "job-1",
-			TaskID:   "execute-0",
-			Position: 1,
-			Type:     "state_execute",
-			Status:   "queued",
-			ImageID:  stringPtr("image-1"),
+			JobID:           "job-1",
+			TaskID:          "execute-0",
+			Position:        1,
+			Type:            "state_execute",
+			Status:          "queued",
+			ImageID:         stringPtr("image-1"),
 			ResolvedImageID: stringPtr("image-1@sha256:resolved"),
-			Cached:   boolPtrFromValue(true),
+			Cached:          boolPtrFromValue(true),
 		},
 	}
 	if err := store.ReplaceTasks(context.Background(), "job-1", tasks); err != nil {
@@ -110,11 +115,13 @@ func TestSQLiteStoreListJobsByStatus(t *testing.T) {
 	store := newQueueStore(t)
 
 	for _, jobID := range []string{"job-1", "job-2"} {
+		signature := "sig-" + jobID
 		if err := store.CreateJob(context.Background(), JobRecord{
 			JobID:       jobID,
 			Status:      "queued",
 			PrepareKind: "psql",
 			ImageID:     "image-1",
+			Signature:   &signature,
 			CreatedAt:   "2026-01-19T00:00:00Z",
 		}); err != nil {
 			t.Fatalf("CreateJob %s: %v", jobID, err)
@@ -135,14 +142,54 @@ func TestSQLiteStoreListJobsByStatus(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreListJobsBySignatureOrder(t *testing.T) {
+	store := newQueueStore(t)
+
+	signature := "sig-1"
+	finished1 := "2026-01-19T00:01:00Z"
+	finished2 := "2026-01-19T00:02:00Z"
+	if err := store.CreateJob(context.Background(), JobRecord{
+		JobID:       "job-1",
+		Status:      "succeeded",
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		Signature:   &signature,
+		CreatedAt:   "2026-01-19T00:00:00Z",
+		FinishedAt:  &finished1,
+	}); err != nil {
+		t.Fatalf("CreateJob job-1: %v", err)
+	}
+	if err := store.CreateJob(context.Background(), JobRecord{
+		JobID:       "job-2",
+		Status:      "succeeded",
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		Signature:   &signature,
+		CreatedAt:   "2026-01-19T00:00:00Z",
+		FinishedAt:  &finished2,
+	}); err != nil {
+		t.Fatalf("CreateJob job-2: %v", err)
+	}
+
+	jobs, err := store.ListJobsBySignature(context.Background(), signature, []string{"succeeded"})
+	if err != nil {
+		t.Fatalf("ListJobsBySignature: %v", err)
+	}
+	if len(jobs) != 2 || jobs[0].JobID != "job-2" || jobs[1].JobID != "job-1" {
+		t.Fatalf("unexpected job order: %+v", jobs)
+	}
+}
+
 func TestSQLiteStoreDeleteJobCascades(t *testing.T) {
 	store := newQueueStore(t)
 
+	signature := "sig-1"
 	if err := store.CreateJob(context.Background(), JobRecord{
 		JobID:       "job-1",
 		Status:      "queued",
 		PrepareKind: "psql",
 		ImageID:     "image-1",
+		Signature:   &signature,
 		CreatedAt:   "2026-01-19T00:00:00Z",
 	}); err != nil {
 		t.Fatalf("CreateJob: %v", err)
@@ -245,6 +292,34 @@ func TestEnsureTaskImageColumnsDuplicate(t *testing.T) {
 	}
 	if err := ensureTaskImageColumns(db); err != nil {
 		t.Fatalf("ensureTaskImageColumns: %v", err)
+	}
+}
+
+func TestEnsureJobSignatureColumnNoTable(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if err := ensureJobSignatureColumn(db); err != nil {
+		t.Fatalf("ensureJobSignatureColumn: %v", err)
+	}
+}
+
+func TestEnsureJobSignatureColumnDuplicate(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE prepare_jobs (signature TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := ensureJobSignatureColumn(db); err != nil {
+		t.Fatalf("ensureJobSignatureColumn: %v", err)
 	}
 }
 

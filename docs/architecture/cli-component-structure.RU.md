@@ -16,16 +16,17 @@
   - Глобальные флаги и диспетчер команд.
   - Загружает config и workspace.
 - `internal/cli`
-  - Логика команд (status, init, ls, rm, prepare, plan).
+  - Логика команд (status, init, ls, rm, prepare, plan, config).
   - Выбор режима вывода и рендер human/json.
 - `internal/client`
   - HTTP клиент, auth headers, обработка redirect.
   - JSON/NDJSON парсинг.
+  - Config endpoints (`/v1/config`, `/v1/config/schema`).
 - `internal/daemon`
   - Discovery/launch локального engine.
   - Читает `engine.json`.
 - `internal/config`
-  - Парсинг и merge конфигов.
+  - Парсинг и merge локального CLI конфигура.
 - `internal/paths`
   - Определение путей для config/cache/state.
 - `internal/util`
@@ -50,8 +51,17 @@
   - Payload списка для `GET /v1/tasks`.
 - `cli.PlanResult`
   - CLI-представление `tasks` для рендера.
+- `client.ConfigValue`, `client.ConfigSchema`
+  - HTTP payload для config get/set/schema.
+- `cli.ConfigOptions`
+  - Path/value/effective/опции для `sqlrs config` команд.
 
-## 4. Диаграмма зависимостей
+## 4. Владение данными
+
+- Локальный CLI конфиг хранится в файлах проекта; CLI загружает его в память на время команды.
+- Server config запрашивается через HTTP и не сохраняется на диск со стороны CLI.
+
+## 5. Диаграмма зависимостей
 
 ```mermaid
 flowchart LR

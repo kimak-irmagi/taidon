@@ -52,14 +52,15 @@ Notes:
 
 ## Configuration
 
-Configure the per-signature retention limit in `.sqlrs/config.yaml`.
-Values are resolved by the normal config merge rules (global + project).
+Configure the per-signature retention limit in server config.
+In local mode, the engine stores config in `state-store/config.json`.
 
-```yaml
-orchestrator:
-  jobs:
-    maxIdentical: 2
+```text
+sqlrs config set orchestrator.jobs.maxIdentical 2
 ```
+
+Use `sqlrs config get orchestrator.jobs.maxIdentical --effective` to inspect
+the effective value (defaults + overrides).
 
 Recommended values:
 
