@@ -11,6 +11,8 @@ import (
 	"sqlrs/cli/internal/daemon"
 )
 
+var connectOrStart = daemon.ConnectOrStart
+
 type ConfigOptions struct {
 	ProfileName    string
 	Mode           string
@@ -76,7 +78,7 @@ func configClient(ctx context.Context, opts ConfigOptions) (*client.Client, erro
 			if opts.Verbose {
 				fmt.Fprintln(os.Stderr, "checking local engine state")
 			}
-			resolved, err := daemon.ConnectOrStart(ctx, daemon.ConnectOptions{
+			resolved, err := connectOrStart(ctx, daemon.ConnectOptions{
 				Endpoint:       endpoint,
 				Autostart:      opts.Autostart,
 				DaemonPath:     opts.DaemonPath,

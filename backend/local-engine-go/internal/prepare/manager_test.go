@@ -1009,6 +1009,28 @@ func TestJobSignatureDiffersForPlanOnly(t *testing.T) {
 	}
 }
 
+func TestUpdateJobSignatureError(t *testing.T) {
+	queueStore := newQueueStore(t)
+	faulty := &faultQueueStore{
+		Store: queueStore,
+		updateJob: func(context.Context, string, queue.JobUpdate) error {
+			return errors.New("boom")
+		},
+	}
+	mgr := newManagerWithQueue(t, &fakeStore{}, faulty)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1@sha256:abc",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if errResp := mgr.updateJobSignature(context.Background(), "job-1", prepared); errResp == nil {
+		t.Fatalf("expected update error")
+	}
+}
+
 func TestTrimCompletedJobsBySignature(t *testing.T) {
 	queueStore := newQueueStore(t)
 	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
@@ -1110,6 +1132,164 @@ func TestTrimCompletedJobsFallbackToCreatedAt(t *testing.T) {
 	}
 	if len(remaining) != 1 || remaining[0].JobID != "job-new" {
 		t.Fatalf("unexpected remaining jobs: %+v", remaining)
+	}
+}
+
+func TestTrimCompletedJobsNoopWhenLimitDisabled(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, &testDeps{
+		config: &fakeConfigStore{value: 0},
+	})
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	createJobRecord(t, queueStore, "job-1", req, StatusSucceeded)
+
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	mgr.trimCompletedJobs(context.Background(), prepared)
+
+	if jobs := mgr.ListJobs(""); len(jobs) != 1 {
+		t.Fatalf("expected jobs untouched, got %+v", jobs)
+	}
+}
+
+func TestTrimCompletedJobsNoopBelowLimit(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, &testDeps{
+		config: &fakeConfigStore{value: 3},
+	})
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	signature, errResp := mgr.computeJobSignature(prepared)
+	if errResp != nil {
+		t.Fatalf("computeJobSignature: %+v", errResp)
+	}
+	for _, jobID := range []string{"job-1", "job-2"} {
+		if err := queueStore.CreateJob(context.Background(), queue.JobRecord{
+			JobID:       jobID,
+			Status:      StatusSucceeded,
+			PrepareKind: req.PrepareKind,
+			ImageID:     req.ImageID,
+			Signature:   &signature,
+			CreatedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+		}); err != nil {
+			t.Fatalf("CreateJob %s: %v", jobID, err)
+		}
+	}
+	mgr.trimCompletedJobs(context.Background(), prepared)
+
+	remaining, err := queueStore.ListJobsBySignature(context.Background(), signature, []string{StatusSucceeded})
+	if err != nil {
+		t.Fatalf("ListJobsBySignature: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("expected jobs retained, got %+v", remaining)
+	}
+}
+
+func TestHasImageDigest(t *testing.T) {
+	if hasImageDigest("") {
+		t.Fatalf("expected empty image to be false")
+	}
+	if hasImageDigest("postgres:15") {
+		t.Fatalf("expected tag-only image to be false")
+	}
+	if hasImageDigest("postgres@") {
+		t.Fatalf("expected trailing @ to be false")
+	}
+	if !hasImageDigest("postgres:15@sha256:abc") {
+		t.Fatalf("expected digest to be true")
+	}
+}
+
+func TestTrimCompletedJobsSkipsOnSignatureError(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	createJobRecord(t, queueStore, "job-1", req, StatusSucceeded)
+
+	prepared := preparedRequest{request: Request{PrepareKind: "psql", ImageID: ""}}
+	mgr.trimCompletedJobs(context.Background(), prepared)
+
+	if jobs := mgr.ListJobs(""); len(jobs) != 1 {
+		t.Fatalf("expected jobs untouched, got %+v", jobs)
+	}
+}
+
+func TestTrimCompletedJobsListJobsError(t *testing.T) {
+	queueStore := newQueueStore(t)
+	wrapped := &signatureQueueStore{Store: queueStore, listErr: errors.New("boom")}
+	mgr := newManagerWithQueue(t, &fakeStore{}, wrapped)
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1@sha256:abc",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	mgr.trimCompletedJobs(context.Background(), prepared)
+}
+
+func TestTrimCompletedJobsDeleteError(t *testing.T) {
+	queueStore := newQueueStore(t)
+	wrapped := &signatureQueueStore{Store: queueStore, deleteErr: errors.New("boom")}
+	mgr := newManagerWithDeps(t, &fakeStore{}, wrapped, &testDeps{
+		config: &fakeConfigStore{value: 1},
+	})
+
+	req := Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1@sha256:abc",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	signature, errResp := mgr.computeJobSignature(prepared)
+	if errResp != nil {
+		t.Fatalf("computeJobSignature: %+v", errResp)
+	}
+
+	jobOld := queue.JobRecord{
+		JobID:       "job-old",
+		Status:      StatusSucceeded,
+		PrepareKind: "psql",
+		ImageID:     req.ImageID,
+		Signature:   &signature,
+		CreatedAt:   "2026-01-19T00:00:00Z",
+	}
+	jobNew := queue.JobRecord{
+		JobID:       "job-new",
+		Status:      StatusSucceeded,
+		PrepareKind: "psql",
+		ImageID:     req.ImageID,
+		Signature:   &signature,
+		CreatedAt:   "2026-01-19T00:01:00Z",
+	}
+	if err := queueStore.CreateJob(context.Background(), jobOld); err != nil {
+		t.Fatalf("CreateJob old: %v", err)
+	}
+	if err := queueStore.CreateJob(context.Background(), jobNew); err != nil {
+		t.Fatalf("CreateJob new: %v", err)
+	}
+
+	mgr.trimCompletedJobs(context.Background(), prepared)
+
+	remaining, err := queueStore.ListJobsBySignature(context.Background(), signature, []string{StatusSucceeded})
+	if err != nil {
+		t.Fatalf("ListJobsBySignature: %v", err)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("expected delete failure to keep jobs, got %+v", remaining)
 	}
 }
 
@@ -2909,6 +3089,26 @@ func (f *fakeConfigStore) Schema() any {
 	return map[string]any{}
 }
 
+type signatureQueueStore struct {
+	queue.Store
+	listErr   error
+	deleteErr error
+}
+
+func (s *signatureQueueStore) ListJobsBySignature(ctx context.Context, signature string, statuses []string) ([]queue.JobRecord, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.Store.ListJobsBySignature(ctx, signature, statuses)
+}
+
+func (s *signatureQueueStore) DeleteJob(ctx context.Context, jobID string) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	return s.Store.DeleteJob(ctx, jobID)
+}
+
 func newManager(t *testing.T, store store.Store) *Manager {
 	t.Helper()
 	return newManagerWithQueue(t, store, newQueueStore(t))
@@ -2995,6 +3195,9 @@ func TestMaxIdenticalJobsDefaults(t *testing.T) {
 	if got := maxIdenticalJobs(&fakeConfigStore{value: "bad"}); got != defaultMaxIdenticalJobs {
 		t.Fatalf("expected default for invalid value, got %d", got)
 	}
+	if got := maxIdenticalJobs(&fakeConfigStore{err: errors.New("boom")}); got != defaultMaxIdenticalJobs {
+		t.Fatalf("expected default for config error, got %d", got)
+	}
 }
 
 func TestMaxIdenticalJobsFromConfig(t *testing.T) {
@@ -3006,6 +3209,57 @@ func TestMaxIdenticalJobsFromConfig(t *testing.T) {
 	}
 	if got := maxIdenticalJobs(&fakeConfigStore{value: json.Number("5")}); got != 5 {
 		t.Fatalf("expected 5, got %d", got)
+	}
+}
+
+func TestConfigValueToInt(t *testing.T) {
+	cases := []struct {
+		value  any
+		want   int
+		wantOK bool
+	}{
+		{value: int(1), want: 1, wantOK: true},
+		{value: int32(2), want: 2, wantOK: true},
+		{value: int64(3), want: 3, wantOK: true},
+		{value: float32(4), want: 4, wantOK: true},
+		{value: float32(4.5), wantOK: false},
+		{value: float64(5), want: 5, wantOK: true},
+		{value: float64(5.5), wantOK: false},
+		{value: json.Number("6"), want: 6, wantOK: true},
+		{value: json.Number("1e2"), wantOK: false},
+		{value: json.Number("999999999999999999999999"), wantOK: false},
+		{value: "nope", wantOK: false},
+	}
+	for _, tc := range cases {
+		got, ok := configValueToInt(tc.value)
+		if ok != tc.wantOK || (ok && got != tc.want) {
+			t.Fatalf("configValueToInt(%#v)=%d,%v; want %d,%v", tc.value, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
+func TestRemoveJobDirNoopAndDelete(t *testing.T) {
+	var nilMgr *Manager
+	if err := nilMgr.removeJobDir("job-1"); err != nil {
+		t.Fatalf("expected nil receiver to be ignored: %v", err)
+	}
+	mgr := &Manager{}
+	if err := mgr.removeJobDir("job-1"); err != nil {
+		t.Fatalf("expected empty state store root to be ignored: %v", err)
+	}
+	mgr.stateStoreRoot = t.TempDir()
+	if err := mgr.removeJobDir(""); err != nil {
+		t.Fatalf("expected empty job id to be ignored: %v", err)
+	}
+	jobDir := filepath.Join(mgr.stateStoreRoot, "jobs", "job-1")
+	if err := os.MkdirAll(jobDir, 0o700); err != nil {
+		t.Fatalf("mkdir job dir: %v", err)
+	}
+	if err := mgr.removeJobDir("job-1"); err != nil {
+		t.Fatalf("removeJobDir: %v", err)
+	}
+	if _, err := os.Stat(jobDir); !os.IsNotExist(err) {
+		t.Fatalf("expected job dir removed")
 	}
 }
 

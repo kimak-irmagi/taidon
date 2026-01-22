@@ -18,6 +18,16 @@ var (
 	ErrInvalidValue = errors.New("config value is invalid")
 )
 
+var (
+	osMkdirAll  = os.MkdirAll
+	osCreateTemp = os.CreateTemp
+	osRename    = os.Rename
+	osOpen      = os.Open
+	fileWrite   = func(file *os.File, data []byte) (int, error) { return file.Write(data) }
+	fileSync    = func(file *os.File) error { return file.Sync() }
+	fileClose   = func(file *os.File) error { return file.Close() }
+)
+
 type Value struct {
 	Path  string `json:"path"`
 	Value any    `json:"value"`
@@ -280,9 +290,6 @@ func parsePath(path string) ([]pathSegment, error) {
 	var segments []pathSegment
 	var key strings.Builder
 	flushKey := func() error {
-		if key.Len() == 0 {
-			return ErrInvalidPath
-		}
 		segments = append(segments, pathSegment{key: key.String()})
 		key.Reset()
 		return nil
@@ -360,10 +367,7 @@ func getPathValue(root any, segments []pathSegment) (any, bool) {
 }
 
 func setPathValue(root map[string]any, segments []pathSegment, value any) (map[string]any, error) {
-	updated, err := setValue(root, segments, value)
-	if err != nil {
-		return nil, err
-	}
+	updated := setValue(root, segments, value)
 	mapped, ok := updated.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("config root must be object")
@@ -371,7 +375,7 @@ func setPathValue(root map[string]any, segments []pathSegment, value any) (map[s
 	return mapped, nil
 }
 
-func setValue(current any, segments []pathSegment, value any) (any, error) {
+func setValue(current any, segments []pathSegment, value any) any {
 	seg := segments[0]
 	if seg.isIndex {
 		list, ok := current.([]any)
@@ -384,14 +388,11 @@ func setValue(current any, segments []pathSegment, value any) (any, error) {
 		}
 		if len(segments) == 1 {
 			list[seg.index] = value
-			return list, nil
+			return list
 		}
-		next, err := setValue(list[seg.index], segments[1:], value)
-		if err != nil {
-			return nil, err
-		}
+		next := setValue(list[seg.index], segments[1:], value)
 		list[seg.index] = next
-		return list, nil
+		return list
 	}
 	m, ok := current.(map[string]any)
 	if !ok || m == nil {
@@ -399,14 +400,11 @@ func setValue(current any, segments []pathSegment, value any) (any, error) {
 	}
 	if len(segments) == 1 {
 		m[seg.key] = value
-		return m, nil
+		return m
 	}
-	next, err := setValue(m[seg.key], segments[1:], value)
-	if err != nil {
-		return nil, err
-	}
+	next := setValue(m[seg.key], segments[1:], value)
 	m[seg.key] = next
-	return m, nil
+	return m
 }
 
 func removePathValue(root map[string]any, segments []pathSegment) (map[string]any, bool) {
@@ -414,11 +412,7 @@ func removePathValue(root map[string]any, segments []pathSegment) (map[string]an
 	if !removed {
 		return root, false
 	}
-	mapped, ok := updated.(map[string]any)
-	if !ok {
-		return root, false
-	}
-	return mapped, true
+	return updated.(map[string]any), true
 }
 
 func removeValue(current any, segments []pathSegment) (any, bool) {
@@ -480,11 +474,11 @@ func cloneMap(value map[string]any) map[string]any {
 	if value == nil {
 		return map[string]any{}
 	}
-	clone, ok := cloneValue(value).(map[string]any)
-	if !ok {
-		return map[string]any{}
+	out := make(map[string]any, len(value))
+	for key, val := range value {
+		out[key] = cloneValue(val)
 	}
-	return clone
+	return out
 }
 
 func cloneValue(value any) any {
@@ -508,40 +502,40 @@ func cloneValue(value any) any {
 
 func atomicWriteFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := osMkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "config-*.json")
+	tmp, err := osCreateTemp(dir, "config-*.json")
 	if err != nil {
 		return err
 	}
 	tmpName := tmp.Name()
 	defer func() {
-		_ = tmp.Close()
+		_ = fileClose(tmp)
 		_ = os.Remove(tmpName)
 	}()
-	if _, err := tmp.Write(data); err != nil {
+	if _, err := fileWrite(tmp, data); err != nil {
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
+	if err := fileSync(tmp); err != nil {
 		return err
 	}
-	if err := tmp.Close(); err != nil {
+	if err := fileClose(tmp); err != nil {
 		return err
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := osRename(tmpName, path); err != nil {
 		return err
 	}
 	return syncDir(dir)
 }
 
 func syncDir(dir string) error {
-	handle, err := os.Open(dir)
+	handle, err := osOpen(dir)
 	if err != nil {
 		return err
 	}
-	defer handle.Close()
-	if err := handle.Sync(); err != nil {
+	defer fileClose(handle)
+	if err := fileSync(handle); err != nil {
 		return nil
 	}
 	return nil
