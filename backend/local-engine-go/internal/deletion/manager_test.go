@@ -681,3 +681,66 @@ func findNode(root DeleteNode, kind, id string) *DeleteNode {
 	}
 	return nil
 }
+
+func TestStateDirForErrors(t *testing.T) {
+	if _, err := stateDirFor("", "image", "state"); err == nil {
+		t.Fatalf("expected error for empty root")
+	}
+	if _, err := stateDirFor(t.TempDir(), "image", ""); err == nil {
+		t.Fatalf("expected error for empty state id")
+	}
+}
+
+func TestParseImageIDVariants(t *testing.T) {
+	engine, tag := parseImageID("")
+	if engine != "unknown" || tag != "latest" {
+		t.Fatalf("unexpected defaults: %s %s", engine, tag)
+	}
+	engine, tag = parseImageID("postgres")
+	if engine != "postgres" || tag != "latest" {
+		t.Fatalf("unexpected parse: %s %s", engine, tag)
+	}
+	engine, tag = parseImageID("repo/postgres:15")
+	if engine != "repo_postgres" || tag != "15" {
+		t.Fatalf("unexpected parse: %s %s", engine, tag)
+	}
+	engine, tag = parseImageID("repo/postgres@sha256:abc")
+	if engine != "repo_postgres" || tag != "latest" {
+		t.Fatalf("unexpected parse: %s %s", engine, tag)
+	}
+	engine, tag = parseImageID("repo/postgres:16@sha256:abc")
+	if engine != "repo_postgres" || tag != "16" {
+		t.Fatalf("unexpected parse: %s %s", engine, tag)
+	}
+}
+
+func TestRemoveStateDir(t *testing.T) {
+	root := t.TempDir()
+	imageID := "repo/postgres:15"
+	stateID := "state-1"
+	dir, err := stateDirFor(root, imageID, stateID)
+	if err != nil {
+		t.Fatalf("stateDirFor: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	manager := &Manager{stateStoreRoot: root}
+	if err := manager.removeStateDir(strPtr(imageID), stateID); err != nil {
+		t.Fatalf("removeStateDir: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected state dir removed")
+	}
+}
+
+func TestRemoveStateDirNoop(t *testing.T) {
+	manager := &Manager{}
+	if err := manager.removeStateDir(nil, "state"); err != nil {
+		t.Fatalf("expected noop remove, got %v", err)
+	}
+	manager = &Manager{stateStoreRoot: t.TempDir()}
+	if err := manager.removeStateDir(nil, ""); err != nil {
+		t.Fatalf("expected noop for empty state id, got %v", err)
+	}
+}

@@ -2985,6 +2985,120 @@ func jsonMarshal(req Request) (string, error) {
 	return string(data), nil
 }
 
+func TestMaxIdenticalJobsDefaults(t *testing.T) {
+	if got := maxIdenticalJobs(nil); got != defaultMaxIdenticalJobs {
+		t.Fatalf("expected default %d, got %d", defaultMaxIdenticalJobs, got)
+	}
+	if got := maxIdenticalJobs(&fakeConfigStore{value: nil}); got != defaultMaxIdenticalJobs {
+		t.Fatalf("expected default for nil value, got %d", got)
+	}
+	if got := maxIdenticalJobs(&fakeConfigStore{value: "bad"}); got != defaultMaxIdenticalJobs {
+		t.Fatalf("expected default for invalid value, got %d", got)
+	}
+}
+
+func TestMaxIdenticalJobsFromConfig(t *testing.T) {
+	if got := maxIdenticalJobs(&fakeConfigStore{value: 4}); got != 4 {
+		t.Fatalf("expected 4, got %d", got)
+	}
+	if got := maxIdenticalJobs(&fakeConfigStore{value: float64(3)}); got != 3 {
+		t.Fatalf("expected 3, got %d", got)
+	}
+	if got := maxIdenticalJobs(&fakeConfigStore{value: json.Number("5")}); got != 5 {
+		t.Fatalf("expected 5, got %d", got)
+	}
+}
+
+func TestEnsureResolvedImageIDUsesTasks(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	tasks := []queue.TaskRecord{
+		{Type: "resolve_image", ResolvedImageID: strPtr("image-1@sha256:resolved")},
+	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, tasks); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
+	if prepared.resolvedImageID != "image-1@sha256:resolved" {
+		t.Fatalf("unexpected resolved image: %s", prepared.resolvedImageID)
+	}
+}
+
+func TestEnsureResolvedImageIDNilPrepared(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", nil, nil); errResp == nil {
+		t.Fatalf("expected error for nil prepared request")
+	}
+}
+
+func TestEnsureResolvedImageIDUsesRequestWhenTasksPresent(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	tasks := []queue.TaskRecord{
+		{Type: "state_execute"},
+	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, tasks); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
+	if prepared.resolvedImageID != "image-1" {
+		t.Fatalf("unexpected resolved image: %s", prepared.resolvedImageID)
+	}
+}
+
+func TestEnsureResolvedImageIDSkipsResolveForDigest(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1@sha256:abc", PsqlArgs: []string{"-c", "select 1"}}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	prepared.resolvedImageID = ""
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
+	if prepared.resolvedImageID != req.ImageID {
+		t.Fatalf("expected resolved image to match digest input")
+	}
+}
+
+func TestEnsureResolvedImageIDResolveErrors(t *testing.T) {
+	queueStore := newQueueStore(t)
+	rt := &fakeRuntime{resolveErr: errors.New("boom")}
+	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, &testDeps{runtime: rt})
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp == nil {
+		t.Fatalf("expected resolve error")
+	}
+}
+
+func TestEnsureResolvedImageIDResolveEmpty(t *testing.T) {
+	queueStore := newQueueStore(t)
+	rt := &fakeRuntime{resolvedImage: " "}
+	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, &testDeps{runtime: rt})
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp == nil {
+		t.Fatalf("expected empty resolved error")
+	}
+}
+
 func createJobRecord(t *testing.T, queueStore queue.Store, jobID string, req Request, status string) {
 	t.Helper()
 	reqJSON, err := jsonMarshal(req)

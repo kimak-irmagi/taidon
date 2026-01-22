@@ -123,3 +123,64 @@ func TestCopyDirCopiesSymlink(t *testing.T) {
 		t.Fatalf("expected symlink, got mode %v", info.Mode())
 	}
 }
+
+func TestCopyDirRejectsEmptyPaths(t *testing.T) {
+	if err := copyDir(context.Background(), "", "dest"); err == nil {
+		t.Fatalf("expected error for empty source")
+	}
+	if err := copyDir(context.Background(), "src", ""); err == nil {
+		t.Fatalf("expected error for empty dest")
+	}
+}
+
+func TestCopyDirDestIsFile(t *testing.T) {
+	src := t.TempDir()
+	filePath := filepath.Join(src, "file.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	destRoot := t.TempDir()
+	destFile := filepath.Join(destRoot, "dest")
+	if err := os.WriteFile(destFile, []byte("y"), 0o600); err != nil {
+		t.Fatalf("write dest file: %v", err)
+	}
+	if err := copyDir(context.Background(), src, destFile); err == nil {
+		t.Fatalf("expected error for dest file")
+	}
+}
+
+func TestCopyDirContextCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	dest := filepath.Join(t.TempDir(), "dest")
+
+	if err := copyDir(ctx, src, dest); err == nil {
+		t.Fatalf("expected context error")
+	}
+}
+
+func TestCopyFileMissingSource(t *testing.T) {
+	if err := copyFile(filepath.Join(t.TempDir(), "missing.txt"), filepath.Join(t.TempDir(), "dest.txt"), 0o600); err == nil {
+		t.Fatalf("expected error for missing source")
+	}
+}
+
+func TestCopyFileRejectsDirectoryDest(t *testing.T) {
+	src := t.TempDir()
+	filePath := filepath.Join(src, "file.txt")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	destDir := filepath.Join(t.TempDir(), "dest")
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		t.Fatalf("mkdir dest: %v", err)
+	}
+	if err := copyFile(filePath, destDir, 0o600); err == nil {
+		t.Fatalf("expected error for directory dest")
+	}
+}
