@@ -40,6 +40,10 @@ This document defines the internal component layout of the local sqlrs engine.
   - Docker runtime adapter (CLI-based in MVP).
   - Starts/stops containers; sets `PGDATA` and trust auth for Postgres images.
   - Keeps warm containers after prepare until run orchestration decides to stop.
+- `internal/run`
+  - Resolves target instance (id/name).
+  - Prepares runtime exec context and validates run kind rules.
+  - Executes commands inside instance containers and streams output.
 - `internal/snapshot`
   - Snapshot manager interface and backend selection.
   - OverlayFS-backed snapshots in the MVP, copy fallback.
@@ -75,6 +79,9 @@ This document defines the internal component layout of the local sqlrs engine.
 - `prepare.Manager`
   - Submits jobs and exposes status/events.
   - Handles `plan_only` by returning task lists.
+- `run.Manager`
+  - Validates run requests and executes commands against instances.
+  - Streams stdout/stderr/exit back to HTTP.
 - `queue.Store`
   - Persists jobs, tasks, and events; supports recovery queries.
 - `prepare.JobEntry`, `prepare.TaskEntry`
@@ -127,6 +134,7 @@ flowchart TD
   CMD --> CFG
   HTTP --> AUTH
   HTTP --> PREP
+  HTTP --> RUN
   HTTP --> DEL
   HTTP --> REG
   HTTP --> STREAM
@@ -139,6 +147,8 @@ flowchart TD
   EXEC --> DBMS
   DEL --> STORE
   DEL --> CONN
+  RUN --> RT
+  RUN --> REG
   PREP --> STORE
   REG --> ID
   REG --> STORE

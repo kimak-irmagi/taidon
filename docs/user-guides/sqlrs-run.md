@@ -24,14 +24,18 @@ and test runners.
 ## Command Syntax
 
 ```text
-sqlrs run[:kind] [OPTIONS] -- <command> [args...]
+sqlrs run[:kind] [OPTIONS] [-- <command> ] [args...]
 ```
 
 Where:
 
 - `:kind` defines how the DSN is passed to the command.
-- `<command>` is executed verbatim after `--`.
+- `<command>` is executed verbatim after `--` (optional).
 - `OPTIONS` control instance resolution.
+
+If `<command>` is omitted, `run:<kind>` uses its default command. In that case,
+`--` may be omitted as well, and any remaining arguments apply to the default
+command.
 
 ---
 
@@ -40,7 +44,8 @@ Where:
 `run[:kind]` defines:
 
 1. **DSN injection mechanism**
-2. Optional **liveness tracking** for the instance
+2. The **default command**, if none is provided
+3. Optional **liveness tracking** for the instance
 
 Built-in kinds include:
 
@@ -64,10 +69,29 @@ Common mechanisms include:
 
 Examples:
 
-- `run:psql` injects DSN via `PGDATABASE`, `PGHOST`, etc.
+- `run:psql` injects DSN as a positional connection string
 - `run:pgbench` injects DSN via command-line flags
 
 The exact behavior is defined by the selected `run:<kind>`.
+
+### `run:psql` injection rules
+
+- Default command: `psql`.
+- The command runs **inside the instance container**, same as `prepare:psql`.
+- DSN is passed as a positional argument (connection string).
+- If the user supplies conflicting connection args (for example `-h/-p/-U/-d`
+  or a positional connection string), `run:psql` fails with an error.
+- Each `-c`, `-f`, and `-` (stdin) source is executed as a **separate** `psql`
+  invocation to match upstream transaction semantics. When `-f -` is used,
+  stdin can be consumed only once.
+
+### `run:pgbench` injection rules
+
+- Default command: `pgbench`.
+- The command runs **inside the instance container**, same as `prepare:psql`.
+- DSN is passed via `pgbench` args (`-h/-p/-U/-d`).
+- If the user supplies conflicting connection args (`-h/-p/-U/-d`), `run:pgbench`
+  fails with an error.
 
 ---
 
@@ -78,10 +102,15 @@ Before executing the command, `run` must resolve a target instance.
 Resolution order:
 
 1. Instance produced by a preceding `prepare` in the same invocation
-2. `--dsn <dsn>`
-3. `--instance <id>`
+2. `--instance <id>`
 
 If resolution fails, `run` terminates with an error.
+
+If both `--instance` and a preceding `prepare` are present, `run` fails with an
+explicit ambiguity error.
+
+`--instance` accepts either an instance id or a name. If multiple candidates are
+found, `run` fails with an ambiguity error.
 
 ---
 
@@ -93,7 +122,7 @@ sqlrs prepare:psql init.sql run:psql -- -c "select 1"
 
 - A temporary instance is created by `prepare`
 - `run` executes against it
-- Instance is typically discarded afterwards
+- Instance is discarded immediately after `run` finishes
 
 ---
 
@@ -103,7 +132,12 @@ sqlrs prepare:psql init.sql run:psql -- -c "select 1"
 
 Depending on configuration:
 
-- Ephemeral instances may be removed after command exit
+- Ephemeral instances created by `prepare` remain warm and await a connection.
+- In a composite `prepare ... run` invocation, the instance is removed
+  immediately after `run` finishes.
+
+Connection-count based cleanup (stop after the first client disconnects) is a
+desired behavior but is not implemented yet.
 
 Some `run:<kind>` implementations may:
 
@@ -141,11 +175,8 @@ Hint: run sqlrs prepare:psql ... to create the instance.
 ## Options
 
 ```text
---dsn <dsn>           Explicit DSN to use
 --instance <id>       Target a specific instance
 ```
-
-At most one of these options may be specified.
 
 ---
 
@@ -170,10 +201,10 @@ sqlrs prepare:psql init.sql run:psql -- -c "select count(*) from users"
 
 ---
 
-### Run with explicit DSN
+### Run with explicit instance
 
 ```bash
-sqlrs run --dsn "$DSN" -- pgbench -c 10 -T 30
+sqlrs run:pgbench --instance my-instance -- -c 10 -T 30
 ```
 
 ---

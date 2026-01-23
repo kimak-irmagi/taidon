@@ -1,5 +1,9 @@
 # Git-aware semantics: active features (GitHub/Git webhooks and bot)
 
+Status: **proposed future design**. Git-aware flags and "prepare-only run"
+behaviors referenced here are not available in the current MVP CLI. Today, the
+MVP uses a composite invocation such as `sqlrs prepare:psql ... run:psql ...`.
+
 Goal: deliver a "wow effect" via automation around PRs/branches **without forcing** a new workflow. This document covers features triggered **by GitHub/Git events** or by PR commands (slash commands).
 
 ## Design principles

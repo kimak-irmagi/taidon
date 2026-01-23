@@ -1,0 +1,197 @@
+package cli
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"sqlrs/cli/internal/cli/runkind"
+	"sqlrs/cli/internal/client"
+	"sqlrs/cli/internal/daemon"
+)
+
+type RunOptions struct {
+	ProfileName    string
+	Mode           string
+	Endpoint       string
+	Autostart      bool
+	DaemonPath     string
+	RunDir         string
+	StateDir       string
+	Timeout        time.Duration
+	StartupTimeout time.Duration
+	Verbose        bool
+
+	Kind        string
+	InstanceRef string
+	Command     string
+	Args        []string
+	Stdin       *string
+	Steps       []RunStep
+}
+
+type RunResult struct {
+	ExitCode int
+}
+
+func RunRun(ctx context.Context, opts RunOptions, stdout io.Writer, stderr io.Writer) (RunResult, error) {
+	if strings.TrimSpace(opts.InstanceRef) == "" {
+		return RunResult{}, fmt.Errorf("instance is required")
+	}
+	kind := strings.ToLower(strings.TrimSpace(opts.Kind))
+	if kind == "" {
+		return RunResult{}, fmt.Errorf("run kind is required")
+	}
+	if !runkind.IsKnown(kind) {
+		return RunResult{}, fmt.Errorf("unknown run kind: %s", kind)
+	}
+	cliClient, err := runClient(ctx, opts)
+	if err != nil {
+		return RunResult{}, err
+	}
+
+	var cmdPtr *string
+	if strings.TrimSpace(opts.Command) != "" {
+		value := opts.Command
+		cmdPtr = &value
+	}
+	body := client.RunRequest{
+		InstanceRef: opts.InstanceRef,
+		Kind:        kind,
+		Command:     cmdPtr,
+		Args:        append([]string{}, opts.Args...),
+		Stdin:       opts.Stdin,
+		Steps:       toClientSteps(opts.Steps),
+	}
+	stream, err := cliClient.RunCommand(ctx, body)
+	if err != nil {
+		return RunResult{}, err
+	}
+	defer stream.Close()
+
+	return readRunStream(stream, stdout, stderr)
+}
+
+type RunStep struct {
+	Args  []string
+	Stdin *string
+}
+
+func toClientSteps(steps []RunStep) []client.RunStep {
+	if len(steps) == 0 {
+		return nil
+	}
+	out := make([]client.RunStep, 0, len(steps))
+	for _, step := range steps {
+		out = append(out, client.RunStep{
+			Args:  append([]string{}, step.Args...),
+			Stdin: step.Stdin,
+		})
+	}
+	return out
+}
+
+func DeleteInstance(ctx context.Context, opts RunOptions, instanceID string) error {
+	if strings.TrimSpace(instanceID) == "" {
+		return nil
+	}
+	cliClient, err := runClient(ctx, opts)
+	if err != nil {
+		return err
+	}
+	_, _, err = cliClient.DeleteInstance(ctx, instanceID, client.DeleteOptions{})
+	return err
+}
+
+func runClient(ctx context.Context, opts RunOptions) (*client.Client, error) {
+	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
+	endpoint := strings.TrimSpace(opts.Endpoint)
+	authToken := ""
+
+	if mode == "local" {
+		if endpoint == "" {
+			endpoint = "auto"
+		}
+		if endpoint == "auto" {
+			if opts.Verbose {
+				fmt.Fprintln(os.Stderr, "checking local engine state")
+			}
+			resolved, err := daemon.ConnectOrStart(ctx, daemon.ConnectOptions{
+				Endpoint:       endpoint,
+				Autostart:      opts.Autostart,
+				DaemonPath:     opts.DaemonPath,
+				RunDir:         opts.RunDir,
+				StateDir:       opts.StateDir,
+				StartupTimeout: opts.StartupTimeout,
+				ClientTimeout:  opts.Timeout,
+				Verbose:        opts.Verbose,
+			})
+			if err != nil {
+				return nil, err
+			}
+			endpoint = resolved.Endpoint
+			authToken = resolved.AuthToken
+			if opts.Verbose {
+				fmt.Fprintf(os.Stderr, "engine ready at %s\n", endpoint)
+			}
+		}
+	} else if mode == "remote" {
+		if endpoint == "" || endpoint == "auto" {
+			return nil, fmt.Errorf("remote mode requires explicit endpoint")
+		}
+		if opts.Verbose {
+			fmt.Fprintf(os.Stderr, "using remote endpoint %s\n", endpoint)
+		}
+	} else {
+		return nil, fmt.Errorf("invalid mode: %s", mode)
+	}
+
+	return client.New(endpoint, client.Options{Timeout: opts.Timeout, AuthToken: authToken}), nil
+}
+
+func readRunStream(stream io.Reader, stdout io.Writer, stderr io.Writer) (RunResult, error) {
+	scanner := bufio.NewScanner(stream)
+	exitCode := 0
+	for scanner.Scan() {
+		var evt client.RunEvent
+		if err := json.Unmarshal(scanner.Bytes(), &evt); err != nil {
+			return RunResult{}, err
+		}
+		switch evt.Type {
+		case "stdout":
+			if evt.Data != "" {
+				if _, err := io.WriteString(stdout, evt.Data); err != nil {
+					return RunResult{}, err
+				}
+			}
+		case "stderr":
+			if evt.Data != "" {
+				if _, err := io.WriteString(stderr, evt.Data); err != nil {
+					return RunResult{}, err
+				}
+			}
+		case "error":
+			if evt.Error != nil && evt.Error.Message != "" {
+				if evt.Error.Details != "" {
+					return RunResult{}, fmt.Errorf("%s: %s", evt.Error.Message, evt.Error.Details)
+				}
+				return RunResult{}, fmt.Errorf("%s", evt.Error.Message)
+			}
+			return RunResult{}, fmt.Errorf("run failed")
+		case "exit":
+			if evt.ExitCode != nil {
+				exitCode = *evt.ExitCode
+			}
+			return RunResult{ExitCode: exitCode}, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return RunResult{}, err
+	}
+	return RunResult{ExitCode: exitCode}, nil
+}

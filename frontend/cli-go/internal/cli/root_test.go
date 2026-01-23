@@ -8,7 +8,7 @@ import (
 )
 
 func TestParseArgs(t *testing.T) {
-	opts, cmd, err := ParseArgs([]string{
+	opts, cmds, err := ParseArgs([]string{
 		"--profile", "p",
 		"--endpoint", "http://example",
 		"--mode", "remote",
@@ -21,8 +21,8 @@ func TestParseArgs(t *testing.T) {
 		t.Fatalf("parse args: %v", err)
 	}
 
-	if cmd.Name != "status" {
-		t.Fatalf("expected command status, got %q", cmd.Name)
+	if len(cmds) != 1 || cmds[0].Name != "status" {
+		t.Fatalf("expected command status, got %+v", cmds)
 	}
 	if opts.Profile != "p" {
 		t.Fatalf("expected profile p, got %q", opts.Profile)
@@ -69,5 +69,18 @@ func TestParseArgsUnknownFlag(t *testing.T) {
 	_, _, err := ParseArgs([]string{"--unknown"})
 	if err == nil {
 		t.Fatalf("expected parse error")
+	}
+}
+
+func TestParseArgsMultipleCommands(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{
+		"prepare:psql", "--", "-c", "select 1",
+		"run:psql", "--", "-c", "select 1",
+	})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 2 || cmds[0].Name != "prepare:psql" || cmds[1].Name != "run:psql" {
+		t.Fatalf("unexpected commands: %+v", cmds)
 	}
 }

@@ -2,6 +2,10 @@
 
 This document describes how the `sqlrs` CLI resolves inputs and talks to the SQL Runner in local and shared deployments, including file vs URL handling and upload flows.
 
+Note: references to `POST /runs` in this document describe the **runner API**
+used in shared deployments (future). The current MVP local engine uses
+`POST /v1/prepare-jobs` for prepare and `POST /v1/runs` for `sqlrs run`.
+
 ## 1. Goals
 
 - Support the same CLI UX for local and remote targets.
@@ -151,6 +155,40 @@ sequenceDiagram
   end
   CLI->>CLI: render deletion tree
 ```
+
+### 4.6 Run (sqlrs run)
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant ENG as Engine
+  participant RT as Runtime
+
+  alt Composite prepare present
+    CLI->>ENG: start prepare job
+    ENG-->>CLI: instance_id + DSN
+  else Explicit instance
+    CLI->>ENG: resolve instance by id or name
+    ENG-->>CLI: instance_id + DSN
+  end
+
+  CLI->>ENG: POST /v1/runs (kind, command or default, args)
+  ENG->>RT: exec in instance container (inject DSN)
+  RT-->>ENG: stdout/stderr/exit
+  ENG-->>CLI: stream output + exit
+
+  opt Composite invocation
+    CLI->>ENG: delete instance
+  end
+```
+
+Notes:
+
+- `run:psql` passes DSN as a positional connection string; `run:pgbench` uses
+  `-h/-p/-U/-d`.
+- Commands run inside the instance container (same runtime as `prepare:psql`).
+- If `--instance` is provided together with a preceding `prepare`, the CLI fails
+  with an explicit ambiguity error.
 
 ## 5. Upload Details (Remote)
 

@@ -8,12 +8,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"sqlrs/engine/internal/auth"
 	"sqlrs/engine/internal/config"
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/registry"
+	"sqlrs/engine/internal/run"
 	"sqlrs/engine/internal/store"
 	"sqlrs/engine/internal/stream"
 )
@@ -25,6 +27,7 @@ type Options struct {
 	Registry   *registry.Registry
 	Prepare    *prepare.Manager
 	Deletion   *deletion.Manager
+	Run        *run.Manager
 	Config     config.Store
 }
 
@@ -190,6 +193,69 @@ func NewHandler(opts Options) http.Handler {
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
+	})
+
+	mux.HandleFunc("/v1/runs", func(w http.ResponseWriter, r *http.Request) {
+		if !auth.RequireBearer(w, r, opts.AuthToken) {
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if opts.Run == nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var req run.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErrorResponse(w, "invalid_argument", "invalid json payload", err.Error(), http.StatusBadRequest)
+			return
+		}
+		result, err := opts.Run.Run(r.Context(), req)
+		if err != nil {
+			switch err.(type) {
+			case run.ValidationError, *run.ValidationError:
+				writeErrorResponse(w, "invalid_argument", err.Error(), "", http.StatusBadRequest)
+				return
+			case run.NotFoundError, *run.NotFoundError:
+				writeErrorResponse(w, "not_found", err.Error(), "", http.StatusNotFound)
+				return
+			case run.ConflictError, *run.ConflictError:
+				writeErrorResponse(w, "conflict", err.Error(), "", http.StatusConflict)
+				return
+			default:
+				writeErrorResponse(w, "internal_error", "run failed", err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		enc := json.NewEncoder(w)
+		_ = enc.Encode(run.Event{
+			Type:       "start",
+			Ts:         time.Now().UTC().Format(time.RFC3339Nano),
+			InstanceID: result.InstanceID,
+		})
+		if strings.TrimSpace(result.Stdout) != "" {
+			_ = enc.Encode(run.Event{
+				Type: "stdout",
+				Ts:   time.Now().UTC().Format(time.RFC3339Nano),
+				Data: result.Stdout,
+			})
+		}
+		if strings.TrimSpace(result.Stderr) != "" {
+			_ = enc.Encode(run.Event{
+				Type: "stderr",
+				Ts:   time.Now().UTC().Format(time.RFC3339Nano),
+				Data: result.Stderr,
+			})
+		}
+		exitCode := result.ExitCode
+		_ = enc.Encode(run.Event{
+			Type:     "exit",
+			Ts:       time.Now().UTC().Format(time.RFC3339Nano),
+			ExitCode: &exitCode,
+		})
 	})
 
 	mux.HandleFunc("/v1/prepare-jobs/", func(w http.ResponseWriter, r *http.Request) {

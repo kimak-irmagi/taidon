@@ -16,8 +16,11 @@
   - Глобальные флаги и диспетчер команд.
   - Загружает config и workspace.
 - `internal/cli`
-  - Логика команд (status, init, ls, rm, prepare, plan, config).
+  - Логика команд (status, init, ls, rm, prepare, plan, run, config).
   - Выбор режима вывода и рендер human/json.
+- `internal/cli/runkind`
+  - Реестр встроенных run-kind (`psql`, `pgbench`).
+  - Правила инъекции DSN и дефолтные команды.
 - `internal/client`
   - HTTP клиент, auth headers, обработка redirect.
   - JSON/NDJSON парсинг.
@@ -41,6 +44,14 @@
 - `cli.PrepareOptions`
   - Общие опции для prepare/plan (endpoint, auth, image id, args).
   - Дополняется флагом `PlanOnly` для `sqlrs plan`.
+- `cli.RunOptions`
+  - `Kind`, `InstanceRef`, `Command`, `Args`, `OutputMode`.
+- `cli.RunTarget`
+  - Разрешенный instance id + DSN для запуска.
+- `client.RunRequest`
+  - HTTP payload для запуска (kind, command/default, args).
+- `client.RunStream`
+  - Стриминг вывода run (stdout/stderr/exit).
 - `client.PrepareJobRequest`
   - HTTP payload для `POST /v1/prepare-jobs` (включая `plan_only`).
 - `client.PrepareJobStatus`

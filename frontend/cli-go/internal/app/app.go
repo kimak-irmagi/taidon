@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"sqlrs/cli/internal/cli"
+	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/config"
 )
 
@@ -19,7 +20,7 @@ const defaultTimeout = 30 * time.Second
 const defaultStartupTimeout = 5 * time.Second
 
 func Run(args []string) error {
-	opts, cmd, err := cli.ParseArgs(args)
+	opts, commands, err := cli.ParseArgs(args)
 	if err != nil {
 		if errors.Is(err, cli.ErrHelp) {
 			cli.PrintUsage(os.Stdout)
@@ -34,8 +35,15 @@ func Run(args []string) error {
 		return err
 	}
 
-	if cmd.Name == "init" {
-		return runInit(os.Stdout, cwd, opts.Workspace, cmd.Args)
+	if len(commands) == 0 {
+		return fmt.Errorf("missing command")
+	}
+
+	if commands[0].Name == "init" {
+		if len(commands) > 1 {
+			return fmt.Errorf("init cannot be combined with other commands")
+		}
+		return runInit(os.Stdout, cwd, opts.Workspace, commands[0].Args)
 	}
 
 	cfgResult, err := config.Load(config.LoadOptions{WorkingDir: cwd})
@@ -114,135 +122,217 @@ func Run(args []string) error {
 		daemonPath = cfg.Orchestrator.DaemonPath
 	}
 
-	switch cmd.Name {
-	case "ls":
-		runOpts := cli.LsOptions{
-			ProfileName:    profileName,
-			Mode:           mode,
-			Endpoint:       profile.Endpoint,
-			Autostart:      profile.Autostart,
-			DaemonPath:     daemonPath,
-			RunDir:         runDir,
-			StateDir:       dirs.StateDir,
-			Timeout:        timeout,
-			StartupTimeout: startupTimeout,
-			Verbose:        opts.Verbose,
-		}
-		return runLs(os.Stdout, runOpts, cmd.Args, output)
-	case "rm":
-		runOpts := cli.RmOptions{
-			ProfileName:    profileName,
-			Mode:           mode,
-			Endpoint:       profile.Endpoint,
-			Autostart:      profile.Autostart,
-			DaemonPath:     daemonPath,
-			RunDir:         runDir,
-			StateDir:       dirs.StateDir,
-			Timeout:        timeout,
-			StartupTimeout: startupTimeout,
-			Verbose:        opts.Verbose,
-		}
-		return runRm(os.Stdout, runOpts, cmd.Args, output)
-	case "prepare:psql":
-		runOpts := cli.PrepareOptions{
-			ProfileName:    profileName,
-			Mode:           mode,
-			Endpoint:       profile.Endpoint,
-			Autostart:      profile.Autostart,
-			DaemonPath:     daemonPath,
-			RunDir:         runDir,
-			StateDir:       dirs.StateDir,
-			Timeout:        timeout,
-			StartupTimeout: startupTimeout,
-			Verbose:        opts.Verbose,
-		}
-		return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
-	case "plan:psql":
-		runOpts := cli.PrepareOptions{
-			ProfileName:    profileName,
-			Mode:           mode,
-			Endpoint:       profile.Endpoint,
-			Autostart:      profile.Autostart,
-			DaemonPath:     daemonPath,
-			RunDir:         runDir,
-			StateDir:       dirs.StateDir,
-			Timeout:        timeout,
-			StartupTimeout: startupTimeout,
-			Verbose:        opts.Verbose,
-		}
-		return runPlan(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output)
-	case "status":
-		if len(cmd.Args) > 0 {
-			return fmt.Errorf("status does not accept arguments")
-		}
-		statusOpts := cli.StatusOptions{
-			ProfileName:    profileName,
-			Mode:           mode,
-			Endpoint:       profile.Endpoint,
-			Autostart:      profile.Autostart,
-			DaemonPath:     daemonPath,
-			RunDir:         runDir,
-			StateDir:       dirs.StateDir,
-			Timeout:        timeout,
-			StartupTimeout: startupTimeout,
-			Verbose:        opts.Verbose,
-		}
-
-		result, err := cli.RunStatus(context.Background(), statusOpts)
-		if err != nil {
-			return err
-		}
-
-		result.Client = Version
-		result.Workspace = workspaceRoot
-
-		if output == "json" {
-			if err := writeJSON(os.Stdout, result); err != nil {
+	var prepared *client.PrepareJobResult
+	for _, cmd := range commands {
+		switch cmd.Name {
+		case "ls":
+			if len(commands) > 1 {
+				return fmt.Errorf("ls cannot be combined with other commands")
+			}
+			runOpts := cli.LsOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
+			return runLs(os.Stdout, runOpts, cmd.Args, output)
+		case "rm":
+			if len(commands) > 1 {
+				return fmt.Errorf("rm cannot be combined with other commands")
+			}
+			runOpts := cli.RmOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
+			return runRm(os.Stdout, runOpts, cmd.Args, output)
+		case "prepare:psql":
+			runOpts := cli.PrepareOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
+			if len(commands) == 1 {
+				return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			}
+			result, handled, err := prepareResult(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			if err != nil {
 				return err
 			}
-		} else {
-			cli.PrintStatus(os.Stdout, result)
-		}
+			if handled {
+				return nil
+			}
+			prepared = &result
+		case "plan:psql":
+			if len(commands) > 1 {
+				return fmt.Errorf("plan cannot be combined with other commands")
+			}
+			runOpts := cli.PrepareOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
+			return runPlan(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output)
+		case "run:psql":
+			runOpts := cli.RunOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
+			if prepared != nil {
+				runOpts.InstanceRef = prepared.InstanceID
+				defer func(instanceID string) {
+					_ = cli.DeleteInstance(context.Background(), runOpts, instanceID)
+				}(prepared.InstanceID)
+			}
+			if err := runRun(os.Stdout, os.Stderr, runOpts, "psql", cmd.Args, workspaceRoot, cwd); err != nil {
+				return err
+			}
+		case "run:pgbench":
+			runOpts := cli.RunOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
+			if prepared != nil {
+				runOpts.InstanceRef = prepared.InstanceID
+				defer func(instanceID string) {
+					_ = cli.DeleteInstance(context.Background(), runOpts, instanceID)
+				}(prepared.InstanceID)
+			}
+			if err := runRun(os.Stdout, os.Stderr, runOpts, "pgbench", cmd.Args, workspaceRoot, cwd); err != nil {
+				return err
+			}
+		case "status":
+			if len(commands) > 1 {
+				return fmt.Errorf("status cannot be combined with other commands")
+			}
+			if len(cmd.Args) > 0 {
+				return fmt.Errorf("status does not accept arguments")
+			}
+			statusOpts := cli.StatusOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
 
-		if !result.OK {
-			return fmt.Errorf("service unhealthy")
-		}
-		return nil
-	case "config":
-		runOpts := cli.ConfigOptions{
-			ProfileName:    profileName,
-			Mode:           mode,
-			Endpoint:       profile.Endpoint,
-			Autostart:      profile.Autostart,
-			DaemonPath:     daemonPath,
-			RunDir:         runDir,
-			StateDir:       dirs.StateDir,
-			Timeout:        timeout,
-			StartupTimeout: startupTimeout,
-			Verbose:        opts.Verbose,
-		}
-		return runConfig(os.Stdout, runOpts, cmd.Args, output)
-	case "prepare":
-		return fmt.Errorf("missing prepare kind (consider prepare:psql)")
-	case "plan":
-		return fmt.Errorf("missing plan kind (consider plan:psql)")
-	default:
-		if strings.HasPrefix(cmd.Name, "prepare:") {
-			kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "prepare:"))
-			if kind == "" {
-				return fmt.Errorf("missing prepare kind (consider prepare:psql)")
+			result, err := cli.RunStatus(context.Background(), statusOpts)
+			if err != nil {
+				return err
 			}
-			return fmt.Errorf("unknown prepare kind: %s", kind)
-		}
-		if strings.HasPrefix(cmd.Name, "plan:") {
-			kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "plan:"))
-			if kind == "" {
-				return fmt.Errorf("missing plan kind (consider plan:psql)")
+
+			result.Client = Version
+			result.Workspace = workspaceRoot
+
+			if output == "json" {
+				if err := writeJSON(os.Stdout, result); err != nil {
+					return err
+				}
+			} else {
+				cli.PrintStatus(os.Stdout, result)
 			}
-			return fmt.Errorf("unknown plan kind: %s", kind)
+
+			if !result.OK {
+				return fmt.Errorf("service unhealthy")
+			}
+			return nil
+		case "config":
+			if len(commands) > 1 {
+				return fmt.Errorf("config cannot be combined with other commands")
+			}
+			runOpts := cli.ConfigOptions{
+				ProfileName:    profileName,
+				Mode:           mode,
+				Endpoint:       profile.Endpoint,
+				Autostart:      profile.Autostart,
+				DaemonPath:     daemonPath,
+				RunDir:         runDir,
+				StateDir:       dirs.StateDir,
+				Timeout:        timeout,
+				StartupTimeout: startupTimeout,
+				Verbose:        opts.Verbose,
+			}
+			return runConfig(os.Stdout, runOpts, cmd.Args, output)
+		case "prepare":
+			return fmt.Errorf("missing prepare kind (consider prepare:psql)")
+		case "plan":
+			return fmt.Errorf("missing plan kind (consider plan:psql)")
+		case "run":
+			return fmt.Errorf("missing run kind (consider run:psql)")
+		default:
+			if strings.HasPrefix(cmd.Name, "prepare:") {
+				kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "prepare:"))
+				if kind == "" {
+					return fmt.Errorf("missing prepare kind (consider prepare:psql)")
+				}
+				return fmt.Errorf("unknown prepare kind: %s", kind)
+			}
+			if strings.HasPrefix(cmd.Name, "plan:") {
+				kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "plan:"))
+				if kind == "" {
+					return fmt.Errorf("missing plan kind (consider plan:psql)")
+				}
+				return fmt.Errorf("unknown plan kind: %s", kind)
+			}
+			if strings.HasPrefix(cmd.Name, "run:") {
+				kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "run:"))
+				if kind == "" {
+					return fmt.Errorf("missing run kind (consider run:psql)")
+				}
+				return fmt.Errorf("unknown run kind: %s", kind)
+			}
+			return fmt.Errorf("unknown command: %s", cmd.Name)
 		}
-		return fmt.Errorf("unknown command: %s", cmd.Name)
 	}
+	return nil
 }
 
 func writeJSON(w io.Writer, v any) error {

@@ -30,6 +30,7 @@ import (
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/registry"
+	runpkg "sqlrs/engine/internal/run"
 	engineRuntime "sqlrs/engine/internal/runtime"
 	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store/sqlite"
@@ -240,6 +241,14 @@ func run(args []string) (int, error) {
 		return 1, fmt.Errorf("delete manager: %v", err)
 	}
 
+	runMgr, err := runpkg.NewManager(runpkg.Options{
+		Registry: reg,
+		Runtime:  rt,
+	})
+	if err != nil {
+		return 1, fmt.Errorf("run manager: %v", err)
+	}
+
 	mux := httpapi.NewHandler(httpapi.Options{
 		Version:    *version,
 		InstanceID: instanceID,
@@ -247,6 +256,7 @@ func run(args []string) (int, error) {
 		Registry:   reg,
 		Prepare:    prepareMgr,
 		Deletion:   deleteMgr,
+		Run:        runMgr,
 		Config:     configMgr,
 	})
 

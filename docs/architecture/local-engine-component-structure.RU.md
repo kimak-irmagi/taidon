@@ -40,6 +40,10 @@
   - Адаптер Docker runtime (CLI в MVP).
   - Старт/стоп контейнеров; задает `PGDATA` и trust auth для Postgres.
   - Держит warm контейнеры после prepare до решения оркестрации run.
+- `internal/run`
+  - Разрешает target instance (id/name).
+  - Готовит контекст запуска и валидирует правила run-kind.
+  - Выполняет команды внутри контейнера и стримит вывод.
 - `internal/snapshot`
   - Интерфейс менеджера снапшотов и выбор backend.
   - OverlayFS в MVP, fallback на копирование.
@@ -75,6 +79,9 @@
 - `prepare.Manager`
   - Принимает jobs и отдает статус/события.
   - Для `plan_only` возвращает список задач.
+- `run.Manager`
+  - Валидирует run запросы и выполняет команды против instances.
+  - Стримит stdout/stderr/exit обратно в HTTP.
 - `queue.Store`
   - Персистит jobs, tasks и события; поддерживает recovery запросы.
 - `prepare.JobEntry`, `prepare.TaskEntry`
@@ -127,6 +134,7 @@ flowchart TD
   CMD --> CFG
   HTTP --> AUTH
   HTTP --> PREP
+  HTTP --> RUN
   HTTP --> DEL
   HTTP --> REG
   HTTP --> STREAM
@@ -139,6 +147,8 @@ flowchart TD
   EXEC --> DBMS
   DEL --> STORE
   DEL --> CONN
+  RUN --> RT
+  RUN --> REG
   PREP --> STORE
   REG --> ID
   REG --> STORE

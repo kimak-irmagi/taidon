@@ -1081,6 +1081,56 @@ func TestTrimCompletedJobsBySignature(t *testing.T) {
 	}
 }
 
+func TestTrimCompletedJobsForJob(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+
+	req := Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1@sha256:abc",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	signature, errResp := mgr.computeJobSignature(prepared)
+	if errResp != nil {
+		t.Fatalf("computeJobSignature: %+v", errResp)
+	}
+
+	olderFinished := "2026-01-19T00:01:00Z"
+	newerFinished := "2026-01-19T00:02:00Z"
+	newestFinished := "2026-01-19T00:03:00Z"
+	jobs := []queue.JobRecord{
+		{JobID: "job-old", Status: StatusSucceeded, PrepareKind: "psql", ImageID: req.ImageID, Signature: &signature, CreatedAt: "2026-01-19T00:00:00Z", FinishedAt: &olderFinished},
+		{JobID: "job-mid", Status: StatusSucceeded, PrepareKind: "psql", ImageID: req.ImageID, Signature: &signature, CreatedAt: "2026-01-19T00:00:00Z", FinishedAt: &newerFinished},
+		{JobID: "job-new", Status: StatusSucceeded, PrepareKind: "psql", ImageID: req.ImageID, Signature: &signature, CreatedAt: "2026-01-19T00:00:00Z", FinishedAt: &newestFinished},
+	}
+	for _, job := range jobs {
+		if err := queueStore.CreateJob(context.Background(), job); err != nil {
+			t.Fatalf("CreateJob %s: %v", job.JobID, err)
+		}
+		dir := filepath.Join(mgr.stateStoreRoot, "jobs", job.JobID)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("mkdir job dir: %v", err)
+		}
+	}
+
+	mgr.trimCompletedJobsForJob(context.Background(), "job-new")
+
+	remaining, err := queueStore.ListJobsBySignature(context.Background(), signature, []string{StatusSucceeded})
+	if err != nil {
+		t.Fatalf("ListJobsBySignature: %v", err)
+	}
+	if len(remaining) != 2 || remaining[0].JobID != "job-new" || remaining[1].JobID != "job-mid" {
+		t.Fatalf("unexpected remaining jobs: %+v", remaining)
+	}
+	if _, err := os.Stat(filepath.Join(mgr.stateStoreRoot, "jobs", "job-old")); !os.IsNotExist(err) {
+		t.Fatalf("expected old job dir to be removed")
+	}
+}
+
 func TestTrimCompletedJobsFallbackToCreatedAt(t *testing.T) {
 	queueStore := newQueueStore(t)
 	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, &testDeps{

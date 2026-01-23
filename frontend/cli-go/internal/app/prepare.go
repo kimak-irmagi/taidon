@@ -9,12 +9,18 @@ import (
 	"strings"
 
 	"sqlrs/cli/internal/cli"
+	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/config"
 )
 
 type prepareArgs struct {
 	Image    string
 	PsqlArgs []string
+}
+
+type stdoutAndErr struct {
+	stdout io.Writer
+	stderr io.Writer
 }
 
 func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
@@ -55,29 +61,41 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 }
 
 func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) error {
-	parsed, showHelp, err := parsePrepareArgs(args)
+	result, handled, err := prepareResult(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, args)
 	if err != nil {
 		return err
 	}
-	if showHelp {
-		cli.PrintPrepareUsage(stdout)
+	if handled {
 		return nil
+	}
+	fmt.Fprintf(stdout, "DSN=%s\n", result.DSN)
+	return nil
+}
+
+func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) (client.PrepareJobResult, bool, error) {
+	parsed, showHelp, err := parsePrepareArgs(args)
+	if err != nil {
+		return client.PrepareJobResult{}, false, err
+	}
+	if showHelp {
+		cli.PrintPrepareUsage(w.stdout)
+		return client.PrepareJobResult{}, true, nil
 	}
 
 	imageID, source, err := resolvePrepareImage(parsed.Image, cfg)
 	if err != nil {
-		return err
+		return client.PrepareJobResult{}, false, err
 	}
 	if imageID == "" {
-		return ExitErrorf(2, "Missing base image id (set --image or dbms.image)")
+		return client.PrepareJobResult{}, false, ExitErrorf(2, "Missing base image id (set --image or dbms.image)")
 	}
 	if runOpts.Verbose {
-		fmt.Fprint(stderr, formatImageSource(imageID, source))
+		fmt.Fprint(w.stderr, formatImageSource(imageID, source))
 	}
 
 	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin)
 	if err != nil {
-		return err
+		return client.PrepareJobResult{}, false, err
 	}
 
 	runOpts.ImageID = imageID
@@ -87,10 +105,9 @@ func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config
 
 	result, err := cli.RunPrepare(context.Background(), runOpts)
 	if err != nil {
-		return err
+		return client.PrepareJobResult{}, false, err
 	}
-	fmt.Fprintf(stdout, "DSN=%s\n", result.DSN)
-	return nil
+	return result, false, nil
 }
 
 func resolvePrepareImage(cliValue string, cfg config.LoadedConfig) (string, string, error) {

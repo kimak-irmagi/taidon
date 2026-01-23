@@ -182,6 +182,27 @@ func (c *Client) ListTasks(ctx context.Context, jobID string) ([]TaskEntry, erro
 	return out, nil
 }
 
+func (c *Client) RunCommand(ctx context.Context, req RunRequest) (io.ReadCloser, error) {
+	var body []byte
+	if req.Args == nil {
+		req.Args = []string{}
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	body = data
+	resp, err := c.doRequestWithBody(ctx, http.MethodPost, "/v1/runs", true, bytes.NewReader(body), "application/json")
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		return nil, parseErrorResponse(resp)
+	}
+	return resp.Body, nil
+}
+
 func (c *Client) GetConfig(ctx context.Context, path string, effective bool) (any, error) {
 	query := url.Values{}
 	addFilter(query, "path", path)

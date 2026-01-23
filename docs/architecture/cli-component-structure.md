@@ -16,8 +16,11 @@ This document defines the internal component layout of the sqlrs CLI.
   - Global flags and command dispatch.
   - Loads config and workspace.
 - `internal/cli`
-  - Command logic (status, init, ls, rm, prepare, plan, config).
+  - Command logic (status, init, ls, rm, prepare, plan, run, config).
   - Chooses output mode and renders human/json output.
+- `internal/cli/runkind`
+  - Built-in run kinds registry (`psql`, `pgbench`).
+  - DSN injection rules and default command mapping.
 - `internal/client`
   - HTTP client, auth headers, redirect handling.
   - JSON/NDJSON parsing.
@@ -40,6 +43,14 @@ This document defines the internal component layout of the sqlrs CLI.
 - `cli.PrepareOptions`
   - Shared options for prepare/plan execution (endpoint, auth, image id, args).
   - Extended with `PlanOnly` for `sqlrs plan`.
+- `cli.RunOptions`
+  - `Kind`, `InstanceRef`, `Command`, `Args`, `OutputMode`.
+- `cli.RunTarget`
+  - Resolved instance id + DSN for execution.
+- `client.RunRequest`
+  - HTTP payload for run execution (kind, command/default, args).
+- `client.RunStream`
+  - Streaming run output (stdout/stderr/exit).
 - `client.PrepareJobRequest`
   - HTTP payload for `POST /v1/prepare-jobs` (includes `plan_only`).
 - `client.PrepareJobStatus`

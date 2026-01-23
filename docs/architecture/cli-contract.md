@@ -48,7 +48,7 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 - `<verb>` is the main command (`prepare`, `run`, `ls`, ...).
 - `:<kind>` is an optional executor/adaptor selector (e.g., `prepare:psql`, `run:pgbench`).
 - `subject` is optional and verb-specific (e.g., an instance id, a name, etc.).
-- `-- <command>...` appears only for verbs that execute an external command (primarily `run`).
+- `-- <command>...` appears only for verbs that execute an external command (primarily `run`) and is optional for `run` kinds with default commands.
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
