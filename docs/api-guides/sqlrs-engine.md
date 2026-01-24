@@ -3205,6 +3205,243 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
+<h1 id="the-sqlrs-engine-api-run">run</h1>
+
+## runCommand
+
+<a id="opIdrunCommand"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X POST http://127.0.0.1:{port}/v1/runs \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/x-ndjson' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+POST http://127.0.0.1:{port}/v1/runs HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Accept: application/x-ndjson
+
+```
+
+```javascript
+const inputBody = '{
+  "instance_ref": "string",
+  "kind": "psql",
+  "command": "string",
+  "args": [
+    "string"
+  ],
+  "stdin": "string",
+  "steps": [
+    {
+      "args": [
+        "string"
+      ],
+      "stdin": "string"
+    }
+  ]
+}';
+const headers = {
+  'Content-Type':'application/json',
+  'Accept':'application/x-ndjson',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/runs',
+{
+  method: 'POST',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/json',
+  'Accept' => 'application/x-ndjson',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.post 'http://127.0.0.1:{port}/v1/runs',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/x-ndjson',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.post('http://127.0.0.1:{port}/v1/runs', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/x-ndjson',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('POST','http://127.0.0.1:{port}/v1/runs', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/runs");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("POST");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/json"},
+        "Accept": []string{"application/x-ndjson"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("POST", "http://127.0.0.1:{port}/v1/runs", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`POST /v1/runs`
+
+*Run a command against an instance*
+
+Executes a run kind command against an existing instance and streams
+stdout/stderr/exit events. If `command` is omitted, the default command
+for the selected kind is used.
+
+> Body parameter
+
+```json
+{
+  "instance_ref": "string",
+  "kind": "psql",
+  "command": "string",
+  "args": [
+    "string"
+  ],
+  "stdin": "string",
+  "steps": [
+    {
+      "args": [
+        "string"
+      ],
+      "stdin": "string"
+    }
+  ]
+}
+```
+
+<h3 id="runcommand-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[RunRequest](#schemarunrequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+> 400 Response
+
+```json
+{
+  "code": "string",
+  "message": "string",
+  "details": "string"
+}
+```
+
+<h3 id="runcommand-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Streamed run output|string|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Instance not found or expired|[ErrorResponse](#schemaerrorresponse)|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Conflicting run arguments|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 <h1 id="the-sqlrs-engine-api-states">states</h1>
 
 ## listStates
@@ -4486,6 +4723,120 @@ or
 |image_id|string|true|none|none|
 |prepare_kind|string|true|none|none|
 |prepare_args_normalized|string|true|none|none|
+
+<h2 id="tocS_RunRequest">RunRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemarunrequest"></a>
+<a id="schema_RunRequest"></a>
+<a id="tocSrunrequest"></a>
+<a id="tocsrunrequest"></a>
+
+```json
+{
+  "instance_ref": "string",
+  "kind": "psql",
+  "command": "string",
+  "args": [
+    "string"
+  ],
+  "stdin": "string",
+  "steps": [
+    {
+      "args": [
+        "string"
+      ],
+      "stdin": "string"
+    }
+  ]
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|instance_ref|string|true|none|Instance id or name.|
+|kind|string|true|none|none|
+|command|string,null|false|none|Optional command; defaults to the run kind command.|
+|args|[string]|true|none|Command arguments; applies to the default command when `command` is omitted. Ignored when `steps` is provided.|
+|stdin|string,null|false|none|Optional stdin payload for the run command.|
+|steps|[[RunStep](#schemarunstep)]|false|none|Optional psql run steps (mutually exclusive with args/stdin).|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|kind|psql|
+|kind|pgbench|
+
+<h2 id="tocS_RunStep">RunStep</h2>
+<!-- backwards compatibility -->
+<a id="schemarunstep"></a>
+<a id="schema_RunStep"></a>
+<a id="tocSrunstep"></a>
+<a id="tocsrunstep"></a>
+
+```json
+{
+  "args": [
+    "string"
+  ],
+  "stdin": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|args|[string]|true|none|none|
+|stdin|string,null|false|none|Optional stdin payload for this step.|
+
+<h2 id="tocS_RunEvent">RunEvent</h2>
+<!-- backwards compatibility -->
+<a id="schemarunevent"></a>
+<a id="schema_RunEvent"></a>
+<a id="tocSrunevent"></a>
+<a id="tocsrunevent"></a>
+
+```json
+{
+  "type": "start",
+  "ts": "2019-08-24T14:15:22Z",
+  "instance_id": "string",
+  "data": "string",
+  "exit_code": 0,
+  "error": {
+    "code": "string",
+    "message": "string",
+    "details": "string"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|type|string|true|none|none|
+|ts|string(date-time)|true|none|none|
+|instance_id|string|false|none|Present for start events.|
+|data|string|false|none|Output chunk for stdout/stderr events.|
+|exit_code|integer(int32)|false|none|Process exit code for exit events.|
+|error|[ErrorResponse](#schemaerrorresponse)|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|start|
+|type|stdout|
+|type|stderr|
+|type|exit|
+|type|error|
 
 <h2 id="tocS_TaskEntry">TaskEntry</h2>
 <!-- backwards compatibility -->
