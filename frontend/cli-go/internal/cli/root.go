@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -25,7 +26,7 @@ type Command struct {
 	Args []string
 }
 
-func ParseArgs(args []string) (GlobalOptions, Command, error) {
+func ParseArgs(args []string) (GlobalOptions, []Command, error) {
 	var opts GlobalOptions
 
 	fs := flag.NewFlagSet("sqlrs", flag.ContinueOnError)
@@ -43,16 +44,16 @@ func ParseArgs(args []string) (GlobalOptions, Command, error) {
 	helpShort := fs.Bool("h", false, "show help")
 
 	if err := fs.Parse(args); err != nil {
-		return opts, Command{}, err
+		return opts, nil, err
 	}
 
 	if *help || *helpShort {
-		return opts, Command{}, ErrHelp
+		return opts, nil, ErrHelp
 	}
 
 	remaining := fs.Args()
 	if len(remaining) == 0 {
-		return opts, Command{}, errors.New("missing command")
+		return opts, nil, errors.New("missing command")
 	}
 
 	opts.Profile = *profile
@@ -65,12 +66,16 @@ func ParseArgs(args []string) (GlobalOptions, Command, error) {
 	if *timeout != "" {
 		parsed, err := time.ParseDuration(*timeout)
 		if err != nil {
-			return opts, Command{}, fmt.Errorf("invalid timeout: %w", err)
+			return opts, nil, fmt.Errorf("invalid timeout: %w", err)
 		}
 		opts.Timeout = parsed
 	}
 
-	return opts, Command{Name: remaining[0], Args: remaining[1:]}, nil
+	commands, err := splitCommands(remaining)
+	if err != nil {
+		return opts, nil, err
+	}
+	return opts, commands, nil
 }
 
 func PrintUsage(w io.Writer) {
@@ -81,6 +86,8 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  init     Initialize a workspace")
 	fmt.Fprintln(w, "  ls       List names, instances, or states")
 	fmt.Fprintln(w, "  rm       Remove an instance or state")
+	fmt.Fprintln(w, "  run:psql  Run a command against an instance (psql)")
+	fmt.Fprintln(w, "  run:pgbench  Run a command against an instance (pgbench)")
 	fmt.Fprintln(w, "  plan:psql  Compute a prepare plan with psql")
 	fmt.Fprintln(w, "  prepare:psql  Prepare a database state with psql")
 	fmt.Fprintln(w, "  status   Check service health")
@@ -94,4 +101,56 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --output <human|json>   Output format")
 	fmt.Fprintln(w, "  --timeout <duration>   Request timeout (e.g. 30s)")
 	fmt.Fprintln(w, "  -v, --verbose           Verbose logging")
+}
+
+func splitCommands(args []string) ([]Command, error) {
+	if len(args) == 0 {
+		return nil, errors.New("missing command")
+	}
+	if isCompositePrepareRun(args) {
+		runIdx := findRunIndex(args)
+		if runIdx > 0 {
+			return []Command{
+				{Name: args[0], Args: args[1:runIdx]},
+				{Name: args[runIdx], Args: args[runIdx+1:]},
+			}, nil
+		}
+	}
+	return []Command{{Name: args[0], Args: args[1:]}}, nil
+}
+
+func isCompositePrepareRun(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	if !strings.HasPrefix(args[0], "prepare:") {
+		return false
+	}
+	return findRunIndex(args) > 0
+}
+
+func findRunIndex(args []string) int {
+	for i := 1; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "run:") {
+			return i
+		}
+	}
+	return -1
+}
+
+func isCommandToken(value string) bool {
+	switch value {
+	case "init", "ls", "rm", "plan", "prepare", "run", "status", "config":
+		return true
+	}
+	if strings.HasPrefix(value, "prepare:") {
+		return true
+	}
+	if strings.HasPrefix(value, "plan:") {
+		return true
+	}
+	if strings.HasPrefix(value, "run:") {
+		return true
+	}
+	return false
 }

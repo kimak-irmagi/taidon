@@ -148,7 +148,7 @@ Then do the same execution step as in Section 2.2 / 2.3 using `psql` and `pgbenc
 
 ---
 
-## 4. With sqlrs (minimal interference, unified prepare + run)
+## 4. With sqlrs (minimal interference)
 
 ### 4.1 Core idea
 
@@ -163,9 +163,37 @@ A _state specification_ (StateSpec) combines:
 
 The presence or absence of cache affects **only startup time**, never semantics.
 
+Note: examples that use `sqlrs run --from/--prepare` describe a **proposed future
+UX**. The current MVP uses a composite invocation
+`sqlrs prepare:psql ... run:psql ...` and does not support `--from` or
+`--prepare` flags.
+
 ---
 
-### 4.2 Unified prepare + run workflow
+### 4.2 Current MVP: composite prepare + run workflow
+
+Example: benchmark with a small seed (MVP, `prepare:psql` only)
+
+```bash
+sqlrs prepare:psql -- -f schema.sql -f seed_small.sql \
+  run:pgbench -- -f query.sql -T 30 -c 1 -j 1
+```
+
+Example: EXPLAIN ANALYZE with a large seed
+
+```bash
+sqlrs prepare:psql -- -f schema.sql -f seed_large.sql \
+  run:psql -- -v ON_ERROR_STOP=1 -X \
+    -c "EXPLAIN (ANALYZE, VERBOSE, BUFFERS, SETTINGS) $(cat query.sql)"
+```
+
+Semantics:
+
+- `prepare:psql ...` defines and materialises the state.
+- An ephemeral instance is created from that state.
+- `run:<kind>` executes against that instance and injects the DSN.
+
+### 4.3 Proposed future: unified prepare + run workflow
 
 Instead of explicitly creating instances or managing global tags, the recommended workflow is a **single command** that:
 
@@ -207,7 +235,7 @@ Semantics:
 
 - The wrapped command receives a normal database connection via env/DSN.
 
-### 4.3 Alternative: explicit DSN or environment export
+### 4.4 Alternative: explicit DSN or environment export
 
 For tools that cannot easily be wrapped, sqlrs can expose connection details directly:
 
@@ -233,7 +261,7 @@ pgbench -f query.sql -T 30 -c 1 -j 1
 
 This preserves compatibility with existing scripts and interactive workflows.
 
-### 4.4 Best practices (sqlrs)
+### 4.5 Best practices (sqlrs)
 
 - Treat preparation parameters as the **true identity** of a database state.
 - Avoid global human-readable tags unless explicitly needed; prefer inline StateSpec.

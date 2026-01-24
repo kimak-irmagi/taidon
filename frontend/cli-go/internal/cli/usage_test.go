@@ -23,6 +23,7 @@ func TestPrintCommandUsage(t *testing.T) {
 		{name: "ls", fn: func(b *bytes.Buffer) { PrintLsUsage(b) }},
 		{name: "plan", fn: func(b *bytes.Buffer) { PrintPlanUsage(b) }},
 		{name: "prepare", fn: func(b *bytes.Buffer) { PrintPrepareUsage(b) }},
+		{name: "run", fn: func(b *bytes.Buffer) { PrintRunUsage(b) }},
 		{name: "config", fn: func(b *bytes.Buffer) { PrintConfigUsage(b) }},
 		{name: "rm", fn: func(b *bytes.Buffer) { PrintRmUsage(b) }},
 	}

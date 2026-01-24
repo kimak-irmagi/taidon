@@ -738,3 +738,251 @@ func TestParseErrorResponseMessageOnly(t *testing.T) {
 		t.Fatalf("expected message error, got %v", err)
 	}
 }
+
+func TestRunCommandSuccess(t *testing.T) {
+	var gotArgs []any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var payload map[string]any
+		_ = json.Unmarshal(body, &payload)
+		if args, ok := payload["args"].([]any); ok {
+			gotArgs = args
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		io.WriteString(w, `{"type":"exit","ts":"2026-01-22T00:00:01Z","exit_code":0}`+"\n")
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	stream, err := cli.RunCommand(context.Background(), RunRequest{
+		InstanceRef: "inst",
+		Kind:        "psql",
+		Args:        nil,
+	})
+	if err != nil {
+		t.Fatalf("RunCommand: %v", err)
+	}
+	_ = stream.Close()
+	if gotArgs == nil {
+		t.Fatalf("expected args field in request")
+	}
+}
+
+func TestRunCommandErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"message":"bad","details":"info"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.RunCommand(context.Background(), RunRequest{
+		InstanceRef: "inst",
+		Kind:        "psql",
+		Args:        []string{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "bad: info") {
+		t.Fatalf("expected error, got %v", err)
+	}
+}
+
+func TestGetConfigPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/config" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"path":"orchestrator.jobs.maxIdentical","value":2}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.GetConfig(context.Background(), "orchestrator.jobs.maxIdentical", false)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+}
+
+func TestGetConfigEffectiveQuery(t *testing.T) {
+	var gotQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"path":"orchestrator.jobs.maxIdentical","value":2}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.GetConfig(context.Background(), "orchestrator.jobs.maxIdentical", true)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if gotQuery.Get("effective") != "true" {
+		t.Fatalf("expected effective=true, got %v", gotQuery.Encode())
+	}
+}
+
+func TestGetConfigRoot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"orchestrator":{"jobs":{"maxIdentical":2}}}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.GetConfig(context.Background(), "", false)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+}
+
+func TestGetConfigErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.GetConfig(context.Background(), "path", false)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestSetConfig(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"path":"orchestrator.jobs.maxIdentical","value":3}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.SetConfig(context.Background(), ConfigValue{Path: "orchestrator.jobs.maxIdentical", Value: 3})
+	if err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	if gotPath != "/v1/config" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+}
+
+func TestSetConfigDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `not-json`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.SetConfig(context.Background(), ConfigValue{Path: "orchestrator.jobs.maxIdentical", Value: 3})
+	if err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+
+func TestSetConfigError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"message":"bad","details":"info"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.SetConfig(context.Background(), ConfigValue{Path: "orchestrator.jobs.maxIdentical", Value: 3})
+	if err == nil || !strings.Contains(err.Error(), "bad: info") {
+		t.Fatalf("expected error, got %v", err)
+	}
+}
+
+func TestRemoveConfig(t *testing.T) {
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"path":"orchestrator.jobs.maxIdentical","value":null}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.RemoveConfig(context.Background(), "orchestrator.jobs.maxIdentical")
+	if err != nil {
+		t.Fatalf("RemoveConfig: %v", err)
+	}
+	if gotPath != "/v1/config" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+}
+
+func TestRemoveConfigDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `not-json`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.RemoveConfig(context.Background(), "orchestrator.jobs.maxIdentical")
+	if err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+
+func TestRemoveConfigError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, `{"message":"bad"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.RemoveConfig(context.Background(), "orchestrator.jobs.maxIdentical")
+	if err == nil || !strings.Contains(err.Error(), "bad") {
+		t.Fatalf("expected error, got %v", err)
+	}
+}
+
+func TestGetConfigSchema(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"type":"object"}`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.GetConfigSchema(context.Background())
+	if err != nil {
+		t.Fatalf("GetConfigSchema: %v", err)
+	}
+}
+
+func TestGetConfigSchemaDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `not-json`)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.GetConfigSchema(context.Background())
+	if err == nil {
+		t.Fatalf("expected decode error")
+	}
+}
+func TestGetConfigSchemaError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, err := cli.GetConfigSchema(context.Background())
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}

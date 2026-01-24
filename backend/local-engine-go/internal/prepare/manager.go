@@ -605,6 +605,36 @@ func (m *Manager) trimCompletedJobs(ctx context.Context, prepared preparedReques
 		m.logJob("", "job retention skipped: %s", errResp.Message)
 		return
 	}
+	m.trimCompletedJobsBySignature(ctx, signature)
+}
+
+func (m *Manager) trimCompletedJobsForJob(ctx context.Context, jobID string) {
+	if strings.TrimSpace(jobID) == "" {
+		return
+	}
+	job, ok, err := m.queue.GetJob(ctx, jobID)
+	if err != nil {
+		m.logJob(jobID, "job retention lookup failed: %v", err)
+		return
+	}
+	if !ok {
+		return
+	}
+	signature := valueOrEmpty(job.Signature)
+	if strings.TrimSpace(signature) == "" {
+		return
+	}
+	m.trimCompletedJobsBySignature(ctx, signature)
+}
+
+func (m *Manager) trimCompletedJobsBySignature(ctx context.Context, signature string) {
+	limit := maxIdenticalJobs(m.config)
+	if limit <= 0 {
+		return
+	}
+	if strings.TrimSpace(signature) == "" {
+		return
+	}
 	jobs, err := m.queue.ListJobsBySignature(ctx, signature, []string{StatusSucceeded, StatusFailed})
 	if err != nil {
 		m.logJob("", "job retention failed: %v", err)
@@ -814,11 +844,15 @@ func (m *Manager) succeed(jobID string, result Result) error {
 		return err
 	}
 	m.logJob(jobID, "succeeded instance=%s state=%s", result.InstanceID, result.StateID)
-	return m.appendEvent(jobID, Event{
+	if err := m.appendEvent(jobID, Event{
 		Type:   "result",
 		Ts:     now,
 		Result: &result,
-	})
+	}); err != nil {
+		return err
+	}
+	m.trimCompletedJobsForJob(context.Background(), jobID)
+	return nil
 }
 
 func (m *Manager) succeedPlan(jobID string) error {
@@ -830,11 +864,15 @@ func (m *Manager) succeedPlan(jobID string) error {
 		return err
 	}
 	m.logJob(jobID, "succeeded plan_only=true")
-	return m.appendEvent(jobID, Event{
+	if err := m.appendEvent(jobID, Event{
 		Type:   "status",
 		Ts:     now,
 		Status: StatusSucceeded,
-	})
+	}); err != nil {
+		return err
+	}
+	m.trimCompletedJobsForJob(context.Background(), jobID)
+	return nil
 }
 
 func (m *Manager) failJob(jobID string, errResp *ErrorResponse) error {
@@ -862,11 +900,15 @@ func (m *Manager) failJob(jobID string, errResp *ErrorResponse) error {
 	} else {
 		m.logJob(jobID, "failed")
 	}
-	return m.appendEvent(jobID, Event{
+	if err := m.appendEvent(jobID, Event{
 		Type:  "error",
 		Ts:    now,
 		Error: errResp,
-	})
+	}); err != nil {
+		return err
+	}
+	m.trimCompletedJobsForJob(context.Background(), jobID)
+	return nil
 }
 
 func (m *Manager) appendEvent(jobID string, event Event) error {

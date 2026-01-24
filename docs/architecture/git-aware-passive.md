@@ -1,5 +1,9 @@
 # Git-aware semantics: passive features (CLI)
 
+Status: **proposed future design**. Flags like `--ref` and `--prepare` are not
+available in the current MVP CLI. Today, the MVP uses a composite invocation
+such as `sqlrs prepare:psql ... run:psql ...`.
+
 Goal: add git-aware capabilities **without changing the user's work habits**. All functions in this document are activated **only by explicit user commands/flags** and do not require repository setup "for Taidon".
 
 ## Design principles

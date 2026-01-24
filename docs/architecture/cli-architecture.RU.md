@@ -2,6 +2,10 @@
 
 Этот документ описывает, как CLI `sqlrs` разрешает входы и общается с SQL Runner в локальном и shared-деплойментах, включая обработку путей/URL и загрузку источников.
 
+Примечание: ссылки на `POST /runs` в этом документе описывают **runner API**
+для shared-деплоймента (дизайн на будущее). В текущем MVP локальный engine
+использует `POST /v1/prepare-jobs` для prepare и `POST /v1/runs` для `sqlrs run`.
+
 ## 1. Цели
 
 - Поддержать одинаковый UX CLI для локальных и удаленных целей.
@@ -151,6 +155,41 @@ sequenceDiagram
   end
   CLI->>CLI: render deletion tree
 ```
+
+### 4.6 Run (sqlrs run)
+
+```mermaid
+sequenceDiagram
+  participant CLI as CLI
+  participant ENG as Engine
+  participant RT as Runtime
+
+  alt Composite prepare present
+    CLI->>ENG: start prepare job
+    ENG-->>CLI: instance_id + DSN
+  else Explicit instance
+    CLI->>ENG: resolve instance by id or name
+    ENG-->>CLI: instance_id + DSN
+  end
+
+  CLI->>ENG: POST /v1/runs (kind, command or default, args)
+  ENG->>RT: exec in instance container (inject DSN)
+  RT-->>ENG: stdout/stderr/exit
+  ENG-->>CLI: stream output + exit
+
+  opt Composite invocation
+    CLI->>ENG: delete instance
+  end
+```
+
+Примечания:
+
+- `run:psql` передает DSN как позиционный connection string; `run:pgbench`
+  использует `-h/-p/-U/-d`.
+- Команды выполняются внутри контейнера инстанса (тот же runtime, что и
+  `prepare:psql`).
+- Если `--instance` задан вместе с предыдущим `prepare`, CLI завершает работу с
+  явной ошибкой неоднозначности.
 
 ## 5. Детали загрузки (remote)
 

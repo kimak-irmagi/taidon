@@ -111,6 +111,29 @@ type PrepareJobResult struct {
 	PrepareArgsNormalized string `json:"prepare_args_normalized"`
 }
 
+type RunRequest struct {
+	InstanceRef string    `json:"instance_ref"`
+	Kind        string    `json:"kind"`
+	Command     *string   `json:"command,omitempty"`
+	Args        []string  `json:"args"`
+	Stdin       *string   `json:"stdin,omitempty"`
+	Steps       []RunStep `json:"steps,omitempty"`
+}
+
+type RunStep struct {
+	Args  []string `json:"args"`
+	Stdin *string  `json:"stdin,omitempty"`
+}
+
+type RunEvent struct {
+	Type       string         `json:"type"`
+	Ts         string         `json:"ts"`
+	InstanceID string         `json:"instance_id,omitempty"`
+	Data       string         `json:"data,omitempty"`
+	ExitCode   *int           `json:"exit_code,omitempty"`
+	Error      *ErrorResponse `json:"error,omitempty"`
+}
+
 type TaskInput struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id"`

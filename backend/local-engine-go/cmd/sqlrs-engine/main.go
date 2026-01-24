@@ -30,6 +30,7 @@ import (
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/registry"
+	runpkg "sqlrs/engine/internal/run"
 	engineRuntime "sqlrs/engine/internal/runtime"
 	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store/sqlite"
@@ -116,7 +117,13 @@ var prepareRecoverFn = func(mgr *prepare.Manager) error {
 	return mgr.Recover(context.Background())
 }
 var newDeletionManagerFn = deletion.NewManager
+var newRunManagerFn = runpkg.NewManager
+var newHandlerFn = httpapi.NewHandler
+var serverShutdownFn = func(server *http.Server, ctx context.Context) error {
+	return server.Shutdown(ctx)
+}
 var isCharDeviceFn = isCharDevice
+var jsonMarshalIndent = json.MarshalIndent
 
 func run(args []string) (int, error) {
 	fs := flag.NewFlagSet("sqlrs-engine", flag.ContinueOnError)
@@ -240,13 +247,22 @@ func run(args []string) (int, error) {
 		return 1, fmt.Errorf("delete manager: %v", err)
 	}
 
-	mux := httpapi.NewHandler(httpapi.Options{
+	runMgr, err := newRunManagerFn(runpkg.Options{
+		Registry: reg,
+		Runtime:  rt,
+	})
+	if err != nil {
+		return 1, fmt.Errorf("run manager: %v", err)
+	}
+
+	mux := newHandlerFn(httpapi.Options{
 		Version:    *version,
 		InstanceID: instanceID,
 		AuthToken:  authToken,
 		Registry:   reg,
 		Prepare:    prepareMgr,
 		Deletion:   deleteMgr,
+		Run:        runMgr,
 		Config:     configMgr,
 	})
 
@@ -277,7 +293,7 @@ func run(args []string) (int, error) {
 			log.Printf("shutting down: %s", reason)
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := server.Shutdown(shutdownCtx); err != nil {
+			if err := serverShutdownFn(server, shutdownCtx); err != nil {
 				log.Printf("shutdown error: %v", err)
 			}
 		})
@@ -337,7 +353,7 @@ func writeEngineState(path string, state EngineState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(state, "", "  ")
+	data, err := jsonMarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
 	}
