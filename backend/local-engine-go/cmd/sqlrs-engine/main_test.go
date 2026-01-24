@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -16,8 +17,11 @@ import (
 	"time"
 
 	"sqlrs/engine/internal/deletion"
+	"sqlrs/engine/internal/httpapi"
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/prepare/queue"
+	runpkg "sqlrs/engine/internal/run"
+	"sqlrs/engine/internal/store/sqlite"
 )
 
 func TestActivityTrackerIdleFor(t *testing.T) {
@@ -149,6 +153,36 @@ func TestWriteEngineStateRenameError(t *testing.T) {
 	path := filepath.Join(dir, "engine.json")
 	if err := writeEngineState(path, EngineState{Endpoint: "127.0.0.1:1234"}); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteEngineStateMarshalError(t *testing.T) {
+	prevMarshal := jsonMarshalIndent
+	jsonMarshalIndent = func(any, string, string) ([]byte, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { jsonMarshalIndent = prevMarshal })
+
+	if err := writeEngineState("engine.json", EngineState{Endpoint: "127.0.0.1:1234"}); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestOpenDBFnEmptyPath(t *testing.T) {
+	if _, err := openDBFn(""); err == nil || !strings.Contains(err.Error(), "sqlite path is empty") {
+		t.Fatalf("expected empty path error, got %v", err)
+	}
+}
+
+func TestOpenDBFnMkdirError(t *testing.T) {
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "state-dir")
+	if err := os.WriteFile(filePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	_, err := openDBFn(filepath.Join(filePath, "state.db"))
+	if err == nil {
+		t.Fatalf("expected mkdir error")
 	}
 }
 
@@ -364,6 +398,84 @@ func TestRunDeletionManagerError(t *testing.T) {
 	}
 }
 
+func TestRunRunManagerError(t *testing.T) {
+	prevNew := newRunManagerFn
+	newRunManagerFn = func(runpkg.Options) (*runpkg.Manager, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { newRunManagerFn = prevNew })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "run manager") {
+		t.Fatalf("expected run manager error, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunSetupLoggingError(t *testing.T) {
+	previousServe := serveHTTP
+	serveHTTP = func(server *http.Server, listener net.Listener) error {
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
+	t.Cleanup(func() { serveHTTP = previousServe })
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "logs"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write logs file: %v", err)
+	}
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=0"})
+	if code != 0 || err != nil {
+		t.Fatalf("expected success, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunStateStoreRootError(t *testing.T) {
+	dir := t.TempDir()
+	stateStorePath := filepath.Join(dir, "state-store")
+	if err := os.WriteFile(stateStorePath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write state-store file: %v", err)
+	}
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "create state store root") {
+		t.Fatalf("expected state store root error, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunConfigManagerError(t *testing.T) {
+	dir := t.TempDir()
+	stateStoreRoot := filepath.Join(dir, "state-store")
+	if err := os.MkdirAll(stateStoreRoot, 0o700); err != nil {
+		t.Fatalf("mkdir state-store: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateStoreRoot, "config.json"), []byte("{"), 0o600); err != nil {
+		t.Fatalf("write config.json: %v", err)
+	}
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "config manager") {
+		t.Fatalf("expected config manager error, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunStoreError(t *testing.T) {
+	prevStore := newStoreFn
+	newStoreFn = func(*sql.DB) (*sqlite.Store, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { newStoreFn = prevStore })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "open state db") {
+		t.Fatalf("expected state store error, got code=%d err=%v", code, err)
+	}
+}
+
 func TestRunWriteEngineStateError(t *testing.T) {
 	previousServe := serveHTTP
 	serveHTTP = func(server *http.Server, listener net.Listener) error {
@@ -416,6 +528,29 @@ func TestRunIdleTimeoutShutdown(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "engine.json")
 	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=100ms"})
+	if err != nil || code != 0 {
+		t.Fatalf("expected success, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunShutdownError(t *testing.T) {
+	previousServe := serveHTTP
+	serveHTTP = func(server *http.Server, listener net.Listener) error {
+		time.Sleep(1500 * time.Millisecond)
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
+	t.Cleanup(func() { serveHTTP = previousServe })
+
+	prevShutdown := serverShutdownFn
+	serverShutdownFn = func(server *http.Server, ctx context.Context) error {
+		return errors.New("boom")
+	}
+	t.Cleanup(func() { serverShutdownFn = prevShutdown })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=10ms"})
 	if err != nil || code != 0 {
 		t.Fatalf("expected success, got code=%d err=%v", code, err)
 	}
@@ -525,6 +660,31 @@ func TestRunHandlerLogsRequest(t *testing.T) {
 	previousServe := serveHTTP
 	serveHTTP = func(server *http.Server, listener net.Listener) error {
 		req := httptest.NewRequest(http.MethodGet, "http://example/v1/health", nil)
+		writer := &flushWriter{}
+		server.Handler.ServeHTTP(writer, req)
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
+	t.Cleanup(func() { serveHTTP = previousServe })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=0"})
+	if err != nil || code != 0 {
+		t.Fatalf("expected success, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunHandlerDefaultsStatusWhenNoWrite(t *testing.T) {
+	prevHandler := newHandlerFn
+	newHandlerFn = func(opts httpapi.Options) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	}
+	t.Cleanup(func() { newHandlerFn = prevHandler })
+
+	previousServe := serveHTTP
+	serveHTTP = func(server *http.Server, listener net.Listener) error {
+		req := httptest.NewRequest(http.MethodGet, "http://example/noop", nil)
 		writer := &flushWriter{}
 		server.Handler.ServeHTTP(writer, req)
 		_ = listener.Close()
