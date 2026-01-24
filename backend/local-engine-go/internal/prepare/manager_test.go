@@ -1131,6 +1131,46 @@ func TestTrimCompletedJobsForJob(t *testing.T) {
 	}
 }
 
+func TestTrimCompletedJobsForJobNoopCases(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+
+	mgr.trimCompletedJobsForJob(context.Background(), "")
+
+	req := Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1@sha256:abc",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}
+	reqJSON, err := jsonMarshal(req)
+	if err != nil {
+		t.Fatalf("jsonMarshal: %v", err)
+	}
+	if err := queueStore.CreateJob(context.Background(), queue.JobRecord{
+		JobID:       "job-1",
+		Status:      StatusSucceeded,
+		PrepareKind: req.PrepareKind,
+		ImageID:     req.ImageID,
+		PlanOnly:    req.PlanOnly,
+		RequestJSON: &reqJSON,
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+		Signature:   nil,
+	}); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	mgr.trimCompletedJobsForJob(context.Background(), "missing")
+	mgr.trimCompletedJobsForJob(context.Background(), "job-1")
+}
+
+func TestTrimCompletedJobsBySignatureNoop(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+
+	mgr.trimCompletedJobsBySignature(context.Background(), "")
+	mgr.trimCompletedJobsBySignature(context.Background(), "   ")
+}
+
 func TestTrimCompletedJobsFallbackToCreatedAt(t *testing.T) {
 	queueStore := newQueueStore(t)
 	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, &testDeps{
