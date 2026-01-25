@@ -2535,8 +2535,7 @@ func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 	mgr.appendLog("job-1", "docker: pulling layers")
 	time.Sleep(450 * time.Millisecond)
 
-	eventsBefore, ok, _, err := mgr.EventsSince("job-1", 0)
-	if err != nil || !ok {
+	if _, ok, _, err := mgr.EventsSince("job-1", 0); err != nil || !ok {
 		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
 	}
 	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
@@ -2549,8 +2548,21 @@ func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
 	}
-	if len(eventsAfter) > len(eventsBefore)+1 {
-		t.Fatalf("expected heartbeat to stop, events before=%d after=%d", len(eventsBefore), len(eventsAfter))
+	finishedTs, err := time.Parse(time.RFC3339Nano, finishedAt)
+	if err != nil {
+		t.Fatalf("parse finishedAt: %v", err)
+	}
+	for _, event := range eventsAfter {
+		if event.Type != "task" || event.TaskID != "execute-0" || event.Status != StatusRunning {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339Nano, event.Ts)
+		if err != nil {
+			t.Fatalf("parse event ts: %v", err)
+		}
+		if ts.After(finishedTs) {
+			t.Fatalf("expected no heartbeat after completion, got %+v", event)
+		}
 	}
 }
 
