@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	engineRuntime "sqlrs/engine/internal/runtime"
@@ -232,7 +233,9 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			return errStateBuildFailed
 		}
 		m.appendLog(jobID, "psql: start")
+		var sinkCalled atomic.Bool
 		psqlCtx := engineRuntime.WithLogSink(ctx, func(line string) {
+			sinkCalled.Store(true)
 			m.appendLog(jobID, "psql: "+line)
 		})
 		output, err := m.psql.Run(psqlCtx, rt.instance, PsqlRunRequest{
@@ -241,7 +244,9 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			Stdin:   prepared.request.Stdin,
 			WorkDir: workdir,
 		})
-		m.appendLogLines(jobID, "psql", output)
+		if !sinkCalled.Load() && strings.TrimSpace(output) != "" {
+			m.appendLogLines(jobID, "psql", output)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				errResp = errorResponse("cancelled", "task cancelled", "")

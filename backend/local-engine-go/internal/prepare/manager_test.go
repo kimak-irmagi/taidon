@@ -349,6 +349,21 @@ func (f *fakePsqlRunner) Run(ctx context.Context, instance engineRuntime.Instanc
 	return f.output, nil
 }
 
+type streamingPsqlRunner struct {
+	output string
+	err    error
+}
+
+func (s *streamingPsqlRunner) Run(ctx context.Context, instance engineRuntime.Instance, req PsqlRunRequest) (string, error) {
+	if sink := engineRuntime.LogSinkFromContext(ctx); sink != nil {
+		sink("streamed line")
+	}
+	if s.err != nil {
+		return s.output, s.err
+	}
+	return s.output, nil
+}
+
 type faultQueueStore struct {
 	queue.Store
 
@@ -668,6 +683,46 @@ func TestSubmitEmitsPsqlOutputLog(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected psql log event, got %+v", events)
+	}
+}
+
+func TestSubmitSkipsPsqlOutputReplayWhenLogSinkStreams(t *testing.T) {
+	store := &fakeStore{}
+	queueStore := newQueueStore(t)
+	psql := &streamingPsqlRunner{output: "psql output line"}
+	mgr := newManagerWithDeps(t, store, queueStore, &testDeps{psql: psql})
+
+	accepted, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	events, ok, done, err := mgr.EventsSince(accepted.JobID, 0)
+	if err != nil || !ok || !done {
+		t.Fatalf("unexpected events: ok=%v done=%v err=%v", ok, done, err)
+	}
+	foundStream := false
+	foundOutput := false
+	for _, event := range events {
+		if event.Type != "log" {
+			continue
+		}
+		if strings.Contains(event.Message, "psql: streamed line") {
+			foundStream = true
+		}
+		if strings.Contains(event.Message, "psql: psql output line") {
+			foundOutput = true
+		}
+	}
+	if !foundStream {
+		t.Fatalf("expected streamed psql log event, got %+v", events)
+	}
+	if foundOutput {
+		t.Fatalf("expected output replay to be skipped, got %+v", events)
 	}
 }
 
@@ -3539,7 +3594,7 @@ type testDeps struct {
 	runtime   *fakeRuntime
 	snapshot  *fakeSnapshot
 	dbms      *fakeDBMS
-	psql      *fakePsqlRunner
+	psql      psqlRunner
 	stateRoot string
 	config    config.Store
 }
