@@ -57,6 +57,9 @@ flowchart LR
   `POST /v1/prepare-jobs` persists the job record before returning `201 Created`.
   `plan_only` compute-only requests return task lists in job status.
 - Streams job events (including task status changes) to all connected NDJSON clients.
+- Emits log events for runtime/DBMS steps (container start, `psql` execution,
+  snapshot prepare/resume) and repeats the last task event every ~500ms while a
+  task is running and no new events are emitted.
 
 ### 1.2 Prepare Controller
 

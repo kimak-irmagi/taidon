@@ -166,7 +166,10 @@ sequenceDiagram
 
   alt Composite prepare present
     CLI->>ENG: start prepare job
-    ENG-->>CLI: instance_id + DSN
+    ENG-->>CLI: job_id + events_url + status_url
+    CLI->>ENG: watch events (events_url)
+    CLI->>ENG: GET /v1/prepare-jobs/{jobId} (on status events)
+    ENG-->>CLI: terminal status + DSN
   else Explicit instance
     CLI->>ENG: resolve instance by id or name
     ENG-->>CLI: instance_id + DSN
@@ -190,6 +193,8 @@ sequenceDiagram
   `prepare:psql`).
 - Если `--instance` задан вместе с предыдущим `prepare`, CLI завершает работу с
   явной ошибкой неоднозначности.
+ - Мониторинг prepare работает через события; CLI проверяет терминальный статус
+   через `GET /v1/prepare-jobs/{jobId}` при получении событий статуса.
 
 ## 5. Детали загрузки (remote)
 

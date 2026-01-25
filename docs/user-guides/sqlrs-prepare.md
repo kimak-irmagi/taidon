@@ -207,6 +207,45 @@ or external applications.
 
 ---
 
+## Job Monitoring (Events-First)
+
+`sqlrs prepare` monitors engine progress through the job events stream rather
+than periodic status polling.
+
+### Event Stream Rules
+
+- The CLI uses the `events_url` returned by `POST /v1/prepare-jobs`.
+- The events stream is newline-delimited JSON (`application/x-ndjson`).
+- The engine emits task/status events plus log events from Docker/Postgres steps
+  (container start, `psql` execution, snapshot prepare/resume).
+- During long-running tasks, the engine repeats the last task event with a new
+  timestamp when no new events appear for ~500ms, so the CLI can keep showing
+  progress even if the underlying system is quiet.
+- The CLI reads events until the stream is exhausted:
+  - If the response status is 200 and `Content-Length` is present, the stream is
+    considered complete after the declared byte length is fully read.
+  - If the response is any 4xx status, the stream is considered complete and
+    the command fails.
+- If the stream ends without a definitive job outcome (`succeeded` or `failed`),
+  the command fails with an error.
+
+### Status Validation
+
+When a status event is received (queued, running, succeeded, failed), the CLI
+re-fetches the job status via `GET /v1/prepare-jobs/{jobId}` to confirm the
+final result. The job is considered complete only when the status endpoint
+returns `succeeded` or `failed`.
+
+### Progress UX
+
+Progress events are printed to stderr. By default, the CLI rewrites the same
+line and shows a spinner when events repeat. It also includes the `message` from
+the latest event if present.
+
+With `--verbose`, each event is printed on a new line (no overwriting).
+
+---
+
 ## Examples
 
 ### Ephemeral preparation

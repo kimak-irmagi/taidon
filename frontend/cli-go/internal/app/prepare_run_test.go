@@ -26,7 +26,10 @@ func TestRunPrepareRemote(t *testing.T) {
 			_ = json.Unmarshal(body, &gotRequest)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"succeeded"}`+"\n")
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"postgres://sqlrs@local/instance/abc","instance_id":"abc","state_id":"state","image_id":"image-1","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
@@ -83,7 +86,10 @@ func TestRunPrepareVerboseImageSource(t *testing.T) {
 			_ = json.Unmarshal(body, &gotRequest)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"succeeded"}`+"\n")
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"postgres://sqlrs@local/instance/abc","instance_id":"abc","state_id":"state","image_id":"image-1","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)

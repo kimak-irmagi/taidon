@@ -151,6 +151,27 @@ func (c *Client) CreatePrepareJob(ctx context.Context, req PrepareJobRequest) (P
 	return out, nil
 }
 
+func (c *Client) StreamPrepareEvents(ctx context.Context, eventsURL string, rangeHeader string) (*http.Response, error) {
+	url := c.resolveURL(eventsURL)
+	if url == "" {
+		return nil, fmt.Errorf("prepare events url is empty")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	if rangeHeader != "" {
+		req.Header.Set("Range", rangeHeader)
+	}
+	if c.userAgent != "" {
+		req.Header.Set("User-Agent", c.userAgent)
+	}
+	if c.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	return c.http.Do(req)
+}
+
 func (c *Client) GetPrepareJob(ctx context.Context, jobID string) (PrepareJobStatus, bool, error) {
 	path := "/v1/prepare-jobs/" + url.PathEscape(strings.TrimSpace(jobID))
 	var out PrepareJobStatus
@@ -372,6 +393,20 @@ func normalizeBaseURL(raw string) string {
 		value = "http://" + value
 	}
 	return strings.TrimRight(value, "/")
+}
+
+func (c *Client) resolveURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
+		return value
+	}
+	if strings.HasPrefix(value, "/") {
+		return c.baseURL + value
+	}
+	return c.baseURL + "/" + value
 }
 
 type HTTPStatusError struct {

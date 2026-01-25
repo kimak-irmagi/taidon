@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	engineRuntime "sqlrs/engine/internal/runtime"
@@ -231,12 +232,21 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			errResp = errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
 			return errStateBuildFailed
 		}
-		output, err := m.psql.Run(ctx, rt.instance, PsqlRunRequest{
+		m.appendLog(jobID, "psql: start")
+		var sinkCalled atomic.Bool
+		psqlCtx := engineRuntime.WithLogSink(ctx, func(line string) {
+			sinkCalled.Store(true)
+			m.appendLog(jobID, "psql: "+line)
+		})
+		output, err := m.psql.Run(psqlCtx, rt.instance, PsqlRunRequest{
 			Args:    psqlArgs,
 			Env:     map[string]string{},
 			Stdin:   prepared.request.Stdin,
 			WorkDir: workdir,
 		})
+		if !sinkCalled.Load() && strings.TrimSpace(output) != "" {
+			m.appendLogLines(jobID, "psql", output)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				errResp = errorResponse("cancelled", "task cancelled", "")
@@ -254,7 +264,11 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			return errStateBuildFailed
 		}
 
-		if err := m.dbms.PrepareSnapshot(ctx, rt.instance); err != nil {
+		m.appendLog(jobID, "pg_ctl: stop for snapshot")
+		pgCtx := engineRuntime.WithLogSink(ctx, func(line string) {
+			m.appendLog(jobID, "pg_ctl: "+line)
+		})
+		if err := m.dbms.PrepareSnapshot(pgCtx, rt.instance); err != nil {
 			errResp = errorResponse("internal_error", "snapshot prepare failed", err.Error())
 			return errStateBuildFailed
 		}
@@ -266,11 +280,17 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			_ = m.dbms.ResumeSnapshot(context.Background(), rt.instance)
 		}()
 
+		m.appendLog(jobID, "snapshot: start")
 		if err := m.snapshot.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil {
 			errResp = errorResponse("internal_error", "snapshot failed", err.Error())
 			return errStateBuildFailed
 		}
-		if err := m.dbms.ResumeSnapshot(ctx, rt.instance); err != nil {
+		m.appendLog(jobID, "snapshot: complete")
+		m.appendLog(jobID, "pg_ctl: start after snapshot")
+		pgResumeCtx := engineRuntime.WithLogSink(ctx, func(line string) {
+			m.appendLog(jobID, "pg_ctl: "+line)
+		})
+		if err := m.dbms.ResumeSnapshot(pgResumeCtx, rt.instance); err != nil {
 			errResp = errorResponse("internal_error", "snapshot resume failed", err.Error())
 			return errStateBuildFailed
 		}
@@ -375,6 +395,7 @@ func (m *Manager) createInstance(ctx context.Context, jobID string, prepared pre
 		}
 		return nil, errorResponse("internal_error", "cannot store instance", err.Error())
 	}
+	m.appendLog(jobID, fmt.Sprintf("instance created %s", instanceID))
 	result := Result{
 		DSN:                   buildDSN(rt.instance.Host, rt.instance.Port),
 		InstanceID:            instanceID,
@@ -413,9 +434,13 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	if strings.TrimSpace(imageID) == "" {
 		return nil, errorResponse("internal_error", "resolved image id is required", "")
 	}
+	ctx = engineRuntime.WithLogSink(ctx, func(line string) {
+		m.appendLog(jobID, "docker: "+line)
+	})
 	var srcDir string
 	switch input.Kind {
 	case "image":
+		m.appendLog(jobID, fmt.Sprintf("docker: init base %s", imageID))
 		paths, err := resolveStatePaths(m.stateStoreRoot, imageID, "")
 		if err != nil {
 			return nil, errorResponse("internal_error", "cannot resolve state paths", err.Error())
@@ -466,6 +491,10 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		return nil, errorResponse("internal_error", "cannot prepare scripts", err.Error())
 	}
 
+	m.appendLog(jobID, "docker: start container")
+	ctx = engineRuntime.WithLogSink(ctx, func(line string) {
+		m.appendLog(jobID, "docker: "+line)
+	})
 	instance, err := m.runtime.Start(ctx, engineRuntime.StartRequest{
 		ImageID: imageID,
 		DataDir: clone.MountDir,
@@ -479,7 +508,9 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		}
 		return nil, errorResponse("internal_error", "cannot start runtime", err.Error())
 	}
+	m.appendLog(jobID, fmt.Sprintf("docker: container started %s", instance.ID))
 	m.logJob(jobID, "runtime started container=%s host=%s port=%d snapshot=%s", instance.ID, instance.Host, instance.Port, m.snapshot.Kind())
+	m.appendLog(jobID, "docker: postgres ready")
 
 	return &jobRuntime{
 		instance:    instance,

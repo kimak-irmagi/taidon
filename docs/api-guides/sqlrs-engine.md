@@ -1054,6 +1054,7 @@ bearerAuth
 # You can also use wget
 curl -X GET http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events \
   -H 'Accept: application/x-ndjson' \
+  -H 'Range: string' \
   -H 'Authorization: Bearer {access-token}'
 
 ```
@@ -1062,6 +1063,7 @@ curl -X GET http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events \
 GET http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/events HTTP/1.1
 Host: 127.0.0.1
 Accept: application/x-ndjson
+Range: string
 
 ```
 
@@ -1069,6 +1071,7 @@ Accept: application/x-ndjson
 
 const headers = {
   'Accept':'application/x-ndjson',
+  'Range':'string',
   'Authorization':'Bearer {access-token}'
 };
 
@@ -1092,6 +1095,7 @@ require 'json'
 
 headers = {
   'Accept' => 'application/x-ndjson',
+  'Range' => 'string',
   'Authorization' => 'Bearer {access-token}'
 }
 
@@ -1107,6 +1111,7 @@ p JSON.parse(result)
 import requests
 headers = {
   'Accept': 'application/x-ndjson',
+  'Range': 'string',
   'Authorization': 'Bearer {access-token}'
 }
 
@@ -1123,6 +1128,7 @@ require 'vendor/autoload.php';
 
 $headers = array(
     'Accept' => 'application/x-ndjson',
+    'Range' => 'string',
     'Authorization' => 'Bearer {access-token}',
 );
 
@@ -1177,6 +1183,7 @@ func main() {
 
     headers := map[string][]string{
         "Accept": []string{"application/x-ndjson"},
+        "Range": []string{"string"},
         "Authorization": []string{"Bearer {access-token}"},
     }
 
@@ -1196,12 +1203,20 @@ func main() {
 *Stream prepare job events*
 
 Streams job events as NDJSON.
+Clients may request a partial stream using an events-based range; if the
+server does not honor the range request, it returns a full 200 response.
 
 <h3 id="streampreparejobevents-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
 |jobId|path|string|true|none|
+|Range|header|string|false|Optional events-based range request, e.g. `events=10-` or `events=10-24`.|
+
+#### Detailed descriptions
+
+**Range**: Optional events-based range request, e.g. `events=10-` or `events=10-24`.
+When supported, the server responds with 206 and `Content-Range: events`.
 
 > Example responses
 
@@ -1222,9 +1237,11 @@ Streams job events as NDJSON.
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|Inline|
+|206|[Partial Content](https://tools.ietf.org/html/rfc7233#section-4.1)|Partial Content (events range)|Inline|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
+|416|[Range Not Satisfiable](https://tools.ietf.org/html/rfc7233#section-4.4)|Requested range not satisfiable|[ErrorResponse](#schemaerrorresponse)|
 
 <h3 id="streampreparejobevents-responseschema">Response Schema</h3>
 
@@ -1265,6 +1282,53 @@ Status Code **200**
 |status|running|
 |status|succeeded|
 |status|failed|
+
+Status Code **206**
+
+*Newline-delimited JSON stream of PrepareJobEvent objects.*
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[PrepareJobEvent](#schemapreparejobevent)]|false|none|Newline-delimited JSON stream of PrepareJobEvent objects.|
+|» type|string|true|none|none|
+|» ts|string(date-time)|true|none|none|
+|» task_id|string|false|none|Present for task status events.|
+|» status|string|false|none|none|
+|» message|string|false|none|none|
+|» result|[PrepareJobResult](#schemapreparejobresult)|false|none|none|
+|»» dsn|string|true|none|DSN for the prepared instance.|
+|»» instance_id|string|true|none|none|
+|»» state_id|string|true|none|none|
+|»» image_id|string|true|none|none|
+|»» prepare_kind|string|true|none|none|
+|»» prepare_args_normalized|string|true|none|none|
+|» error|[ErrorResponse](#schemaerrorresponse)|false|none|none|
+|»» code|string|true|none|none|
+|»» message|string|true|none|none|
+|»» details|string|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|type|status|
+|type|log|
+|type|result|
+|type|error|
+|type|task|
+|status|queued|
+|status|running|
+|status|succeeded|
+|status|failed|
+
+### Response Headers
+
+|Status|Header|Type|Format|Description|
+|---|---|---|---|---|
+|200|Accept-Ranges|string||Range unit support (e.g. `events`).|
+|206|Content-Range|string||Events range returned, e.g. `events 10-24/100` or `events 10-*/100`.
+|
+|206|Accept-Ranges|string||Range unit support (e.g. `events`).|
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -3431,7 +3495,7 @@ for the selected kind is used.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Streamed run output|string|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Streamed run output|[RunEvent](#schemarunevent)|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Instance not found or expired|[ErrorResponse](#schemaerrorresponse)|

@@ -1,13 +1,24 @@
 package runtime
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+)
+
+var (
+	cmdStdoutPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) { return cmd.StdoutPipe() }
+	cmdStderrPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) { return cmd.StderrPipe() }
+	cmdStart      = func(cmd *exec.Cmd) error { return cmd.Start() }
+	cmdWait       = func(cmd *exec.Cmd) error { return cmd.Wait() }
 )
 
 const (
@@ -35,6 +46,10 @@ type commandRunner interface {
 	Run(ctx context.Context, name string, args []string, stdin *string) (string, error)
 }
 
+type streamingRunner interface {
+	RunStreaming(ctx context.Context, name string, args []string, stdin *string, sink LogSink) (string, error)
+}
+
 type execRunner struct{}
 
 func (execRunner) Run(ctx context.Context, name string, args []string, stdin *string) (string, error) {
@@ -45,6 +60,58 @@ func (execRunner) Run(ctx context.Context, name string, args []string, stdin *st
 	hideWindow(cmd)
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func (execRunner) RunStreaming(ctx context.Context, name string, args []string, stdin *string, sink LogSink) (string, error) {
+	if sink == nil {
+		return execRunner{}.Run(ctx, name, args, stdin)
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	if stdin != nil {
+		cmd.Stdin = strings.NewReader(*stdin)
+	}
+	hideWindow(cmd)
+	stdout, err := cmdStdoutPipe(cmd)
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmdStderrPipe(cmd)
+	if err != nil {
+		return "", err
+	}
+	if err := cmdStart(cmd); err != nil {
+		return "", err
+	}
+
+	lineCh := make(chan string, 16)
+	var wg sync.WaitGroup
+	readPipe := func(reader io.Reader) {
+		defer wg.Done()
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			lineCh <- strings.TrimRight(scanner.Text(), "\r")
+		}
+	}
+	wg.Add(2)
+	go readPipe(stdout)
+	go readPipe(stderr)
+	go func() {
+		wg.Wait()
+		close(lineCh)
+	}()
+
+	var output bytes.Buffer
+	for line := range lineCh {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			sink(trimmed)
+		}
+		output.WriteString(line)
+		output.WriteByte('\n')
+	}
+	err = cmdWait(cmd)
+	return output.String(), err
 }
 
 type DockerRuntime struct {
@@ -326,7 +393,26 @@ func (r *DockerRuntime) WaitForReady(ctx context.Context, id string, timeout tim
 }
 
 func (r *DockerRuntime) run(ctx context.Context, args []string, stdin *string) (string, error) {
+	sink := logSinkFromContext(ctx)
+	if sink != nil {
+		if runner, ok := r.runner.(streamingRunner); ok {
+			output, err := runner.RunStreaming(ctx, r.binary, args, stdin, sink)
+			if err != nil {
+				return output, wrapDockerError(err, output)
+			}
+			return output, nil
+		}
+	}
 	output, err := r.runner.Run(ctx, r.binary, args, stdin)
+	if sink != nil {
+		for _, line := range strings.Split(output, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			sink(line)
+		}
+	}
 	if err != nil {
 		return output, wrapDockerError(err, output)
 	}

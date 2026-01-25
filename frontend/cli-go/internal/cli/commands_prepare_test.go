@@ -1,13 +1,19 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,7 +27,9 @@ func TestRunPrepareRemoteSuccess(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("succeeded")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
@@ -62,7 +70,9 @@ func TestRunPrepareLocalAutoUsesEngineState(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("succeeded")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
@@ -104,7 +114,9 @@ func TestRunPrepareFailedWithErrorDetails(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("failed")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"failed","error":{"message":"boom","details":"details"}}`)
@@ -156,7 +168,9 @@ func TestRunPrepareJobNotFound(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("running")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.WriteHeader(http.StatusNotFound)
 		default:
@@ -183,7 +197,9 @@ func TestRunPrepareSucceededWithoutResult(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("succeeded")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded"}`)
@@ -211,7 +227,9 @@ func TestRunPrepareFailedWithoutError(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("failed")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"failed"}`)
@@ -279,7 +297,9 @@ func TestRunPlanRemoteSuccess(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("succeeded")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":true,"prepare_kind":"psql","image_id":"image","prepare_args_normalized":"-c select 1","tasks":[{"task_id":"plan","type":"plan","planner_kind":"psql"}]}`)
@@ -342,7 +362,9 @@ func TestRunPlanNotPlanOnly(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("succeeded")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":false}`)
@@ -388,7 +410,9 @@ func TestRunPlanNoTasks(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("succeeded")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":true,"prepare_kind":"psql","image_id":"image","prepare_args_normalized":"-c select 1","tasks":[]}`)
@@ -416,7 +440,9 @@ func TestRunPlanFailedWithMessage(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("failed")})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"failed","error":{"message":"boom"}}`)
@@ -439,65 +465,562 @@ func TestRunPlanFailedWithMessage(t *testing.T) {
 }
 
 func TestWaitForPrepareCanceled(t *testing.T) {
-	ready := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/prepare-jobs/job-1" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		select {
-		case ready <- struct{}{}:
+		switch r.URL.Path {
+		case "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+			<-r.Context().Done()
+		case "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"running"}`)
 		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"job_id":"job-1","status":"running"}`)
 	}))
 	defer server.Close()
 
 	cli := client.New(server.URL, client.Options{Timeout: time.Second})
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		<-ready
-		cancel()
-	}()
-	_, err := waitForPrepare(ctx, cli, "job-1")
+	cancel()
+	_, err := waitForPrepare(ctx, cli, "job-1", server.URL+"/v1/prepare-jobs/job-1/events", io.Discard, false)
 	if err == nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected canceled error, got %v", err)
 	}
 }
 
-func TestWaitForPrepareRequestError(t *testing.T) {
+func TestWaitForPrepareEvents4xx(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		if r.URL.Path == "/v1/prepare-jobs/job-1/events" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
 
 	cli := client.New(server.URL, client.Options{Timeout: time.Second})
-	_, err := waitForPrepare(context.Background(), cli, "job-1")
-	if err == nil {
-		t.Fatalf("expected error")
+	_, err := waitForPrepare(context.Background(), cli, "job-1", server.URL+"/v1/prepare-jobs/job-1/events", io.Discard, false)
+	if err == nil || !strings.Contains(err.Error(), "events stream") {
+		t.Fatalf("expected events stream error, got %v", err)
 	}
 }
 
-func TestWaitForPrepareTicks(t *testing.T) {
-	var calls int
+func TestWaitForPrepareStreamEndsWithoutTerminal(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if calls == 0 {
-			calls++
+		switch r.URL.Path {
+		case "/v1/prepare-jobs/job-1/events":
+			writeEventStream(w, []client.PrepareJobEvent{statusEvent("running")})
+		case "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"running"}`)
-			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		io.WriteString(w, `{"job_id":"job-1","status":"succeeded"}`)
 	}))
 	defer server.Close()
 
 	cli := client.New(server.URL, client.Options{Timeout: time.Second})
-	status, err := waitForPrepare(context.Background(), cli, "job-1")
+	_, err := waitForPrepare(context.Background(), cli, "job-1", server.URL+"/v1/prepare-jobs/job-1/events", io.Discard, false)
+	if err == nil || !strings.Contains(err.Error(), "terminal") {
+		t.Fatalf("expected terminal status error, got %v", err)
+	}
+}
+
+func TestWaitForPrepareReconnectRangeIgnored(t *testing.T) {
+	var eventCalls int32
+	var statusCalls int32
+	eventsPayload := encodeEvents([]client.PrepareJobEvent{statusEvent("running"), statusEvent("succeeded")})
+	firstChunk := eventsPayload[:strings.Index(eventsPayload, "\n")+1]
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/prepare-jobs/job-1/events":
+			call := atomic.AddInt32(&eventCalls, 1)
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Header().Set("Content-Length", strconv.Itoa(len(eventsPayload)))
+			if call == 1 {
+				io.WriteString(w, firstChunk)
+				return
+			}
+			if r.Header.Get("Range") == "" {
+				t.Fatalf("expected Range header on reconnect")
+			}
+			io.WriteString(w, eventsPayload)
+		case "/v1/prepare-jobs/job-1":
+			call := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if call == 1 {
+				io.WriteString(w, `{"job_id":"job-1","status":"running"}`)
+				return
+			}
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cli := client.New(server.URL, client.Options{Timeout: time.Second})
+	status, err := waitForPrepare(context.Background(), cli, "job-1", server.URL+"/v1/prepare-jobs/job-1/events", io.Discard, false)
 	if err != nil {
 		t.Fatalf("waitForPrepare: %v", err)
 	}
 	if status.Status != "succeeded" {
 		t.Fatalf("expected succeeded status, got %q", status.Status)
 	}
+}
+
+func TestWaitForPrepareReconnectRangePartial(t *testing.T) {
+	var eventCalls int32
+	var statusCalls int32
+	eventsPayload := encodeEvents([]client.PrepareJobEvent{statusEvent("running"), statusEvent("succeeded")})
+	firstChunk := eventsPayload[:strings.Index(eventsPayload, "\n")+1]
+	lastChunk := eventsPayload[strings.Index(eventsPayload, "\n")+1:]
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/prepare-jobs/job-1/events":
+			call := atomic.AddInt32(&eventCalls, 1)
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			if call == 1 {
+				w.Header().Set("Content-Length", strconv.Itoa(len(eventsPayload)))
+				io.WriteString(w, firstChunk)
+				return
+			}
+			if r.Header.Get("Range") == "" {
+				t.Fatalf("expected Range header on reconnect")
+			}
+			w.Header().Set("Content-Range", "events 1-1/2")
+			w.WriteHeader(http.StatusPartialContent)
+			io.WriteString(w, lastChunk)
+		case "/v1/prepare-jobs/job-1":
+			call := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if call == 1 {
+				io.WriteString(w, `{"job_id":"job-1","status":"running"}`)
+				return
+			}
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cli := client.New(server.URL, client.Options{Timeout: time.Second})
+	status, err := waitForPrepare(context.Background(), cli, "job-1", server.URL+"/v1/prepare-jobs/job-1/events", io.Discard, false)
+	if err != nil {
+		t.Fatalf("waitForPrepare: %v", err)
+	}
+	if status.Status != "succeeded" {
+		t.Fatalf("expected succeeded status, got %q", status.Status)
+	}
+}
+
+func TestWaitForPrepareSpinnerNoNewlines(t *testing.T) {
+	var statusCalls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/prepare-jobs/job-1/events":
+			events := []client.PrepareJobEvent{
+				statusEvent("running"),
+				statusEvent("running"),
+				statusEvent("succeeded"),
+			}
+			writeEventStream(w, events)
+		case "/v1/prepare-jobs/job-1":
+			call := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if call == 1 {
+				io.WriteString(w, `{"job_id":"job-1","status":"running"}`)
+				return
+			}
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cli := client.New(server.URL, client.Options{Timeout: time.Second})
+	var stderr bytes.Buffer
+	_, err := waitForPrepare(context.Background(), cli, "job-1", server.URL+"/v1/prepare-jobs/job-1/events", &stderr, false)
+	if err != nil {
+		t.Fatalf("waitForPrepare: %v", err)
+	}
+	if strings.Count(stderr.String(), "\n") > 1 {
+		t.Fatalf("expected no extra newlines, got %q", stderr.String())
+	}
+}
+
+func TestPrepareProgressSpinnerOnDuplicateOnly(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newPrepareProgress(&buf, false)
+	event := client.PrepareJobEvent{
+		Type:   "task",
+		Status: "running",
+		TaskID: "execute-0",
+	}
+
+	progress.Update(event)
+	line := lastProgressLine(buf.String())
+	if hasSpinnerSuffix(line) {
+		t.Fatalf("expected no spinner on first event, got %q", line)
+	}
+
+	progress.Update(event)
+	line = lastProgressLine(buf.String())
+	if !hasSpinnerSuffix(line) {
+		t.Fatalf("expected spinner on duplicate event, got %q", line)
+	}
+
+	progress.Update(client.PrepareJobEvent{
+		Type:    "log",
+		Message: "docker: pull",
+	})
+	line = lastProgressLine(buf.String())
+	if hasSpinnerSuffix(line) {
+		t.Fatalf("expected spinner cleared on new event, got %q", line)
+	}
+}
+
+func TestPrepareProgressWriteSpinnerMinimal(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newPrepareProgress(&buf, false)
+	progress.minSpinner = true
+
+	progress.writeSpinner("-")
+	if buf.String() != " -" {
+		t.Fatalf("expected initial spinner output, got %q", buf.String())
+	}
+
+	progress.writeSpinner("|")
+	if buf.String() != " -\b|" {
+		t.Fatalf("expected backspace spinner update, got %q", buf.String())
+	}
+}
+
+func TestPrepareProgressWriteSpinnerDiscard(t *testing.T) {
+	progress := newPrepareProgress(io.Discard, false)
+	progress.minSpinner = true
+	progress.writeSpinner("-")
+}
+
+func TestPrepareProgressTerminalHelpers(t *testing.T) {
+	prevIsTerminal := isTerminal
+	prevGetTermSize := getTermSize
+	defer func() {
+		isTerminal = prevIsTerminal
+		getTermSize = prevGetTermSize
+	}()
+
+	isTerminal = func(fd int) bool { return true }
+	getTermSize = func(fd int) (int, int, error) { return 20, 5, nil }
+	t.Setenv("WT_SESSION", "1")
+
+	if !supportsAnsiClear(os.Stdout) {
+		t.Fatalf("expected supportsAnsiClear true with terminal")
+	}
+	if !supportsSpinnerBackspace(os.Stdout) {
+		t.Fatalf("expected supportsSpinnerBackspace true with terminal")
+	}
+	if width, ok := terminalWidth(os.Stdout); !ok || width != 20 {
+		t.Fatalf("expected terminalWidth 20 true, got %d %v", width, ok)
+	}
+	if got := truncateLine("abcdef", 4); got != "a..." {
+		t.Fatalf("unexpected truncateLine: %q", got)
+	}
+	if got := truncateLine("abc", 2); got != "ab" {
+		t.Fatalf("unexpected truncateLine narrow: %q", got)
+	}
+}
+
+func TestPrepareProgressTerminalHelpersFalse(t *testing.T) {
+	if supportsAnsiClear(&bytes.Buffer{}) {
+		t.Fatalf("expected supportsAnsiClear false for non-file writer")
+	}
+	if supportsSpinnerBackspace(&bytes.Buffer{}) {
+		t.Fatalf("expected supportsSpinnerBackspace false for non-file writer")
+	}
+	if width, ok := terminalWidth(&bytes.Buffer{}); ok || width != 0 {
+		t.Fatalf("expected terminalWidth false for non-file writer, got %d %v", width, ok)
+	}
+}
+
+func TestPrepareProgressTerminalHelpersEnvEmpty(t *testing.T) {
+	prevIsTerminal := isTerminal
+	defer func() { isTerminal = prevIsTerminal }()
+	isTerminal = func(fd int) bool { return true }
+	t.Setenv("WT_SESSION", "")
+	t.Setenv("TERM", "")
+	if runtime.GOOS == "windows" {
+		if supportsAnsiClear(os.Stdout) {
+			t.Fatalf("expected supportsAnsiClear false with empty env")
+		}
+		if supportsSpinnerBackspace(os.Stdout) {
+			t.Fatalf("expected supportsSpinnerBackspace false with empty env")
+		}
+	} else {
+		if !supportsAnsiClear(os.Stdout) {
+			t.Fatalf("expected supportsAnsiClear true on non-windows")
+		}
+		if !supportsSpinnerBackspace(os.Stdout) {
+			t.Fatalf("expected supportsSpinnerBackspace true on non-windows")
+		}
+	}
+}
+
+func TestPrepareProgressTerminalWidthErrors(t *testing.T) {
+	prevIsTerminal := isTerminal
+	prevGetTermSize := getTermSize
+	defer func() {
+		isTerminal = prevIsTerminal
+		getTermSize = prevGetTermSize
+	}()
+	isTerminal = func(fd int) bool { return true }
+	getTermSize = func(fd int) (int, int, error) { return 0, 0, errors.New("boom") }
+	if width, ok := terminalWidth(os.Stdout); ok || width != 0 {
+		t.Fatalf("expected terminalWidth error false, got %d %v", width, ok)
+	}
+	getTermSize = func(fd int) (int, int, error) { return 0, 0, nil }
+	if width, ok := terminalWidth(os.Stdout); ok || width != 0 {
+		t.Fatalf("expected terminalWidth false for zero width, got %d %v", width, ok)
+	}
+}
+
+func TestPrepareProgressWriteLinePadding(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newPrepareProgress(&buf, false)
+	progress.clearLine = false
+	progress.wroteLine = true
+	progress.lastVisible = 10
+	progress.writeLine("short")
+	out := buf.String()
+	if !strings.HasPrefix(out, "\rshort") {
+		t.Fatalf("expected carriage return and content, got %q", out)
+	}
+	if len([]rune(out)) < len([]rune("\rshort"))+5 {
+		t.Fatalf("expected padded spaces, got %q", out)
+	}
+}
+
+func TestPrepareProgressWriteLineClear(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newPrepareProgress(&buf, false)
+	progress.clearLine = true
+	progress.wroteLine = true
+	progress.writeLine("next")
+	if !strings.HasPrefix(buf.String(), "\r\033[2Knext") {
+		t.Fatalf("expected clear line prefix, got %q", buf.String())
+	}
+}
+
+func TestPrepareProgressWriteLineWidthTruncate(t *testing.T) {
+	prevIsTerminal := isTerminal
+	prevGetTermSize := getTermSize
+	defer func() {
+		isTerminal = prevIsTerminal
+		getTermSize = prevGetTermSize
+	}()
+	isTerminal = func(fd int) bool { return true }
+	getTermSize = func(fd int) (int, int, error) { return 6, 5, nil }
+
+	tmp, err := os.CreateTemp(t.TempDir(), "line")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer tmp.Close()
+
+	progress := newPrepareProgress(tmp, false)
+	progress.writeLine("123456789")
+	info, err := tmp.Stat()
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("expected truncated output")
+	}
+}
+
+func TestPrepareProgressWriteLinePaddingWidthClamp(t *testing.T) {
+	prevIsTerminal := isTerminal
+	prevGetTermSize := getTermSize
+	defer func() {
+		isTerminal = prevIsTerminal
+		getTermSize = prevGetTermSize
+	}()
+	isTerminal = func(fd int) bool { return true }
+	getTermSize = func(fd int) (int, int, error) { return 8, 5, nil }
+
+	tmp, err := os.CreateTemp(t.TempDir(), "pad")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer tmp.Close()
+
+	progress := newPrepareProgress(tmp, false)
+	progress.clearLine = false
+	progress.wroteLine = true
+	progress.lastVisible = 10
+	progress.writeLine("short")
+	info, err := tmp.Stat()
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("expected padded output")
+	}
+}
+
+func TestPrepareProgressNewNilWriter(t *testing.T) {
+	progress := newPrepareProgress(nil, false)
+	if progress.writer != io.Discard {
+		t.Fatalf("expected discard writer for nil")
+	}
+}
+
+func TestPrepareProgressTruncateLineNoop(t *testing.T) {
+	if got := truncateLine("abc", 0); got != "abc" {
+		t.Fatalf("unexpected truncateLine width 0: %q", got)
+	}
+	if got := truncateLine("abc", 5); got != "abc" {
+		t.Fatalf("unexpected truncateLine no truncation: %q", got)
+	}
+}
+
+func TestPrepareProgressWriteSpinnerWidthSkip(t *testing.T) {
+	prevIsTerminal := isTerminal
+	prevGetTermSize := getTermSize
+	defer func() {
+		isTerminal = prevIsTerminal
+		getTermSize = prevGetTermSize
+	}()
+
+	isTerminal = func(fd int) bool { return true }
+	getTermSize = func(fd int) (int, int, error) { return 6, 5, nil }
+	tmp, err := os.CreateTemp(t.TempDir(), "spinner")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer tmp.Close()
+	progress := newPrepareProgress(tmp, false)
+	progress.minSpinner = true
+	progress.lastVisible = 5
+	progress.writeSpinner("-")
+	info, err := tmp.Stat()
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Fatalf("expected spinner suppressed on narrow width, got %d bytes", info.Size())
+	}
+}
+
+func TestPrepareProgressUpdateVerbose(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newPrepareProgress(&buf, true)
+	progress.Update(client.PrepareJobEvent{Type: "status", Status: "running"})
+	if !strings.Contains(buf.String(), "prepare status") || !strings.HasSuffix(buf.String(), "\n") {
+		t.Fatalf("expected verbose line, got %q", buf.String())
+	}
+}
+
+func TestPrepareProgressUpdateVerboseDiscard(t *testing.T) {
+	progress := newPrepareProgress(io.Discard, true)
+	progress.Update(client.PrepareJobEvent{Type: "status", Status: "running"})
+	if progress.wroteLine {
+		t.Fatalf("expected wroteLine false for discard")
+	}
+}
+
+func TestPrepareProgressUpdateMinSpinner(t *testing.T) {
+	var buf bytes.Buffer
+	progress := newPrepareProgress(&buf, false)
+	progress.minSpinner = true
+	event := client.PrepareJobEvent{Type: "task", Status: "running", TaskID: "execute-0"}
+	progress.Update(event)
+	progress.Update(event)
+	progress.Update(event)
+	if !strings.Contains(buf.String(), "\b") {
+		t.Fatalf("expected backspace spinner update, got %q", buf.String())
+	}
+}
+
+func TestWaitForPrepareVerboseNewlines(t *testing.T) {
+	var statusCalls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/prepare-jobs/job-1/events":
+			events := []client.PrepareJobEvent{
+				{Type: "log", Ts: "2026-01-24T00:00:00Z", Message: "docker pull"},
+				statusEvent("running"),
+				{Type: "log", Ts: "2026-01-24T00:00:01Z", Message: "psql start"},
+				statusEvent("succeeded"),
+			}
+			writeEventStream(w, events)
+		case "/v1/prepare-jobs/job-1":
+			call := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if call == 1 {
+				io.WriteString(w, `{"job_id":"job-1","status":"running"}`)
+				return
+			}
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cli := client.New(server.URL, client.Options{Timeout: time.Second})
+	var stderr bytes.Buffer
+	_, err := waitForPrepare(context.Background(), cli, "job-1", server.URL+"/v1/prepare-jobs/job-1/events", &stderr, true)
+	if err != nil {
+		t.Fatalf("waitForPrepare: %v", err)
+	}
+	if strings.Count(stderr.String(), "\n") < 3 {
+		t.Fatalf("expected verbose output lines, got %q", stderr.String())
+	}
+}
+
+func writeEventStream(w http.ResponseWriter, events []client.PrepareJobEvent) {
+	payload := encodeEvents(events)
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+	io.WriteString(w, payload)
+}
+
+func encodeEvents(events []client.PrepareJobEvent) string {
+	var builder strings.Builder
+	for _, event := range events {
+		data, err := json.Marshal(event)
+		if err != nil {
+			continue
+		}
+		builder.Write(data)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
+func statusEvent(status string) client.PrepareJobEvent {
+	return client.PrepareJobEvent{
+		Type:   "status",
+		Ts:     "2026-01-24T00:00:00Z",
+		Status: status,
+	}
+}
+
+func lastProgressLine(output string) string {
+	if idx := strings.LastIndex(output, "\r"); idx != -1 {
+		return output[idx+1:]
+	}
+	return output
+}
+
+func hasSpinnerSuffix(line string) bool {
+	if line == "" {
+		return false
+	}
+	last := line[len(line)-1]
+	return last == '-' || last == '\\' || last == '|' || last == '/'
 }

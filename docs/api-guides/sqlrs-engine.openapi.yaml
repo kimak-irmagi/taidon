@@ -199,7 +199,10 @@ paths:
     get:
       operationId: streamPrepareJobEvents
       summary: Stream prepare job events
-      description: Streams job events as NDJSON.
+      description: |
+        Streams job events as NDJSON.
+        Clients may request a partial stream using an events-based range; if the
+        server does not honor the range request, it returns a full 200 response.
       tags:
         - prepare
       parameters:
@@ -208,9 +211,41 @@ paths:
           required: true
           schema:
             type: string
+        - in: header
+          name: Range
+          required: false
+          schema:
+            type: string
+          description: |
+            Optional events-based range request, e.g. `events=10-` or `events=10-24`.
+            When supported, the server responds with 206 and `Content-Range: events`.
       responses:
         "200":
           description: OK
+          headers:
+            Accept-Ranges:
+              schema:
+                type: string
+              description: Range unit support (e.g. `events`).
+          content:
+            application/x-ndjson:
+              schema:
+                type: array
+                description: Newline-delimited JSON stream of PrepareJobEvent objects.
+                items:
+                  $ref: "#/components/schemas/PrepareJobEvent"
+        "206":
+          description: Partial Content (events range)
+          headers:
+            Content-Range:
+              schema:
+                type: string
+              description: |
+                Events range returned, e.g. `events 10-24/100` or `events 10-*/100`.
+            Accept-Ranges:
+              schema:
+                type: string
+              description: Range unit support (e.g. `events`).
           content:
             application/x-ndjson:
               schema:
@@ -228,6 +263,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Not found
+        "416":
+          description: Requested range not satisfiable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/tasks:
     get:
       operationId: listTasks
@@ -606,8 +647,7 @@ paths:
           content:
             application/x-ndjson:
               schema:
-                type: string
-                description: Newline-delimited JSON stream of RunEvent objects.
+                $ref: "#/components/schemas/RunEvent"
         "400":
           description: Invalid input
           content:

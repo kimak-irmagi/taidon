@@ -97,6 +97,7 @@ type PrepareJobEvent struct {
 	Type    string            `json:"type"`
 	Ts      string            `json:"ts"`
 	Status  string            `json:"status,omitempty"`
+	TaskID  string            `json:"task_id,omitempty"`
 	Message string            `json:"message,omitempty"`
 	Result  *PrepareJobResult `json:"result,omitempty"`
 	Error   *ErrorResponse    `json:"error,omitempty"`

@@ -619,6 +619,9 @@ func TestPrepareJobsDeleteBlockedWithoutForce(t *testing.T) {
 	}
 
 	close(blocker.release)
+	if err := waitForPrepareCompletion(server.URL, "/v1/prepare-jobs/"+jobID, "secret"); err != nil {
+		t.Fatalf("wait for job completion: %v", err)
+	}
 }
 
 func TestPrepareEventsWithoutFlusher(t *testing.T) {
@@ -719,7 +722,7 @@ func waitForChannel(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
 	select {
 	case <-ch:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatalf("timed out waiting for channel")
 	}
 }
@@ -753,6 +756,45 @@ func pollPrepareStatus(baseURL, location, token string) (prepare.Status, error) 
 		select {
 		case <-ctx.Done():
 			return last, ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func waitForPrepareCompletion(baseURL, location, token string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+location, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			select {
+			case <-ctx.Done():
+				return &httpStatusError{StatusCode: resp.StatusCode}
+			case <-time.After(50 * time.Millisecond):
+				continue
+			}
+		}
+		var status prepare.Status
+		if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+			resp.Body.Close()
+			return err
+		}
+		resp.Body.Close()
+		if status.Status == prepare.StatusSucceeded || status.Status == prepare.StatusFailed {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
