@@ -3495,7 +3495,7 @@ for the selected kind is used.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Streamed run output|string|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Streamed run output|[RunEvent](#schemarunevent)|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Instance not found or expired|[ErrorResponse](#schemaerrorresponse)|
