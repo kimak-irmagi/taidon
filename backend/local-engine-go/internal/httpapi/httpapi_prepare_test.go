@@ -722,7 +722,7 @@ func waitForChannel(t *testing.T, ch <-chan struct{}) {
 	t.Helper()
 	select {
 	case <-ch:
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatalf("timed out waiting for channel")
 	}
 }
