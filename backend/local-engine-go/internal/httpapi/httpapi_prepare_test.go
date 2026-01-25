@@ -619,6 +619,9 @@ func TestPrepareJobsDeleteBlockedWithoutForce(t *testing.T) {
 	}
 
 	close(blocker.release)
+	if _, err := pollPrepareStatus(server.URL, "/v1/prepare-jobs/"+jobID, "secret"); err != nil {
+		t.Fatalf("wait for job completion: %v", err)
+	}
 }
 
 func TestPrepareEventsWithoutFlusher(t *testing.T) {

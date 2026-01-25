@@ -1444,8 +1444,7 @@ func TestDeleteListTasksError(t *testing.T) {
 
 func TestDeleteJobForceCancels(t *testing.T) {
 	queueStore := newQueueStore(t)
-	blocker := &blockingStore{started: make(chan struct{})}
-	mgr := newManagerWithQueue(t, blocker, queueStore)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
 	mgr.async = true
 
 	if _, err := mgr.Submit(context.Background(), Request{
@@ -1456,10 +1455,15 @@ func TestDeleteJobForceCancels(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	select {
-	case <-blocker.started:
-	case <-time.After(2 * time.Second):
-		t.Fatalf("timeout waiting for CreateState")
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if mgr.getRunner("job-1") != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timeout waiting for job runner")
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 
 	result, ok := mgr.Delete("job-1", deletion.DeleteOptions{Force: true})

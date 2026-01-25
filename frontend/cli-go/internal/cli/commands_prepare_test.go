@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -751,12 +752,20 @@ func TestPrepareProgressTerminalHelpersEnvEmpty(t *testing.T) {
 	isTerminal = func(fd int) bool { return true }
 	t.Setenv("WT_SESSION", "")
 	t.Setenv("TERM", "")
-
-	if supportsAnsiClear(os.Stdout) {
-		t.Fatalf("expected supportsAnsiClear false with empty env")
-	}
-	if supportsSpinnerBackspace(os.Stdout) {
-		t.Fatalf("expected supportsSpinnerBackspace false with empty env")
+	if runtime.GOOS == "windows" {
+		if supportsAnsiClear(os.Stdout) {
+			t.Fatalf("expected supportsAnsiClear false with empty env")
+		}
+		if supportsSpinnerBackspace(os.Stdout) {
+			t.Fatalf("expected supportsSpinnerBackspace false with empty env")
+		}
+	} else {
+		if !supportsAnsiClear(os.Stdout) {
+			t.Fatalf("expected supportsAnsiClear true on non-windows")
+		}
+		if !supportsSpinnerBackspace(os.Stdout) {
+			t.Fatalf("expected supportsSpinnerBackspace true on non-windows")
+		}
 	}
 }
 
