@@ -60,7 +60,10 @@ func TestRunPlanVerboseImageSource(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1"}`)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"succeeded"}`+"\n")
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":true,"prepare_kind":"psql","image_id":"image","prepare_args_normalized":"-c select 1","tasks":[{"task_id":"plan","type":"plan","planner_kind":"psql"},{"task_id":"execute-0","type":"state_execute","input":{"kind":"image","id":"image"},"task_hash":"hash","output_state_id":"state-1","cached":false},{"task_id":"prepare-instance","type":"prepare_instance","input":{"kind":"state","id":"state-1"},"instance_mode":"ephemeral"}]}`)

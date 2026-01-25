@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+type LogSink func(line string)
+
 type Instance struct {
 	ID   string
 	Host string
@@ -19,10 +21,10 @@ type StartRequest struct {
 }
 
 type ExecRequest struct {
-	User string
-	Args []string
-	Env  map[string]string
-	Dir  string
+	User  string
+	Args  []string
+	Env   map[string]string
+	Dir   string
 	Stdin *string
 }
 

@@ -1,0 +1,2837 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>prepare: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">sqlrs/engine/internal/prepare/errors.go (100.0%)</option>
+				
+				<option value="file1">sqlrs/engine/internal/prepare/execution.go (81.5%)</option>
+				
+				<option value="file2">sqlrs/engine/internal/prepare/hash.go (100.0%)</option>
+				
+				<option value="file3">sqlrs/engine/internal/prepare/manager.go (93.3%)</option>
+				
+				<option value="file4">sqlrs/engine/internal/prepare/psql.go (97.3%)</option>
+				
+				<option value="file5">sqlrs/engine/internal/prepare/psql_container.go (87.2%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package prepare
+
+import "fmt"
+
+type ValidationError struct {
+        Code    string
+        Message string
+        Details string
+}
+
+func (e ValidationError) Error() string <span class="cov8" title="1">{
+        if e.Details == "" </span><span class="cov8" title="1">{
+                return e.Message
+        }</span>
+        <span class="cov8" title="1">return fmt.Sprintf("%s: %s", e.Message, e.Details)</span>
+}
+
+func (e ValidationError) Response() *ErrorResponse <span class="cov8" title="1">{
+        return errorResponse(e.Code, e.Message, e.Details)
+}</span>
+
+func ToErrorResponse(err error) *ErrorResponse <span class="cov8" title="1">{
+        if err == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">switch v := err.(type) </span>{
+        case ValidationError:<span class="cov8" title="1">
+                return v.Response()</span>
+        case *ValidationError:<span class="cov8" title="1">
+                return v.Response()</span>
+        default:<span class="cov8" title="1">
+                return errorResponse("internal_error", "internal error", err.Error())</span>
+        }
+}
+
+func errorResponse(code, message, details string) *ErrorResponse <span class="cov8" title="1">{
+        resp := &amp;ErrorResponse{
+                Code:    code,
+                Message: message,
+        }
+        if details != "" </span><span class="cov8" title="1">{
+                resp.Details = details
+        }</span>
+        <span class="cov8" title="1">return resp</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package prepare
+
+import (
+        "context"
+        "errors"
+        "fmt"
+        "os"
+        "path/filepath"
+        "runtime"
+        "strings"
+        "time"
+
+        engineRuntime "sqlrs/engine/internal/runtime"
+        "sqlrs/engine/internal/store"
+)
+
+type PsqlRunRequest struct {
+        Args    []string
+        Env     map[string]string
+        Stdin   *string
+        WorkDir string
+}
+
+type psqlRunner interface {
+        Run(ctx context.Context, instance engineRuntime.Instance, req PsqlRunRequest) (string, error)
+}
+
+type containerPsqlRunner struct {
+        runtime engineRuntime.Runtime
+}
+
+func (r containerPsqlRunner) Run(ctx context.Context, instance engineRuntime.Instance, req PsqlRunRequest) (string, error) <span class="cov8" title="1">{
+        if r.runtime == nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("runtime is required")
+        }</span>
+        <span class="cov8" title="1">return r.runtime.Exec(ctx, instance.ID, engineRuntime.ExecRequest{
+                User:  "postgres",
+                Args:  req.Args,
+                Env:   req.Env,
+                Dir:   req.WorkDir,
+                Stdin: req.Stdin,
+        })</span>
+}
+
+type statePaths struct {
+        root      string
+        engine    string
+        version   string
+        baseDir   string
+        statesDir string
+        stateDir  string
+}
+
+func resolveStatePaths(root string, imageID string, stateID string) (statePaths, error) <span class="cov8" title="1">{
+        if strings.TrimSpace(root) == "" </span><span class="cov8" title="1">{
+                return statePaths{}, fmt.Errorf("state store root is required")
+        }</span>
+        <span class="cov8" title="1">engineID, version := parseImageID(imageID)
+        baseDir := filepath.Join(root, "engines", engineID, version, "base")
+        statesDir := filepath.Join(root, "engines", engineID, version, "states")
+        stateDir := ""
+        if strings.TrimSpace(stateID) != "" </span><span class="cov8" title="1">{
+                stateDir = filepath.Join(statesDir, stateID)
+        }</span>
+        <span class="cov8" title="1">return statePaths{
+                root:      root,
+                engine:    engineID,
+                version:   version,
+                baseDir:   baseDir,
+                statesDir: statesDir,
+                stateDir:  stateDir,
+        }, nil</span>
+}
+
+func parseImageID(imageID string) (string, string) <span class="cov8" title="1">{
+        imageID = strings.TrimSpace(imageID)
+        if imageID == "" </span><span class="cov8" title="1">{
+                return "unknown", "latest"
+        }</span>
+        <span class="cov8" title="1">tag := ""
+        digest := ""
+        if at := strings.Index(imageID, "@"); at != -1 </span><span class="cov8" title="1">{
+                if at+1 &lt; len(imageID) </span><span class="cov8" title="1">{
+                        digest = imageID[at+1:]
+                }</span>
+                <span class="cov8" title="1">imageID = imageID[:at]</span>
+        }
+        <span class="cov8" title="1">if digest == "" </span><span class="cov8" title="1">{
+                if colon := strings.LastIndex(imageID, ":"); colon != -1 &amp;&amp; colon &gt; strings.LastIndex(imageID, "/") </span><span class="cov8" title="1">{
+                        tag = imageID[colon+1:]
+                        imageID = imageID[:colon]
+                }</span>
+        } else<span class="cov8" title="1"> {
+                tag = digest
+        }</span>
+        <span class="cov8" title="1">engine := imageID
+        if slash := strings.LastIndex(engine, "/"); slash != -1 </span><span class="cov8" title="1">{
+                engine = engine[slash+1:]
+        }</span>
+        <span class="cov8" title="1">engine = sanitizeSegment(engine)
+        tag = sanitizeSegment(tag)
+        if tag == "" </span><span class="cov8" title="1">{
+                tag = "latest"
+        }</span>
+        <span class="cov8" title="1">return engine, tag</span>
+}
+
+func sanitizeSegment(value string) string <span class="cov8" title="1">{
+        if value == "" </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">var b strings.Builder
+        for _, r := range value </span><span class="cov8" title="1">{
+                if r &gt; 127 </span><span class="cov0" title="0">{
+                        b.WriteByte('_')
+                        continue</span>
+                }
+                <span class="cov8" title="1">if (r &gt;= 'a' &amp;&amp; r &lt;= 'z') || (r &gt;= 'A' &amp;&amp; r &lt;= 'Z') || (r &gt;= '0' &amp;&amp; r &lt;= '9') || r == '.' || r == '-' || r == '_' </span><span class="cov8" title="1">{
+                        b.WriteRune(r)
+                        continue</span>
+                }
+                <span class="cov8" title="1">b.WriteByte('_')</span>
+        }
+        <span class="cov8" title="1">out := b.String()
+        if out == "" || out == "." || out == ".." </span><span class="cov0" title="0">{
+                return "unknown"
+        }</span>
+        <span class="cov8" title="1">return out</span>
+}
+
+func mergeEnv(base []string, overrides map[string]string) []string <span class="cov8" title="1">{
+        if len(overrides) == 0 </span><span class="cov0" title="0">{
+                return base
+        }</span>
+        <span class="cov8" title="1">out := append([]string{}, base...)
+        index := map[string]int{}
+        for i, entry := range out </span><span class="cov8" title="1">{
+                key := entry
+                if idx := strings.Index(entry, "="); idx != -1 </span><span class="cov8" title="1">{
+                        key = entry[:idx]
+                }</span>
+                <span class="cov8" title="1">index[normalizeEnvKey(key)] = i</span>
+        }
+        <span class="cov8" title="1">for key, value := range overrides </span><span class="cov8" title="1">{
+                entry := key + "=" + value
+                if idx, ok := index[normalizeEnvKey(key)]; ok </span><span class="cov8" title="1">{
+                        out[idx] = entry
+                        continue</span>
+                }
+                <span class="cov8" title="1">out = append(out, entry)</span>
+        }
+        <span class="cov8" title="1">return out</span>
+}
+
+func normalizeEnvKey(key string) string <span class="cov8" title="1">{
+        if runtime.GOOS == "windows" </span><span class="cov8" title="1">{
+                return strings.ToUpper(key)
+        }</span>
+        <span class="cov0" title="0">return key</span>
+}
+
+func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) *ErrorResponse <span class="cov8" title="1">{
+        if ctx.Err() != nil </span><span class="cov8" title="1">{
+                return errorResponse("cancelled", "task cancelled", "")
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(task.OutputStateID) == "" </span><span class="cov8" title="1">{
+                return errorResponse("internal_error", "missing output state id", "")
+        }</span>
+        <span class="cov8" title="1">cached, err := m.isStateCached(task.OutputStateID)
+        if err != nil </span><span class="cov0" title="0">{
+                return errorResponse("internal_error", "cannot check state cache", err.Error())
+        }</span>
+        <span class="cov8" title="1">if cached </span><span class="cov8" title="1">{
+                m.logTask(jobID, task.TaskID, "cached output_state=%s", task.OutputStateID)
+                return nil
+        }</span>
+
+        <span class="cov8" title="1">imageID := prepared.effectiveImageID()
+        if strings.TrimSpace(imageID) == "" </span><span class="cov0" title="0">{
+                return errorResponse("internal_error", "resolved image id is required", "")
+        }</span>
+        <span class="cov8" title="1">paths, err := resolveStatePaths(m.stateStoreRoot, imageID, task.OutputStateID)
+        if err != nil </span><span class="cov0" title="0">{
+                return errorResponse("internal_error", "cannot resolve state paths", err.Error())
+        }</span>
+        <span class="cov8" title="1">if err := os.MkdirAll(paths.statesDir, 0o700); err != nil </span><span class="cov0" title="0">{
+                return errorResponse("internal_error", "cannot create state dir", err.Error())
+        }</span>
+        <span class="cov8" title="1">if err := os.MkdirAll(paths.stateDir, 0o700); err != nil </span><span class="cov0" title="0">{
+                return errorResponse("internal_error", "cannot create state dir", err.Error())
+        }</span>
+
+        <span class="cov8" title="1">runner, ephemeral := m.runnerForJob(jobID)
+        if runner == nil </span><span class="cov0" title="0">{
+                return errorResponse("internal_error", "job runner missing", "")
+        }</span>
+        <span class="cov8" title="1">if ephemeral </span><span class="cov8" title="1">{
+                defer m.cleanupRuntime(context.Background(), runner)
+        }</span>
+
+        <span class="cov8" title="1">var errResp *ErrorResponse
+        lockErr := withStateBuildLock(ctx, paths.stateDir, func() error </span><span class="cov8" title="1">{
+                cached, err := m.isStateCached(task.OutputStateID)
+                if err != nil </span><span class="cov0" title="0">{
+                        errResp = errorResponse("internal_error", "cannot check state cache", err.Error())
+                        return errStateBuildFailed
+                }</span>
+                <span class="cov8" title="1">if cached </span><span class="cov0" title="0">{
+                        m.logTask(jobID, task.TaskID, "cached output_state=%s", task.OutputStateID)
+                        return nil
+                }</span>
+                <span class="cov8" title="1">if stateBuildMarkerExists(paths.stateDir) </span><span class="cov8" title="1">{
+                        if err := os.RemoveAll(paths.stateDir); err != nil </span><span class="cov0" title="0">{
+                                errResp = errorResponse("internal_error", "cannot reset state dir", err.Error())
+                                return errStateBuildFailed
+                        }</span>
+                        <span class="cov8" title="1">if err := os.MkdirAll(paths.stateDir, 0o700); err != nil </span><span class="cov0" title="0">{
+                                errResp = errorResponse("internal_error", "cannot create state dir", err.Error())
+                                return errStateBuildFailed
+                        }</span>
+                }
+
+                <span class="cov8" title="1">rt, innerResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+                if innerResp != nil </span><span class="cov8" title="1">{
+                        errResp = innerResp
+                        return errStateBuildFailed
+                }</span>
+
+                <span class="cov8" title="1">psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
+                if err != nil </span><span class="cov0" title="0">{
+                        errResp = errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
+                        return errStateBuildFailed
+                }</span>
+                <span class="cov8" title="1">m.appendLog(jobID, "psql: start")
+                psqlCtx := engineRuntime.WithLogSink(ctx, func(line string) </span><span class="cov0" title="0">{
+                        m.appendLog(jobID, "psql: "+line)
+                }</span>)
+                <span class="cov8" title="1">output, err := m.psql.Run(psqlCtx, rt.instance, PsqlRunRequest{
+                        Args:    psqlArgs,
+                        Env:     map[string]string{},
+                        Stdin:   prepared.request.Stdin,
+                        WorkDir: workdir,
+                })
+                m.appendLogLines(jobID, "psql", output)
+                if err != nil </span><span class="cov8" title="1">{
+                        if ctx.Err() != nil </span><span class="cov0" title="0">{
+                                errResp = errorResponse("cancelled", "task cancelled", "")
+                                return errStateBuildFailed
+                        }</span>
+                        <span class="cov8" title="1">details := strings.TrimSpace(output)
+                        if details == "" </span><span class="cov0" title="0">{
+                                details = err.Error()
+                        }</span>
+                        <span class="cov8" title="1">errResp = errorResponse("internal_error", "psql execution failed", details)
+                        return errStateBuildFailed</span>
+                }
+                <span class="cov8" title="1">if ctx.Err() != nil </span><span class="cov0" title="0">{
+                        errResp = errorResponse("cancelled", "task cancelled", "")
+                        return errStateBuildFailed
+                }</span>
+
+                <span class="cov8" title="1">m.appendLog(jobID, "pg_ctl: stop for snapshot")
+                pgCtx := engineRuntime.WithLogSink(ctx, func(line string) </span><span class="cov0" title="0">{
+                        m.appendLog(jobID, "pg_ctl: "+line)
+                }</span>)
+                <span class="cov8" title="1">if err := m.dbms.PrepareSnapshot(pgCtx, rt.instance); err != nil </span><span class="cov8" title="1">{
+                        errResp = errorResponse("internal_error", "snapshot prepare failed", err.Error())
+                        return errStateBuildFailed
+                }</span>
+                <span class="cov8" title="1">resumed := false
+                defer func() </span><span class="cov8" title="1">{
+                        if resumed </span><span class="cov8" title="1">{
+                                return
+                        }</span>
+                        <span class="cov8" title="1">_ = m.dbms.ResumeSnapshot(context.Background(), rt.instance)</span>
+                }()
+
+                <span class="cov8" title="1">m.appendLog(jobID, "snapshot: start")
+                if err := m.snapshot.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil </span><span class="cov8" title="1">{
+                        errResp = errorResponse("internal_error", "snapshot failed", err.Error())
+                        return errStateBuildFailed
+                }</span>
+                <span class="cov8" title="1">m.appendLog(jobID, "snapshot: complete")
+                m.appendLog(jobID, "pg_ctl: start after snapshot")
+                pgResumeCtx := engineRuntime.WithLogSink(ctx, func(line string) </span><span class="cov0" title="0">{
+                        m.appendLog(jobID, "pg_ctl: "+line)
+                }</span>)
+                <span class="cov8" title="1">if err := m.dbms.ResumeSnapshot(pgResumeCtx, rt.instance); err != nil </span><span class="cov8" title="1">{
+                        errResp = errorResponse("internal_error", "snapshot resume failed", err.Error())
+                        return errStateBuildFailed
+                }</span>
+                <span class="cov8" title="1">resumed = true
+
+                parentID := parentStateID(task.Input)
+                createdAt := m.now().UTC().Format(time.RFC3339Nano)
+                entry := store.StateCreate{
+                        StateID:               task.OutputStateID,
+                        ParentStateID:         parentID,
+                        StateFingerprint:      task.OutputStateID,
+                        ImageID:               imageID,
+                        PrepareKind:           prepared.request.PrepareKind,
+                        PrepareArgsNormalized: prepared.argsNormalized,
+                        CreatedAt:             createdAt,
+                }
+                if err := m.store.CreateState(ctx, entry); err != nil </span><span class="cov8" title="1">{
+                        if ctx.Err() != nil </span><span class="cov8" title="1">{
+                                errResp = errorResponse("cancelled", "task cancelled", "")
+                                return errStateBuildFailed
+                        }</span>
+                        <span class="cov8" title="1">_ = m.snapshot.Destroy(context.Background(), paths.stateDir)
+                        errResp = errorResponse("internal_error", "cannot store state", err.Error())
+                        return errStateBuildFailed</span>
+                }
+                <span class="cov8" title="1">if err := writeStateBuildMarker(paths.stateDir); err != nil </span><span class="cov0" title="0">{
+                        errResp = errorResponse("internal_error", "cannot write state marker", err.Error())
+                        return errStateBuildFailed
+                }</span>
+                <span class="cov8" title="1">return nil</span>
+        })
+        <span class="cov8" title="1">if errResp != nil </span><span class="cov8" title="1">{
+                return errResp
+        }</span>
+        <span class="cov8" title="1">if lockErr != nil </span><span class="cov0" title="0">{
+                if ctx.Err() != nil </span><span class="cov0" title="0">{
+                        return errorResponse("cancelled", "task cancelled", "")
+                }</span>
+                <span class="cov0" title="0">return errorResponse("internal_error", "cannot acquire state build lock", lockErr.Error())</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (m *Manager) createInstance(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (*Result, *ErrorResponse) <span class="cov8" title="1">{
+        if ctx.Err() != nil </span><span class="cov8" title="1">{
+                return nil, errorResponse("cancelled", "job cancelled", "")
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(stateID) == "" </span><span class="cov8" title="1">{
+                return nil, errorResponse("internal_error", "state id is required", "")
+        }</span>
+
+        <span class="cov8" title="1">runner, ephemeral := m.runnerForJob(jobID)
+        if runner == nil </span><span class="cov0" title="0">{
+                return nil, errorResponse("internal_error", "job runner missing", "")
+        }</span>
+        <span class="cov8" title="1">if ephemeral </span><span class="cov8" title="1">{
+                defer m.cleanupRuntime(context.Background(), runner)
+        }</span>
+
+        <span class="cov8" title="1">rt := runner.getRuntime()
+        if rt == nil </span><span class="cov8" title="1">{
+                var errResp *ErrorResponse
+                rt, errResp = m.startRuntime(ctx, jobID, prepared, &amp;TaskInput{Kind: "state", ID: stateID})
+                if errResp != nil </span><span class="cov8" title="1">{
+                        return nil, errResp
+                }</span>
+                <span class="cov8" title="1">runner.setRuntime(rt)</span>
+        }
+        <span class="cov8" title="1">if rt.instance.Host == "" || rt.instance.Port == 0 </span><span class="cov8" title="1">{
+                return nil, errorResponse("internal_error", "runtime instance is missing connection info", "")
+        }</span>
+
+        <span class="cov8" title="1">instanceID, err := randomHex(16)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, errorResponse("internal_error", "cannot generate instance id", err.Error())
+        }</span>
+        <span class="cov8" title="1">createdAt := m.now().UTC().Format(time.RFC3339Nano)
+        status := store.InstanceStatusActive
+        var runtimeID *string
+        imageID := prepared.effectiveImageID()
+        if strings.TrimSpace(imageID) == "" </span><span class="cov0" title="0">{
+                return nil, errorResponse("internal_error", "resolved image id is required", "")
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(rt.instance.ID) != "" </span><span class="cov8" title="1">{
+                runtimeID = strPtr(rt.instance.ID)
+        }</span>
+        <span class="cov8" title="1">var runtimeDir *string
+        if strings.TrimSpace(rt.runtimeDir) != "" </span><span class="cov8" title="1">{
+                runtimeDir = strPtr(rt.runtimeDir)
+        }</span>
+        <span class="cov8" title="1">if err := m.store.CreateInstance(ctx, store.InstanceCreate{
+                InstanceID: instanceID,
+                StateID:    stateID,
+                ImageID:    imageID,
+                CreatedAt:  createdAt,
+                RuntimeID:  runtimeID,
+                RuntimeDir: runtimeDir,
+                Status:     &amp;status,
+        }); err != nil </span><span class="cov8" title="1">{
+                if ctx.Err() != nil </span><span class="cov0" title="0">{
+                        return nil, errorResponse("cancelled", "job cancelled", "")
+                }</span>
+                <span class="cov8" title="1">return nil, errorResponse("internal_error", "cannot store instance", err.Error())</span>
+        }
+        <span class="cov8" title="1">m.appendLog(jobID, fmt.Sprintf("instance created %s", instanceID))
+        result := Result{
+                DSN:                   buildDSN(rt.instance.Host, rt.instance.Port),
+                InstanceID:            instanceID,
+                StateID:               stateID,
+                ImageID:               imageID,
+                PrepareKind:           prepared.request.PrepareKind,
+                PrepareArgsNormalized: prepared.argsNormalized,
+        }
+        return &amp;result, nil</span>
+}
+
+func (m *Manager) ensureRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput, runner *jobRunner) (*jobRuntime, *ErrorResponse) <span class="cov8" title="1">{
+        if runner == nil </span><span class="cov8" title="1">{
+                return nil, errorResponse("internal_error", "job runner missing", "")
+        }</span>
+        <span class="cov8" title="1">if rt := runner.getRuntime(); rt != nil </span><span class="cov0" title="0">{
+                return rt, nil
+        }</span>
+        <span class="cov8" title="1">rt, errResp := m.startRuntime(ctx, jobID, prepared, input)
+        if errResp != nil </span><span class="cov8" title="1">{
+                return nil, errResp
+        }</span>
+        <span class="cov8" title="1">runner.setRuntime(rt)
+        return rt, nil</span>
+}
+
+func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput) (*jobRuntime, *ErrorResponse) <span class="cov8" title="1">{
+        if ctx.Err() != nil </span><span class="cov0" title="0">{
+                return nil, errorResponse("cancelled", "job cancelled", "")
+        }</span>
+        <span class="cov8" title="1">if input == nil </span><span class="cov8" title="1">{
+                return nil, errorResponse("internal_error", "task input is required", "")
+        }</span>
+
+        <span class="cov8" title="1">imageID := prepared.effectiveImageID()
+        if strings.TrimSpace(imageID) == "" </span><span class="cov0" title="0">{
+                return nil, errorResponse("internal_error", "resolved image id is required", "")
+        }</span>
+        <span class="cov8" title="1">ctx = engineRuntime.WithLogSink(ctx, func(line string) </span><span class="cov0" title="0">{
+                m.appendLog(jobID, "docker: "+line)
+        }</span>)
+        <span class="cov8" title="1">var srcDir string
+        switch input.Kind </span>{
+        case "image":<span class="cov8" title="1">
+                m.appendLog(jobID, fmt.Sprintf("docker: init base %s", imageID))
+                paths, err := resolveStatePaths(m.stateStoreRoot, imageID, "")
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, errorResponse("internal_error", "cannot resolve state paths", err.Error())
+                }</span>
+                <span class="cov8" title="1">if err := m.ensureBaseState(ctx, imageID, paths.baseDir); err != nil </span><span class="cov0" title="0">{
+                        if ctx.Err() != nil </span><span class="cov0" title="0">{
+                                return nil, errorResponse("cancelled", "job cancelled", "")
+                        }</span>
+                        <span class="cov0" title="0">return nil, errorResponse("internal_error", "cannot initialize base state", err.Error())</span>
+                }
+                <span class="cov8" title="1">srcDir = paths.baseDir</span>
+        case "state":<span class="cov8" title="1">
+                if strings.TrimSpace(input.ID) == "" </span><span class="cov8" title="1">{
+                        return nil, errorResponse("internal_error", "input state id is required", "")
+                }</span>
+                <span class="cov8" title="1">entry, ok, err := m.store.GetState(ctx, input.ID)
+                if err != nil </span><span class="cov8" title="1">{
+                        return nil, errorResponse("internal_error", "cannot load input state", err.Error())
+                }</span>
+                <span class="cov8" title="1">if !ok </span><span class="cov8" title="1">{
+                        return nil, errorResponse("internal_error", "input state not found", input.ID)
+                }</span>
+                <span class="cov8" title="1">if strings.TrimSpace(entry.ImageID) != "" </span><span class="cov8" title="1">{
+                        imageID = entry.ImageID
+                }</span>
+                <span class="cov8" title="1">paths, err := resolveStatePaths(m.stateStoreRoot, imageID, input.ID)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, errorResponse("internal_error", "cannot resolve state paths", err.Error())
+                }</span>
+                <span class="cov8" title="1">srcDir = paths.stateDir</span>
+        default:<span class="cov8" title="1">
+                return nil, errorResponse("internal_error", "unsupported task input", input.Kind)</span>
+        }
+
+        <span class="cov8" title="1">runtimeDir := filepath.Join(m.stateStoreRoot, "jobs", jobID, "runtime")
+        _ = os.RemoveAll(runtimeDir)
+        if err := os.MkdirAll(filepath.Dir(runtimeDir), 0o700); err != nil </span><span class="cov0" title="0">{
+                return nil, errorResponse("internal_error", "cannot create runtime dir", err.Error())
+        }</span>
+        <span class="cov8" title="1">clone, err := m.snapshot.Clone(ctx, srcDir, runtimeDir)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, errorResponse("internal_error", "cannot clone state", err.Error())
+        }</span>
+
+        <span class="cov8" title="1">rtScriptMount, err := scriptMountForFiles(prepared.filePaths)
+        if err != nil </span><span class="cov0" title="0">{
+                _ = clone.Cleanup()
+                return nil, errorResponse("internal_error", "cannot prepare scripts", err.Error())
+        }</span>
+
+        <span class="cov8" title="1">m.appendLog(jobID, "docker: start container")
+        ctx = engineRuntime.WithLogSink(ctx, func(line string) </span><span class="cov0" title="0">{
+                m.appendLog(jobID, "docker: "+line)
+        }</span>)
+        <span class="cov8" title="1">instance, err := m.runtime.Start(ctx, engineRuntime.StartRequest{
+                ImageID: imageID,
+                DataDir: clone.MountDir,
+                Name:    "sqlrs-prepare-" + jobID,
+                Mounts:  runtimeMountsFrom(rtScriptMount),
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                _ = clone.Cleanup()
+                if ctx.Err() != nil </span><span class="cov0" title="0">{
+                        return nil, errorResponse("cancelled", "job cancelled", "")
+                }</span>
+                <span class="cov0" title="0">return nil, errorResponse("internal_error", "cannot start runtime", err.Error())</span>
+        }
+        <span class="cov8" title="1">m.appendLog(jobID, fmt.Sprintf("docker: container started %s", instance.ID))
+        m.logJob(jobID, "runtime started container=%s host=%s port=%d snapshot=%s", instance.ID, instance.Host, instance.Port, m.snapshot.Kind())
+        m.appendLog(jobID, "docker: postgres ready")
+
+        return &amp;jobRuntime{
+                instance:    instance,
+                dataDir:     clone.MountDir,
+                runtimeDir:  runtimeDir,
+                cleanup:     clone.Cleanup,
+                scriptMount: rtScriptMount,
+        }, nil</span>
+}
+
+func (m *Manager) ensureBaseState(ctx context.Context, imageID string, baseDir string) error <span class="cov8" title="1">{
+        if strings.TrimSpace(baseDir) == "" </span><span class="cov8" title="1">{
+                return fmt.Errorf("base dir is required")
+        }</span>
+        <span class="cov8" title="1">if initMarkerExists(baseDir) </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">if err := os.MkdirAll(baseDir, 0o700); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if err := withInitLock(ctx, baseDir, func() error </span><span class="cov8" title="1">{
+                if initMarkerExists(baseDir) </span><span class="cov0" title="0">{
+                        return nil
+                }</span>
+                <span class="cov8" title="1">if _, err := os.Stat(filepath.Join(baseDir, "PG_VERSION")); err == nil </span><span class="cov8" title="1">{
+                        return writeInitMarker(baseDir)
+                }</span>
+                <span class="cov8" title="1">if err := m.runtime.InitBase(ctx, imageID, baseDir); err != nil </span><span class="cov8" title="1">{
+                        return err
+                }</span>
+                <span class="cov8" title="1">return writeInitMarker(baseDir)</span>
+        }); err != nil <span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+const (
+        baseInitMarkerName = ".init.ok"
+        baseInitLockName   = ".init.lock"
+)
+
+func initMarkerExists(baseDir string) bool <span class="cov8" title="1">{
+        _, err := os.Stat(filepath.Join(baseDir, baseInitMarkerName))
+        return err == nil
+}</span>
+
+func writeInitMarker(baseDir string) error <span class="cov8" title="1">{
+        path := filepath.Join(baseDir, baseInitMarkerName)
+        return os.WriteFile(path, []byte("ok"), 0o600)
+}</span>
+
+func withInitLock(ctx context.Context, baseDir string, fn func() error) error <span class="cov8" title="1">{
+        if fn == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("lock callback is required")
+        }</span>
+        <span class="cov8" title="1">lockPath := filepath.Join(baseDir, baseInitLockName)
+        for </span><span class="cov8" title="1">{
+                if ctx.Err() != nil </span><span class="cov0" title="0">{
+                        return ctx.Err()
+                }</span>
+                <span class="cov8" title="1">f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+                if err == nil </span><span class="cov8" title="1">{
+                        _ = f.Close()
+                        defer os.Remove(lockPath)
+                        return fn()
+                }</span>
+                <span class="cov8" title="1">if errors.Is(err, os.ErrExist) </span><span class="cov8" title="1">{
+                        if initMarkerExists(baseDir) </span><span class="cov8" title="1">{
+                                _ = os.Remove(lockPath)
+                                return nil
+                        }</span>
+                        <span class="cov8" title="1">time.Sleep(50 * time.Millisecond)
+                        continue</span>
+                }
+                <span class="cov0" title="0">return err</span>
+        }
+}
+
+const (
+        stateBuildMarkerName = ".build.ok"
+        stateBuildLockName   = ".build.lock"
+)
+
+var errStateBuildFailed = errors.New("state build failed")
+
+func stateBuildMarkerExists(stateDir string) bool <span class="cov8" title="1">{
+        _, err := os.Stat(filepath.Join(stateDir, stateBuildMarkerName))
+        return err == nil
+}</span>
+
+func writeStateBuildMarker(stateDir string) error <span class="cov8" title="1">{
+        path := filepath.Join(stateDir, stateBuildMarkerName)
+        return os.WriteFile(path, []byte("ok"), 0o600)
+}</span>
+
+func withStateBuildLock(ctx context.Context, stateDir string, fn func() error) error <span class="cov8" title="1">{
+        if fn == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("lock callback is required")
+        }</span>
+        <span class="cov8" title="1">lockPath := filepath.Join(stateDir, stateBuildLockName)
+        for </span><span class="cov8" title="1">{
+                if ctx.Err() != nil </span><span class="cov0" title="0">{
+                        return ctx.Err()
+                }</span>
+                <span class="cov8" title="1">f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+                if err == nil </span><span class="cov8" title="1">{
+                        _ = f.Close()
+                        defer os.Remove(lockPath)
+                        return fn()
+                }</span>
+                <span class="cov8" title="1">if errors.Is(err, os.ErrExist) </span><span class="cov8" title="1">{
+                        if stateBuildMarkerExists(stateDir) </span><span class="cov8" title="1">{
+                                _ = os.Remove(lockPath)
+                                return nil
+                        }</span>
+                        <span class="cov8" title="1">time.Sleep(50 * time.Millisecond)
+                        continue</span>
+                }
+                <span class="cov0" title="0">return err</span>
+        }
+}
+
+func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) <span class="cov8" title="1">{
+        if runner == nil </span><span class="cov0" title="0">{
+                return
+        }</span>
+        <span class="cov8" title="1">rt := runner.getRuntime()
+        if rt == nil </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">runner.setRuntime(nil)
+        stopCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+        defer cancel()
+        if err := m.runtime.Stop(stopCtx, rt.instance.ID); err != nil </span><span class="cov0" title="0">{
+                _ = m.runtime.Stop(context.Background(), rt.instance.ID)
+        }</span>
+        <span class="cov8" title="1">if rt.cleanup != nil </span><span class="cov8" title="1">{
+                _ = rt.cleanup()
+        }</span>
+}
+
+func (m *Manager) runnerForJob(jobID string) (*jobRunner, bool) <span class="cov8" title="1">{
+        if strings.TrimSpace(jobID) != "" </span><span class="cov8" title="1">{
+                if runner := m.getRunner(jobID); runner != nil </span><span class="cov8" title="1">{
+                        return runner, false
+                }</span>
+        }
+        <span class="cov8" title="1">return &amp;jobRunner{}, true</span>
+}
+
+func parentStateID(input *TaskInput) *string <span class="cov8" title="1">{
+        if input == nil || input.Kind != "state" || strings.TrimSpace(input.ID) == "" </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov0" title="0">return strPtr(input.ID)</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package prepare
+
+import (
+        "crypto/sha256"
+        "encoding/hex"
+        "fmt"
+        "hash"
+)
+
+type stateHasher struct {
+        hash hash.Hash
+}
+
+func newStateHasher() *stateHasher <span class="cov8" title="1">{
+        return &amp;stateHasher{hash: sha256.New()}
+}</span>
+
+func (s *stateHasher) write(key, value string) <span class="cov8" title="1">{
+        fmt.Fprintf(s.hash, "%s=%d:%s\n", key, len(value), value)
+}</span>
+
+func (s *stateHasher) sum() string <span class="cov8" title="1">{
+        return hex.EncodeToString(s.hash.Sum(nil))
+}</span>
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package prepare
+
+import (
+        "context"
+        "crypto/rand"
+        "encoding/hex"
+        "encoding/json"
+        "fmt"
+        "log"
+        "os"
+        "path/filepath"
+        "strings"
+        "sync"
+        "time"
+
+        "sqlrs/engine/internal/config"
+        "sqlrs/engine/internal/dbms"
+        "sqlrs/engine/internal/deletion"
+        "sqlrs/engine/internal/prepare/queue"
+        "sqlrs/engine/internal/runtime"
+        "sqlrs/engine/internal/snapshot"
+        "sqlrs/engine/internal/store"
+)
+
+const (
+        StatusQueued    = "queued"
+        StatusRunning   = "running"
+        StatusSucceeded = "succeeded"
+        StatusFailed    = "failed"
+)
+
+type Options struct {
+        Store          store.Store
+        Queue          queue.Store
+        Runtime        runtime.Runtime
+        Snapshot       snapshot.Manager
+        DBMS           dbms.Connector
+        StateStoreRoot string
+        Config         config.Store
+        Psql           psqlRunner
+        Version        string
+        Now            func() time.Time
+        IDGen          func() (string, error)
+        Async          bool
+        HeartbeatEvery time.Duration
+}
+
+type Manager struct {
+        store          store.Store
+        queue          queue.Store
+        runtime        runtime.Runtime
+        snapshot       snapshot.Manager
+        dbms           dbms.Connector
+        stateStoreRoot string
+        config         config.Store
+        psql           psqlRunner
+        version        string
+        now            func() time.Time
+        idGen          func() (string, error)
+        async          bool
+        heartbeatEvery time.Duration
+
+        mu      sync.Mutex
+        running map[string]*jobRunner
+        events  *eventBus
+        beats   map[string]*heartbeatState
+}
+
+type jobRunner struct {
+        cancel context.CancelFunc
+        done   chan struct{}
+        mu     sync.Mutex
+        rt     *jobRuntime
+}
+
+type jobRuntime struct {
+        instance    runtime.Instance
+        dataDir     string
+        runtimeDir  string
+        cleanup     func() error
+        scriptMount *scriptMount
+}
+
+type preparedRequest struct {
+        request         Request
+        normalizedArgs  []string
+        argsNormalized  string
+        inputHashes     []inputHash
+        filePaths       []string
+        resolvedImageID string
+}
+
+func NewManager(opts Options) (*Manager, error) <span class="cov8" title="1">{
+        if opts.Store == nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("store is required")
+        }</span>
+        <span class="cov8" title="1">if opts.Queue == nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("queue is required")
+        }</span>
+        <span class="cov8" title="1">if opts.Runtime == nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("runtime is required")
+        }</span>
+        <span class="cov8" title="1">if opts.Snapshot == nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("snapshot manager is required")
+        }</span>
+        <span class="cov8" title="1">if opts.DBMS == nil </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("dbms connector is required")
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(opts.StateStoreRoot) == "" </span><span class="cov8" title="1">{
+                return nil, fmt.Errorf("state store root is required")
+        }</span>
+        <span class="cov8" title="1">now := opts.Now
+        if now == nil </span><span class="cov8" title="1">{
+                now = time.Now
+        }</span>
+        <span class="cov8" title="1">idGen := opts.IDGen
+        if idGen == nil </span><span class="cov8" title="1">{
+                idGen = func() (string, error) </span><span class="cov0" title="0">{
+                        return randomHex(16)
+                }</span>
+        }
+        <span class="cov8" title="1">psql := opts.Psql
+        if psql == nil </span><span class="cov8" title="1">{
+                psql = containerPsqlRunner{runtime: opts.Runtime}
+        }</span>
+        <span class="cov8" title="1">return &amp;Manager{
+                store:          opts.Store,
+                queue:          opts.Queue,
+                runtime:        opts.Runtime,
+                snapshot:       opts.Snapshot,
+                dbms:           opts.DBMS,
+                stateStoreRoot: opts.StateStoreRoot,
+                config:         opts.Config,
+                psql:           psql,
+                version:        opts.Version,
+                now:            now,
+                idGen:          idGen,
+                async:          opts.Async,
+                heartbeatEvery: normalizeHeartbeat(opts.HeartbeatEvery),
+                running:        map[string]*jobRunner{},
+                events:         newEventBus(),
+                beats:          map[string]*heartbeatState{},
+        }, nil</span>
+}
+
+func (m *Manager) Recover(ctx context.Context) error <span class="cov8" title="1">{
+        jobs, err := m.queue.ListJobsByStatus(ctx, []string{StatusQueued, StatusRunning})
+        if err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">for _, job := range jobs </span><span class="cov8" title="1">{
+                m.logJob(job.JobID, "recover status=%s", job.Status)
+                prepared, err := m.prepareFromJob(job)
+                if err != nil </span><span class="cov8" title="1">{
+                        errResp := errorResponse("internal_error", "cannot restore job request", err.Error())
+                        _ = m.failJob(job.JobID, errResp)
+                        continue</span>
+                }
+                <span class="cov8" title="1">if m.async </span><span class="cov0" title="0">{
+                        go m.runJob(prepared, job.JobID)
+                }</span> else<span class="cov8" title="1"> {
+                        m.runJob(prepared, job.JobID)
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (m *Manager) Submit(ctx context.Context, req Request) (Accepted, error) <span class="cov8" title="1">{
+        prepared, err := m.prepareRequest(req)
+        if err != nil </span><span class="cov8" title="1">{
+                return Accepted{}, err
+        }</span>
+        <span class="cov8" title="1">jobID, err := m.idGen()
+        if err != nil </span><span class="cov8" title="1">{
+                return Accepted{}, err
+        }</span>
+        <span class="cov8" title="1">now := m.now().UTC().Format(time.RFC3339Nano)
+        reqJSON, err := json.Marshal(prepared.request)
+        if err != nil </span><span class="cov0" title="0">{
+                return Accepted{}, err
+        }</span>
+
+        <span class="cov8" title="1">argsNormalized := prepared.argsNormalized
+        job := queue.JobRecord{
+                JobID:                 jobID,
+                Status:                StatusQueued,
+                PrepareKind:           prepared.request.PrepareKind,
+                ImageID:               prepared.request.ImageID,
+                PlanOnly:              prepared.request.PlanOnly,
+                SnapshotMode:          "always",
+                PrepareArgsNormalized: &amp;argsNormalized,
+                RequestJSON:           strPtr(string(reqJSON)),
+                CreatedAt:             now,
+        }
+        if err := m.queue.CreateJob(ctx, job); err != nil </span><span class="cov8" title="1">{
+                return Accepted{}, err
+        }</span>
+        <span class="cov8" title="1">m.logJob(jobID, "created kind=%s image=%s plan_only=%t", prepared.request.PrepareKind, prepared.request.ImageID, prepared.request.PlanOnly)
+        _ = m.appendEvent(jobID, Event{
+                Type:   "status",
+                Ts:     now,
+                Status: StatusQueued,
+        })
+
+        if m.async </span><span class="cov8" title="1">{
+                go m.runJob(prepared, jobID)
+        }</span> else<span class="cov8" title="1"> {
+                m.runJob(prepared, jobID)
+        }</span>
+
+        <span class="cov8" title="1">base := "/v1/prepare-jobs/" + jobID
+        return Accepted{
+                JobID:     jobID,
+                StatusURL: base,
+                EventsURL: base + "/events",
+                Status:    StatusQueued,
+        }, nil</span>
+}
+
+func (m *Manager) Get(jobID string) (Status, bool) <span class="cov8" title="1">{
+        job, ok, err := m.queue.GetJob(context.Background(), jobID)
+        if err != nil </span><span class="cov0" title="0">{
+                m.logJob(jobID, "lookup failed error=%v", err)
+                return Status{}, false
+        }</span>
+        <span class="cov8" title="1">if !ok </span><span class="cov8" title="1">{
+                m.logJob(jobID, "lookup missing")
+                return Status{}, false
+        }</span>
+        <span class="cov8" title="1">tasks, err := m.queue.ListTasks(context.Background(), jobID)
+        if err != nil </span><span class="cov8" title="1">{
+                m.logJob(jobID, "task list failed error=%v", err)
+                tasks = nil
+        }</span>
+        <span class="cov8" title="1">status := Status{
+                JobID:                 job.JobID,
+                Status:                job.Status,
+                PrepareKind:           job.PrepareKind,
+                ImageID:               job.ImageID,
+                PlanOnly:              job.PlanOnly,
+                PrepareArgsNormalized: valueOrEmpty(job.PrepareArgsNormalized),
+                CreatedAt:             strPtr(job.CreatedAt),
+                StartedAt:             job.StartedAt,
+                FinishedAt:            job.FinishedAt,
+                Tasks:                 planTasksFromRecords(tasks),
+        }
+        if job.ResultJSON != nil </span><span class="cov8" title="1">{
+                var result Result
+                if err := json.Unmarshal([]byte(*job.ResultJSON), &amp;result); err == nil </span><span class="cov8" title="1">{
+                        status.Result = &amp;result
+                }</span>
+        }
+        <span class="cov8" title="1">if job.ErrorJSON != nil </span><span class="cov8" title="1">{
+                var errResp ErrorResponse
+                if err := json.Unmarshal([]byte(*job.ErrorJSON), &amp;errResp); err == nil </span><span class="cov8" title="1">{
+                        status.Error = &amp;errResp
+                }</span>
+        }
+        <span class="cov8" title="1">return status, true</span>
+}
+
+func (m *Manager) ListJobs(jobID string) []JobEntry <span class="cov8" title="1">{
+        jobs, err := m.queue.ListJobs(context.Background(), jobID)
+        if err != nil </span><span class="cov8" title="1">{
+                return []JobEntry{}
+        }</span>
+        <span class="cov8" title="1">entries := make([]JobEntry, 0, len(jobs))
+        for _, job := range jobs </span><span class="cov8" title="1">{
+                entry := JobEntry{
+                        JobID:       job.JobID,
+                        Status:      job.Status,
+                        PrepareKind: job.PrepareKind,
+                        ImageID:     job.ImageID,
+                        PlanOnly:    job.PlanOnly,
+                        CreatedAt:   strPtr(job.CreatedAt),
+                        StartedAt:   job.StartedAt,
+                        FinishedAt:  job.FinishedAt,
+                }
+                entries = append(entries, entry)
+        }</span>
+        <span class="cov8" title="1">return entries</span>
+}
+
+func (m *Manager) ListTasks(jobID string) []TaskEntry <span class="cov8" title="1">{
+        tasks, err := m.queue.ListTasks(context.Background(), jobID)
+        if err != nil || len(tasks) == 0 </span><span class="cov8" title="1">{
+                return []TaskEntry{}
+        }</span>
+        <span class="cov8" title="1">entries := make([]TaskEntry, 0, len(tasks))
+        for _, task := range tasks </span><span class="cov8" title="1">{
+                entries = append(entries, taskEntryFromRecord(task))
+        }</span>
+        <span class="cov8" title="1">return entries</span>
+}
+
+func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.DeleteResult, bool) <span class="cov8" title="1">{
+        _, ok, err := m.queue.GetJob(context.Background(), jobID)
+        if err != nil || !ok </span><span class="cov8" title="1">{
+                return deletion.DeleteResult{}, false
+        }</span>
+        <span class="cov8" title="1">tasks, err := m.queue.ListTasks(context.Background(), jobID)
+        if err != nil </span><span class="cov8" title="1">{
+                return deletion.DeleteResult{}, false
+        }</span>
+
+        <span class="cov8" title="1">blocked := hasRunningTasks(tasks)
+        node := deletion.DeleteNode{
+                Kind: "job",
+                ID:   jobID,
+        }
+        if blocked &amp;&amp; !opts.Force </span><span class="cov8" title="1">{
+                m.logJob(jobID, "delete blocked active_tasks=true")
+                node.Blocked = deletion.BlockActiveTasks
+                return deletion.DeleteResult{
+                        DryRun:  opts.DryRun,
+                        Outcome: deletion.OutcomeBlocked,
+                        Root:    node,
+                }, true
+        }</span>
+
+        <span class="cov8" title="1">result := deletion.DeleteResult{
+                DryRun:  opts.DryRun,
+                Outcome: deletion.OutcomeDeleted,
+                Root:    node,
+        }
+        if opts.DryRun </span><span class="cov8" title="1">{
+                result.Outcome = deletion.OutcomeWouldDelete
+                return result, true
+        }</span>
+
+        <span class="cov8" title="1">if blocked &amp;&amp; opts.Force </span><span class="cov8" title="1">{
+                m.logJob(jobID, "delete force cancel")
+                runner := m.getRunner(jobID)
+                if runner != nil </span><span class="cov8" title="1">{
+                        runner.cancel()
+                        &lt;-runner.done
+                }</span>
+        }
+
+        <span class="cov8" title="1">if err := m.queue.DeleteJob(context.Background(), jobID); err != nil </span><span class="cov0" title="0">{
+                return deletion.DeleteResult{}, false
+        }</span>
+        <span class="cov8" title="1">if err := m.removeJobDir(jobID); err != nil </span><span class="cov0" title="0">{
+                m.logJob(jobID, "delete cleanup failed: %v", err)
+                return deletion.DeleteResult{}, false
+        }</span>
+        <span class="cov8" title="1">m.logJob(jobID, "deleted")
+        return result, true</span>
+}
+
+func (m *Manager) EventsSince(jobID string, index int) ([]Event, bool, bool, error) <span class="cov8" title="1">{
+        job, ok, err := m.queue.GetJob(context.Background(), jobID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, false, false, err
+        }</span>
+        <span class="cov8" title="1">if !ok </span><span class="cov8" title="1">{
+                return nil, false, false, nil
+        }</span>
+        <span class="cov8" title="1">events, err := m.queue.ListEventsSince(context.Background(), jobID, index)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, true, false, err
+        }</span>
+        <span class="cov8" title="1">out := make([]Event, 0, len(events))
+        for _, event := range events </span><span class="cov8" title="1">{
+                out = append(out, eventFromRecord(event))
+        }</span>
+        <span class="cov8" title="1">done := job.Status == StatusSucceeded || job.Status == StatusFailed
+        return out, true, done, nil</span>
+}
+
+func (m *Manager) WaitForEvent(ctx context.Context, jobID string, index int) error <span class="cov8" title="1">{
+        ch := m.events.subscribe(jobID)
+        defer m.events.unsubscribe(jobID, ch)
+        for </span><span class="cov8" title="1">{
+                count, err := m.queue.CountEvents(ctx, jobID)
+                if err != nil </span><span class="cov8" title="1">{
+                        return err
+                }</span>
+                <span class="cov8" title="1">if count &gt; index </span><span class="cov8" title="1">{
+                        return nil
+                }</span>
+                <span class="cov8" title="1">job, ok, err := m.queue.GetJob(ctx, jobID)
+                if err != nil </span><span class="cov8" title="1">{
+                        return err
+                }</span>
+                <span class="cov8" title="1">if !ok </span><span class="cov8" title="1">{
+                        return errJobNotFound
+                }</span>
+                <span class="cov8" title="1">if job.Status == StatusSucceeded || job.Status == StatusFailed </span><span class="cov8" title="1">{
+                        return nil
+                }</span>
+                <span class="cov8" title="1">select </span>{
+                case &lt;-ctx.Done():<span class="cov0" title="0">
+                        return ctx.Err()</span>
+                case &lt;-ch:<span class="cov8" title="1"></span>
+                }
+        }
+}
+
+func (m *Manager) prepareFromJob(job queue.JobRecord) (preparedRequest, error) <span class="cov8" title="1">{
+        if job.RequestJSON == nil </span><span class="cov8" title="1">{
+                return preparedRequest{}, fmt.Errorf("request_json is empty")
+        }</span>
+        <span class="cov8" title="1">var req Request
+        if err := json.Unmarshal([]byte(*job.RequestJSON), &amp;req); err != nil </span><span class="cov8" title="1">{
+                return preparedRequest{}, err
+        }</span>
+        <span class="cov8" title="1">return m.prepareRequest(req)</span>
+}
+
+func (m *Manager) runJob(prepared preparedRequest, jobID string) <span class="cov8" title="1">{
+        ctx, cancel := context.WithCancel(context.Background())
+        runner := m.registerRunner(jobID, cancel)
+        jobSucceeded := false
+        defer func() </span><span class="cov8" title="1">{
+                if !jobSucceeded </span><span class="cov8" title="1">{
+                        m.cleanupRuntime(ctx, runner)
+                }</span>
+                <span class="cov8" title="1">close(runner.done)
+                m.unregisterRunner(jobID)</span>
+        }()
+
+        <span class="cov8" title="1">now := m.now().UTC()
+        startedAt := now.Format(time.RFC3339Nano)
+        _ = m.queue.UpdateJob(ctx, jobID, queue.JobUpdate{
+                Status:    strPtr(StatusRunning),
+                StartedAt: &amp;startedAt,
+        })
+        _ = m.appendEvent(jobID, Event{
+                Type:   "status",
+                Ts:     startedAt,
+                Status: StatusRunning,
+        })
+        _ = m.queue.UpdateJob(ctx, jobID, queue.JobUpdate{
+                PrepareArgsNormalized: &amp;prepared.argsNormalized,
+        })
+        m.logJob(jobID, "running")
+
+        tasks, stateID, errResp := m.loadOrPlanTasks(ctx, jobID, prepared)
+        if errResp != nil </span><span class="cov8" title="1">{
+                _ = m.failJob(jobID, errResp)
+                return
+        }</span>
+
+        <span class="cov8" title="1">if prepared.request.PlanOnly </span><span class="cov8" title="1">{
+                if err := m.markTasksSucceeded(ctx, jobID, tasks); err != nil </span><span class="cov8" title="1">{
+                        _ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
+                        return
+                }</span>
+                <span class="cov8" title="1">if err := m.succeedPlan(jobID); err == nil </span><span class="cov8" title="1">{
+                        jobSucceeded = true
+                }</span>
+                <span class="cov8" title="1">return</span>
+        }
+
+        <span class="cov8" title="1">for _, task := range tasks </span><span class="cov8" title="1">{
+                if ctx.Err() != nil </span><span class="cov0" title="0">{
+                        _ = m.failJob(jobID, errorResponse("cancelled", "job cancelled", ""))
+                        return
+                }</span>
+                <span class="cov8" title="1">if task.Status == StatusSucceeded </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">if task.Status == StatusFailed </span><span class="cov8" title="1">{
+                        _ = m.failJob(jobID, errorResponse("internal_error", "task failed", task.TaskID))
+                        return
+                }</span>
+                <span class="cov8" title="1">if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusRunning, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil, nil); err != nil </span><span class="cov8" title="1">{
+                        _ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
+                        return
+                }</span>
+                <span class="cov8" title="1">switch task.Type </span>{
+                case "plan":<span class="cov8" title="1"></span>
+                case "resolve_image":<span class="cov8" title="1">
+                        if strings.TrimSpace(task.ResolvedImageID) != "" &amp;&amp; strings.TrimSpace(prepared.resolvedImageID) == "" </span><span class="cov8" title="1">{
+                                prepared.resolvedImageID = task.ResolvedImageID
+                        }</span>
+                        <span class="cov8" title="1">if errResp := m.ensureResolvedImageID(ctx, jobID, &amp;prepared, nil); errResp != nil </span><span class="cov0" title="0">{
+                                _ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
+                                _ = m.failJob(jobID, errResp)
+                                return
+                        }</span>
+                case "state_execute":<span class="cov8" title="1">
+                        if err := m.executeStateTask(ctx, jobID, prepared, task); err != nil </span><span class="cov8" title="1">{
+                                _ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), err)
+                                _ = m.failJob(jobID, err)
+                                return
+                        }</span>
+                        <span class="cov8" title="1">stateID = task.OutputStateID</span>
+                case "prepare_instance":<span class="cov8" title="1">
+                        result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
+                        if errResp != nil </span><span class="cov8" title="1">{
+                                _ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
+                                _ = m.failJob(jobID, errResp)
+                                return
+                        }</span>
+                        <span class="cov8" title="1">if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil); err != nil </span><span class="cov0" title="0">{
+                                _ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
+                                return
+                        }</span>
+                        <span class="cov8" title="1">if err := m.succeed(jobID, *result); err == nil </span><span class="cov8" title="1">{
+                                jobSucceeded = true
+                        }</span>
+                        <span class="cov8" title="1">return</span>
+                }
+                <span class="cov8" title="1">if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil); err != nil </span><span class="cov0" title="0">{
+                        _ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
+                        return
+                }</span>
+        }
+
+        <span class="cov8" title="1">if stateID == "" </span><span class="cov8" title="1">{
+                _ = m.failJob(jobID, errorResponse("internal_error", "missing output state", ""))
+                return
+        }</span>
+        <span class="cov0" title="0">result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
+        if errResp != nil </span><span class="cov0" title="0">{
+                _ = m.failJob(jobID, errResp)
+                return
+        }</span>
+        <span class="cov0" title="0">if err := m.succeed(jobID, *result); err == nil </span><span class="cov0" title="0">{
+                jobSucceeded = true
+        }</span>
+}
+
+func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) <span class="cov8" title="1">{
+        taskRecords, err := m.queue.ListTasks(ctx, jobID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, "", errorResponse("internal_error", "cannot load tasks", err.Error())
+        }</span>
+        <span class="cov8" title="1">if errResp := m.ensureResolvedImageID(ctx, jobID, &amp;prepared, taskRecords); errResp != nil </span><span class="cov8" title="1">{
+                return nil, "", errResp
+        }</span>
+        <span class="cov8" title="1">if len(taskRecords) == 0 </span><span class="cov8" title="1">{
+                if errResp := m.updateJobSignature(ctx, jobID, prepared); errResp != nil </span><span class="cov0" title="0">{
+                        return nil, "", errResp
+                }</span>
+                <span class="cov8" title="1">tasks, stateID, errResp := m.buildPlan(prepared)
+                if errResp != nil </span><span class="cov0" title="0">{
+                        return nil, "", errResp
+                }</span>
+                <span class="cov8" title="1">m.logJob(jobID, "planned tasks count=%d state_id=%s", len(tasks), stateID)
+                records := taskRecordsFromPlan(jobID, tasks)
+                if err := m.queue.ReplaceTasks(ctx, jobID, records); err != nil </span><span class="cov8" title="1">{
+                        return nil, "", errorResponse("internal_error", "cannot store tasks", err.Error())
+                }</span>
+                <span class="cov8" title="1">m.logJob(jobID, "stored tasks count=%d", len(tasks))
+                m.trimCompletedJobs(ctx, prepared)
+                return taskStatesFromPlan(tasks), stateID, nil</span>
+        }
+        <span class="cov8" title="1">states := taskStatesFromRecords(taskRecords)
+        stateID := findOutputStateID(states)
+        for i := range states </span><span class="cov8" title="1">{
+                task := &amp;states[i]
+                if task.Status != StatusRunning </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">if task.Type == "state_execute" </span><span class="cov8" title="1">{
+                        if exists, err := m.isStateCached(task.OutputStateID); err == nil &amp;&amp; exists </span><span class="cov8" title="1">{
+                                finishedAt := m.now().UTC().Format(time.RFC3339Nano)
+                                _ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, &amp;finishedAt, nil)
+                                task.Status = StatusSucceeded
+                        }</span> else<span class="cov0" title="0"> {
+                                _ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusQueued, nil, nil, nil)
+                                task.Status = StatusQueued
+                        }</span>
+                }
+        }
+        <span class="cov8" title="1">return states, stateID, nil</span>
+}
+
+func (m *Manager) updateJobSignature(ctx context.Context, jobID string, prepared preparedRequest) *ErrorResponse <span class="cov8" title="1">{
+        signature, errResp := m.computeJobSignature(prepared)
+        if errResp != nil </span><span class="cov0" title="0">{
+                return errResp
+        }</span>
+        <span class="cov8" title="1">if err := m.queue.UpdateJob(ctx, jobID, queue.JobUpdate{Signature: &amp;signature}); err != nil </span><span class="cov8" title="1">{
+                return errorResponse("internal_error", "cannot update job signature", err.Error())
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (m *Manager) computeJobSignature(prepared preparedRequest) (string, *ErrorResponse) <span class="cov8" title="1">{
+        taskHash, errResp := m.computeTaskHash(prepared)
+        if errResp != nil </span><span class="cov0" title="0">{
+                return "", errResp
+        }</span>
+        <span class="cov8" title="1">imageID := prepared.effectiveImageID()
+        if strings.TrimSpace(imageID) == "" </span><span class="cov8" title="1">{
+                return "", errorResponse("internal_error", "resolved image id is required", "")
+        }</span>
+        <span class="cov8" title="1">hasher := newStateHasher()
+        hasher.write("task_hash", taskHash)
+        hasher.write("image_id", imageID)
+        hasher.write("plan_only", fmt.Sprintf("%t", prepared.request.PlanOnly))
+        signature := hasher.sum()
+        if signature == "" </span><span class="cov0" title="0">{
+                return "", errorResponse("internal_error", "cannot compute job signature", "")
+        }</span>
+        <span class="cov8" title="1">return signature, nil</span>
+}
+
+func (m *Manager) trimCompletedJobs(ctx context.Context, prepared preparedRequest) <span class="cov8" title="1">{
+        limit := maxIdenticalJobs(m.config)
+        if limit &lt;= 0 </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">signature, errResp := m.computeJobSignature(prepared)
+        if errResp != nil </span><span class="cov8" title="1">{
+                m.logJob("", "job retention skipped: %s", errResp.Message)
+                return
+        }</span>
+        <span class="cov8" title="1">m.trimCompletedJobsBySignature(ctx, signature)</span>
+}
+
+func (m *Manager) trimCompletedJobsForJob(ctx context.Context, jobID string) <span class="cov8" title="1">{
+        if strings.TrimSpace(jobID) == "" </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">job, ok, err := m.queue.GetJob(ctx, jobID)
+        if err != nil </span><span class="cov0" title="0">{
+                m.logJob(jobID, "job retention lookup failed: %v", err)
+                return
+        }</span>
+        <span class="cov8" title="1">if !ok </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">signature := valueOrEmpty(job.Signature)
+        if strings.TrimSpace(signature) == "" </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">m.trimCompletedJobsBySignature(ctx, signature)</span>
+}
+
+func (m *Manager) trimCompletedJobsBySignature(ctx context.Context, signature string) <span class="cov8" title="1">{
+        limit := maxIdenticalJobs(m.config)
+        if limit &lt;= 0 </span><span class="cov0" title="0">{
+                return
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(signature) == "" </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">jobs, err := m.queue.ListJobsBySignature(ctx, signature, []string{StatusSucceeded, StatusFailed})
+        if err != nil </span><span class="cov8" title="1">{
+                m.logJob("", "job retention failed: %v", err)
+                return
+        }</span>
+        <span class="cov8" title="1">if len(jobs) &lt;= limit </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">for i := limit; i &lt; len(jobs); i++ </span><span class="cov8" title="1">{
+                jobID := jobs[i].JobID
+                if err := m.queue.DeleteJob(ctx, jobID); err != nil </span><span class="cov8" title="1">{
+                        m.logJob(jobID, "job retention delete failed: %v", err)
+                        continue</span>
+                }
+                <span class="cov8" title="1">if err := m.removeJobDir(jobID); err != nil </span><span class="cov0" title="0">{
+                        m.logJob(jobID, "job retention cleanup failed: %v", err)
+                }</span>
+                <span class="cov8" title="1">m.logJob(jobID, "retention deleted")</span>
+        }
+}
+
+func (m *Manager) prepareRequest(req Request) (preparedRequest, error) <span class="cov8" title="1">{
+        kind := strings.TrimSpace(req.PrepareKind)
+        if kind == "" </span><span class="cov8" title="1">{
+                return preparedRequest{}, ValidationError{Code: "invalid_argument", Message: "prepare_kind is required"}
+        }</span>
+        <span class="cov8" title="1">if kind != "psql" </span><span class="cov8" title="1">{
+                return preparedRequest{}, ValidationError{Code: "invalid_argument", Message: "unsupported prepare_kind", Details: kind}
+        }</span>
+        <span class="cov8" title="1">imageID := strings.TrimSpace(req.ImageID)
+        if imageID == "" </span><span class="cov8" title="1">{
+                return preparedRequest{}, ValidationError{Code: "invalid_argument", Message: "image_id is required"}
+        }</span>
+        <span class="cov8" title="1">req.PrepareKind = kind
+        req.ImageID = imageID
+        prepared, err := preparePsqlArgs(req.PsqlArgs, req.Stdin)
+        if err != nil </span><span class="cov8" title="1">{
+                return preparedRequest{}, err
+        }</span>
+        <span class="cov8" title="1">resolvedImageID := ""
+        if hasImageDigest(imageID) </span><span class="cov8" title="1">{
+                resolvedImageID = imageID
+        }</span>
+        <span class="cov8" title="1">return preparedRequest{
+                request:         req,
+                normalizedArgs:  prepared.normalizedArgs,
+                argsNormalized:  prepared.argsNormalized,
+                inputHashes:     prepared.inputHashes,
+                filePaths:       prepared.filePaths,
+                resolvedImageID: resolvedImageID,
+        }, nil</span>
+}
+
+func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) <span class="cov8" title="1">{
+        taskHash, errResp := m.computeTaskHash(prepared)
+        if errResp != nil </span><span class="cov0" title="0">{
+                return nil, "", errResp
+        }</span>
+        <span class="cov8" title="1">imageID := prepared.effectiveImageID()
+        if strings.TrimSpace(imageID) == "" </span><span class="cov0" title="0">{
+                return nil, "", errorResponse("internal_error", "resolved image id is required", "")
+        }</span>
+        <span class="cov8" title="1">stateID, errResp := m.computeOutputStateID("image", imageID, taskHash)
+        if errResp != nil </span><span class="cov0" title="0">{
+                return nil, "", errResp
+        }</span>
+        <span class="cov8" title="1">cached, err := m.isStateCached(stateID)
+        if err != nil </span><span class="cov8" title="1">{
+                return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
+        }</span>
+        <span class="cov8" title="1">cachedFlag := cached
+
+        tasks := make([]PlanTask, 0, 3)
+        tasks = append(tasks, PlanTask{
+                TaskID:      "plan",
+                Type:        "plan",
+                PlannerKind: prepared.request.PrepareKind,
+        })
+        if needsImageResolve(prepared.request.ImageID) </span><span class="cov8" title="1">{
+                tasks = append(tasks, PlanTask{
+                        TaskID:          "resolve-image",
+                        Type:            "resolve_image",
+                        ImageID:         prepared.request.ImageID,
+                        ResolvedImageID: imageID,
+                })
+        }</span>
+        <span class="cov8" title="1">tasks = append(tasks,
+                PlanTask{
+                        TaskID: "execute-0",
+                        Type:   "state_execute",
+                        Input: &amp;TaskInput{
+                                Kind: "image",
+                                ID:   imageID,
+                        },
+                        TaskHash:      taskHash,
+                        OutputStateID: stateID,
+                        Cached:        &amp;cachedFlag,
+                },
+                PlanTask{
+                        TaskID: "prepare-instance",
+                        Type:   "prepare_instance",
+                        Input: &amp;TaskInput{
+                                Kind: "state",
+                                ID:   stateID,
+                        },
+                        InstanceMode: "ephemeral",
+                },
+        )
+        return tasks, stateID, nil</span>
+}
+
+func (m *Manager) computeTaskHash(prepared preparedRequest) (string, *ErrorResponse) <span class="cov8" title="1">{
+        hasher := newStateHasher()
+        hasher.write("prepare_kind", prepared.request.PrepareKind)
+        for i, arg := range prepared.normalizedArgs </span><span class="cov8" title="1">{
+                hasher.write(fmt.Sprintf("arg:%d", i), arg)
+        }</span>
+        <span class="cov8" title="1">for i, input := range prepared.inputHashes </span><span class="cov8" title="1">{
+                hasher.write(fmt.Sprintf("input:%d:%s", i, input.Kind), input.Value)
+        }</span>
+        <span class="cov8" title="1">hasher.write("engine_version", m.version)
+        taskHash := hasher.sum()
+        if taskHash == "" </span><span class="cov0" title="0">{
+                return "", errorResponse("internal_error", "cannot compute task hash", "")
+        }</span>
+        <span class="cov8" title="1">return taskHash, nil</span>
+}
+
+func (m *Manager) computeOutputStateID(inputKind, inputID, taskHash string) (string, *ErrorResponse) <span class="cov8" title="1">{
+        hasher := newStateHasher()
+        hasher.write("input_kind", inputKind)
+        hasher.write("input_id", inputID)
+        hasher.write("task_hash", taskHash)
+        stateID := hasher.sum()
+        if stateID == "" </span><span class="cov0" title="0">{
+                return "", errorResponse("internal_error", "cannot compute state id", "")
+        }</span>
+        <span class="cov8" title="1">return stateID, nil</span>
+}
+
+func (m *Manager) isStateCached(stateID string) (bool, error) <span class="cov8" title="1">{
+        if strings.TrimSpace(stateID) == "" </span><span class="cov8" title="1">{
+                return false, nil
+        }</span>
+        <span class="cov8" title="1">_, ok, err := m.store.GetState(context.Background(), stateID)
+        if err != nil </span><span class="cov8" title="1">{
+                return false, err
+        }</span>
+        <span class="cov8" title="1">return ok, nil</span>
+}
+
+func (m *Manager) markTasksSucceeded(ctx context.Context, jobID string, tasks []taskState) error <span class="cov8" title="1">{
+        for _, task := range tasks </span><span class="cov8" title="1">{
+                if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil); err != nil </span><span class="cov8" title="1">{
+                        return err
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+func (m *Manager) updateTaskStatus(ctx context.Context, jobID string, taskID string, status string, startedAt *string, finishedAt *string, errResp *ErrorResponse) error <span class="cov8" title="1">{
+        var errJSON *string
+        if errResp != nil </span><span class="cov8" title="1">{
+                payload, err := json.Marshal(errResp)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov8" title="1">errJSON = strPtr(string(payload))</span>
+        }
+        <span class="cov8" title="1">update := queue.TaskUpdate{
+                Status:     &amp;status,
+                StartedAt:  startedAt,
+                FinishedAt: finishedAt,
+                ErrorJSON:  errJSON,
+        }
+        if err := m.queue.UpdateTask(ctx, jobID, taskID, update); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">m.logTask(jobID, taskID, "status=%s", status)
+        event := Event{
+                Type:   "task",
+                Ts:     m.now().UTC().Format(time.RFC3339Nano),
+                Status: status,
+                TaskID: taskID,
+        }
+        return m.appendEvent(jobID, event)</span>
+}
+
+func (m *Manager) succeed(jobID string, result Result) error <span class="cov8" title="1">{
+        now := m.now().UTC().Format(time.RFC3339Nano)
+        payload, err := json.Marshal(result)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if err := m.queue.UpdateJob(context.Background(), jobID, queue.JobUpdate{
+                Status:     strPtr(StatusSucceeded),
+                FinishedAt: &amp;now,
+                ResultJSON: strPtr(string(payload)),
+        }); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if err := m.appendEvent(jobID, Event{
+                Type:   "status",
+                Ts:     now,
+                Status: StatusSucceeded,
+        }); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">m.logJob(jobID, "succeeded instance=%s state=%s", result.InstanceID, result.StateID)
+        if err := m.appendEvent(jobID, Event{
+                Type:   "result",
+                Ts:     now,
+                Result: &amp;result,
+        }); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">m.trimCompletedJobsForJob(context.Background(), jobID)
+        return nil</span>
+}
+
+func (m *Manager) succeedPlan(jobID string) error <span class="cov8" title="1">{
+        now := m.now().UTC().Format(time.RFC3339Nano)
+        if err := m.queue.UpdateJob(context.Background(), jobID, queue.JobUpdate{
+                Status:     strPtr(StatusSucceeded),
+                FinishedAt: &amp;now,
+        }); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">m.logJob(jobID, "succeeded plan_only=true")
+        if err := m.appendEvent(jobID, Event{
+                Type:   "status",
+                Ts:     now,
+                Status: StatusSucceeded,
+        }); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">m.trimCompletedJobsForJob(context.Background(), jobID)
+        return nil</span>
+}
+
+func (m *Manager) failJob(jobID string, errResp *ErrorResponse) error <span class="cov8" title="1">{
+        now := m.now().UTC().Format(time.RFC3339Nano)
+        payload, err := json.Marshal(errResp)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if err := m.queue.UpdateJob(context.Background(), jobID, queue.JobUpdate{
+                Status:     strPtr(StatusFailed),
+                FinishedAt: &amp;now,
+                ErrorJSON:  strPtr(string(payload)),
+        }); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if err := m.appendEvent(jobID, Event{
+                Type:   "status",
+                Ts:     now,
+                Status: StatusFailed,
+        }); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">if errResp != nil </span><span class="cov8" title="1">{
+                m.logJob(jobID, "failed code=%s message=%s", errResp.Code, errResp.Message)
+        }</span> else<span class="cov0" title="0"> {
+                m.logJob(jobID, "failed")
+        }</span>
+        <span class="cov8" title="1">if err := m.appendEvent(jobID, Event{
+                Type:  "error",
+                Ts:    now,
+                Error: errResp,
+        }); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">m.trimCompletedJobsForJob(context.Background(), jobID)
+        return nil</span>
+}
+
+func (m *Manager) appendEvent(jobID string, event Event) error <span class="cov8" title="1">{
+        record := eventRecordFromEvent(jobID, event)
+        if _, err := m.queue.AppendEvent(context.Background(), record); err != nil </span><span class="cov8" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="1">m.updateHeartbeat(jobID, event)
+        m.events.notify(jobID)
+        return nil</span>
+}
+
+func (m *Manager) registerRunner(jobID string, cancel context.CancelFunc) *jobRunner <span class="cov8" title="1">{
+        runner := &amp;jobRunner{
+                cancel: cancel,
+                done:   make(chan struct{}),
+        }
+        m.mu.Lock()
+        m.running[jobID] = runner
+        m.mu.Unlock()
+        return runner
+}</span>
+
+func (m *Manager) unregisterRunner(jobID string) <span class="cov8" title="1">{
+        m.mu.Lock()
+        delete(m.running, jobID)
+        m.mu.Unlock()
+}</span>
+
+func (m *Manager) getRunner(jobID string) *jobRunner <span class="cov8" title="1">{
+        m.mu.Lock()
+        defer m.mu.Unlock()
+        return m.running[jobID]
+}</span>
+
+func (r *jobRunner) setRuntime(rt *jobRuntime) <span class="cov8" title="1">{
+        r.mu.Lock()
+        r.rt = rt
+        r.mu.Unlock()
+}</span>
+
+func (r *jobRunner) getRuntime() *jobRuntime <span class="cov8" title="1">{
+        r.mu.Lock()
+        defer r.mu.Unlock()
+        return r.rt
+}</span>
+
+func (m *Manager) logJob(jobID string, format string, args ...any) <span class="cov8" title="1">{
+        if strings.TrimSpace(jobID) == "" </span><span class="cov8" title="1">{
+                log.Printf("prepare "+format, args...)
+                return
+        }</span>
+        <span class="cov8" title="1">args = append([]any{jobID}, args...)
+        log.Printf("prepare job=%s "+format, args...)</span>
+}
+
+func (m *Manager) logTask(jobID string, taskID string, format string, args ...any) <span class="cov8" title="1">{
+        if strings.TrimSpace(jobID) == "" || strings.TrimSpace(taskID) == "" </span><span class="cov8" title="1">{
+                log.Printf("prepare task "+format, args...)
+                return
+        }</span>
+        <span class="cov8" title="1">args = append([]any{jobID, taskID}, args...)
+        log.Printf("prepare job=%s task=%s "+format, args...)</span>
+}
+
+func (m *Manager) appendLog(jobID string, message string) <span class="cov8" title="1">{
+        if strings.TrimSpace(jobID) == "" || strings.TrimSpace(message) == "" </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">_ = m.appendEvent(jobID, Event{
+                Type:    "log",
+                Ts:      m.now().UTC().Format(time.RFC3339Nano),
+                Message: message,
+        })</span>
+}
+
+func (m *Manager) appendLogLines(jobID string, prefix string, content string) <span class="cov8" title="1">{
+        content = strings.TrimSpace(content)
+        if content == "" </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">for _, line := range strings.Split(content, "\n") </span><span class="cov8" title="1">{
+                line = strings.TrimSpace(line)
+                if line == "" </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">if prefix != "" </span><span class="cov8" title="1">{
+                        m.appendLog(jobID, prefix+": "+line)
+                }</span> else<span class="cov8" title="1"> {
+                        m.appendLog(jobID, line)
+                }</span>
+        }
+}
+
+func normalizeHeartbeat(value time.Duration) time.Duration <span class="cov8" title="1">{
+        if value &lt;= 0 </span><span class="cov8" title="1">{
+                return 500 * time.Millisecond
+        }</span>
+        <span class="cov8" title="1">if value &lt; 200*time.Millisecond </span><span class="cov8" title="1">{
+                return 200 * time.Millisecond
+        }</span>
+        <span class="cov8" title="1">if value &gt; time.Second </span><span class="cov8" title="1">{
+                return time.Second
+        }</span>
+        <span class="cov8" title="1">return value</span>
+}
+
+type heartbeatState struct {
+        lastEventAt time.Time
+        lastEvent   *Event
+        runningTask string
+        cancel      context.CancelFunc
+}
+
+func (m *Manager) updateHeartbeat(jobID string, event Event) <span class="cov8" title="1">{
+        if strings.TrimSpace(jobID) == "" </span><span class="cov8" title="1">{
+                return
+        }</span>
+        <span class="cov8" title="1">m.mu.Lock()
+        state := m.beats[jobID]
+        if state == nil </span><span class="cov8" title="1">{
+                state = &amp;heartbeatState{}
+                m.beats[jobID] = state
+        }</span>
+        <span class="cov8" title="1">state.lastEventAt = m.now().UTC()
+        shouldStart := false
+        if event.Type == "task" &amp;&amp; event.Status == StatusRunning &amp;&amp; strings.TrimSpace(event.TaskID) != "" </span><span class="cov8" title="1">{
+                copy := event
+                state.runningTask = event.TaskID
+                state.lastEvent = &amp;copy
+                if state.cancel == nil </span><span class="cov8" title="1">{
+                        shouldStart = true
+                }</span>
+        }
+        <span class="cov8" title="1">if event.Type == "log" &amp;&amp; state.runningTask != "" </span><span class="cov8" title="1">{
+                copy := event
+                state.lastEvent = &amp;copy
+        }</span>
+        <span class="cov8" title="1">if event.Type == "task" &amp;&amp; event.Status != StatusRunning &amp;&amp; state.runningTask != "" &amp;&amp; state.runningTask == event.TaskID </span><span class="cov8" title="1">{
+                state.runningTask = ""
+                state.lastEvent = nil
+                if state.cancel != nil </span><span class="cov8" title="1">{
+                        state.cancel()
+                        state.cancel = nil
+                }</span>
+        }
+        <span class="cov8" title="1">if event.Type == "status" &amp;&amp; (event.Status == StatusSucceeded || event.Status == StatusFailed) </span><span class="cov8" title="1">{
+                state.runningTask = ""
+                state.lastEvent = nil
+                if state.cancel != nil </span><span class="cov8" title="1">{
+                        state.cancel()
+                        state.cancel = nil
+                }</span>
+        }
+        <span class="cov8" title="1">m.mu.Unlock()
+        if shouldStart </span><span class="cov8" title="1">{
+                m.startHeartbeat(jobID)
+        }</span>
+}
+
+func (m *Manager) startHeartbeat(jobID string) <span class="cov8" title="1">{
+        m.mu.Lock()
+        state := m.beats[jobID]
+        if state == nil || state.cancel != nil </span><span class="cov8" title="1">{
+                m.mu.Unlock()
+                return
+        }</span>
+        <span class="cov8" title="1">ctx, cancel := context.WithCancel(context.Background())
+        state.cancel = cancel
+        m.mu.Unlock()
+
+        go func() </span><span class="cov8" title="1">{
+                ticker := time.NewTicker(m.heartbeatEvery)
+                defer ticker.Stop()
+                for </span><span class="cov8" title="1">{
+                        select </span>{
+                        case &lt;-ctx.Done():<span class="cov8" title="1">
+                                return</span>
+                        case &lt;-ticker.C:<span class="cov8" title="1"></span>
+                        }
+                        <span class="cov8" title="1">var emit *Event
+                        var lastEventAt time.Time
+                        m.mu.Lock()
+                        state := m.beats[jobID]
+                        if state != nil </span><span class="cov8" title="1">{
+                                lastEventAt = state.lastEventAt
+                                if state.lastEvent != nil &amp;&amp; state.runningTask != "" </span><span class="cov8" title="1">{
+                                        copy := *state.lastEvent
+                                        emit = &amp;copy
+                                }</span>
+                        }
+                        <span class="cov8" title="1">m.mu.Unlock()
+                        if emit == nil </span><span class="cov8" title="1">{
+                                return
+                        }</span>
+                        <span class="cov8" title="1">if m.now().UTC().Sub(lastEventAt) &lt; m.heartbeatEvery </span><span class="cov8" title="1">{
+                                continue</span>
+                        }
+                        <span class="cov8" title="1">emit.Ts = m.now().UTC().Format(time.RFC3339Nano)
+                        _ = m.appendEvent(jobID, *emit)</span>
+                }
+        }()
+}
+
+type taskState struct {
+        PlanTask
+        Status string
+}
+
+func taskStatesFromPlan(tasks []PlanTask) []taskState <span class="cov8" title="1">{
+        states := make([]taskState, 0, len(tasks))
+        for _, task := range tasks </span><span class="cov8" title="1">{
+                states = append(states, taskState{
+                        PlanTask: task,
+                        Status:   StatusQueued,
+                })
+        }</span>
+        <span class="cov8" title="1">return states</span>
+}
+
+func taskStatesFromRecords(records []queue.TaskRecord) []taskState <span class="cov8" title="1">{
+        states := make([]taskState, 0, len(records))
+        for _, task := range records </span><span class="cov8" title="1">{
+                states = append(states, taskState{
+                        PlanTask: planTaskFromRecord(task),
+                        Status:   task.Status,
+                })
+        }</span>
+        <span class="cov8" title="1">return states</span>
+}
+
+func taskRecordsFromPlan(jobID string, tasks []PlanTask) []queue.TaskRecord <span class="cov8" title="1">{
+        records := make([]queue.TaskRecord, 0, len(tasks))
+        for i, task := range tasks </span><span class="cov8" title="1">{
+                records = append(records, queue.TaskRecord{
+                        JobID:           jobID,
+                        TaskID:          task.TaskID,
+                        Position:        i,
+                        Type:            task.Type,
+                        Status:          StatusQueued,
+                        PlannerKind:     nullableString(task.PlannerKind),
+                        InputKind:       nullableString(taskInputKind(task.Input)),
+                        InputID:         nullableString(taskInputID(task.Input)),
+                        ImageID:         nullableString(task.ImageID),
+                        ResolvedImageID: nullableString(task.ResolvedImageID),
+                        TaskHash:        nullableString(task.TaskHash),
+                        OutputStateID:   nullableString(task.OutputStateID),
+                        Cached:          task.Cached,
+                        InstanceMode:    nullableString(task.InstanceMode),
+                })
+        }</span>
+        <span class="cov8" title="1">return records</span>
+}
+
+func planTasksFromRecords(records []queue.TaskRecord) []PlanTask <span class="cov8" title="1">{
+        tasks := make([]PlanTask, 0, len(records))
+        for _, task := range records </span><span class="cov8" title="1">{
+                tasks = append(tasks, planTaskFromRecord(task))
+        }</span>
+        <span class="cov8" title="1">return tasks</span>
+}
+
+func planTaskFromRecord(task queue.TaskRecord) PlanTask <span class="cov8" title="1">{
+        var input *TaskInput
+        if task.InputKind != nil &amp;&amp; task.InputID != nil </span><span class="cov8" title="1">{
+                input = &amp;TaskInput{
+                        Kind: *task.InputKind,
+                        ID:   *task.InputID,
+                }
+        }</span>
+        <span class="cov8" title="1">return PlanTask{
+                TaskID:          task.TaskID,
+                Type:            task.Type,
+                PlannerKind:     valueOrEmpty(task.PlannerKind),
+                Input:           input,
+                ImageID:         valueOrEmpty(task.ImageID),
+                ResolvedImageID: valueOrEmpty(task.ResolvedImageID),
+                TaskHash:        valueOrEmpty(task.TaskHash),
+                OutputStateID:   valueOrEmpty(task.OutputStateID),
+                Cached:          task.Cached,
+                InstanceMode:    valueOrEmpty(task.InstanceMode),
+        }</span>
+}
+
+func taskEntryFromRecord(task queue.TaskRecord) TaskEntry <span class="cov8" title="1">{
+        var input *TaskInput
+        if task.InputKind != nil &amp;&amp; task.InputID != nil </span><span class="cov8" title="1">{
+                input = &amp;TaskInput{
+                        Kind: *task.InputKind,
+                        ID:   *task.InputID,
+                }
+        }</span>
+        <span class="cov8" title="1">return TaskEntry{
+                TaskID:          task.TaskID,
+                JobID:           task.JobID,
+                Type:            task.Type,
+                Status:          task.Status,
+                PlannerKind:     valueOrEmpty(task.PlannerKind),
+                Input:           input,
+                ImageID:         valueOrEmpty(task.ImageID),
+                ResolvedImageID: valueOrEmpty(task.ResolvedImageID),
+                TaskHash:        valueOrEmpty(task.TaskHash),
+                OutputStateID:   valueOrEmpty(task.OutputStateID),
+                Cached:          task.Cached,
+                InstanceMode:    valueOrEmpty(task.InstanceMode),
+        }</span>
+}
+
+func eventFromRecord(record queue.EventRecord) Event <span class="cov8" title="1">{
+        event := Event{
+                Type:    record.Type,
+                Ts:      record.Ts,
+                Status:  valueOrEmpty(record.Status),
+                TaskID:  valueOrEmpty(record.TaskID),
+                Message: valueOrEmpty(record.Message),
+        }
+        if record.ResultJSON != nil </span><span class="cov8" title="1">{
+                var result Result
+                if err := json.Unmarshal([]byte(*record.ResultJSON), &amp;result); err == nil </span><span class="cov8" title="1">{
+                        event.Result = &amp;result
+                }</span>
+        }
+        <span class="cov8" title="1">if record.ErrorJSON != nil </span><span class="cov8" title="1">{
+                var errResp ErrorResponse
+                if err := json.Unmarshal([]byte(*record.ErrorJSON), &amp;errResp); err == nil </span><span class="cov8" title="1">{
+                        event.Error = &amp;errResp
+                }</span>
+        }
+        <span class="cov8" title="1">return event</span>
+}
+
+func eventRecordFromEvent(jobID string, event Event) queue.EventRecord <span class="cov8" title="1">{
+        record := queue.EventRecord{
+                JobID:   jobID,
+                Type:    event.Type,
+                Ts:      event.Ts,
+                Status:  nullableString(event.Status),
+                TaskID:  nullableString(event.TaskID),
+                Message: nullableString(event.Message),
+        }
+        if event.Result != nil </span><span class="cov8" title="1">{
+                if payload, err := json.Marshal(event.Result); err == nil </span><span class="cov8" title="1">{
+                        record.ResultJSON = strPtr(string(payload))
+                }</span>
+        }
+        <span class="cov8" title="1">if event.Error != nil </span><span class="cov8" title="1">{
+                if payload, err := json.Marshal(event.Error); err == nil </span><span class="cov8" title="1">{
+                        record.ErrorJSON = strPtr(string(payload))
+                }</span>
+        }
+        <span class="cov8" title="1">return record</span>
+}
+
+func findOutputStateID(tasks []taskState) string <span class="cov8" title="1">{
+        for i := len(tasks) - 1; i &gt;= 0; i-- </span><span class="cov8" title="1">{
+                if tasks[i].Type == "state_execute" &amp;&amp; tasks[i].OutputStateID != "" </span><span class="cov8" title="1">{
+                        return tasks[i].OutputStateID
+                }</span>
+        }
+        <span class="cov8" title="1">return ""</span>
+}
+
+func hasRunningTasks(tasks []queue.TaskRecord) bool <span class="cov8" title="1">{
+        for _, task := range tasks </span><span class="cov8" title="1">{
+                if task.Status == StatusRunning </span><span class="cov8" title="1">{
+                        return true
+                }</span>
+        }
+        <span class="cov8" title="1">return false</span>
+}
+
+func taskInputKind(input *TaskInput) string <span class="cov8" title="1">{
+        if input == nil </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">return input.Kind</span>
+}
+
+func taskInputID(input *TaskInput) string <span class="cov8" title="1">{
+        if input == nil </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">return input.ID</span>
+}
+
+func valueOrEmpty(value *string) string <span class="cov8" title="1">{
+        if value == nil </span><span class="cov8" title="1">{
+                return ""
+        }</span>
+        <span class="cov8" title="1">return *value</span>
+}
+
+func nullableString(value string) *string <span class="cov8" title="1">{
+        if strings.TrimSpace(value) == "" </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return &amp;value</span>
+}
+
+const defaultMaxIdenticalJobs = 2
+
+func maxIdenticalJobs(cfg config.Store) int <span class="cov8" title="1">{
+        if cfg == nil </span><span class="cov8" title="1">{
+                return defaultMaxIdenticalJobs
+        }</span>
+        <span class="cov8" title="1">value, err := cfg.Get("orchestrator.jobs.maxIdentical", true)
+        if err != nil </span><span class="cov8" title="1">{
+                return defaultMaxIdenticalJobs
+        }</span>
+        <span class="cov8" title="1">if value == nil </span><span class="cov8" title="1">{
+                return defaultMaxIdenticalJobs
+        }</span>
+        <span class="cov8" title="1">if num, ok := configValueToInt(value); ok &amp;&amp; num &gt;= 0 </span><span class="cov8" title="1">{
+                return num
+        }</span>
+        <span class="cov8" title="1">return defaultMaxIdenticalJobs</span>
+}
+
+func configValueToInt(value any) (int, bool) <span class="cov8" title="1">{
+        switch v := value.(type) </span>{
+        case int:<span class="cov8" title="1">
+                return v, true</span>
+        case int32:<span class="cov8" title="1">
+                return int(v), true</span>
+        case int64:<span class="cov8" title="1">
+                return int(v), true</span>
+        case float32:<span class="cov8" title="1">
+                if v != float32(int(v)) </span><span class="cov8" title="1">{
+                        return 0, false
+                }</span>
+                <span class="cov8" title="1">return int(v), true</span>
+        case float64:<span class="cov8" title="1">
+                if v != float64(int(v)) </span><span class="cov8" title="1">{
+                        return 0, false
+                }</span>
+                <span class="cov8" title="1">return int(v), true</span>
+        case json.Number:<span class="cov8" title="1">
+                if strings.ContainsAny(string(v), ".eE") </span><span class="cov8" title="1">{
+                        return 0, false
+                }</span>
+                <span class="cov8" title="1">parsed, err := v.Int64()
+                if err != nil </span><span class="cov8" title="1">{
+                        return 0, false
+                }</span>
+                <span class="cov8" title="1">return int(parsed), true</span>
+        default:<span class="cov8" title="1">
+                return 0, false</span>
+        }
+}
+
+func (m *Manager) removeJobDir(jobID string) error <span class="cov8" title="1">{
+        if m == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(m.stateStoreRoot) == "" </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(jobID) == "" </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">path := filepath.Join(m.stateStoreRoot, "jobs", jobID)
+        return os.RemoveAll(path)</span>
+}
+
+func strPtr(value string) *string <span class="cov8" title="1">{
+        return &amp;value
+}</span>
+
+func (p preparedRequest) effectiveImageID() string <span class="cov8" title="1">{
+        if strings.TrimSpace(p.resolvedImageID) != "" </span><span class="cov8" title="1">{
+                return p.resolvedImageID
+        }</span>
+        <span class="cov8" title="1">return p.request.ImageID</span>
+}
+
+func hasImageDigest(imageID string) bool <span class="cov8" title="1">{
+        imageID = strings.TrimSpace(imageID)
+        if imageID == "" </span><span class="cov8" title="1">{
+                return false
+        }</span>
+        <span class="cov8" title="1">at := strings.LastIndex(imageID, "@")
+        return at != -1 &amp;&amp; at+1 &lt; len(imageID)</span>
+}
+
+func needsImageResolve(imageID string) bool <span class="cov8" title="1">{
+        return !hasImageDigest(imageID)
+}</span>
+
+func (m *Manager) ensureResolvedImageID(ctx context.Context, jobID string, prepared *preparedRequest, tasks []queue.TaskRecord) *ErrorResponse <span class="cov8" title="1">{
+        if prepared == nil </span><span class="cov8" title="1">{
+                return errorResponse("internal_error", "prepared request is required", "")
+        }</span>
+        <span class="cov8" title="1">if strings.TrimSpace(prepared.resolvedImageID) != "" </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">if resolved := resolvedImageFromTasks(tasks); resolved != "" </span><span class="cov8" title="1">{
+                prepared.resolvedImageID = resolved
+                return nil
+        }</span>
+        <span class="cov8" title="1">if len(tasks) &gt; 0 </span><span class="cov8" title="1">{
+                prepared.resolvedImageID = prepared.request.ImageID
+                return nil
+        }</span>
+        <span class="cov8" title="1">if !needsImageResolve(prepared.request.ImageID) </span><span class="cov8" title="1">{
+                prepared.resolvedImageID = prepared.request.ImageID
+                return nil
+        }</span>
+        <span class="cov8" title="1">m.appendLog(jobID, fmt.Sprintf("resolve image %s", prepared.request.ImageID))
+        ctx = runtime.WithLogSink(ctx, func(line string) </span><span class="cov0" title="0">{
+                m.appendLog(jobID, "docker: "+line)
+        }</span>)
+        <span class="cov8" title="1">resolved, err := m.runtime.ResolveImage(ctx, prepared.request.ImageID)
+        if err != nil </span><span class="cov8" title="1">{
+                return errorResponse("internal_error", "cannot resolve image", err.Error())
+        }</span>
+        <span class="cov8" title="1">resolved = strings.TrimSpace(resolved)
+        if resolved == "" </span><span class="cov8" title="1">{
+                return errorResponse("internal_error", "resolved image id is required", "")
+        }</span>
+        <span class="cov8" title="1">m.appendLog(jobID, fmt.Sprintf("resolved image %s", resolved))
+        prepared.resolvedImageID = resolved
+        return nil</span>
+}
+
+func resolvedImageFromTasks(tasks []queue.TaskRecord) string <span class="cov8" title="1">{
+        for _, task := range tasks </span><span class="cov8" title="1">{
+                if task.Type != "resolve_image" </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">resolved := valueOrEmpty(task.ResolvedImageID)
+                if strings.TrimSpace(resolved) != "" </span><span class="cov8" title="1">{
+                        return resolved
+                }</span>
+        }
+        <span class="cov8" title="1">return ""</span>
+}
+
+var errJobNotFound = fmt.Errorf("job not found")
+
+type eventBus struct {
+        mu   sync.Mutex
+        subs map[string]map[chan struct{}]struct{}
+}
+
+func newEventBus() *eventBus <span class="cov8" title="1">{
+        return &amp;eventBus{
+                subs: map[string]map[chan struct{}]struct{}{},
+        }
+}</span>
+
+func (b *eventBus) subscribe(jobID string) chan struct{} <span class="cov8" title="1">{
+        ch := make(chan struct{}, 1)
+        b.mu.Lock()
+        if b.subs[jobID] == nil </span><span class="cov8" title="1">{
+                b.subs[jobID] = map[chan struct{}]struct{}{}
+        }</span>
+        <span class="cov8" title="1">b.subs[jobID][ch] = struct{}{}
+        b.mu.Unlock()
+        return ch</span>
+}
+
+func (b *eventBus) unsubscribe(jobID string, ch chan struct{}) <span class="cov8" title="1">{
+        b.mu.Lock()
+        defer b.mu.Unlock()
+        if b.subs[jobID] != nil </span><span class="cov8" title="1">{
+                delete(b.subs[jobID], ch)
+                if len(b.subs[jobID]) == 0 </span><span class="cov8" title="1">{
+                        delete(b.subs, jobID)
+                }</span>
+        }
+        <span class="cov8" title="1">close(ch)</span>
+}
+
+func (b *eventBus) notify(jobID string) <span class="cov8" title="1">{
+        b.mu.Lock()
+        defer b.mu.Unlock()
+        for ch := range b.subs[jobID] </span><span class="cov8" title="1">{
+                select </span>{
+                case ch &lt;- struct{}{}:<span class="cov8" title="1"></span>
+                default:<span class="cov0" title="0"></span>
+                }
+        }
+}
+
+func buildDSN(host string, port int) string <span class="cov8" title="1">{
+        return fmt.Sprintf("postgres://sqlrs@%s:%d/postgres", host, port)
+}</span>
+
+func formatTime(value time.Time) *string <span class="cov8" title="1">{
+        if value.IsZero() </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">formatted := value.UTC().Format(time.RFC3339Nano)
+        return &amp;formatted</span>
+}
+
+func formatTimePtr(value *time.Time) *string <span class="cov8" title="1">{
+        if value == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return formatTime(*value)</span>
+}
+
+var randReader = rand.Reader
+
+func randomHex(bytes int) (string, error) <span class="cov8" title="1">{
+        buf := make([]byte, bytes)
+        if _, err := randReader.Read(buf); err != nil </span><span class="cov8" title="1">{
+                return "", err
+        }</span>
+        <span class="cov8" title="1">return hex.EncodeToString(buf), nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package prepare
+
+import (
+        "crypto/sha256"
+        "encoding/hex"
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+)
+
+type psqlPrepared struct {
+        normalizedArgs []string
+        argsNormalized string
+        inputHashes    []inputHash
+        filePaths      []string
+}
+
+type inputHash struct {
+        Kind  string
+        Value string
+}
+
+func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) <span class="cov8" title="1">{
+        normalized := append([]string{}, args...)
+        var inputHashes []inputHash
+        var filePaths []string
+        hasNoPsqlrc := false
+        hasOnErrorStop := false
+        usesStdin := false
+
+        for i := 0; i &lt; len(args); i++ </span><span class="cov8" title="1">{
+                arg := args[i]
+                if arg == "" </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">if arg == "--" </span><span class="cov8" title="1">{
+                        if i+1 &lt; len(args) </span><span class="cov8" title="1">{
+                                return psqlPrepared{}, ValidationError{Code: "invalid_argument", Message: "positional arguments are not allowed"}
+                        }</span>
+                        <span class="cov8" title="1">continue</span>
+                }
+
+                <span class="cov8" title="1">if isConnectionFlag(arg) </span><span class="cov8" title="1">{
+                        return psqlPrepared{}, ValidationError{Code: "invalid_argument", Message: "connection flags are not allowed", Details: arg}
+                }</span>
+
+                <span class="cov8" title="1">if arg == "-X" || arg == "--no-psqlrc" </span><span class="cov8" title="1">{
+                        hasNoPsqlrc = true
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">if handled, err := handleVarFlag(args, &amp;i, &amp;hasOnErrorStop); err != nil </span><span class="cov8" title="1">{
+                        return psqlPrepared{}, err
+                }</span> else<span class="cov8" title="1"> if handled </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">if handled, err := handleFileFlag(args, &amp;i, stdin, &amp;usesStdin, &amp;inputHashes, &amp;filePaths); err != nil </span><span class="cov8" title="1">{
+                        return psqlPrepared{}, err
+                }</span> else<span class="cov8" title="1"> if handled </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">if handled, err := handleCommandFlag(args, &amp;i, &amp;inputHashes); err != nil </span><span class="cov8" title="1">{
+                        return psqlPrepared{}, err
+                }</span> else<span class="cov8" title="1"> if handled </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+
+                <span class="cov8" title="1">if strings.HasPrefix(arg, "-") </span><span class="cov8" title="1">{
+                        continue</span>
+                }
+                <span class="cov8" title="1">return psqlPrepared{}, ValidationError{Code: "invalid_argument", Message: "positional database arguments are not allowed", Details: arg}</span>
+        }
+
+        <span class="cov8" title="1">if usesStdin &amp;&amp; stdin == nil </span><span class="cov0" title="0">{
+                return psqlPrepared{}, ValidationError{Code: "invalid_argument", Message: "stdin is required when using -f -"}
+        }</span>
+        <span class="cov8" title="1">if !usesStdin &amp;&amp; stdin != nil </span><span class="cov8" title="1">{
+                return psqlPrepared{}, ValidationError{Code: "invalid_argument", Message: "stdin is only valid with -f -"}
+        }</span>
+
+        <span class="cov8" title="1">if !hasNoPsqlrc </span><span class="cov8" title="1">{
+                normalized = append(normalized, "-X")
+        }</span>
+        <span class="cov8" title="1">if !hasOnErrorStop </span><span class="cov8" title="1">{
+                normalized = append(normalized, "-v", "ON_ERROR_STOP=1")
+        }</span>
+
+        <span class="cov8" title="1">return psqlPrepared{
+                normalizedArgs: normalized,
+                argsNormalized: strings.Join(normalized, " "),
+                inputHashes:    inputHashes,
+                filePaths:      filePaths,
+        }, nil</span>
+}
+
+func isConnectionFlag(arg string) bool <span class="cov8" title="1">{
+        switch arg </span>{
+        case "-h", "-p", "-U", "-d", "--host", "--port", "--username", "--dbname", "--database":<span class="cov8" title="1">
+                return true</span>
+        }
+        <span class="cov8" title="1">if strings.HasPrefix(arg, "--host=") ||
+                strings.HasPrefix(arg, "--port=") ||
+                strings.HasPrefix(arg, "--username=") ||
+                strings.HasPrefix(arg, "--dbname=") ||
+                strings.HasPrefix(arg, "--database=") </span><span class="cov8" title="1">{
+                return true
+        }</span>
+        <span class="cov8" title="1">if strings.HasPrefix(arg, "-h") &amp;&amp; len(arg) &gt; 2 </span><span class="cov0" title="0">{
+                return true
+        }</span>
+        <span class="cov8" title="1">if strings.HasPrefix(arg, "-p") &amp;&amp; len(arg) &gt; 2 </span><span class="cov8" title="1">{
+                return true
+        }</span>
+        <span class="cov8" title="1">if strings.HasPrefix(arg, "-U") &amp;&amp; len(arg) &gt; 2 </span><span class="cov8" title="1">{
+                return true
+        }</span>
+        <span class="cov8" title="1">if strings.HasPrefix(arg, "-d") &amp;&amp; len(arg) &gt; 2 </span><span class="cov8" title="1">{
+                return true
+        }</span>
+        <span class="cov8" title="1">return false</span>
+}
+
+func handleVarFlag(args []string, index *int, hasOnErrorStop *bool) (bool, error) <span class="cov8" title="1">{
+        arg := args[*index]
+
+        switch </span>{
+        case arg == "-v" || arg == "--set" || arg == "--variable":<span class="cov8" title="1">
+                if *index+1 &gt;= len(args) </span><span class="cov8" title="1">{
+                        return true, ValidationError{Code: "invalid_argument", Message: "missing value for variable flag", Details: arg}
+                }</span>
+                <span class="cov8" title="1">val := args[*index+1]
+                if err := checkOnErrorStop(val, hasOnErrorStop); err != nil </span><span class="cov8" title="1">{
+                        return true, err
+                }</span>
+                <span class="cov8" title="1">*index++
+                return true, nil</span>
+        case strings.HasPrefix(arg, "-v") &amp;&amp; len(arg) &gt; 2:<span class="cov8" title="1">
+                val := arg[2:]
+                if err := checkOnErrorStop(val, hasOnErrorStop); err != nil </span><span class="cov0" title="0">{
+                        return true, err
+                }</span>
+                <span class="cov8" title="1">return true, nil</span>
+        case strings.HasPrefix(arg, "--set="):<span class="cov8" title="1">
+                val := strings.TrimPrefix(arg, "--set=")
+                if err := checkOnErrorStop(val, hasOnErrorStop); err != nil </span><span class="cov8" title="1">{
+                        return true, err
+                }</span>
+                <span class="cov8" title="1">return true, nil</span>
+        case strings.HasPrefix(arg, "--variable="):<span class="cov8" title="1">
+                val := strings.TrimPrefix(arg, "--variable=")
+                if err := checkOnErrorStop(val, hasOnErrorStop); err != nil </span><span class="cov8" title="1">{
+                        return true, err
+                }</span>
+                <span class="cov8" title="1">return true, nil</span>
+        default:<span class="cov8" title="1">
+                return false, nil</span>
+        }
+}
+
+func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, inputHashes *[]inputHash, filePaths *[]string) (bool, error) <span class="cov8" title="1">{
+        arg := args[*index]
+        switch </span>{
+        case arg == "-f" || arg == "--file":<span class="cov8" title="1">
+                if *index+1 &gt;= len(args) </span><span class="cov8" title="1">{
+                        return true, ValidationError{Code: "invalid_argument", Message: "missing value for file flag", Details: arg}
+                }</span>
+                <span class="cov8" title="1">path := args[*index+1]
+                if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil </span><span class="cov8" title="1">{
+                        return true, err
+                }</span>
+                <span class="cov8" title="1">*index++
+                return true, nil</span>
+        case strings.HasPrefix(arg, "--file="):<span class="cov8" title="1">
+                path := strings.TrimPrefix(arg, "--file=")
+                if path == "" </span><span class="cov8" title="1">{
+                        return true, ValidationError{Code: "invalid_argument", Message: "missing value for file flag", Details: arg}
+                }</span>
+                <span class="cov8" title="1">if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil </span><span class="cov0" title="0">{
+                        return true, err
+                }</span>
+                <span class="cov8" title="1">return true, nil</span>
+        case strings.HasPrefix(arg, "-f") &amp;&amp; len(arg) &gt; 2:<span class="cov8" title="1">
+                path := arg[2:]
+                if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil </span><span class="cov8" title="1">{
+                        return true, err
+                }</span>
+                <span class="cov8" title="1">return true, nil</span>
+        default:<span class="cov8" title="1">
+                return false, nil</span>
+        }
+}
+
+func handleCommandFlag(args []string, index *int, inputHashes *[]inputHash) (bool, error) <span class="cov8" title="1">{
+        arg := args[*index]
+        switch </span>{
+        case arg == "-c" || arg == "--command":<span class="cov8" title="1">
+                if *index+1 &gt;= len(args) </span><span class="cov8" title="1">{
+                        return true, ValidationError{Code: "invalid_argument", Message: "missing value for command flag", Details: arg}
+                }</span>
+                <span class="cov8" title="1">cmd := args[*index+1]
+                *inputHashes = append(*inputHashes, inputHash{
+                        Kind:  "command",
+                        Value: hashContent(cmd),
+                })
+                *index++
+                return true, nil</span>
+        case strings.HasPrefix(arg, "--command="):<span class="cov8" title="1">
+                cmd := strings.TrimPrefix(arg, "--command=")
+                *inputHashes = append(*inputHashes, inputHash{
+                        Kind:  "command",
+                        Value: hashContent(cmd),
+                })
+                return true, nil</span>
+        case strings.HasPrefix(arg, "-c") &amp;&amp; len(arg) &gt; 2:<span class="cov8" title="1">
+                cmd := arg[2:]
+                *inputHashes = append(*inputHashes, inputHash{
+                        Kind:  "command",
+                        Value: hashContent(cmd),
+                })
+                return true, nil</span>
+        default:<span class="cov8" title="1">
+                return false, nil</span>
+        }
+}
+
+func addFileHash(path string, stdin *string, usesStdin *bool, inputHashes *[]inputHash, filePaths *[]string) error <span class="cov8" title="1">{
+        if path == "-" </span><span class="cov8" title="1">{
+                *usesStdin = true
+                if stdin == nil </span><span class="cov8" title="1">{
+                        return ValidationError{Code: "invalid_argument", Message: "stdin is required when using -f -"}
+                }</span>
+                <span class="cov8" title="1">*inputHashes = append(*inputHashes, inputHash{
+                        Kind:  "stdin",
+                        Value: hashContent(*stdin),
+                })
+                return nil</span>
+        }
+        <span class="cov8" title="1">if path == "" </span><span class="cov8" title="1">{
+                return ValidationError{Code: "invalid_argument", Message: "file path is empty"}
+        }</span>
+        <span class="cov8" title="1">if !filepath.IsAbs(path) </span><span class="cov8" title="1">{
+                return ValidationError{Code: "invalid_argument", Message: "file path must be absolute", Details: path}
+        }</span>
+        <span class="cov8" title="1">data, err := os.ReadFile(path)
+        if err != nil </span><span class="cov8" title="1">{
+                return ValidationError{Code: "invalid_argument", Message: "cannot read file", Details: fmt.Sprintf("%s: %v", path, err)}
+        }</span>
+        <span class="cov8" title="1">*inputHashes = append(*inputHashes, inputHash{
+                Kind:  "file",
+                Value: hashContentBytes(data),
+        })
+        if filePaths != nil </span><span class="cov8" title="1">{
+                *filePaths = append(*filePaths, path)
+        }</span>
+        <span class="cov8" title="1">return nil</span>
+}
+
+func checkOnErrorStop(value string, hasOnErrorStop *bool) error <span class="cov8" title="1">{
+        name, val, ok := splitAssignment(value)
+        if !ok </span><span class="cov8" title="1">{
+                if strings.EqualFold(strings.TrimSpace(value), "ON_ERROR_STOP") </span><span class="cov8" title="1">{
+                        return ValidationError{Code: "invalid_argument", Message: "ON_ERROR_STOP must be set to 1"}
+                }</span>
+                <span class="cov8" title="1">return nil</span>
+        }
+        <span class="cov8" title="1">if strings.EqualFold(strings.TrimSpace(name), "ON_ERROR_STOP") </span><span class="cov8" title="1">{
+                *hasOnErrorStop = true
+                if strings.TrimSpace(val) != "1" </span><span class="cov8" title="1">{
+                        return ValidationError{Code: "invalid_argument", Message: "ON_ERROR_STOP must be set to 1", Details: value}
+                }</span>
+        }
+        <span class="cov8" title="1">return nil</span>
+}
+
+func splitAssignment(value string) (string, string, bool) <span class="cov8" title="1">{
+        parts := strings.SplitN(value, "=", 2)
+        if len(parts) != 2 </span><span class="cov8" title="1">{
+                return "", "", false
+        }</span>
+        <span class="cov8" title="1">return parts[0], parts[1], true</span>
+}
+
+func hashContent(value string) string <span class="cov8" title="1">{
+        return hashContentBytes([]byte(value))
+}</span>
+
+func hashContentBytes(value []byte) string <span class="cov8" title="1">{
+        sum := sha256.Sum256(value)
+        return hex.EncodeToString(sum[:])
+}</span>
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package prepare
+
+import (
+        "fmt"
+        "path"
+        "path/filepath"
+        "strings"
+
+        engineRuntime "sqlrs/engine/internal/runtime"
+)
+
+const containerScriptsRoot = "/sqlrs/scripts"
+
+type scriptMount struct {
+        HostRoot      string
+        ContainerRoot string
+}
+
+func scriptMountForFiles(paths []string) (*scriptMount, error) <span class="cov8" title="1">{
+        if len(paths) == 0 </span><span class="cov8" title="1">{
+                return nil, nil
+        }</span>
+        <span class="cov8" title="1">root, err := commonDir(paths)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="1">return &amp;scriptMount{
+                HostRoot:      filepath.Clean(root),
+                ContainerRoot: containerScriptsRoot,
+        }, nil</span>
+}
+
+func buildPsqlExecArgs(args []string, mount *scriptMount) ([]string, string, error) <span class="cov8" title="1">{
+        rewritten, workdir, err := rewritePsqlFileArgs(args, mount)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, "", err
+        }</span>
+        <span class="cov8" title="1">execArgs := []string{
+                "psql",
+                "-h", "127.0.0.1",
+                "-p", "5432",
+                "-U", "sqlrs",
+                "-d", "postgres",
+        }
+        execArgs = append(execArgs, rewritten...)
+        return execArgs, workdir, nil</span>
+}
+
+func runtimeMountsFrom(mount *scriptMount) []engineRuntime.Mount <span class="cov8" title="1">{
+        if mount == nil </span><span class="cov8" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="1">return []engineRuntime.Mount{{
+                HostPath:      mount.HostRoot,
+                ContainerPath: mount.ContainerRoot,
+                ReadOnly:      true,
+        }}</span>
+}
+
+func rewritePsqlFileArgs(args []string, mount *scriptMount) ([]string, string, error) <span class="cov8" title="1">{
+        if mount == nil </span><span class="cov8" title="1">{
+                return append([]string{}, args...), "", nil
+        }</span>
+        <span class="cov8" title="1">rewritten := make([]string, 0, len(args))
+        workdir := ""
+        for i := 0; i &lt; len(args); i++ </span><span class="cov8" title="1">{
+                arg := args[i]
+                switch </span>{
+                case arg == "-f" || arg == "--file":<span class="cov8" title="1">
+                        if i+1 &gt;= len(args) </span><span class="cov8" title="1">{
+                                return nil, "", fmt.Errorf("missing value for file flag: %s", arg)
+                        }</span>
+                        <span class="cov8" title="1">mapped, err := mapScriptPath(args[i+1], mount)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, "", err
+                        }</span>
+                        <span class="cov8" title="1">if workdir == "" &amp;&amp; mapped != "-" </span><span class="cov8" title="1">{
+                                workdir = path.Dir(mapped)
+                        }</span>
+                        <span class="cov8" title="1">rewritten = append(rewritten, arg, mapped)
+                        i++</span>
+                case strings.HasPrefix(arg, "--file="):<span class="cov8" title="1">
+                        value := strings.TrimPrefix(arg, "--file=")
+                        mapped, err := mapScriptPath(value, mount)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, "", err
+                        }</span>
+                        <span class="cov8" title="1">if workdir == "" &amp;&amp; mapped != "-" </span><span class="cov8" title="1">{
+                                workdir = path.Dir(mapped)
+                        }</span>
+                        <span class="cov8" title="1">rewritten = append(rewritten, "--file="+mapped)</span>
+                case strings.HasPrefix(arg, "-f") &amp;&amp; len(arg) &gt; 2:<span class="cov8" title="1">
+                        value := arg[2:]
+                        mapped, err := mapScriptPath(value, mount)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, "", err
+                        }</span>
+                        <span class="cov8" title="1">if workdir == "" &amp;&amp; mapped != "-" </span><span class="cov0" title="0">{
+                                workdir = path.Dir(mapped)
+                        }</span>
+                        <span class="cov8" title="1">rewritten = append(rewritten, "-f"+mapped)</span>
+                default:<span class="cov8" title="1">
+                        rewritten = append(rewritten, arg)</span>
+                }
+        }
+        <span class="cov8" title="1">return rewritten, workdir, nil</span>
+}
+
+func mapScriptPath(value string, mount *scriptMount) (string, error) <span class="cov8" title="1">{
+        if value == "-" </span><span class="cov8" title="1">{
+                return value, nil
+        }</span>
+        <span class="cov8" title="1">if mount == nil </span><span class="cov8" title="1">{
+                return "", fmt.Errorf("script mount is required for file path: %s", value)
+        }</span>
+        <span class="cov8" title="1">if !filepath.IsAbs(value) </span><span class="cov8" title="1">{
+                return "", fmt.Errorf("file path must be absolute: %s", value)
+        }</span>
+        <span class="cov8" title="1">if !isWithin(mount.HostRoot, value) </span><span class="cov8" title="1">{
+                return "", fmt.Errorf("file path is outside script root: %s", value)
+        }</span>
+        <span class="cov8" title="1">rel, err := filepath.Rel(mount.HostRoot, value)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov8" title="1">rel = filepath.ToSlash(rel)
+        return path.Join(mount.ContainerRoot, rel), nil</span>
+}
+
+func commonDir(paths []string) (string, error) <span class="cov8" title="1">{
+        if len(paths) == 0 </span><span class="cov8" title="1">{
+                return "", fmt.Errorf("paths are required")
+        }</span>
+        <span class="cov8" title="1">root := filepath.Dir(filepath.Clean(paths[0]))
+        for _, p := range paths[1:] </span><span class="cov8" title="1">{
+                dir := filepath.Dir(filepath.Clean(p))
+                for !isWithin(root, dir) </span><span class="cov8" title="1">{
+                        parent := filepath.Dir(root)
+                        if parent == root </span><span class="cov0" title="0">{
+                                return "", fmt.Errorf("paths do not share a common root")
+                        }</span>
+                        <span class="cov8" title="1">root = parent</span>
+                }
+        }
+        <span class="cov8" title="1">return root, nil</span>
+}
+
+func isWithin(base, target string) bool <span class="cov8" title="1">{
+        rel, err := filepath.Rel(base, target)
+        if err != nil </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov8" title="1">if rel == "." </span><span class="cov0" title="0">{
+                return true
+        }</span>
+        <span class="cov8" title="1">prefix := ".." + string(filepath.Separator)
+        return !strings.HasPrefix(rel, prefix) &amp;&amp; rel != ".."</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

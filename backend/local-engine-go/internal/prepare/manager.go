@@ -42,6 +42,7 @@ type Options struct {
 	Now            func() time.Time
 	IDGen          func() (string, error)
 	Async          bool
+	HeartbeatEvery time.Duration
 }
 
 type Manager struct {
@@ -57,10 +58,12 @@ type Manager struct {
 	now            func() time.Time
 	idGen          func() (string, error)
 	async          bool
+	heartbeatEvery time.Duration
 
 	mu      sync.Mutex
 	running map[string]*jobRunner
 	events  *eventBus
+	beats   map[string]*heartbeatState
 }
 
 type jobRunner struct {
@@ -133,8 +136,10 @@ func NewManager(opts Options) (*Manager, error) {
 		now:            now,
 		idGen:          idGen,
 		async:          opts.Async,
+		heartbeatEvery: normalizeHeartbeat(opts.HeartbeatEvery),
 		running:        map[string]*jobRunner{},
 		events:         newEventBus(),
+		beats:          map[string]*heartbeatState{},
 	}, nil
 }
 
@@ -916,6 +921,7 @@ func (m *Manager) appendEvent(jobID string, event Event) error {
 	if _, err := m.queue.AppendEvent(context.Background(), record); err != nil {
 		return err
 	}
+	m.updateHeartbeat(jobID, event)
 	m.events.notify(jobID)
 	return nil
 }
@@ -971,6 +977,145 @@ func (m *Manager) logTask(jobID string, taskID string, format string, args ...an
 	}
 	args = append([]any{jobID, taskID}, args...)
 	log.Printf("prepare job=%s task=%s "+format, args...)
+}
+
+func (m *Manager) appendLog(jobID string, message string) {
+	if strings.TrimSpace(jobID) == "" || strings.TrimSpace(message) == "" {
+		return
+	}
+	_ = m.appendEvent(jobID, Event{
+		Type:    "log",
+		Ts:      m.now().UTC().Format(time.RFC3339Nano),
+		Message: message,
+	})
+}
+
+func (m *Manager) appendLogLines(jobID string, prefix string, content string) {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return
+	}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if prefix != "" {
+			m.appendLog(jobID, prefix+": "+line)
+		} else {
+			m.appendLog(jobID, line)
+		}
+	}
+}
+
+func normalizeHeartbeat(value time.Duration) time.Duration {
+	if value <= 0 {
+		return 500 * time.Millisecond
+	}
+	if value < 200*time.Millisecond {
+		return 200 * time.Millisecond
+	}
+	if value > time.Second {
+		return time.Second
+	}
+	return value
+}
+
+type heartbeatState struct {
+	lastEventAt time.Time
+	lastEvent   *Event
+	runningTask string
+	cancel      context.CancelFunc
+}
+
+func (m *Manager) updateHeartbeat(jobID string, event Event) {
+	if strings.TrimSpace(jobID) == "" {
+		return
+	}
+	m.mu.Lock()
+	state := m.beats[jobID]
+	if state == nil {
+		state = &heartbeatState{}
+		m.beats[jobID] = state
+	}
+	state.lastEventAt = m.now().UTC()
+	shouldStart := false
+	if event.Type == "task" && event.Status == StatusRunning && strings.TrimSpace(event.TaskID) != "" {
+		copy := event
+		state.runningTask = event.TaskID
+		state.lastEvent = &copy
+		if state.cancel == nil {
+			shouldStart = true
+		}
+	}
+	if event.Type == "log" && state.runningTask != "" {
+		copy := event
+		state.lastEvent = &copy
+	}
+	if event.Type == "task" && event.Status != StatusRunning && state.runningTask != "" && state.runningTask == event.TaskID {
+		state.runningTask = ""
+		state.lastEvent = nil
+		if state.cancel != nil {
+			state.cancel()
+			state.cancel = nil
+		}
+	}
+	if event.Type == "status" && (event.Status == StatusSucceeded || event.Status == StatusFailed) {
+		state.runningTask = ""
+		state.lastEvent = nil
+		if state.cancel != nil {
+			state.cancel()
+			state.cancel = nil
+		}
+	}
+	m.mu.Unlock()
+	if shouldStart {
+		m.startHeartbeat(jobID)
+	}
+}
+
+func (m *Manager) startHeartbeat(jobID string) {
+	m.mu.Lock()
+	state := m.beats[jobID]
+	if state == nil || state.cancel != nil {
+		m.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	state.cancel = cancel
+	m.mu.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(m.heartbeatEvery)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			var emit *Event
+			var lastEventAt time.Time
+			m.mu.Lock()
+			state := m.beats[jobID]
+			if state != nil {
+				lastEventAt = state.lastEventAt
+				if state.lastEvent != nil && state.runningTask != "" {
+					copy := *state.lastEvent
+					emit = &copy
+				}
+			}
+			m.mu.Unlock()
+			if emit == nil {
+				return
+			}
+			if m.now().UTC().Sub(lastEventAt) < m.heartbeatEvery {
+				continue
+			}
+			emit.Ts = m.now().UTC().Format(time.RFC3339Nano)
+			_ = m.appendEvent(jobID, *emit)
+		}
+	}()
 }
 
 type taskState struct {
@@ -1276,6 +1421,10 @@ func (m *Manager) ensureResolvedImageID(ctx context.Context, jobID string, prepa
 		prepared.resolvedImageID = prepared.request.ImageID
 		return nil
 	}
+	m.appendLog(jobID, fmt.Sprintf("resolve image %s", prepared.request.ImageID))
+	ctx = runtime.WithLogSink(ctx, func(line string) {
+		m.appendLog(jobID, "docker: "+line)
+	})
 	resolved, err := m.runtime.ResolveImage(ctx, prepared.request.ImageID)
 	if err != nil {
 		return errorResponse("internal_error", "cannot resolve image", err.Error())
@@ -1284,6 +1433,7 @@ func (m *Manager) ensureResolvedImageID(ctx context.Context, jobID string, prepa
 	if resolved == "" {
 		return errorResponse("internal_error", "resolved image id is required", "")
 	}
+	m.appendLog(jobID, fmt.Sprintf("resolved image %s", resolved))
 	prepared.resolvedImageID = resolved
 	return nil
 }

@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"errors"
+	"io"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -469,6 +471,137 @@ func TestExecRunnerRunError(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(output), "err") {
 		t.Fatalf("expected stderr in output, got %q", output)
+	}
+}
+
+func TestExecRunnerRunStreaming(t *testing.T) {
+	runner := execRunner{}
+	cmd, args := shellCommand("echo out && echo err 1>&2")
+	var lines []string
+	output, err := runner.RunStreaming(context.Background(), cmd, args, nil, func(line string) {
+		lines = append(lines, line)
+	})
+	if err != nil {
+		t.Fatalf("RunStreaming: %v", err)
+	}
+	if len(lines) < 2 {
+		t.Fatalf("expected streamed lines, got %+v", lines)
+	}
+	if !strings.Contains(output, "out") || !strings.Contains(output, "err") {
+		t.Fatalf("expected output to include stdout/stderr, got %q", output)
+	}
+}
+
+func TestExecRunnerRunStreamingWithStdin(t *testing.T) {
+	runner := execRunner{}
+	cmd := "sh"
+	args := []string{"-c", "read x; echo $x"}
+	if runtime.GOOS == "windows" {
+		cmd = "cmd"
+		args = []string{"/V:ON", "/C", "set /p x= & echo !x!"}
+	}
+	input := "hello"
+	var lines []string
+	output, err := runner.RunStreaming(context.Background(), cmd, args, &input, func(line string) {
+		lines = append(lines, line)
+	})
+	if err != nil {
+		t.Fatalf("RunStreaming: %v", err)
+	}
+	if !strings.Contains(output, "hello") {
+		t.Fatalf("expected output to include stdin, got %q", output)
+	}
+	if len(lines) == 0 || lines[0] != "hello" {
+		t.Fatalf("expected stdin line in sink, got %+v", lines)
+	}
+}
+
+func TestExecRunnerRunStreamingNilSink(t *testing.T) {
+	runner := execRunner{}
+	cmd, args := shellCommand("echo ok")
+	if _, err := runner.RunStreaming(context.Background(), cmd, args, nil, nil); err != nil {
+		t.Fatalf("RunStreaming nil sink: %v", err)
+	}
+}
+
+func TestExecRunnerRunStreamingStdoutPipeError(t *testing.T) {
+	prevStdout := cmdStdoutPipe
+	defer func() { cmdStdoutPipe = prevStdout }()
+	cmdStdoutPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) {
+		return nil, errors.New("stdout boom")
+	}
+
+	runner := execRunner{}
+	_, err := runner.RunStreaming(context.Background(), "cmd", []string{"/c", "echo ok"}, nil, func(string) {})
+	if err == nil || !strings.Contains(err.Error(), "stdout boom") {
+		t.Fatalf("expected stdout pipe error, got %v", err)
+	}
+}
+
+func TestExecRunnerRunStreamingStderrPipeError(t *testing.T) {
+	prevStdout := cmdStdoutPipe
+	prevStderr := cmdStderrPipe
+	defer func() {
+		cmdStdoutPipe = prevStdout
+		cmdStderrPipe = prevStderr
+	}()
+	cmdStdoutPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("")), nil
+	}
+	cmdStderrPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) {
+		return nil, errors.New("stderr boom")
+	}
+
+	runner := execRunner{}
+	_, err := runner.RunStreaming(context.Background(), "cmd", []string{"/c", "echo ok"}, nil, func(string) {})
+	if err == nil || !strings.Contains(err.Error(), "stderr boom") {
+		t.Fatalf("expected stderr pipe error, got %v", err)
+	}
+}
+
+func TestExecRunnerRunStreamingStartError(t *testing.T) {
+	prevStdout := cmdStdoutPipe
+	prevStderr := cmdStderrPipe
+	prevStart := cmdStart
+	defer func() {
+		cmdStdoutPipe = prevStdout
+		cmdStderrPipe = prevStderr
+		cmdStart = prevStart
+	}()
+	cmdStdoutPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("")), nil
+	}
+	cmdStderrPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("")), nil
+	}
+	cmdStart = func(cmd *exec.Cmd) error {
+		return errors.New("start boom")
+	}
+
+	runner := execRunner{}
+	_, err := runner.RunStreaming(context.Background(), "cmd", []string{"/c", "echo ok"}, nil, func(string) {})
+	if err == nil || !strings.Contains(err.Error(), "start boom") {
+		t.Fatalf("expected start error, got %v", err)
+	}
+}
+
+func TestDockerRuntimeLogSink(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{{output: "line-1\nline-2\n"}},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	var lines []string
+	ctx := WithLogSink(context.Background(), func(line string) {
+		lines = append(lines, line)
+	})
+	if _, err := rt.Exec(ctx, "container-1", ExecRequest{Args: []string{"echo", "ok"}}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 log lines, got %d", len(lines))
+	}
+	if lines[0] != "line-1" || lines[1] != "line-2" {
+		t.Fatalf("unexpected log lines: %+v", lines)
 	}
 }
 

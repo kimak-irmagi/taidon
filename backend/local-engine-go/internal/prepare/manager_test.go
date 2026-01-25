@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,6 +163,17 @@ func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir stri
 	}
 	f.initCreated = true
 	return os.WriteFile(filepath.Join(dataDir, "PG_VERSION"), []byte("17"), 0o600)
+}
+
+type loggingRuntime struct {
+	fakeRuntime
+}
+
+func (l *loggingRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
+	if sink := engineRuntime.LogSinkFromContext(ctx); sink != nil {
+		sink("pulling layers")
+	}
+	return l.fakeRuntime.ResolveImage(ctx, imageID)
 }
 
 func (f *fakeRuntime) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
@@ -591,6 +603,37 @@ func TestSubmitStoresStateAndInstance(t *testing.T) {
 	}
 	if !foundTask {
 		t.Fatalf("expected task events, got %+v", events)
+	}
+}
+
+func TestSubmitEmitsPsqlOutputLog(t *testing.T) {
+	store := &fakeStore{}
+	queueStore := newQueueStore(t)
+	psql := &fakePsqlRunner{output: "psql output line"}
+	mgr := newManagerWithDeps(t, store, queueStore, &testDeps{psql: psql})
+
+	accepted, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	events, ok, done, err := mgr.EventsSince(accepted.JobID, 0)
+	if err != nil || !ok || !done {
+		t.Fatalf("unexpected events: ok=%v done=%v err=%v", ok, done, err)
+	}
+	found := false
+	for _, event := range events {
+		if event.Type == "log" && strings.Contains(event.Message, "psql: psql output line") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected psql log event, got %+v", events)
 	}
 }
 
@@ -2321,6 +2364,308 @@ func TestWaitForEventCancel(t *testing.T) {
 	}
 }
 
+func TestHeartbeatRepeatsRunningTask(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: t.TempDir(),
+		Config:         &fakeConfigStore{value: 2},
+		Psql:           &fakePsqlRunner{},
+		Version:        "v1",
+		Now:            time.Now,
+		IDGen:          func() (string, error) { return "job-1", nil },
+		Async:          false,
+		HeartbeatEvery: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", []queue.TaskRecord{
+		{JobID: "job-1", TaskID: "prepare-instance", Position: 0, Type: "prepare_instance", Status: StatusQueued},
+	}); err != nil {
+		t.Fatalf("ReplaceTasks: %v", err)
+	}
+	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := mgr.updateTaskStatus(context.Background(), "job-1", "prepare-instance", StatusRunning, &startedAt, nil, nil); err != nil {
+		t.Fatalf("updateTaskStatus: %v", err)
+	}
+	time.Sleep(450 * time.Millisecond)
+
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	runningCount := 0
+	for _, event := range events {
+		if event.Type == "task" && event.TaskID == "prepare-instance" && event.Status == StatusRunning {
+			runningCount++
+		}
+	}
+	if runningCount < 2 {
+		t.Fatalf("expected heartbeat task events, got %d events %+v", runningCount, events)
+	}
+
+	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := mgr.updateTaskStatus(context.Background(), "job-1", "prepare-instance", StatusSucceeded, nil, &finishedAt, nil); err != nil {
+		t.Fatalf("updateTaskStatus: %v", err)
+	}
+}
+
+func TestHeartbeatRepeatsLogEvent(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: t.TempDir(),
+		Config:         &fakeConfigStore{value: 2},
+		Psql:           &fakePsqlRunner{},
+		Version:        "v1",
+		Now:            time.Now,
+		IDGen:          func() (string, error) { return "job-1", nil },
+		Async:          false,
+		HeartbeatEvery: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", []queue.TaskRecord{
+		{JobID: "job-1", TaskID: "execute-0", Position: 0, Type: "state_execute", Status: StatusQueued},
+	}); err != nil {
+		t.Fatalf("ReplaceTasks: %v", err)
+	}
+	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := mgr.updateTaskStatus(context.Background(), "job-1", "execute-0", StatusRunning, &startedAt, nil, nil); err != nil {
+		t.Fatalf("updateTaskStatus: %v", err)
+	}
+	mgr.appendLog("job-1", "docker: pulling layers")
+	time.Sleep(450 * time.Millisecond)
+
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	logCount := 0
+	for _, event := range events {
+		if event.Type == "log" && event.Message == "docker: pulling layers" {
+			logCount++
+		}
+	}
+	if logCount < 2 {
+		t.Fatalf("expected heartbeat log events, got %d events %+v", logCount, events)
+	}
+}
+
+func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: t.TempDir(),
+		Config:         &fakeConfigStore{value: 2},
+		Psql:           &fakePsqlRunner{},
+		Version:        "v1",
+		Now:            time.Now,
+		IDGen:          func() (string, error) { return "job-1", nil },
+		Async:          false,
+		HeartbeatEvery: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", []queue.TaskRecord{
+		{JobID: "job-1", TaskID: "execute-0", Position: 0, Type: "state_execute", Status: StatusQueued},
+	}); err != nil {
+		t.Fatalf("ReplaceTasks: %v", err)
+	}
+	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := mgr.updateTaskStatus(context.Background(), "job-1", "execute-0", StatusRunning, &startedAt, nil, nil); err != nil {
+		t.Fatalf("updateTaskStatus: %v", err)
+	}
+	mgr.appendLog("job-1", "docker: pulling layers")
+	time.Sleep(450 * time.Millisecond)
+
+	eventsBefore, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := mgr.updateTaskStatus(context.Background(), "job-1", "execute-0", StatusSucceeded, nil, &finishedAt, nil); err != nil {
+		t.Fatalf("updateTaskStatus: %v", err)
+	}
+	time.Sleep(250 * time.Millisecond)
+
+	eventsAfter, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	if len(eventsAfter) > len(eventsBefore)+1 {
+		t.Fatalf("expected heartbeat to stop, events before=%d after=%d", len(eventsBefore), len(eventsAfter))
+	}
+}
+
+func TestAppendLogIgnoresEmpty(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+
+	mgr.appendLog("", "message")
+	mgr.appendLog("job-1", "")
+
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no events, got %d", len(events))
+	}
+
+	mgr.appendLog("job-1", "hello")
+	events, ok, _, err = mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	if len(events) != 1 || events[0].Message != "hello" {
+		t.Fatalf("unexpected log events: %+v", events)
+	}
+}
+
+func TestAppendLogLines(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+
+	mgr.appendLogLines("job-1", "docker", " line-1\n\n line-2 ")
+	mgr.appendLogLines("job-1", "", "line-3")
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("expected 3 log events, got %d", len(events))
+	}
+	if events[0].Message != "docker: line-1" || events[1].Message != "docker: line-2" || events[2].Message != "line-3" {
+		t.Fatalf("unexpected log messages: %+v", events)
+	}
+}
+
+func TestNormalizeHeartbeat(t *testing.T) {
+	if got := normalizeHeartbeat(0); got != 500*time.Millisecond {
+		t.Fatalf("expected default heartbeat, got %v", got)
+	}
+	if got := normalizeHeartbeat(50 * time.Millisecond); got != 200*time.Millisecond {
+		t.Fatalf("expected min heartbeat, got %v", got)
+	}
+	if got := normalizeHeartbeat(1500 * time.Millisecond); got != time.Second {
+		t.Fatalf("expected max heartbeat, got %v", got)
+	}
+	if got := normalizeHeartbeat(300 * time.Millisecond); got != 300*time.Millisecond {
+		t.Fatalf("expected passthrough heartbeat, got %v", got)
+	}
+}
+
+func TestHeartbeatStopsOnStatusEvent(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          queueStore,
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: t.TempDir(),
+		Config:         &fakeConfigStore{value: 2},
+		Psql:           &fakePsqlRunner{},
+		Version:        "v1",
+		Now:            time.Now,
+		IDGen:          func() (string, error) { return "job-1", nil },
+		Async:          false,
+		HeartbeatEvery: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+
+	mgr.updateHeartbeat("job-1", Event{Type: "task", Status: StatusRunning, TaskID: "execute-0"})
+	mgr.updateHeartbeat("job-1", Event{Type: "status", Status: StatusSucceeded})
+
+	mgr.mu.Lock()
+	state := mgr.beats["job-1"]
+	mgr.mu.Unlock()
+	if state == nil {
+		t.Fatalf("expected heartbeat state")
+	}
+	if state.runningTask != "" || state.lastEvent != nil || state.cancel != nil {
+		t.Fatalf("expected heartbeat cleared, got %+v", state)
+	}
+}
+
+func TestStartHeartbeatNoopWhenCancelSet(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	called := false
+	mgr.mu.Lock()
+	mgr.beats["job-1"] = &heartbeatState{
+		cancel: func() { called = true },
+	}
+	mgr.mu.Unlock()
+
+	mgr.startHeartbeat("job-1")
+	if called {
+		t.Fatalf("expected startHeartbeat to noop when cancel set")
+	}
+}
+
+func TestStartHeartbeatNoEvent(t *testing.T) {
+	mgr, err := NewManager(Options{
+		Store:          &fakeStore{},
+		Queue:          newQueueStore(t),
+		Runtime:        &fakeRuntime{},
+		Snapshot:       &fakeSnapshot{},
+		DBMS:           &fakeDBMS{},
+		StateStoreRoot: t.TempDir(),
+		Config:         &fakeConfigStore{value: 2},
+		Psql:           &fakePsqlRunner{},
+		Version:        "v1",
+		Now:            time.Now,
+		IDGen:          func() (string, error) { return "job-1", nil },
+		Async:          false,
+		HeartbeatEvery: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	mgr.mu.Lock()
+	mgr.beats["job-1"] = &heartbeatState{
+		runningTask: "execute-0",
+	}
+	mgr.mu.Unlock()
+	mgr.startHeartbeat("job-1")
+	time.Sleep(250 * time.Millisecond)
+}
+
+func TestUpdateHeartbeatEmptyJobID(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	mgr.updateHeartbeat("", Event{Type: "task", Status: StatusRunning, TaskID: "execute-0"})
+}
+
 func TestEventBusNotify(t *testing.T) {
 	bus := newEventBus()
 	ch := bus.subscribe("job-1")
@@ -3440,6 +3785,59 @@ func TestEnsureResolvedImageIDResolveEmpty(t *testing.T) {
 	}
 	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp == nil {
 		t.Fatalf("expected empty resolved error")
+	}
+}
+
+func TestEnsureResolvedImageIDResolvesImage(t *testing.T) {
+	queueStore := newQueueStore(t)
+	rt := &loggingRuntime{fakeRuntime: fakeRuntime{resolvedImage: "image-1@sha256:resolved"}}
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	mgr.runtime = rt
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
+	if prepared.resolvedImageID != "image-1@sha256:resolved" {
+		t.Fatalf("unexpected resolved image: %s", prepared.resolvedImageID)
+	}
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	foundResolve := false
+	foundResolved := false
+	for _, event := range events {
+		if event.Message == "resolve image image-1" {
+			foundResolve = true
+		}
+		if event.Message == "resolved image image-1@sha256:resolved" {
+			foundResolved = true
+		}
+	}
+	if !foundResolve || !foundResolved {
+		t.Fatalf("expected resolve log events, got %+v", events)
+	}
+}
+
+func TestEnsureResolvedImageIDAlreadyResolved(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1", PsqlArgs: []string{"-c", "select 1"}}
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	prepared.resolvedImageID = "image-1@sha256:resolved"
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
+	if prepared.resolvedImageID != "image-1@sha256:resolved" {
+		t.Fatalf("expected resolved image to be preserved")
 	}
 }
 

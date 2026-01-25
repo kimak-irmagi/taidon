@@ -166,7 +166,10 @@ sequenceDiagram
 
   alt Composite prepare present
     CLI->>ENG: start prepare job
-    ENG-->>CLI: instance_id + DSN
+    ENG-->>CLI: job_id + events_url + status_url
+    CLI->>ENG: watch events (events_url)
+    CLI->>ENG: GET /v1/prepare-jobs/{jobId} (on status events)
+    ENG-->>CLI: terminal status + DSN
   else Explicit instance
     CLI->>ENG: resolve instance by id or name
     ENG-->>CLI: instance_id + DSN
@@ -189,6 +192,8 @@ Notes:
 - Commands run inside the instance container (same runtime as `prepare:psql`).
 - If `--instance` is provided together with a preceding `prepare`, the CLI fails
   with an explicit ambiguity error.
+ - Prepare monitoring is events-first; the CLI validates terminal status via
+   `GET /v1/prepare-jobs/{jobId}` when status events arrive.
 
 ## 5. Upload Details (Remote)
 
