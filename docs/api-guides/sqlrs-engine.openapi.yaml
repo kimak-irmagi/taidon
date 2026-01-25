@@ -648,7 +648,6 @@ paths:
             application/x-ndjson:
               schema:
                 $ref: "#/components/schemas/RunEvent"
-              description: Newline-delimited JSON stream of RunEvent objects.
         "400":
           description: Invalid input
           content:
