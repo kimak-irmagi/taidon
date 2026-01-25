@@ -2737,6 +2737,24 @@ func TestHeartbeatStopsOnStatusEvent(t *testing.T) {
 	}
 }
 
+func TestHeartbeatDoesNotRecreateAfterTerminalStatus(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+
+	mgr.updateHeartbeat("job-1", Event{Type: "task", Status: StatusRunning, TaskID: "execute-0"})
+	mgr.updateHeartbeat("job-1", Event{Type: "status", Status: StatusSucceeded})
+	mgr.updateHeartbeat("job-1", Event{
+		Type:   "result",
+		Result: &Result{InstanceID: "i", StateID: "s", ImageID: "img"},
+	})
+
+	mgr.mu.Lock()
+	state := mgr.beats["job-1"]
+	mgr.mu.Unlock()
+	if state != nil {
+		t.Fatalf("expected no heartbeat state after terminal status, got %+v", state)
+	}
+}
+
 func TestStartHeartbeatNoopWhenCancelSet(t *testing.T) {
 	mgr := newManager(t, &fakeStore{})
 	called := false

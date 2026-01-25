@@ -1035,6 +1035,10 @@ func (m *Manager) updateHeartbeat(jobID string, event Event) {
 	m.mu.Lock()
 	state := m.beats[jobID]
 	if state == nil {
+		if !(event.Type == "task" && event.Status == StatusRunning && strings.TrimSpace(event.TaskID) != "") {
+			m.mu.Unlock()
+			return
+		}
 		state = &heartbeatState{}
 		m.beats[jobID] = state
 	}
