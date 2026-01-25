@@ -231,6 +231,40 @@ func (f *fakeRuntime) WaitForReady(ctx context.Context, id string, timeout time.
 	return nil
 }
 
+type cancelRuntime struct {
+	started chan struct{}
+}
+
+func (b *cancelRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error {
+	return nil
+}
+
+func (b *cancelRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
+	return imageID + "@sha256:resolved", nil
+}
+
+func (b *cancelRuntime) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
+	select {
+	case <-b.started:
+	default:
+		close(b.started)
+	}
+	<-ctx.Done()
+	return engineRuntime.Instance{}, ctx.Err()
+}
+
+func (b *cancelRuntime) Stop(ctx context.Context, id string) error {
+	return nil
+}
+
+func (b *cancelRuntime) Exec(ctx context.Context, id string, req engineRuntime.ExecRequest) (string, error) {
+	return "", nil
+}
+
+func (b *cancelRuntime) WaitForReady(ctx context.Context, id string, timeout time.Duration) error {
+	return nil
+}
+
 type fakeSnapshot struct {
 	cloneCalls    []string
 	snapshotCalls []string
@@ -1444,7 +1478,9 @@ func TestDeleteListTasksError(t *testing.T) {
 
 func TestDeleteJobForceCancels(t *testing.T) {
 	queueStore := newQueueStore(t)
+	blocker := &cancelRuntime{started: make(chan struct{})}
 	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	mgr.runtime = blocker
 	mgr.async = true
 
 	if _, err := mgr.Submit(context.Background(), Request{
@@ -1455,15 +1491,10 @@ func TestDeleteJobForceCancels(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if mgr.getRunner("job-1") != nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for job runner")
-		}
-		time.Sleep(25 * time.Millisecond)
+	select {
+	case <-blocker.started:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timeout waiting for Start")
 	}
 
 	result, ok := mgr.Delete("job-1", deletion.DeleteOptions{Force: true})
