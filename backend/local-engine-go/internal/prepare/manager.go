@@ -1067,6 +1067,7 @@ func (m *Manager) updateHeartbeat(jobID string, event Event) {
 			state.cancel()
 			state.cancel = nil
 		}
+		delete(m.beats, jobID)
 	}
 	m.mu.Unlock()
 	if shouldStart {

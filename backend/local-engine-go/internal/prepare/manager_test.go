@@ -2614,11 +2614,8 @@ func TestHeartbeatStopsOnStatusEvent(t *testing.T) {
 	mgr.mu.Lock()
 	state := mgr.beats["job-1"]
 	mgr.mu.Unlock()
-	if state == nil {
-		t.Fatalf("expected heartbeat state")
-	}
-	if state.runningTask != "" || state.lastEvent != nil || state.cancel != nil {
-		t.Fatalf("expected heartbeat cleared, got %+v", state)
+	if state != nil {
+		t.Fatalf("expected heartbeat state removed, got %+v", state)
 	}
 }
 
