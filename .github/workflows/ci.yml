@@ -73,8 +73,9 @@ jobs:
           go-version-file: backend/local-engine-go/go.mod
 
       - name: Run engine coverage
+        working-directory: backend/local-engine-go
         shell: bash
-        run: go test ./backend/local-engine-go/... -covermode=count -coverprofile=coverage-engine-${{ matrix.runner }}.out
+        run: go test ./... -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}.out
 
       - name: Set up Go (cli)
         uses: actions/setup-go@v5
