@@ -205,8 +205,24 @@ jobs:
                       path = os.path.relpath(norm, workspace)
               return path.replace("\\", "/")
 
+          def resolve_existing(path: str) -> str:
+              candidates = [path]
+              if not os.path.isabs(path):
+                  candidates.append(os.path.join("frontend", "cli-go", path))
+                  candidates.append(os.path.join("backend", "local-engine-go", path))
+                  candidates.append(os.path.join("frontend", "cli-go", "internal", path))
+                  candidates.append(os.path.join("backend", "local-engine-go", "internal", path))
+              for candidate in candidates:
+                  if not workspace:
+                      return candidate.replace("\\", "/")
+                  full = os.path.normpath(os.path.join(workspace, candidate))
+                  if os.path.isfile(full):
+                      return os.path.relpath(full, workspace).replace("\\", "/")
+              return path.replace("\\", "/")
+
           def rewrite(path: str, out_path: str) -> None:
               out_lines = []
+              unresolved = []
               with open(path, "r", encoding="utf-8") as fh:
                   for line in fh:
                       line = line.rstrip("\n")
@@ -217,10 +233,18 @@ jobs:
                       if not match:
                           out_lines.append(line)
                           continue
-                      file_path = normalize_path(match.group(1))
-                      out_lines.append(f"{file_path}:{match.group(2)}")
+                      raw_path = match.group(1)
+                      file_path = normalize_path(raw_path)
+                      resolved = resolve_existing(file_path)
+                      if resolved == file_path and workspace and not os.path.isfile(os.path.join(workspace, resolved)):
+                          unresolved.append(raw_path)
+                      out_lines.append(f"{resolved}:{match.group(2)}")
               with open(out_path, "w", encoding="utf-8") as fh:
                   fh.write("\n".join(out_lines) + "\n")
+              if unresolved:
+                  print("unresolved coverage paths (sample):")
+                  for path in unresolved[:10]:
+                      print(" -", path)
 
           rewrite("coverage.raw", "coverage.out")
           PY
