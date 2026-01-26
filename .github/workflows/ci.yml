@@ -407,10 +407,8 @@ jobs:
         uses: coverallsapp/github-action@v2
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-          COVERALLS_BASE_PATH: ${{ github.workspace }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: coverage.out
           format: golang
-          base-path: ${{ github.workspace }}
           debug: true
