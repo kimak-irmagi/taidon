@@ -412,4 +412,4 @@ jobs:
           file: coverage.out
           format: golang
           debug: true
-          coverage-reporter-version: v0.6.14
+          base-path: /foo
