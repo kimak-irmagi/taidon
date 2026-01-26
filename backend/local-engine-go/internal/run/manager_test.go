@@ -24,6 +24,7 @@ type fakeRuntime struct {
 	startCalls    []engineRuntime.StartRequest
 	startErr      error
 	startInstance engineRuntime.Instance
+	stopCalls     []string
 }
 
 func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error { return nil }
@@ -40,7 +41,10 @@ func (f *fakeRuntime) Start(ctx context.Context, req engineRuntime.StartRequest)
 	}
 	return engineRuntime.Instance{ID: "container-2", Host: "127.0.0.1", Port: 5432}, nil
 }
-func (f *fakeRuntime) Stop(ctx context.Context, id string) error { return nil }
+func (f *fakeRuntime) Stop(ctx context.Context, id string) error {
+	f.stopCalls = append(f.stopCalls, id)
+	return nil
+}
 func (f *fakeRuntime) Exec(ctx context.Context, id string, req engineRuntime.ExecRequest) (string, error) {
 	f.calls = append(f.calls, req)
 	f.execIDs = append(f.execIDs, id)
@@ -528,6 +532,36 @@ func TestManagerRunRecreateFailsWhenStartFails(t *testing.T) {
 	}
 }
 
+func TestManagerRunRecreateStopsContainerOnUpdateRuntimeError(t *testing.T) {
+	db := openStore(t)
+	defer db.Close()
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime: %v", err)
+	}
+	createInstanceWithRuntimeDir(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", runtimeDir)
+
+	rt := &fakeRuntime{
+		errQueue:      []error{errors.New("No such container: container-1")},
+		startInstance: engineRuntime.Instance{ID: "container-2", Host: "127.0.0.1", Port: 5432},
+	}
+	mgr, _ := NewManager(Options{
+		Registry: registry.New(updateRuntimeErrorStore{Store: db}),
+		Runtime:  rt,
+	})
+	_, err := mgr.Run(context.Background(), Request{
+		InstanceRef: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Kind:        "psql",
+		Args:        []string{"-c", "select 1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "runtime updates") {
+		t.Fatalf("expected runtime update error, got %v", err)
+	}
+	if len(rt.stopCalls) != 1 || rt.stopCalls[0] != "container-2" {
+		t.Fatalf("expected stop call for container-2, got %+v", rt.stopCalls)
+	}
+}
+
 func openStore(t *testing.T) *sqlite.Store {
 	t.Helper()
 	path := t.TempDir() + "/state.db"
@@ -536,4 +570,12 @@ func openStore(t *testing.T) *sqlite.Store {
 		t.Fatalf("sqlite open: %v", err)
 	}
 	return st
+}
+
+type updateRuntimeErrorStore struct {
+	store.Store
+}
+
+func (u updateRuntimeErrorStore) UpdateInstanceRuntime(ctx context.Context, instanceID string, runtimeID *string) error {
+	return errors.New("store does not support runtime updates")
 }

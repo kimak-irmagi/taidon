@@ -205,6 +205,7 @@ func (m *Manager) recreateContainer(ctx context.Context, entry store.InstanceEnt
 	}
 	appendLogEvent(events, "run: container started")
 	if err := m.registry.UpdateInstanceRuntime(ctx, entry.InstanceID, strPtr(instance.ID)); err != nil {
+		_ = m.runtime.Stop(ctx, instance.ID)
 		return "", err
 	}
 	return instance.ID, nil
