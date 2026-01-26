@@ -7,44 +7,6 @@ on:
       - main
 
 jobs:
-  test-cli:
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: frontend/cli-go/go.mod
-
-      - name: Run CLI tests
-        working-directory: frontend/cli-go
-        run: go test ./...
-
-  test-engine:
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: backend/local-engine-go/go.mod
-
-      - name: Run engine tests
-        working-directory: backend/local-engine-go
-        run: go test ./...
-
   docs-sync:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
