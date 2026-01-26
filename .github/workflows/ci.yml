@@ -217,7 +217,11 @@ jobs:
                       return candidate.replace("\\", "/")
                   full = os.path.normpath(os.path.join(workspace, candidate))
                   if os.path.isfile(full):
-                      return os.path.relpath(full, workspace).replace("\\", "/")
+                      return full.replace("\\", "/")
+              if workspace and os.path.isabs(path):
+                  return path.replace("\\", "/")
+              if workspace:
+                  return os.path.normpath(os.path.join(workspace, path)).replace("\\", "/")
               return path.replace("\\", "/")
 
           def rewrite(path: str, out_path: str) -> None:
@@ -236,7 +240,7 @@ jobs:
                       raw_path = match.group(1)
                       file_path = normalize_path(raw_path)
                       resolved = resolve_existing(file_path)
-                      if resolved == file_path and workspace and not os.path.isfile(os.path.join(workspace, resolved)):
+                      if workspace and not os.path.isfile(resolved):
                           unresolved.append(raw_path)
                       out_lines.append(f"{resolved}:{match.group(2)}")
               with open(out_path, "w", encoding="utf-8") as fh:
@@ -414,3 +418,4 @@ jobs:
           coveralls-token: ${{ secrets.COVERALLS_REPO_TOKEN }}
           file: coverage.out
           format: golang
+          base-path: ${{ github.workspace }}
