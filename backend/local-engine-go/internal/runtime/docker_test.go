@@ -307,6 +307,22 @@ func TestDockerRuntimeStopEmptyID(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeStopIgnoresMissingContainer(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{{
+			output: "Error response from daemon: No such container: container-1\n",
+			err:    errors.New("exit 1"),
+		}},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.Stop(context.Background(), "container-1"); err != nil {
+		t.Fatalf("expected missing container to be ignored, got %v", err)
+	}
+	if len(runner.calls) != 1 || runner.calls[0].args[0] != "stop" {
+		t.Fatalf("expected docker stop call, got %+v", runner.calls)
+	}
+}
+
 func TestDockerRuntimeWaitForReadyTimeout(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
@@ -447,6 +463,21 @@ func TestIsDockerUnavailableOutput(t *testing.T) {
 	}
 	if !isDockerUnavailableOutput("failed to connect to the docker api", errors.New("fail")) {
 		t.Fatalf("expected unavailable for docker api string")
+	}
+}
+
+func TestIsDockerNotFoundOutput(t *testing.T) {
+	if !isDockerNotFoundOutput("Error response from daemon: No such container: abc", errors.New("exit 1")) {
+		t.Fatalf("expected no such container to be detected")
+	}
+	if !isDockerNotFoundOutput("container abc is not running", errors.New("exit 1")) {
+		t.Fatalf("expected is not running container to be detected")
+	}
+	if isDockerNotFoundOutput("boom", errors.New("fail")) {
+		t.Fatalf("expected unrelated error to be false")
+	}
+	if isDockerNotFoundOutput("", nil) {
+		t.Fatalf("expected empty output to be false")
 	}
 }
 

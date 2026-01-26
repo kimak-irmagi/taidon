@@ -3,6 +3,8 @@ package run
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +16,14 @@ import (
 )
 
 type fakeRuntime struct {
-	calls  []engineRuntime.ExecRequest
-	output []string
-	err    error
+	calls         []engineRuntime.ExecRequest
+	execIDs       []string
+	output        []string
+	errQueue      []error
+	err           error
+	startCalls    []engineRuntime.StartRequest
+	startErr      error
+	startInstance engineRuntime.Instance
 }
 
 func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error { return nil }
@@ -24,12 +31,25 @@ func (f *fakeRuntime) ResolveImage(ctx context.Context, imageID string) (string,
 	return imageID, nil
 }
 func (f *fakeRuntime) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
-	return engineRuntime.Instance{}, nil
+	f.startCalls = append(f.startCalls, req)
+	if f.startErr != nil {
+		return engineRuntime.Instance{}, f.startErr
+	}
+	if strings.TrimSpace(f.startInstance.ID) != "" {
+		return f.startInstance, nil
+	}
+	return engineRuntime.Instance{ID: "container-2", Host: "127.0.0.1", Port: 5432}, nil
 }
 func (f *fakeRuntime) Stop(ctx context.Context, id string) error { return nil }
 func (f *fakeRuntime) Exec(ctx context.Context, id string, req engineRuntime.ExecRequest) (string, error) {
 	f.calls = append(f.calls, req)
+	f.execIDs = append(f.execIDs, id)
 	if len(f.output) == 0 {
+		if len(f.errQueue) > 0 {
+			err := f.errQueue[0]
+			f.errQueue = f.errQueue[1:]
+			return "", err
+		}
 		if f.err != nil {
 			return "", f.err
 		}
@@ -37,6 +57,11 @@ func (f *fakeRuntime) Exec(ctx context.Context, id string, req engineRuntime.Exe
 	}
 	out := f.output[0]
 	f.output = f.output[1:]
+	if len(f.errQueue) > 0 {
+		err := f.errQueue[0]
+		f.errQueue = f.errQueue[1:]
+		return out, err
+	}
 	if f.err != nil {
 		return out, f.err
 	}
@@ -68,6 +93,35 @@ func createInstance(t *testing.T, st store.Store, instanceID string) {
 		ImageID:    "image-1",
 		CreatedAt:  now,
 		RuntimeID:  &runtimeID,
+		Status:     &status,
+	}); err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+}
+
+func createInstanceWithRuntimeDir(t *testing.T, st store.Store, instanceID string, runtimeDir string) {
+	t.Helper()
+	now := timeNow()
+	stateID := "state-1"
+	if err := st.CreateState(context.Background(), store.StateCreate{
+		StateID:               stateID,
+		ImageID:               "image-1",
+		PrepareKind:           "psql",
+		PrepareArgsNormalized: "-c select 1",
+		CreatedAt:             now,
+		StateFingerprint:      "fp-1",
+	}); err != nil {
+		t.Fatalf("CreateState: %v", err)
+	}
+	runtimeID := "container-1"
+	status := store.InstanceStatusActive
+	if err := st.CreateInstance(context.Background(), store.InstanceCreate{
+		InstanceID: instanceID,
+		StateID:    stateID,
+		ImageID:    "image-1",
+		CreatedAt:  now,
+		RuntimeID:  &runtimeID,
+		RuntimeDir: strPtr(runtimeDir),
 		Status:     &status,
 	}); err != nil {
 		t.Fatalf("CreateInstance: %v", err)
@@ -350,6 +404,130 @@ func TestManagerRunExecError(t *testing.T) {
 	}
 }
 
+func TestManagerRunRecreatesMissingContainerAndUpdatesRuntimeID(t *testing.T) {
+	db := openStore(t)
+	defer db.Close()
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	merged := filepath.Join(runtimeDir, "merged")
+	if err := os.MkdirAll(merged, 0o700); err != nil {
+		t.Fatalf("mkdir runtime: %v", err)
+	}
+	createInstanceWithRuntimeDir(t, db, "dddddddddddddddddddddddddddddddd", runtimeDir)
+
+	rt := &fakeRuntime{
+		output:        []string{"", "ok"},
+		errQueue:      []error{errors.New("Error response from daemon: No such container: container-1")},
+		startInstance: engineRuntime.Instance{ID: "container-2", Host: "127.0.0.1", Port: 5432},
+	}
+	mgr, _ := NewManager(Options{Registry: registry.New(db), Runtime: rt})
+	res, err := mgr.Run(context.Background(), Request{
+		InstanceRef: "dddddddddddddddddddddddddddddddd",
+		Kind:        "psql",
+		Args:        []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Stdout != "ok" {
+		t.Fatalf("unexpected stdout: %q", res.Stdout)
+	}
+	if len(rt.startCalls) != 1 {
+		t.Fatalf("expected start call, got %d", len(rt.startCalls))
+	}
+	if rt.startCalls[0].DataDir != merged {
+		t.Fatalf("unexpected data dir: %s", rt.startCalls[0].DataDir)
+	}
+	entry, ok, err := db.GetInstance(context.Background(), "dddddddddddddddddddddddddddddddd")
+	if err != nil || !ok {
+		t.Fatalf("GetInstance: ok=%v err=%v", ok, err)
+	}
+	if entry.RuntimeID == nil || *entry.RuntimeID != "container-2" {
+		t.Fatalf("expected runtime id updated, got %+v", entry.RuntimeID)
+	}
+	if len(res.Events) != 3 {
+		t.Fatalf("expected 3 recovery events, got %+v", res.Events)
+	}
+	if res.Events[0].Type != "log" || res.Events[0].Data != "run: container missing - recreating" {
+		t.Fatalf("unexpected event 0: %+v", res.Events[0])
+	}
+	if res.Events[1].Type != "log" || res.Events[1].Data != "run: restoring runtime" {
+		t.Fatalf("unexpected event 1: %+v", res.Events[1])
+	}
+	if res.Events[2].Type != "log" || res.Events[2].Data != "run: container started" {
+		t.Fatalf("unexpected event 2: %+v", res.Events[2])
+	}
+}
+
+func TestManagerRunRecreateFailsWhenRuntimeDirMissing(t *testing.T) {
+	db := openStore(t)
+	defer db.Close()
+	now := timeNow()
+	stateID := "state-1"
+	if err := db.CreateState(context.Background(), store.StateCreate{
+		StateID:               stateID,
+		ImageID:               "image-1",
+		PrepareKind:           "psql",
+		PrepareArgsNormalized: "-c select 1",
+		CreatedAt:             now,
+		StateFingerprint:      "fp-1",
+	}); err != nil {
+		t.Fatalf("CreateState: %v", err)
+	}
+	runtimeID := "container-1"
+	status := store.InstanceStatusActive
+	if err := db.CreateInstance(context.Background(), store.InstanceCreate{
+		InstanceID: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		StateID:    stateID,
+		ImageID:    "image-1",
+		CreatedAt:  now,
+		RuntimeID:  &runtimeID,
+		RuntimeDir: nil,
+		Status:     &status,
+	}); err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+
+	rt := &fakeRuntime{
+		errQueue: []error{errors.New("No such container: container-1")},
+	}
+	mgr, _ := NewManager(Options{Registry: registry.New(db), Runtime: rt})
+	_, err := mgr.Run(context.Background(), Request{
+		InstanceRef: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		Kind:        "psql",
+		Args:        []string{"-c", "select 1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "runtime_dir") {
+		t.Fatalf("expected runtime_dir error, got %v", err)
+	}
+	if len(rt.startCalls) != 0 {
+		t.Fatalf("expected no start calls, got %d", len(rt.startCalls))
+	}
+}
+
+func TestManagerRunRecreateFailsWhenStartFails(t *testing.T) {
+	db := openStore(t)
+	defer db.Close()
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime: %v", err)
+	}
+	createInstanceWithRuntimeDir(t, db, "ffffffffffffffffffffffffffffffff", runtimeDir)
+
+	rt := &fakeRuntime{
+		errQueue: []error{errors.New("No such container: container-1")},
+		startErr: errors.New("start failed"),
+	}
+	mgr, _ := NewManager(Options{Registry: registry.New(db), Runtime: rt})
+	_, err := mgr.Run(context.Background(), Request{
+		InstanceRef: "ffffffffffffffffffffffffffffffff",
+		Kind:        "psql",
+		Args:        []string{"-c", "select 1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "runtime start failed") {
+		t.Fatalf("expected start failed error, got %v", err)
+	}
+}
+
 func openStore(t *testing.T) *sqlite.Store {
 	t.Helper()
 	path := t.TempDir() + "/state.db"
@@ -358,8 +536,4 @@ func openStore(t *testing.T) *sqlite.Store {
 		t.Fatalf("sqlite open: %v", err)
 	}
 	return st
-}
-
-func strPtr(value string) *string {
-	return &value
 }

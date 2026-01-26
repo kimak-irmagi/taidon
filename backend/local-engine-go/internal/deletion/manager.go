@@ -2,6 +2,7 @@ package deletion
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -301,7 +302,14 @@ func (m *Manager) stopRuntime(ctx context.Context, runtimeID *string) error {
 	if id == "" {
 		return nil
 	}
-	return m.runtime.Stop(ctx, id)
+	if err := m.runtime.Stop(ctx, id); err != nil {
+		var unavailable runtime.DockerUnavailableError
+		if errors.As(err, &unavailable) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func removeRuntimeDir(runtimeDir *string) error {

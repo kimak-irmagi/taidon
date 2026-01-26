@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,8 +22,12 @@ import (
 )
 
 type fakeRunRuntime struct {
-	output string
-	err    error
+	output        string
+	err           error
+	errQueue      []error
+	startCalls    []engineRuntime.StartRequest
+	startErr      error
+	startInstance engineRuntime.Instance
 }
 
 func (f *fakeRunRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error {
@@ -34,7 +39,14 @@ func (f *fakeRunRuntime) ResolveImage(ctx context.Context, imageID string) (stri
 }
 
 func (f *fakeRunRuntime) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
-	return engineRuntime.Instance{}, nil
+	f.startCalls = append(f.startCalls, req)
+	if f.startErr != nil {
+		return engineRuntime.Instance{}, f.startErr
+	}
+	if strings.TrimSpace(f.startInstance.ID) != "" {
+		return f.startInstance, nil
+	}
+	return engineRuntime.Instance{ID: "container-2", Host: "127.0.0.1", Port: 5432}, nil
 }
 
 func (f *fakeRunRuntime) Stop(ctx context.Context, id string) error {
@@ -42,6 +54,11 @@ func (f *fakeRunRuntime) Stop(ctx context.Context, id string) error {
 }
 
 func (f *fakeRunRuntime) Exec(ctx context.Context, id string, req engineRuntime.ExecRequest) (string, error) {
+	if len(f.errQueue) > 0 {
+		err := f.errQueue[0]
+		f.errQueue = f.errQueue[1:]
+		return f.output, err
+	}
 	if f.err != nil {
 		return f.output, f.err
 	}
@@ -99,6 +116,25 @@ func createInstance(t *testing.T, st store.Store, instanceID string) {
 		ImageID:    "image-1",
 		CreatedAt:  now,
 		RuntimeID:  &runtimeID,
+		Status:     &status,
+	}); err != nil {
+		t.Fatalf("CreateInstance: %v", err)
+	}
+}
+
+func createInstanceWithRuntimeDir(t *testing.T, st store.Store, instanceID string, runtimeDir string) {
+	t.Helper()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	status := store.InstanceStatusActive
+	runtimeID := "container-1"
+	createState(t, st, "state-1")
+	if err := st.CreateInstance(context.Background(), store.InstanceCreate{
+		InstanceID: instanceID,
+		StateID:    "state-1",
+		ImageID:    "image-1",
+		CreatedAt:  now,
+		RuntimeID:  &runtimeID,
+		RuntimeDir: strPtr(runtimeDir),
 		Status:     &status,
 	}); err != nil {
 		t.Fatalf("CreateInstance: %v", err)
@@ -229,6 +265,65 @@ func TestRunEndpointStreamsSteps(t *testing.T) {
 	}
 	if !foundStdout {
 		t.Fatalf("expected stdout event")
+	}
+}
+
+func TestRunEndpointStreamsRecoveryEvents(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state.db")
+	st, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("sqlite open: %v", err)
+	}
+	defer st.Close()
+	runtimeDir := filepath.Join(t.TempDir(), "runtime")
+	merged := filepath.Join(runtimeDir, "merged")
+	if err := os.MkdirAll(merged, 0o700); err != nil {
+		t.Fatalf("mkdir runtime: %v", err)
+	}
+	createInstanceWithRuntimeDir(t, st, "ffffffffffffffffffffffffffffffff", runtimeDir)
+
+	runtime := &fakeRunRuntime{
+		output:   "ok",
+		errQueue: []error{errors.New("Error response from daemon: No such container: container-1")},
+	}
+	server := newRunServer(t, st, runtime)
+	defer server.Close()
+
+	body := `{"instance_ref":"ffffffffffffffffffffffffffffffff","kind":"psql","args":["-c","select 1"]}`
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/runs", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	data, _ := io.ReadAll(resp.Body)
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	var types []string
+	var logs []string
+	for _, line := range lines {
+		var evt map[string]any
+		if err := json.Unmarshal(line, &evt); err != nil {
+			t.Fatalf("decode event: %v", err)
+		}
+		if value, ok := evt["type"].(string); ok {
+			types = append(types, value)
+		}
+		if evt["type"] == "log" {
+			if msg, ok := evt["data"].(string); ok {
+				logs = append(logs, msg)
+			}
+		}
+	}
+	if !contains(types, "log") {
+		t.Fatalf("expected log events, got %v", types)
+	}
+	if len(logs) < 3 {
+		t.Fatalf("expected 3 recovery logs, got %v", logs)
+	}
+	if logs[0] != "run: container missing - recreating" || logs[1] != "run: restoring runtime" || logs[2] != "run: container started" {
+		t.Fatalf("unexpected recovery logs: %v", logs)
 	}
 }
 
@@ -443,4 +538,8 @@ func contains(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+func strPtr(value string) *string {
+	return &value
 }

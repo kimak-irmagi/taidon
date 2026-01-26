@@ -231,6 +231,9 @@ func NewHandler(opts Options) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		enc := json.NewEncoder(w)
+		for _, evt := range result.Events {
+			_ = enc.Encode(evt)
+		}
 		_ = enc.Encode(run.Event{
 			Type:       "start",
 			Ts:         time.Now().UTC().Format(time.RFC3339Nano),

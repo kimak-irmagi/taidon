@@ -199,6 +199,9 @@ After a successful step:
 
 - After prepare, the container stays running and the instance is recorded as warm.
   Run orchestration will decide when to stop warm instances.
+- If a warm instance container is missing, run orchestration recreates the
+  container from the preserved runtime data directory; missing runtime data is
+  treated as an error (no state rebuild).
 
 ---
 

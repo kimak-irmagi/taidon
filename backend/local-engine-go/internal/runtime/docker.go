@@ -336,7 +336,10 @@ func (r *DockerRuntime) Stop(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	_, err := r.run(ctx, []string{"stop", "-t", "10", id}, nil)
+	output, err := r.run(ctx, []string{"stop", "-t", "10", id}, nil)
+	if err != nil && isDockerNotFoundOutput(output, err) {
+		return nil
+	}
 	return err
 }
 
@@ -496,6 +499,23 @@ func isDockerUnavailableOutput(output string, err error) bool {
 		return true
 	}
 	if strings.Contains(combined, "npipe") && strings.Contains(combined, "docker") && strings.Contains(combined, "pipe") {
+		return true
+	}
+	return false
+}
+
+func isDockerNotFoundOutput(output string, err error) bool {
+	combined := strings.ToLower(strings.TrimSpace(output))
+	if err != nil {
+		combined = strings.TrimSpace(combined + " " + err.Error())
+	}
+	if combined == "" {
+		return false
+	}
+	if strings.Contains(combined, "no such container") {
+		return true
+	}
+	if strings.Contains(combined, "is not running") && strings.Contains(combined, "container") {
 		return true
 	}
 	return false

@@ -631,8 +631,9 @@ paths:
       summary: Run a command against an instance
       description: |
         Executes a run kind command against an existing instance and streams
-        stdout/stderr/exit events. If `command` is omitted, the default command
-        for the selected kind is used.
+        stdout/stderr/exit events. The stream may also include log events for
+        instance recovery when a missing container is recreated. If `command`
+        is omitted, the default command for the selected kind is used.
       tags:
         - run
       requestBody:
@@ -1212,7 +1213,7 @@ components:
       properties:
         type:
           type: string
-          enum: [start, stdout, stderr, exit, error]
+          enum: [start, stdout, stderr, exit, error, log]
         ts:
           type: string
           format: date-time
@@ -1221,7 +1222,7 @@ components:
           description: Present for start events.
         data:
           type: string
-          description: Output chunk for stdout/stderr events.
+          description: Output chunk for stdout/stderr events or log message text.
         exit_code:
           type: integer
           format: int32

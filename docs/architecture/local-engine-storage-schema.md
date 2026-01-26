@@ -73,8 +73,10 @@ CREATE TABLE IF NOT EXISTS instances (
 Notes:
 
 - `instance_id` uses the engine-defined id format.
-- `runtime_id` stores the runtime/container identifier used to stop or inspect the instance.
-- `runtime_dir` stores the absolute path to the per-job runtime data directory for cleanup.
+- `runtime_id` stores the runtime/container identifier used to stop or inspect the instance;
+  it is updated when a missing container is recreated for `run`.
+- `runtime_dir` stores the absolute path to the per-job runtime data directory for cleanup
+  and for container recreation during `run`.
 - `status` is reserved for future use; current status is derived.
 
 ### 3.3 `names`
