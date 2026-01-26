@@ -112,7 +112,8 @@ jobs:
 
       - name: Run engine coverage
         working-directory: backend/local-engine-go
-        run: go test ./... -coverprofile=coverage-engine.out
+        shell: bash
+        run: go test ./... -coverprofile=../../coverage-engine-${{ matrix.runner }}.out
 
       - name: Set up Go (cli)
         uses: actions/setup-go@v5
@@ -121,14 +122,8 @@ jobs:
 
       - name: Run CLI coverage
         working-directory: frontend/cli-go
-        run: go test ./... -coverprofile=coverage-cli.out
-
-      - name: Collect coverage artifacts
         shell: bash
-        run: |
-          set -euo pipefail
-          mv backend/local-engine-go/coverage-engine.out "coverage-engine-${{ matrix.runner }}.out"
-          mv frontend/cli-go/coverage-cli.out "coverage-cli-${{ matrix.runner }}.out"
+        run: go test ./... -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
