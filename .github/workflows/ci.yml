@@ -157,14 +157,14 @@ jobs:
           pattern = re.compile(r"^(.+):(\d+\.\d+,\d+\.\d+\s+\d+\s+\d+)$")
 
           def normalize_path(path: str) -> str:
-              if path.startswith("sqlrs/engine/"):
-                  path = path.replace("sqlrs/engine/", "backend/local-engine-go/", 1)
-              elif path.startswith("sqlrs/cli/"):
-                  path = path.replace("sqlrs/cli/", "frontend/cli-go/", 1)
               if workspace:
                   norm = os.path.normpath(path)
                   if os.path.isabs(norm) and norm.startswith(workspace):
                       path = os.path.relpath(norm, workspace)
+              if path.startswith("sqlrs/engine/"):
+                  path = path.replace("sqlrs/engine/", "backend/local-engine-go/", 1)
+              elif path.startswith("sqlrs/cli/"):
+                  path = path.replace("sqlrs/cli/", "frontend/cli-go/", 1)
               return path.replace("\\", "/")
 
           def resolve_existing(path: str) -> str:
@@ -179,11 +179,11 @@ jobs:
                       return candidate.replace("\\", "/")
                   full = os.path.normpath(os.path.join(workspace, candidate))
                   if os.path.isfile(full):
-                      return full.replace("\\", "/")
+                      return os.path.relpath(full, workspace).replace("\\", "/")
               if workspace and os.path.isabs(path):
-                  return path.replace("\\", "/")
+                  return os.path.relpath(path, workspace).replace("\\", "/")
               if workspace:
-                  return os.path.normpath(os.path.join(workspace, path)).replace("\\", "/")
+                  return os.path.normpath(path).replace("\\", "/")
               return path.replace("\\", "/")
 
           def rewrite(path: str, out_path: str) -> None:
@@ -213,6 +213,36 @@ jobs:
                       print(" -", path)
 
           rewrite("coverage.raw", "coverage.out")
+          PY
+
+      - name: Debug coverage path formats
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "coverage.out first lines:"
+          head -n 5 coverage.out
+          python - <<'PY'
+          import re
+          drive = re.compile(r"^[A-Za-z]:\\\\")
+          abs_posix = re.compile(r"^/")
+          total = 0
+          drive_hits = []
+          abs_hits = []
+          with open("coverage.out", "r", encoding="utf-8") as fh:
+              for line in fh:
+                  if line.startswith("mode:"):
+                      continue
+                  total += 1
+                  path = line.split(":", 1)[0]
+                  if drive.match(path):
+                      if len(drive_hits) < 5:
+                          drive_hits.append(path)
+                  if abs_posix.match(path):
+                      if len(abs_hits) < 5:
+                          abs_hits.append(path)
+          print(f"total lines: {total}")
+          print(f"windows-drive paths: {len(drive_hits)} sample={drive_hits}")
+          print(f"posix-abs paths: {len(abs_hits)} sample={abs_hits}")
           PY
 
       - name: Show coverage paths (debug)
