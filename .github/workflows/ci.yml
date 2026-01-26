@@ -73,9 +73,8 @@ jobs:
           go-version-file: backend/local-engine-go/go.mod
 
       - name: Run engine coverage
-        working-directory: backend/local-engine-go
         shell: bash
-        run: go test ./... -covermode=set -coverprofile=../../coverage-engine-${{ matrix.runner }}.out
+        run: go test ./backend/local-engine-go/... -covermode=count -coverprofile=coverage-engine-${{ matrix.runner }}.out
 
       - name: Set up Go (cli)
         uses: actions/setup-go@v5
@@ -85,7 +84,7 @@ jobs:
       - name: Run CLI coverage
         working-directory: frontend/cli-go
         shell: bash
-        run: go test ./... -covermode=set -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
+        run: go test ./... -covermode=count -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
@@ -412,3 +411,4 @@ jobs:
           file: coverage.out
           format: golang
           debug: true
+          coverage-reporter-version: v0.6.14
