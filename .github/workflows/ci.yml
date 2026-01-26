@@ -202,7 +202,7 @@ jobs:
                       raw_path = match.group(1)
                       file_path = normalize_path(raw_path)
                       resolved = resolve_existing(file_path)
-                      if workspace and not os.path.isfile(resolved):
+                      if workspace and not os.path.isfile(os.path.join(workspace, resolved)):
                           unresolved.append(raw_path)
                       out_lines.append(f"{resolved}:{match.group(2)}")
               with open(out_path, "w", encoding="utf-8") as fh:
@@ -212,7 +212,29 @@ jobs:
                   for path in unresolved[:10]:
                       print(" -", path)
 
+          def rewrite_relative(path: str, out_path: str, prefix: str) -> None:
+              prefix = prefix.replace("\\", "/").strip("/")
+              out_lines = []
+              with open(path, "r", encoding="utf-8") as fh:
+                  for line in fh:
+                      line = line.rstrip("\n")
+                      if line.startswith("mode:"):
+                          out_lines.append(line)
+                          continue
+                      match = pattern.match(line)
+                      if not match:
+                          out_lines.append(line)
+                          continue
+                      file_path = normalize_path(match.group(1))
+                      if file_path.startswith(prefix + "/"):
+                          file_path = file_path[len(prefix) + 1:]
+                      out_lines.append(f"{file_path}:{match.group(2)}")
+              with open(out_path, "w", encoding="utf-8") as fh:
+                  fh.write("\n".join(out_lines) + "\n")
+
           rewrite("coverage.raw", "coverage.out")
+          rewrite_relative("coverage-cli.raw", "coverage-cli.out", "frontend/cli-go")
+          rewrite_relative("coverage-engine.raw", "coverage-engine.out", "backend/local-engine-go")
           PY
 
       - name: Debug coverage path formats
@@ -261,6 +283,8 @@ jobs:
           path: |
             coverage.out
             coverage.raw
+            coverage-cli.out
+            coverage-engine.out
 
       - name: Summarize low coverage
         id: coverage-details
@@ -402,14 +426,28 @@ jobs:
           COVERAGE_CLI_FILES: ${{ steps.coverage-details.outputs.cli_low_files }}
           COVERAGE_CLI_FUNCS: ${{ steps.coverage-details.outputs.cli_low_funcs }}
 
-      - name: Upload coverage to Coveralls
+      - name: Upload CLI coverage to Coveralls
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: coverallsapp/github-action@v2
         env:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: coverage.out
+          file: coverage-cli.out
           format: golang
           debug: true
-          base-path: /foo
+          base-path: /frontend/cli-go
+          coverage-reporter-version: v0.6.14
+
+      - name: Upload engine coverage to Coveralls
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: coverallsapp/github-action@v2
+        env:
+          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage-engine.out
+          format: golang
+          debug: true
+          base-path: /backend/local-engine-go
+          coverage-reporter-version: v0.6.14
