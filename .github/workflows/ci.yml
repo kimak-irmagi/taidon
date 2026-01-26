@@ -113,7 +113,7 @@ jobs:
       - name: Run engine coverage
         working-directory: backend/local-engine-go
         shell: bash
-        run: go test ./... -coverprofile=../../coverage-engine-${{ matrix.runner }}.out
+        run: go test ./... -covermode=set -coverprofile=../../coverage-engine-${{ matrix.runner }}.out
 
       - name: Set up Go (cli)
         uses: actions/setup-go@v5
@@ -123,7 +123,7 @@ jobs:
       - name: Run CLI coverage
         working-directory: frontend/cli-go
         shell: bash
-        run: go test ./... -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
+        run: go test ./... -covermode=set -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
 
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
@@ -153,9 +153,6 @@ jobs:
         with:
           path: coverage-artifacts
 
-      - name: Install gocovmerge
-        run: go install github.com/wadey/gocovmerge@latest
-
       - name: Merge coverage
         id: coverage
         shell: bash
@@ -169,9 +166,19 @@ jobs:
             exit 1
           fi
 
-          gocovmerge "${engine_files[@]}" > coverage-engine.raw
-          gocovmerge "${cli_files[@]}" > coverage-cli.raw
-          gocovmerge coverage-engine.raw coverage-cli.raw > coverage.raw
+          merge_profiles() {
+            local output=$1
+            shift
+            awk 'BEGIN{FS=" "} $1!="mode:"{key=$1" "$2; if(!(key in max) || $3>max[key]) max[key]=$3} END{for(k in max){print k" "max[k]}}' "$@" \
+              | sort > "${output}.body"
+            echo "mode: set" > "$output"
+            cat "${output}.body" >> "$output"
+            rm -f "${output}.body"
+          }
+
+          merge_profiles coverage-engine.raw "${engine_files[@]}"
+          merge_profiles coverage-cli.raw "${cli_files[@]}"
+          merge_profiles coverage.raw coverage-engine.raw coverage-cli.raw
 
           normalize() {
             local input=$1
