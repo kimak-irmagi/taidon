@@ -225,6 +225,23 @@ jobs:
           rewrite("coverage.raw", "coverage.out")
           PY
 
+      - name: Show coverage paths (debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "coverage.out sample:"
+          head -n 5 coverage.out
+          echo "coverage.raw sample:"
+          head -n 5 coverage.raw
+
+      - name: Upload merged coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-merged
+          path: |
+            coverage.out
+            coverage.raw
+
       - name: Summarize low coverage
         id: coverage-details
         shell: bash
