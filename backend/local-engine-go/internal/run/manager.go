@@ -3,10 +3,14 @@ package run
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"sqlrs/engine/internal/registry"
 	engineRuntime "sqlrs/engine/internal/runtime"
+	"sqlrs/engine/internal/store"
 )
 
 const (
@@ -43,6 +47,7 @@ type Result struct {
 	Stdout     string
 	Stderr     string
 	ExitCode   int
+	Events     []Event
 }
 
 func NewManager(opts Options) (*Manager, error) {
@@ -80,6 +85,7 @@ func (m *Manager) Run(ctx context.Context, req Request) (Result, error) {
 	if runtimeID == "" {
 		return Result{}, ConflictError{Message: "instance runtime id is missing"}
 	}
+	events := []Event{}
 
 	args := append([]string{}, req.Args...)
 	if kind == kindPsql && hasPsqlConnectionArgs(args) {
@@ -118,11 +124,7 @@ func (m *Manager) Run(ctx context.Context, req Request) (Result, error) {
 				return Result{}, ConflictError{Message: "conflicting psql connection arguments"}
 			}
 			execArgs := buildExecArgs(kind, command, stepArgs)
-			stepOutput, err := m.runtime.Exec(ctx, runtimeID, engineRuntime.ExecRequest{
-				User:  "postgres",
-				Args:  execArgs,
-				Stdin: step.Stdin,
-			})
+			stepOutput, err := m.execWithRecovery(ctx, entry, &runtimeID, execArgs, step.Stdin, &events)
 			if err != nil {
 				return Result{}, fmt.Errorf("exec failed: %w", err)
 			}
@@ -132,15 +134,12 @@ func (m *Manager) Run(ctx context.Context, req Request) (Result, error) {
 			InstanceID: entry.InstanceID,
 			Stdout:     output.String(),
 			ExitCode:   0,
+			Events:     events,
 		}, nil
 	}
 
 	execArgs := buildExecArgs(kind, command, args)
-	output, err := m.runtime.Exec(ctx, runtimeID, engineRuntime.ExecRequest{
-		User:  "postgres",
-		Args:  execArgs,
-		Stdin: req.Stdin,
-	})
+	output, err := m.execWithRecovery(ctx, entry, &runtimeID, execArgs, req.Stdin, &events)
 	if err != nil {
 		return Result{}, fmt.Errorf("exec failed: %w", err)
 	}
@@ -149,7 +148,96 @@ func (m *Manager) Run(ctx context.Context, req Request) (Result, error) {
 		InstanceID: entry.InstanceID,
 		Stdout:     output,
 		ExitCode:   0,
+		Events:     events,
 	}, nil
+}
+
+func (m *Manager) execWithRecovery(ctx context.Context, entry store.InstanceEntry, runtimeID *string, args []string, stdin *string, events *[]Event) (string, error) {
+	output, err := m.runtime.Exec(ctx, *runtimeID, engineRuntime.ExecRequest{
+		User:  "postgres",
+		Args:  args,
+		Stdin: stdin,
+	})
+	if err == nil {
+		return output, nil
+	}
+	if !isContainerMissing(err) {
+		return output, err
+	}
+	newRuntimeID, err := m.recreateContainer(ctx, entry, events)
+	if err != nil {
+		return output, err
+	}
+	*runtimeID = newRuntimeID
+	return m.runtime.Exec(ctx, *runtimeID, engineRuntime.ExecRequest{
+		User:  "postgres",
+		Args:  args,
+		Stdin: stdin,
+	})
+}
+
+func (m *Manager) recreateContainer(ctx context.Context, entry store.InstanceEntry, events *[]Event) (string, error) {
+	appendLogEvent(events, "run: container missing - recreating")
+	runtimeDir := ""
+	if entry.RuntimeDir != nil {
+		runtimeDir = strings.TrimSpace(*entry.RuntimeDir)
+	}
+	if runtimeDir == "" {
+		return "", ConflictError{Message: "instance runtime_dir is missing"}
+	}
+	info, err := os.Stat(runtimeDir)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("runtime_dir is missing: %w", err)
+	}
+	dataDir := runtimeDir
+	merged := filepath.Join(runtimeDir, "merged")
+	if info, err := os.Stat(merged); err == nil && info.IsDir() {
+		dataDir = merged
+	}
+	appendLogEvent(events, "run: restoring runtime")
+	instance, err := m.runtime.Start(ctx, engineRuntime.StartRequest{
+		ImageID: entry.ImageID,
+		DataDir: dataDir,
+		Name:    "sqlrs-run-" + entry.InstanceID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("runtime start failed: %w", err)
+	}
+	appendLogEvent(events, "run: container started")
+	if err := m.registry.UpdateInstanceRuntime(ctx, entry.InstanceID, strPtr(instance.ID)); err != nil {
+		_ = m.runtime.Stop(ctx, instance.ID)
+		return "", err
+	}
+	return instance.ID, nil
+}
+
+func appendLogEvent(events *[]Event, message string) {
+	if events == nil || strings.TrimSpace(message) == "" {
+		return
+	}
+	*events = append(*events, Event{
+		Type: "log",
+		Ts:   time.Now().UTC().Format(time.RFC3339Nano),
+		Data: message,
+	})
+}
+
+func isContainerMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "no such container") {
+		return true
+	}
+	if strings.Contains(msg, "container") && strings.Contains(msg, "is not running") {
+		return true
+	}
+	return false
+}
+
+func strPtr(value string) *string {
+	return &value
 }
 
 func isKnownKind(kind string) bool {

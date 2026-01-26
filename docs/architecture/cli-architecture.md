@@ -176,6 +176,13 @@ sequenceDiagram
   end
 
   CLI->>ENG: POST /v1/runs (kind, command or default, args)
+  opt Missing instance container
+    ENG-->>CLI: event "run: container missing - recreating"
+    ENG-->>CLI: event "run: restoring runtime"
+    ENG->>RT: start container with runtime_dir mount
+    RT-->>ENG: container ready
+    ENG-->>CLI: event "run: container started"
+  end
   ENG->>RT: exec in instance container (inject DSN)
   RT-->>ENG: stdout/stderr/exit
   ENG-->>CLI: stream output + exit
@@ -190,10 +197,12 @@ Notes:
 - `run:psql` passes DSN as a positional connection string; `run:pgbench` uses
   `-h/-p/-U/-d`.
 - Commands run inside the instance container (same runtime as `prepare:psql`).
+- If the instance container is missing and `runtime_dir` exists, the engine
+  recreates the container and emits run events before execution.
 - If `--instance` is provided together with a preceding `prepare`, the CLI fails
   with an explicit ambiguity error.
- - Prepare monitoring is events-first; the CLI validates terminal status via
-   `GET /v1/prepare-jobs/{jobId}` when status events arrive.
+- Prepare monitoring is events-first; the CLI validates terminal status via
+  `GET /v1/prepare-jobs/{jobId}` when status events arrive.
 
 ## 5. Upload Details (Remote)
 

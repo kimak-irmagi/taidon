@@ -6,7 +6,9 @@
 
 Unlike `prepare`, `run` **never constructs or restores database state**.
 It only consumes an already available instance and injects its DSN into
-the executed command.
+the executed command. If the instance container is missing but the runtime
+data directory is still present, `run` may recreate the container using
+the preserved runtime data before executing the command.
 
 `run` is designed to integrate sqlrs with arbitrary tools, applications,
 and test runners.
@@ -148,6 +150,25 @@ These behaviors are **implementation-specific** and not guaranteed by `run`.
 
 ---
 
+## Instance Recovery (Missing Container)
+
+If an instance exists in the registry but its container is missing (for example,
+Docker was restarted or the container was removed externally), `run` attempts to
+recreate the container **using the instance runtime data directory**.
+
+Rules:
+
+- The runtime data directory must exist and be readable.
+- The container is recreated from `runtime_dir` and the instance's `image_id`.
+- The instance `runtime_id` is updated to the new container id.
+- The `runtime_dir` path is preserved (it is not regenerated).
+- If `runtime_dir` is missing, `run` fails with an error (no fallback to state).
+
+This recovery is intended to be transparent to the CLI user and should not
+change command semantics, only reduce failures caused by missing containers.
+
+---
+
 ## Error Handling
 
 `sqlrs run` may fail with the following errors:
@@ -163,6 +184,10 @@ These behaviors are **implementation-specific** and not guaranteed by `run`.
 
 - **Execution failure**
   - The invoked command exited with non-zero status
+
+- **Missing runtime data**
+  - Instance exists but `runtime_dir` is missing or unreadable, and container
+    recovery is not possible
 
 When possible, errors include hints such as:
 
@@ -212,6 +237,7 @@ sqlrs run:pgbench --instance my-instance -- -c 10 -T 30
 ## Guarantees
 
 - `run` never modifies or creates states.
-- `run` never restores missing instances.
+- `run` may recreate a missing container when `runtime_dir` exists, but it never
+  rebuilds state from scratch.
 - Instance resolution is explicit and deterministic.
 - Command execution semantics are fully transparent.

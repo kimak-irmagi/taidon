@@ -3446,8 +3446,9 @@ func main() {
 *Run a command against an instance*
 
 Executes a run kind command against an existing instance and streams
-stdout/stderr/exit events. If `command` is omitted, the default command
-for the selected kind is used.
+stdout/stderr/exit events. The stream may also include log events for
+instance recovery when a missing container is recreated. If `command`
+is omitted, the default command for the selected kind is used.
 
 > Body parameter
 
@@ -4888,7 +4889,7 @@ or
 |type|string|true|none|none|
 |ts|string(date-time)|true|none|none|
 |instance_id|string|false|none|Present for start events.|
-|data|string|false|none|Output chunk for stdout/stderr events.|
+|data|string|false|none|Output chunk for stdout/stderr events or log message text.|
 |exit_code|integer(int32)|false|none|Process exit code for exit events.|
 |error|[ErrorResponse](#schemaerrorresponse)|false|none|none|
 
@@ -4901,6 +4902,7 @@ or
 |type|stderr|
 |type|exit|
 |type|error|
+|type|log|
 
 <h2 id="tocS_TaskEntry">TaskEntry</h2>
 <!-- backwards compatibility -->

@@ -310,6 +310,46 @@ func TestDeleteInstanceStopsRuntime(t *testing.T) {
 	}
 }
 
+func TestDeleteInstanceIgnoresDockerUnavailable(t *testing.T) {
+	st := newFakeStore()
+	dir := filepath.Join(t.TempDir(), "runtime-dir")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	st.instances["inst-1"] = store.InstanceEntry{
+		InstanceID: "inst-1",
+		StateID:    "state-1",
+		RuntimeID:  strPtr("container-1"),
+		RuntimeDir: strPtr(dir),
+	}
+
+	fake := &fakeRuntime{stopErr: runtime.DockerUnavailableError{Message: "down"}}
+	mgr, err := NewManager(Options{
+		Store:   st,
+		Runtime: fake,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	_, found, err := mgr.DeleteInstance(context.Background(), "inst-1", DeleteOptions{Force: true})
+	if err != nil {
+		t.Fatalf("DeleteInstance: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected instance to be found")
+	}
+	if len(fake.stopCalls) != 1 || fake.stopCalls[0] != "container-1" {
+		t.Fatalf("expected runtime stop for container-1, got %+v", fake.stopCalls)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime dir to be removed")
+	}
+	if _, ok := st.instances["inst-1"]; ok {
+		t.Fatalf("expected instance to be deleted")
+	}
+}
+
 func TestDeleteStateNonRecurseBlocked(t *testing.T) {
 	st := newFakeStore()
 	st.states["root"] = store.StateEntry{StateID: "root"}

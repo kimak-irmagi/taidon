@@ -289,6 +289,18 @@ func (s *Store) DeleteState(ctx context.Context, stateID string) error {
 	return err
 }
 
+func (s *Store) UpdateInstanceRuntime(ctx context.Context, instanceID string, runtimeID *string) error {
+	var value any
+	if runtimeID != nil {
+		trimmed := strings.TrimSpace(*runtimeID)
+		if trimmed != "" {
+			value = trimmed
+		}
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE instances SET runtime_id = ? WHERE instance_id = ?`, value, instanceID)
+	return err
+}
+
 func initDB(db *sql.DB) error {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)

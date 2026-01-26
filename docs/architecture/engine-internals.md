@@ -60,6 +60,8 @@ flowchart LR
 - Emits log events for runtime/DBMS steps (container start, `psql` execution,
   snapshot prepare/resume) and repeats the last task event every ~500ms while a
   task is running and no new events are emitted.
+- Streams run output/events over NDJSON; recovery steps are emitted when a
+  missing instance container is recreated.
 
 ### 1.2 Prepare Controller
 
@@ -133,6 +135,10 @@ flowchart LR
 - Handles instance lifecycle (ephemeral) and TTL/GC metadata.
 - Containers stay running after prepare; instances are recorded as warm until
   run orchestration decides to stop them.
+- If a run finds a missing instance container and `runtime_dir` exists, the
+  engine recreates the container from the preserved runtime data, updates
+  `runtime_id`, and emits run recovery events. Missing `runtime_dir` is a run
+  error (no state rebuild).
 - Instance deletion removes the recorded runtime data directory to avoid
   leaking per-job runtime data under the state store.
 - State creation is serialized with per-state filesystem locks so concurrent

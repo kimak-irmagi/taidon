@@ -176,6 +176,13 @@ sequenceDiagram
   end
 
   CLI->>ENG: POST /v1/runs (kind, command or default, args)
+  opt Missing instance container
+    ENG-->>CLI: event "run: container missing - recreating"
+    ENG-->>CLI: event "run: restoring runtime"
+    ENG->>RT: start container with runtime_dir mount
+    RT-->>ENG: container ready
+    ENG-->>CLI: event "run: container started"
+  end
   ENG->>RT: exec in instance container (inject DSN)
   RT-->>ENG: stdout/stderr/exit
   ENG-->>CLI: stream output + exit
@@ -191,10 +198,12 @@ sequenceDiagram
   использует `-h/-p/-U/-d`.
 - Команды выполняются внутри контейнера инстанса (тот же runtime, что и
   `prepare:psql`).
+- Если контейнер инстанса отсутствует и `runtime_dir` существует, engine
+  пересоздает контейнер и пишет run-события до выполнения команды.
 - Если `--instance` задан вместе с предыдущим `prepare`, CLI завершает работу с
   явной ошибкой неоднозначности.
- - Мониторинг prepare работает через события; CLI проверяет терминальный статус
-   через `GET /v1/prepare-jobs/{jobId}` при получении событий статуса.
+- Мониторинг prepare работает через события; CLI проверяет терминальный статус
+  через `GET /v1/prepare-jobs/{jobId}` при получении событий статуса.
 
 ## 5. Детали загрузки (remote)
 

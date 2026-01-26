@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"sqlrs/engine/internal/id"
@@ -51,6 +52,17 @@ func (r *Registry) ListStates(ctx context.Context, filters store.StateFilters) (
 
 func (r *Registry) GetState(ctx context.Context, stateID string) (store.StateEntry, bool, error) {
 	return r.store.GetState(ctx, strings.TrimSpace(stateID))
+}
+
+func (r *Registry) UpdateInstanceRuntime(ctx context.Context, instanceID string, runtimeID *string) error {
+	type runtimeUpdater interface {
+		UpdateInstanceRuntime(ctx context.Context, instanceID string, runtimeID *string) error
+	}
+	updater, ok := r.store.(runtimeUpdater)
+	if !ok {
+		return fmt.Errorf("store does not support runtime updates")
+	}
+	return updater.UpdateInstanceRuntime(ctx, instanceID, runtimeID)
 }
 
 func (r *Registry) Close() error {

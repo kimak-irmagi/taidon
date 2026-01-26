@@ -44,6 +44,8 @@ This document defines the internal component layout of the local sqlrs engine.
   - Resolves target instance (id/name).
   - Prepares runtime exec context and validates run kind rules.
   - Executes commands inside instance containers and streams output.
+  - Recreates missing instance containers from `runtime_dir` and updates
+    `runtime_id` before executing run commands.
 - `internal/snapshot`
   - Snapshot manager interface and backend selection.
   - OverlayFS-backed snapshots in the MVP, copy fallback.
@@ -82,6 +84,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - `run.Manager`
   - Validates run requests and executes commands against instances.
   - Streams stdout/stderr/exit back to HTTP.
+  - Emits recovery events when recreating a missing instance container.
 - `queue.Store`
   - Persists jobs, tasks, and events; supports recovery queries.
 - `prepare.JobEntry`, `prepare.TaskEntry`
