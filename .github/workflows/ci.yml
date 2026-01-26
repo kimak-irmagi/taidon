@@ -125,49 +125,6 @@ jobs:
         shell: bash
         run: go test ./... -covermode=set -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
 
-      - name: Normalize coverage paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          import os, re, sys
-
-          workspace = os.environ.get("GITHUB_WORKSPACE", "")
-          workspace = os.path.normpath(workspace) if workspace else ""
-          pattern = re.compile(r"^(.+):(\d+\.\d+,\d+\.\d+\s+\d+\s+\d+)$")
-
-          def normalize_path(path: str) -> str:
-              if path.startswith("sqlrs/engine/"):
-                  path = path.replace("sqlrs/engine/", "backend/local-engine-go/", 1)
-              elif path.startswith("sqlrs/cli/"):
-                  path = path.replace("sqlrs/cli/", "frontend/cli-go/", 1)
-              if workspace:
-                  norm = os.path.normpath(path)
-                  if os.path.isabs(norm) and norm.startswith(workspace):
-                      path = os.path.relpath(norm, workspace)
-              return path.replace("\\", "/")
-
-          def rewrite(path: str) -> None:
-              out_lines = []
-              with open(path, "r", encoding="utf-8") as fh:
-                  for line in fh:
-                      line = line.rstrip("\n")
-                      if line.startswith("mode:"):
-                          out_lines.append(line)
-                          continue
-                      match = pattern.match(line)
-                      if not match:
-                          out_lines.append(line)
-                          continue
-                      file_path = normalize_path(match.group(1))
-                      out_lines.append(f"{file_path}:{match.group(2)}")
-              with open(path, "w", encoding="utf-8") as fh:
-                  fh.write("\n".join(out_lines) + "\n")
-
-          rewrite("coverage-engine-${{ matrix.runner }}.out")
-          rewrite("coverage-cli-${{ matrix.runner }}.out")
-          PY
-
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -223,16 +180,50 @@ jobs:
           merge_profiles coverage-cli.raw "${cli_files[@]}"
           merge_profiles coverage.raw coverage-engine.raw coverage-cli.raw
 
-          cp coverage-engine.raw coverage-engine.out
-          cp coverage-cli.raw coverage-cli.out
-          cp coverage.raw coverage.out
-
-          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
-          engine=$(go tool cover -func=coverage-engine.out | awk '/^total:/ {print $3}')
-          cli=$(go tool cover -func=coverage-cli.out | awk '/^total:/ {print $3}')
+          total=$(go tool cover -func=coverage.raw | awk '/^total:/ {print $3}')
+          engine=$(go tool cover -func=coverage-engine.raw | awk '/^total:/ {print $3}')
+          cli=$(go tool cover -func=coverage-cli.raw | awk '/^total:/ {print $3}')
           echo "total=$total" >> "$GITHUB_OUTPUT"
           echo "engine=$engine" >> "$GITHUB_OUTPUT"
           echo "cli=$cli" >> "$GITHUB_OUTPUT"
+
+          python - <<'PY'
+          import os, re
+
+          workspace = os.environ.get("GITHUB_WORKSPACE", "")
+          workspace = os.path.normpath(workspace) if workspace else ""
+          pattern = re.compile(r"^(.+):(\d+\.\d+,\d+\.\d+\s+\d+\s+\d+)$")
+
+          def normalize_path(path: str) -> str:
+              if path.startswith("sqlrs/engine/"):
+                  path = path.replace("sqlrs/engine/", "backend/local-engine-go/", 1)
+              elif path.startswith("sqlrs/cli/"):
+                  path = path.replace("sqlrs/cli/", "frontend/cli-go/", 1)
+              if workspace:
+                  norm = os.path.normpath(path)
+                  if os.path.isabs(norm) and norm.startswith(workspace):
+                      path = os.path.relpath(norm, workspace)
+              return path.replace("\\", "/")
+
+          def rewrite(path: str, out_path: str) -> None:
+              out_lines = []
+              with open(path, "r", encoding="utf-8") as fh:
+                  for line in fh:
+                      line = line.rstrip("\n")
+                      if line.startswith("mode:"):
+                          out_lines.append(line)
+                          continue
+                      match = pattern.match(line)
+                      if not match:
+                          out_lines.append(line)
+                          continue
+                      file_path = normalize_path(match.group(1))
+                      out_lines.append(f"{file_path}:{match.group(2)}")
+              with open(out_path, "w", encoding="utf-8") as fh:
+                  fh.write("\n".join(out_lines) + "\n")
+
+          rewrite("coverage.raw", "coverage.out")
+          PY
 
       - name: Summarize low coverage
         id: coverage-details
@@ -260,10 +251,10 @@ jobs:
               | awk -F '\t' '{pct=$1+0; printf "- %s (%.1f%%)\n", $2, pct}'
           }
 
-          engine_funcs=$(summarize_funcs coverage-engine.out 10 || true)
-          engine_files=$(summarize_files coverage-engine.out 10 || true)
-          cli_funcs=$(summarize_funcs coverage-cli.out 10 || true)
-          cli_files=$(summarize_files coverage-cli.out 10 || true)
+          engine_funcs=$(summarize_funcs coverage-engine.raw 10 || true)
+          engine_files=$(summarize_files coverage-engine.raw 10 || true)
+          cli_funcs=$(summarize_funcs coverage-cli.raw 10 || true)
+          cli_files=$(summarize_files coverage-cli.raw 10 || true)
 
           emit() {
             local name=$1
