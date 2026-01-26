@@ -96,9 +96,53 @@ jobs:
         run: git diff --exit-code
 
   coverage:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go (engine)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/local-engine-go/go.mod
+
+      - name: Run engine coverage
+        working-directory: backend/local-engine-go
+        run: go test ./... -coverprofile=coverage-engine.out
+
+      - name: Set up Go (cli)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: frontend/cli-go/go.mod
+
+      - name: Run CLI coverage
+        working-directory: frontend/cli-go
+        run: go test ./... -coverprofile=coverage-cli.out
+
+      - name: Collect coverage artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv backend/local-engine-go/coverage-engine.out "coverage-engine-${{ matrix.runner }}.out"
+          mv frontend/cli-go/coverage-cli.out "coverage-cli-${{ matrix.runner }}.out"
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.runner }}
+          path: |
+            coverage-engine-${{ matrix.runner }}.out
+            coverage-cli-${{ matrix.runner }}.out
+
+  coverage-merge:
     runs-on: ubuntu-latest
+    needs: coverage
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
     steps:
       - name: Checkout
@@ -109,30 +153,54 @@ jobs:
         with:
           go-version-file: backend/local-engine-go/go.mod
 
-      - name: Run engine coverage
-        working-directory: backend/local-engine-go
-        run: go test ./... -coverprofile=coverage-engine.out
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-artifacts
 
-      - name: Run CLI coverage
-        working-directory: frontend/cli-go
-        run: go test ./... -coverprofile=coverage-cli.out
+      - name: Install gocovmerge
+        run: go install github.com/wadey/gocovmerge@latest
 
       - name: Merge coverage
         id: coverage
+        shell: bash
         run: |
           set -euo pipefail
-          echo "mode: set" > coverage.out
-          tail -n +2 backend/local-engine-go/coverage-engine.out >> coverage.out
-          tail -n +2 frontend/cli-go/coverage-cli.out >> coverage.out
+
+          mapfile -t engine_files < <(find coverage-artifacts -name 'coverage-engine-*.out' -print | sort)
+          mapfile -t cli_files < <(find coverage-artifacts -name 'coverage-cli-*.out' -print | sort)
+          if [[ ${#engine_files[@]} -eq 0 || ${#cli_files[@]} -eq 0 ]]; then
+            echo "missing coverage artifacts"
+            exit 1
+          fi
+
+          gocovmerge "${engine_files[@]}" > coverage-engine.raw
+          gocovmerge "${cli_files[@]}" > coverage-cli.raw
+          gocovmerge coverage-engine.raw coverage-cli.raw > coverage.raw
+
+          normalize() {
+            local input=$1
+            local output=$2
+            sed -E \
+              -e 's#^sqlrs/engine/#backend/local-engine-go/#' \
+              -e 's#^sqlrs/cli/#frontend/cli-go/#' \
+              "$input" > "$output"
+          }
+
+          normalize coverage-engine.raw coverage-engine.out
+          normalize coverage-cli.raw coverage-cli.out
+          normalize coverage.raw coverage.out
+
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}')
-          engine=$(go tool cover -func=backend/local-engine-go/coverage-engine.out | awk '/^total:/ {print $3}')
-          cli=$(go tool cover -func=frontend/cli-go/coverage-cli.out | awk '/^total:/ {print $3}')
+          engine=$(go tool cover -func=coverage-engine.out | awk '/^total:/ {print $3}')
+          cli=$(go tool cover -func=coverage-cli.out | awk '/^total:/ {print $3}')
           echo "total=$total" >> "$GITHUB_OUTPUT"
           echo "engine=$engine" >> "$GITHUB_OUTPUT"
           echo "cli=$cli" >> "$GITHUB_OUTPUT"
 
       - name: Summarize low coverage
         id: coverage-details
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -156,10 +224,10 @@ jobs:
               | awk -F '\t' '{pct=$1+0; printf "- %s (%.1f%%)\n", $2, pct}'
           }
 
-          engine_funcs=$(summarize_funcs backend/local-engine-go/coverage-engine.out 10 || true)
-          engine_files=$(summarize_files backend/local-engine-go/coverage-engine.out 10 || true)
-          cli_funcs=$(summarize_funcs frontend/cli-go/coverage-cli.out 10 || true)
-          cli_files=$(summarize_files frontend/cli-go/coverage-cli.out 10 || true)
+          engine_funcs=$(summarize_funcs coverage-engine.out 10 || true)
+          engine_files=$(summarize_files coverage-engine.out 10 || true)
+          cli_funcs=$(summarize_funcs coverage-cli.out 10 || true)
+          cli_files=$(summarize_files coverage-cli.out 10 || true)
 
           emit() {
             local name=$1
@@ -190,7 +258,7 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            Coverage summary (ubuntu-latest):
+            Coverage summary (all platforms):
             - engine: ${{ steps.coverage.outputs.engine }}
             - cli: ${{ steps.coverage.outputs.cli }}
             - combined: ${{ steps.coverage.outputs.total }}
@@ -214,7 +282,7 @@ jobs:
           comment-id: ${{ steps.coverage-comment.outputs.comment-id }}
           edit-mode: replace
           body: |
-            Coverage summary (ubuntu-latest):
+            Coverage summary (all platforms):
             - engine: ${{ steps.coverage.outputs.engine }}
             - cli: ${{ steps.coverage.outputs.cli }}
             - combined: ${{ steps.coverage.outputs.total }}
@@ -230,6 +298,45 @@ jobs:
 
             Lowest-covered cli functions:
             ${{ steps.coverage-details.outputs.cli_low_funcs }}
+
+      - name: Comment coverage on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              'Coverage summary (all platforms):',
+              `- engine: ${process.env.COVERAGE_ENGINE}`,
+              `- cli: ${process.env.COVERAGE_CLI}`,
+              `- combined: ${process.env.COVERAGE_TOTAL}`,
+              '',
+              'Lowest-covered engine files:',
+              process.env.COVERAGE_ENGINE_FILES,
+              '',
+              'Lowest-covered engine functions:',
+              process.env.COVERAGE_ENGINE_FUNCS,
+              '',
+              'Lowest-covered cli files:',
+              process.env.COVERAGE_CLI_FILES,
+              '',
+              'Lowest-covered cli functions:',
+              process.env.COVERAGE_CLI_FUNCS,
+            ].join('\n')
+
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body,
+            })
+        env:
+          COVERAGE_ENGINE: ${{ steps.coverage.outputs.engine }}
+          COVERAGE_CLI: ${{ steps.coverage.outputs.cli }}
+          COVERAGE_TOTAL: ${{ steps.coverage.outputs.total }}
+          COVERAGE_ENGINE_FILES: ${{ steps.coverage-details.outputs.engine_low_files }}
+          COVERAGE_ENGINE_FUNCS: ${{ steps.coverage-details.outputs.engine_low_funcs }}
+          COVERAGE_CLI_FILES: ${{ steps.coverage-details.outputs.cli_low_files }}
+          COVERAGE_CLI_FUNCS: ${{ steps.coverage-details.outputs.cli_low_funcs }}
 
       - name: Upload coverage to Coveralls
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
