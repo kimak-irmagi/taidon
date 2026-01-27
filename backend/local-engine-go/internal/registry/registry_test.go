@@ -291,3 +291,38 @@ func TestRegistryCloseCallsStore(t *testing.T) {
 		t.Fatalf("expected Close to call store Close")
 	}
 }
+
+type runtimeStore struct {
+	fakeStore
+	lastID      string
+	lastRuntime *string
+	err         error
+}
+
+func (r *runtimeStore) UpdateInstanceRuntime(ctx context.Context, instanceID string, runtimeID *string) error {
+	r.lastID = instanceID
+	r.lastRuntime = runtimeID
+	return r.err
+}
+
+func TestRegistryUpdateInstanceRuntimeUnsupported(t *testing.T) {
+	reg := New(&fakeStore{})
+	if err := reg.UpdateInstanceRuntime(context.Background(), "inst-1", nil); err == nil {
+		t.Fatalf("expected error for unsupported runtime updates")
+	}
+}
+
+func TestRegistryUpdateInstanceRuntimeCallsStore(t *testing.T) {
+	store := &runtimeStore{}
+	reg := New(store)
+	runtimeID := "rt-1"
+	if err := reg.UpdateInstanceRuntime(context.Background(), "inst-1", &runtimeID); err != nil {
+		t.Fatalf("UpdateInstanceRuntime: %v", err)
+	}
+	if store.lastID != "inst-1" {
+		t.Fatalf("expected instance id to be forwarded")
+	}
+	if store.lastRuntime == nil || *store.lastRuntime != runtimeID {
+		t.Fatalf("expected runtime id to be forwarded")
+	}
+}

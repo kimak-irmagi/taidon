@@ -279,6 +279,14 @@ func (f *fakeSnapshot) Kind() string {
 	return "fake"
 }
 
+func (f *fakeSnapshot) Capabilities() snapshot.Capabilities {
+	return snapshot.Capabilities{
+		RequiresDBStop:       true,
+		SupportsWritableClone: true,
+		SupportsSendReceive:   false,
+	}
+}
+
 func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
 	f.cloneCalls = append(f.cloneCalls, srcDir)
 	if f.cloneErr != nil {

@@ -39,7 +39,7 @@
 ### 3.2 Стратегия host-хранилища (по платформам)
 
 - **Linux (primary):** host-managed state store на OverlayFS.
-- **Windows / WSL2:** backend снапшотов добавим позже; сейчас fallback на полное копирование.
+- **Windows / WSL2:** backend снапшотов добавим позже; fallback на полное копирование.
 
 Runtime код не раскрывает конкретные пути: engine/adapter сам разрешает data dirs и передает mounts в runtime.
 Для локального engine корень state store - `<StateDir>/state-store`.
@@ -115,6 +115,7 @@ Base states хранятся как **CoW-способные файловые н
 Clone(base_state) -> sandbox_state
 Snapshot(sandbox_state) -> new_state
 Destroy(state_or_sandbox)
+Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_receive }
 ```
 
 Варианты реализации:
@@ -122,6 +123,20 @@ Destroy(state_or_sandbox)
 - `OverlayFSSnapshotter`
 - `CopySnapshotter`
 - (future) `BtrfsSnapshotter`, `ZfsSnapshotter`, `CsiSnapshotter`
+
+### 6.4 Политика выбора бэкенда
+
+- Runtime выбирает snapshotter по возможностям хоста и опциональному конфиг-override
+  (например, `engine.config.snapshot.backend`).
+- Если предпочтительный backend недоступен, происходит **fallback** на `CopySnapshotter`.
+- Выбранный backend фиксируется в метаданных состояния для совместимости GC/restore.
+
+### 6.5 Инварианты snapshotter
+
+- **Неизменяемость:** состояние неизменно после `Snapshot`.
+- **Идемпотентный destroy:** `Destroy` безопасно вызывать повторно.
+- **Writable clone:** `Clone` всегда создаёт writable sandbox, независимый от базы.
+- **Non-destructive snapshot:** `Snapshot` не должен изменять sandbox.
 
 ---
 
@@ -163,6 +178,12 @@ Destroy(state_or_sandbox)
 
 - Снапшот файловой системы без координации с БД.
 - Полагается на crash recovery БД при следующем запуске.
+
+### 8.3 Граница ответственности за консистентность
+
+Режим консистентности выбирается **оркестрацией** (политика prepare/run), а не snapshotter-ом.
+Snapshotter лишь сообщает, нужна ли остановка БД, через `Capabilities().requires_db_stop`.
+Если backend требует остановки, оркестрация **обязана** приостановить СУБД перед `Snapshot`.
 
 ---
 

@@ -37,6 +37,10 @@ func (f fakeManager) Kind() string {
 	return f.kind
 }
 
+func (f fakeManager) Capabilities() Capabilities {
+	return Capabilities{}
+}
+
 func (f fakeManager) Clone(ctx context.Context, srcDir string, destDir string) (CloneResult, error) {
 	return CloneResult{}, nil
 }

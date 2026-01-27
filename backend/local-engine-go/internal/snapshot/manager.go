@@ -9,9 +9,16 @@ type CloneResult struct {
 
 type Manager interface {
 	Kind() string
+	Capabilities() Capabilities
 	Clone(ctx context.Context, srcDir string, destDir string) (CloneResult, error)
 	Snapshot(ctx context.Context, srcDir string, destDir string) error
 	Destroy(ctx context.Context, dir string) error
+}
+
+type Capabilities struct {
+	RequiresDBStop       bool
+	SupportsWritableClone bool
+	SupportsSendReceive   bool
 }
 
 type Options struct {

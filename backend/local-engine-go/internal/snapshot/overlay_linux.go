@@ -75,6 +75,14 @@ func (m overlayManager) Kind() string {
 	return "overlayfs"
 }
 
+func (m overlayManager) Capabilities() Capabilities {
+	return Capabilities{
+		RequiresDBStop:       true,
+		SupportsWritableClone: true,
+		SupportsSendReceive:   false,
+	}
+}
+
 func (m overlayManager) Clone(ctx context.Context, srcDir string, destDir string) (CloneResult, error) {
 	if srcDir == "" || destDir == "" {
 		return CloneResult{}, fmt.Errorf("source and destination are required")

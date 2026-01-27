@@ -39,7 +39,7 @@ Containers are **stateless executors**.
 ### 3.2 Host Storage Strategy (by platform)
 
 - **Linux (primary):** host-managed state store with OverlayFS copy-on-write.
-- **Windows / WSL2:** snapshot backend added later; initial fallback is full copy.
+- **Windows / WSL2:** snapshot backend added later; fallback is full copy.
 
 Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
 For local engine, the state store root is `<StateDir>/state-store`.
@@ -123,6 +123,7 @@ Used when CoW FS is unavailable.
 Clone(base_state) -> sandbox_state
 Snapshot(sandbox_state) -> new_state
 Destroy(state_or_sandbox)
+Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_receive }
 ```
 
 Implementation variants:
@@ -130,6 +131,20 @@ Implementation variants:
 - `OverlayFSSnapshotter`
 - `CopySnapshotter`
 - (future) `BtrfsSnapshotter`, `ZfsSnapshotter`, `CsiSnapshotter`
+
+### 6.4 Backend Selection Policy
+
+- The runtime selects a snapshotter based on host capabilities and optional config override
+  (e.g., `engine.config.snapshot.backend`).
+- If the preferred backend is unavailable, it **falls back to** `CopySnapshotter`.
+- The chosen backend is recorded in state metadata for GC/restore compatibility.
+
+### 6.5 Snapshotter Invariants
+
+- **Immutability:** a state is immutable after `Snapshot`.
+- **Idempotent destroy:** `Destroy` is safe to call repeatedly.
+- **Writable clone:** `Clone` always produces a writable sandbox independent of the base.
+- **Non-destructive snapshot:** `Snapshot` must not mutate the sandbox state.
 
 ---
 
@@ -171,6 +186,12 @@ Used for:
 
 - Filesystem snapshot without DB coordination.
 - Relies on DB crash recovery on next start.
+
+### 8.3 Consistency Control Boundary
+
+Consistency mode is decided by **orchestration** (prepare/run policy), not by the snapshotter.
+Snapshotters only declare whether they require a DB stop via `Capabilities().requires_db_stop`.
+If a backend requires a stop, orchestration **must** pause the DBMS before calling `Snapshot`.
 
 ---
 
