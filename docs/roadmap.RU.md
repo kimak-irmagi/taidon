@@ -30,14 +30,17 @@ gantt
     axisFormat  %b %Y
 
     section Основы
-    Каркас Core API + Engine                  :a1, 2026-01-01, 30d
-    Локальный runtime + lifecycle экземпляра   :a2, after a1, 45d
-    Адаптер Liquibase (применение миграций)   :a3, after a2, 30d
+    Каркас Core API + Engine                  :done, a1, 2026-01-01, 30d
+    Локальный runtime + lifecycle экземпляра   :done, a2, after a1, 45d
+    Бэкенд snapshot ФС (overlayfs)            :done, a2fs, after a2, 20d
+    Бэкенд snapshot ФС (ZFS)                  :a2z, after a2fs, 30d
+    Бэкенд snapshot ФС (Btrfs)                :a2b, after a2z, 30d
+    Адаптер Liquibase (применение миграций)   :a3, after a2b, 30d
 
     section Продуктовый MVP (локальный)
     Drop-in подключение (proxy/adapter)       :b1, after a2, 45d
-    CLI UX + детерминированные запуски        :b2, after a2, 45d
-    Кэш состояний v1 (reuse states)           :b3, after a3, 45d
+    CLI UX + детерминированные запуски        :active, b2, after a2, 45d
+    Кэш состояний v1 (reuse states)           :active, b3, after a3, 45d
     Git-aware CLI (ref/diff/provenance)       :b4, after b3, 30d
 
     section Team (On-Prem)
@@ -66,6 +69,15 @@ gantt
 
 ---
 
+## Статус (на 2026-01-27)
+
+- **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, локальный pipeline plan/prepare/run, хранение job/task и события, базовая часть state cache и ретеншн, CLI-основа (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`).
+- **Сделано (ФС)**: заглушка snapshot на overlayfs (copy).
+- **В работе**: UX CLI и детерминизм выполнения end-to-end (ещё нет Liquibase-адаптера и эквивалентов `apply/status/logs/destroy`).
+- **Запланировано**: drop-in подключение, git-aware CLI, team on-prem оркестрация, облачный sharing, образование.
+
+---
+
 ## Milestones
 
 ### M0. Архитектурный baseline
@@ -75,6 +87,8 @@ gantt
 - Зафиксировать канонические сущности: project, instance, run, artefact, share
 - Зафиксировать core API surface (create/apply/run/destroy + status/events)
 - Принять подход к runtime изоляции для MVP (локальные контейнеры vs альтернативы)
+
+**Статус**: сделано (архитектура закреплена ADR и локальным OpenAPI для engine).
 
 **Ключевые документы, которые нужно подготовить дальше**:
 
@@ -97,15 +111,13 @@ gantt
 
 **Deliverables**:
 
-- Taidon Engine + API (локальный режим)
-- Локальный runtime (контейнеры) с lifecycle экземпляра
-- Liquibase адаптер (apply changelog)
-- CLI:
-  - `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
-  - `sqlrs status`, `sqlrs logs`
-- Cache v1:
-  - cache key: `db_engine + base_image + changelog_hash + seed_hash`
-  - reuse через snapshot/clone стратегию (implementation-dependent)
+- Taidon Engine + API (локальный режим) — **сделано** (локальный OpenAPI spec)
+- Локальный runtime (контейнеры) с lifecycle экземпляра — **сделано**
+- CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm` — **сделано**
+- Cache v1 (prepare jobs + reuse state + retention) — **сделано (ядро)**
+- Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy), **в планах** (ZFS, Btrfs)
+- Liquibase адаптер (apply changelog) — **в планах**
+- CLI parity с исходным MVP списком (`apply/status/logs/destroy`) — **в планах**
 
 **Опционально (nice-to-have)**:
 
@@ -119,6 +131,8 @@ gantt
 - Cold start создает рабочий экземпляр
 - Warm start переиспользует кэшированное состояние и значительно быстрее
 - Миграции детерминированы и воспроизводимы
+
+**Статус**: в работе (локальный runtime и CLI есть; Liquibase/apply ещё нет).
 
 ---
 

@@ -30,14 +30,17 @@ gantt
     axisFormat  %b %Y
 
     section Foundation
-    Core API + Engine skeleton                 :a1, 2026-01-01, 30d
-    Local runtime + instance lifecycle          :a2, after a1, 45d
-    Liquibase adapter (apply migrations)       :a3, after a2, 30d
+    Core API + Engine skeleton                 :done, a1, 2026-01-01, 30d
+    Local runtime + instance lifecycle          :done, a2, after a1, 45d
+    Filesystem snapshot backend (overlayfs)    :done, a2fs, after a2, 20d
+    Filesystem snapshot backend (ZFS)          :a2z, after a2fs, 30d
+    Filesystem snapshot backend (Btrfs)        :a2b, after a2z, 30d
+    Liquibase adapter (apply migrations)       :a3, after a2b, 30d
 
     section Product MVP (Local)
     Drop-in connection (proxy/adapter)         :b1, after a2, 45d
-    CLI UX + deterministic runs                :b2, after a2, 45d
-    State cache v1 (reuse states)              :b3, after a3, 45d
+    CLI UX + deterministic runs                :active, b2, after a2, 45d
+    State cache v1 (reuse states)              :active, b3, after a3, 45d
     Git-aware CLI (ref/diff/provenance)        :b4, after b3, 30d
 
     section Team (On-Prem)
@@ -66,6 +69,15 @@ gantt
 
 ---
 
+## Status (as of 2026-01-27)
+
+- **Done**: local engine API surface (health, config, names, instances, runs, states, prepare jobs, tasks), local runtime and lifecycle, local prepare/plan/run pipeline, job/task persistence and events, state cache foundations and retention rules, CLI basics (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`).
+- **Done (filesystem)**: overlayfs-based copy stub for state snapshots.
+- **In progress**: CLI UX hardening and deterministic execution end-to-end (still missing Liquibase adapter and `apply/status/logs/destroy` equivalents).
+- **Planned**: drop-in connection, git-aware CLI, team on-prem orchestration, cloud sharing, education.
+
+---
+
 ## Milestones
 
 ### M0. Architecture Baseline
@@ -75,6 +87,8 @@ gantt
 - Freeze canonical entities: project, instance, run, artefact, share
 - Freeze core API surface (create/apply/run/destroy + status/events)
 - Decide runtime isolation approach for MVP (local containers vs other)
+
+**Status**: Done (architecture captured via ADRs and the local engine OpenAPI spec).
 
 **Key documents to produce next**:
 
@@ -97,15 +111,13 @@ gantt
 
 **Deliverables**:
 
-- Taidon Engine + API (local mode)
-- Local runtime (containers) with instance lifecycle
-- Liquibase adapter (apply changelog)
-- CLI:
-  - `sqlrs apply`, `sqlrs run`, `sqlrs destroy`
-  - `sqlrs status`, `sqlrs logs`
-- Cache v1:
-  - cache key: `db_engine + base_image + changelog_hash + seed_hash`
-  - reuse by snapshot/clone strategy (implementation-dependent)
+- Taidon Engine + API (local mode) — **Done** (local OpenAPI spec)
+- Local runtime (containers) with instance lifecycle — **Done**
+- CLI surface (local): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm` — **Done**
+- Cache v1 (prepare jobs + state reuse + retention) — **Done (core)**
+- Filesystem snapshot backends — **Done** (overlayfs copy stub), **Planned** (ZFS, Btrfs)
+- Liquibase adapter (apply changelog) — **Planned**
+- CLI parity with original MVP list (`apply/status/logs/destroy`) — **Planned**
 
 **Optional (nice-to-have)**:
 
@@ -119,6 +131,8 @@ gantt
 - A cold start produces a working instance
 - A warm start reuses cached state and is significantly faster
 - Migrations are deterministic and reproducible
+
+**Status**: In progress (core local runtime and CLI exist; Liquibase/apply flow pending).
 
 ---
 
