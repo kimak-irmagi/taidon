@@ -31,7 +31,7 @@ gantt
 
     section Foundation
     Core API + Engine skeleton                 :done, a1, 2026-01-01, 30d
-    Local runtime + instance lifecycle          :done, a2, after a1, 45d
+    Local runtime + instance lifecycle         :done, a2, after a1, 45d
     Filesystem snapshot backend (overlayfs)    :done, a2fs, after a2, 20d
     Filesystem snapshot backend (ZFS)          :a2z, after a2fs, 30d
     Filesystem snapshot backend (Btrfs)        :a2b, after a2z, 30d
