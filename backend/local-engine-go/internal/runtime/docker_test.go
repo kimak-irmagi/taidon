@@ -492,6 +492,9 @@ func TestIsDockerUnavailableOutput(t *testing.T) {
 	if !isDockerUnavailableOutput("", errors.New("npipe:////./pipe/dockerDesktopLinuxEngine")) {
 		t.Fatalf("expected unavailable for npipe docker desktop string")
 	}
+	if !isDockerUnavailableOutput("Is the docker daemon running?", errors.New("fail")) {
+		t.Fatalf("expected unavailable for daemon running hint")
+	}
 }
 
 func TestIsDockerNotFoundOutput(t *testing.T) {
@@ -639,6 +642,20 @@ func TestDockerRuntimeResolveImageEmptyDigest(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeResolveImageInspectAfterPullError(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: "no such image\n", err: errors.New("fail")},
+			{output: "pulled\n"},
+			{output: "inspect boom\n", err: errors.New("fail")},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.ResolveImage(context.Background(), "image-1"); err == nil || !strings.Contains(err.Error(), "docker inspect failed") {
+		t.Fatalf("expected inspect error, got %v", err)
+	}
+}
+
 func TestDockerRuntimeInitBaseEnsureDataDirOwnerError(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
@@ -663,6 +680,32 @@ func TestDockerRuntimeInitBaseInitdbError(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeInitBaseInitdbDockerUnavailable(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: ""}, {output: ""}, {output: ""},
+			{output: "Cannot connect to the Docker daemon", err: errors.New("fail")},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.InitBase(context.Background(), "image", "/data"); err == nil || !strings.Contains(err.Error(), "docker is not running") {
+		t.Fatalf("expected docker unavailable error, got %v", err)
+	}
+}
+
+func TestDockerRuntimeInitBaseInitdbPermissionOutput(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: ""}, {output: ""}, {output: ""},
+			{output: "initdb: error: could not change permissions of directory", err: errors.New("fail")},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.InitBase(context.Background(), "image", "/data"); err == nil || !strings.Contains(err.Error(), "permissions are not supported") {
+		t.Fatalf("expected permission error, got %v", err)
+	}
+}
+
 func TestDockerRuntimeStartPortCommandError(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
@@ -676,6 +719,19 @@ func TestDockerRuntimeStartPortCommandError(t *testing.T) {
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil || !strings.Contains(err.Error(), "docker port failed") {
 		t.Fatalf("expected docker port error, got %v", err)
+	}
+}
+
+func TestDockerRuntimeStartDockerRunUnavailable(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: ""}, {output: ""}, {output: ""},
+			{output: "Cannot connect to the Docker daemon", err: errors.New("fail")},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil || !strings.Contains(err.Error(), "docker is not running") {
+		t.Fatalf("expected docker unavailable error, got %v", err)
 	}
 }
 
@@ -714,6 +770,18 @@ func TestDockerRuntimeWaitForReadyContextCancelled(t *testing.T) {
 	cancel()
 	if err := rt.WaitForReady(ctx, "container-1", time.Second); err == nil {
 		t.Fatalf("expected context error")
+	}
+}
+
+func TestDockerRuntimeWaitForReadyDefaultTimeout(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: "accepting connections\n"},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.WaitForReady(context.Background(), "container-1", 0); err != nil {
+		t.Fatalf("WaitForReady: %v", err)
 	}
 }
 

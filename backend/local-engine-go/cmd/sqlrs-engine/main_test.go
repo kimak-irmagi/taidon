@@ -524,6 +524,9 @@ func TestRunIdleTimeoutShutdown(t *testing.T) {
 		return server.Serve(listener)
 	}
 	t.Cleanup(func() { serveHTTP = previousServe })
+	prevTicker := idleTickerEvery
+	idleTickerEvery = 10 * time.Millisecond
+	t.Cleanup(func() { idleTickerEvery = prevTicker })
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "engine.json")
@@ -536,11 +539,14 @@ func TestRunIdleTimeoutShutdown(t *testing.T) {
 func TestRunShutdownError(t *testing.T) {
 	previousServe := serveHTTP
 	serveHTTP = func(server *http.Server, listener net.Listener) error {
-		time.Sleep(1500 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		_ = listener.Close()
 		return http.ErrServerClosed
 	}
 	t.Cleanup(func() { serveHTTP = previousServe })
+	prevTicker := idleTickerEvery
+	idleTickerEvery = 10 * time.Millisecond
+	t.Cleanup(func() { idleTickerEvery = prevTicker })
 
 	prevShutdown := serverShutdownFn
 	serverShutdownFn = func(server *http.Server, ctx context.Context) error {

@@ -101,6 +101,7 @@ var exitFn = os.Exit
 var randReader = rand.Reader
 var writeFileFn = os.WriteFile
 var renameFn = os.Rename
+var idleTickerEvery = time.Second
 var openDBFn = func(path string) (*sql.DB, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("sqlite path is empty")
@@ -301,7 +302,7 @@ func run(args []string) (int, error) {
 
 	if *idleTimeout > 0 {
 		go func() {
-			ticker := time.NewTicker(time.Second)
+			ticker := time.NewTicker(idleTickerEvery)
 			defer ticker.Stop()
 			for {
 				select {

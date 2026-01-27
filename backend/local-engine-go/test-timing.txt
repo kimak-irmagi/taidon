@@ -1,0 +1,1684 @@
+=== RUN   TestActivityTrackerIdleFor
+--- PASS: TestActivityTrackerIdleFor (0.00s)
+=== RUN   TestRandomHex
+--- PASS: TestRandomHex (0.00s)
+=== RUN   TestRandomHexError
+--- PASS: TestRandomHexError (0.00s)
+=== RUN   TestWriteAndRemoveEngineState
+--- PASS: TestWriteAndRemoveEngineState (0.05s)
+=== RUN   TestWriteEngineStateInvalidDir
+--- PASS: TestWriteEngineStateInvalidDir (0.00s)
+=== RUN   TestWriteEngineStateRemoveError
+--- PASS: TestWriteEngineStateRemoveError (0.01s)
+=== RUN   TestWriteEngineStateTempFileError
+--- PASS: TestWriteEngineStateTempFileError (0.00s)
+=== RUN   TestWriteEngineStateWriteError
+--- PASS: TestWriteEngineStateWriteError (0.01s)
+=== RUN   TestWriteEngineStateRenameError
+--- PASS: TestWriteEngineStateRenameError (0.03s)
+=== RUN   TestWriteEngineStateMarshalError
+--- PASS: TestWriteEngineStateMarshalError (0.00s)
+=== RUN   TestOpenDBFnEmptyPath
+--- PASS: TestOpenDBFnEmptyPath (0.00s)
+=== RUN   TestOpenDBFnMkdirError
+--- PASS: TestOpenDBFnMkdirError (0.00s)
+=== RUN   TestRemoveEngineStateError
+2026/01/27 23:10:48 remove engine.json: remove C:\Users\Zlygo\AppData\Local\Temp\TestRemoveEngineStateError3215523516\001\nested: The directory is not empty.
+--- PASS: TestRemoveEngineStateError (0.13s)
+=== RUN   TestSetupLoggingWritesToFile
+--- PASS: TestSetupLoggingWritesToFile (0.05s)
+=== RUN   TestRunMissingListen
+--- PASS: TestRunMissingListen (0.00s)
+=== RUN   TestRunMissingStatePath
+--- PASS: TestRunMissingStatePath (0.00s)
+=== RUN   TestRunRunDirError
+--- PASS: TestRunRunDirError (0.01s)
+=== RUN   TestRunInvalidListen
+--- PASS: TestRunInvalidListen (0.00s)
+=== RUN   TestRunUnknownFlag
+--- PASS: TestRunUnknownFlag (0.00s)
+=== RUN   TestRunServeError
+--- PASS: TestRunServeError (1.78s)
+=== RUN   TestServeHTTPDefault
+--- PASS: TestServeHTTPDefault (0.00s)
+=== RUN   TestRunRandomHexError
+--- PASS: TestRunRandomHexError (0.00s)
+=== RUN   TestRunAuthTokenError
+--- PASS: TestRunAuthTokenError (0.04s)
+=== RUN   TestRunOpenStateDBError
+--- PASS: TestRunOpenStateDBError (0.03s)
+=== RUN   TestRunOpenQueueDBError
+--- PASS: TestRunOpenQueueDBError (1.78s)
+=== RUN   TestRunPrepareManagerError
+--- PASS: TestRunPrepareManagerError (3.26s)
+=== RUN   TestRunPrepareRecoverError
+--- PASS: TestRunPrepareRecoverError (0.54s)
+=== RUN   TestRunDeletionManagerError
+--- PASS: TestRunDeletionManagerError (0.30s)
+=== RUN   TestRunRunManagerError
+--- PASS: TestRunRunManagerError (0.54s)
+=== RUN   TestRunSetupLoggingError
+--- PASS: TestRunSetupLoggingError (0.84s)
+=== RUN   TestRunStateStoreRootError
+--- PASS: TestRunStateStoreRootError (0.01s)
+=== RUN   TestRunConfigManagerError
+--- PASS: TestRunConfigManagerError (0.39s)
+=== RUN   TestRunStoreError
+--- PASS: TestRunStoreError (0.01s)
+=== RUN   TestRunWriteEngineStateError
+--- PASS: TestRunWriteEngineStateError (0.22s)
+=== RUN   TestRunWithRunDir
+--- PASS: TestRunWithRunDir (3.32s)
+=== RUN   TestRunIdleTimeoutShutdown
+--- PASS: TestRunIdleTimeoutShutdown (3.51s)
+=== RUN   TestRunShutdownError
+--- PASS: TestRunShutdownError (2.42s)
+=== RUN   TestSetupLoggingSuccess
+--- PASS: TestSetupLoggingSuccess (0.01s)
+=== RUN   TestSetupLoggingRejectsLogDirFile
+--- PASS: TestSetupLoggingRejectsLogDirFile (0.02s)
+=== RUN   TestSetupLoggingRejectsLogFileDir
+--- PASS: TestSetupLoggingRejectsLogFileDir (0.01s)
+=== RUN   TestSetupLoggingCharDevice
+--- PASS: TestSetupLoggingCharDevice (0.01s)
+=== RUN   TestIsCharDeviceBehaviors
+--- PASS: TestIsCharDeviceBehaviors (0.00s)
+=== RUN   TestRunSuccess
+--- PASS: TestRunSuccess (0.36s)
+=== RUN   TestRunHandlerLogsRequest
+--- PASS: TestRunHandlerLogsRequest (0.29s)
+=== RUN   TestRunHandlerDefaultsStatusWhenNoWrite
+--- PASS: TestRunHandlerDefaultsStatusWhenNoWrite (0.32s)
+=== RUN   TestMainUsesExitCode
+missing --listen
+--- PASS: TestMainUsesExitCode (0.00s)
+=== RUN   TestStatusRecorderWriteDefaults
+--- PASS: TestStatusRecorderWriteDefaults (0.00s)
+=== RUN   TestStatusRecorderWriteHeader
+--- PASS: TestStatusRecorderWriteHeader (0.00s)
+=== RUN   TestStatusRecorderFlusher
+--- PASS: TestStatusRecorderFlusher (0.00s)
+PASS
+ok  	sqlrs/engine/cmd/sqlrs-engine	21.368s
+=== RUN   TestRequireBearerAllowsEmptyToken
+--- PASS: TestRequireBearerAllowsEmptyToken (0.00s)
+=== RUN   TestRequireBearerAcceptsValidToken
+--- PASS: TestRequireBearerAcceptsValidToken (0.00s)
+=== RUN   TestRequireBearerRejectsInvalidToken
+--- PASS: TestRequireBearerRejectsInvalidToken (0.00s)
+PASS
+ok  	sqlrs/engine/internal/auth	2.498s
+=== RUN   TestConfigLoadDefaultsWhenMissingFile
+--- PASS: TestConfigLoadDefaultsWhenMissingFile (0.01s)
+=== RUN   TestNewManagerRequiresStateStoreRoot
+--- PASS: TestNewManagerRequiresStateStoreRoot (0.00s)
+=== RUN   TestConfigLoadOverridesFromFile
+--- PASS: TestConfigLoadOverridesFromFile (0.01s)
+=== RUN   TestLoadOverridesInvalidJSON
+--- PASS: TestLoadOverridesInvalidJSON (0.01s)
+=== RUN   TestLoadOverridesNonObject
+--- PASS: TestLoadOverridesNonObject (0.05s)
+=== RUN   TestLoadOverridesReadError
+--- PASS: TestLoadOverridesReadError (0.04s)
+=== RUN   TestConfigGetPathMissing
+--- PASS: TestConfigGetPathMissing (0.00s)
+=== RUN   TestConfigGetInvalidPath
+--- PASS: TestConfigGetInvalidPath (0.00s)
+=== RUN   TestConfigGetRoot
+--- PASS: TestConfigGetRoot (0.01s)
+=== RUN   TestConfigSetCreatesNestedPath
+--- PASS: TestConfigSetCreatesNestedPath (0.04s)
+=== RUN   TestConfigSetInvalidPath
+--- PASS: TestConfigSetInvalidPath (0.04s)
+=== RUN   TestConfigSetInvalidValue
+--- PASS: TestConfigSetInvalidValue (0.06s)
+=== RUN   TestConfigSetArrayIndex
+--- PASS: TestConfigSetArrayIndex (0.07s)
+=== RUN   TestConfigSetIndexAtRoot
+--- PASS: TestConfigSetIndexAtRoot (0.02s)
+=== RUN   TestConfigRemoveKey
+--- PASS: TestConfigRemoveKey (0.06s)
+=== RUN   TestConfigRemoveMissingPath
+--- PASS: TestConfigRemoveMissingPath (0.00s)
+=== RUN   TestConfigRemoveInvalidPath
+--- PASS: TestConfigRemoveInvalidPath (0.00s)
+=== RUN   TestConfigRemoveWriteError
+--- PASS: TestConfigRemoveWriteError (0.01s)
+=== RUN   TestConfigRemoveFallsBackToDefault
+--- PASS: TestConfigRemoveFallsBackToDefault (0.03s)
+=== RUN   TestConfigSetNullValue
+--- PASS: TestConfigSetNullValue (0.04s)
+=== RUN   TestConfigEffectiveMerged
+--- PASS: TestConfigEffectiveMerged (0.02s)
+=== RUN   TestConfigSchemaValidationRejects
+--- PASS: TestConfigSchemaValidationRejects (0.03s)
+=== RUN   TestValidateValueVariants
+--- PASS: TestValidateValueVariants (0.00s)
+=== RUN   TestConfigAtomicWriteCommit
+--- PASS: TestConfigAtomicWriteCommit (0.03s)
+=== RUN   TestConfigAtomicWriteFailureNoCommit
+--- PASS: TestConfigAtomicWriteFailureNoCommit (0.00s)
+=== RUN   TestConfigConcurrentSetSerialized
+--- PASS: TestConfigConcurrentSetSerialized (0.06s)
+=== RUN   TestConfigUsesDefaultsAndSchema
+--- PASS: TestConfigUsesDefaultsAndSchema (0.00s)
+=== RUN   TestParsePathInvalidForms
+--- PASS: TestParsePathInvalidForms (0.00s)
+=== RUN   TestParsePathEmpty
+--- PASS: TestParsePathEmpty (0.00s)
+=== RUN   TestParsePathIndexWithDot
+--- PASS: TestParsePathIndexWithDot (0.00s)
+=== RUN   TestGetPathValueFailures
+--- PASS: TestGetPathValueFailures (0.00s)
+=== RUN   TestSetPathValueListExpansion
+--- PASS: TestSetPathValueListExpansion (0.00s)
+=== RUN   TestSetPathValueNestedMap
+--- PASS: TestSetPathValueNestedMap (0.00s)
+=== RUN   TestSetValueListInRange
+--- PASS: TestSetValueListInRange (0.00s)
+=== RUN   TestSetValueNestedMapAndList
+--- PASS: TestSetValueNestedMapAndList (0.00s)
+=== RUN   TestRemovePathValueIndex
+--- PASS: TestRemovePathValueIndex (0.00s)
+=== RUN   TestRemovePathValueMissing
+--- PASS: TestRemovePathValueMissing (0.00s)
+=== RUN   TestSetPathValueInvalidRoot
+--- PASS: TestSetPathValueInvalidRoot (0.00s)
+=== RUN   TestCloneMapDeepCopy
+--- PASS: TestCloneMapDeepCopy (0.00s)
+=== RUN   TestCloneMapNil
+--- PASS: TestCloneMapNil (0.00s)
+=== RUN   TestAtomicWriteFileAndSyncDir
+--- PASS: TestAtomicWriteFileAndSyncDir (0.07s)
+=== RUN   TestAtomicWriteFileRenameError
+--- PASS: TestAtomicWriteFileRenameError (0.07s)
+=== RUN   TestAtomicWriteFileCreateTempError
+    config_test.go:725: chmod does not reliably block writes on windows
+--- SKIP: TestAtomicWriteFileCreateTempError (0.00s)
+=== RUN   TestAtomicWriteFileMkdirError
+--- PASS: TestAtomicWriteFileMkdirError (0.00s)
+=== RUN   TestAtomicWriteFileWriteError
+--- PASS: TestAtomicWriteFileWriteError (0.00s)
+=== RUN   TestAtomicWriteFileSyncError
+--- PASS: TestAtomicWriteFileSyncError (0.00s)
+=== RUN   TestAtomicWriteFileCloseError
+--- PASS: TestAtomicWriteFileCloseError (0.05s)
+=== RUN   TestAtomicWriteFileRenameErrorStub
+--- PASS: TestAtomicWriteFileRenameErrorStub (0.05s)
+=== RUN   TestSyncDirOpenErrorStub
+--- PASS: TestSyncDirOpenErrorStub (0.00s)
+=== RUN   TestMergeMapsOverridesNonMapBase
+--- PASS: TestMergeMapsOverridesNonMapBase (0.00s)
+=== RUN   TestMergeMapsNilOverrides
+--- PASS: TestMergeMapsNilOverrides (0.00s)
+=== RUN   TestSyncDirIgnoresSyncError
+--- PASS: TestSyncDirIgnoresSyncError (0.00s)
+=== RUN   TestAsIntConversions
+--- PASS: TestAsIntConversions (0.00s)
+=== RUN   TestRemoveValueFromMapAndList
+--- PASS: TestRemoveValueFromMapAndList (0.00s)
+=== RUN   TestRemoveValueMissingReturnsFalse
+--- PASS: TestRemoveValueMissingReturnsFalse (0.00s)
+=== RUN   TestMergeMapsRecursesAndOverrides
+--- PASS: TestMergeMapsRecursesAndOverrides (0.00s)
+PASS
+ok  	sqlrs/engine/internal/config	3.125s
+=== RUN   TestNoopReturnsZeroConnections
+--- PASS: TestNoopReturnsZeroConnections (0.00s)
+PASS
+ok  	sqlrs/engine/internal/conntrack	2.191s
+=== RUN   TestPostgresConnectorPrepareSnapshot
+--- PASS: TestPostgresConnectorPrepareSnapshot (0.00s)
+=== RUN   TestPostgresConnectorResumeSnapshot
+--- PASS: TestPostgresConnectorResumeSnapshot (0.00s)
+=== RUN   TestPostgresConnectorRequiresRuntime
+--- PASS: TestPostgresConnectorRequiresRuntime (0.00s)
+PASS
+ok  	sqlrs/engine/internal/dbms	2.451s
+=== RUN   TestNewManagerRequiresStore
+--- PASS: TestNewManagerRequiresStore (0.00s)
+=== RUN   TestDeleteInstanceBlockedByConnections
+--- PASS: TestDeleteInstanceBlockedByConnections (0.00s)
+=== RUN   TestDeleteInstanceDryRun
+--- PASS: TestDeleteInstanceDryRun (0.00s)
+=== RUN   TestDeleteInstanceForceDeletes
+--- PASS: TestDeleteInstanceForceDeletes (0.00s)
+=== RUN   TestDeleteInstanceStopsRuntime
+--- PASS: TestDeleteInstanceStopsRuntime (0.01s)
+=== RUN   TestDeleteInstanceIgnoresDockerUnavailable
+--- PASS: TestDeleteInstanceIgnoresDockerUnavailable (0.06s)
+=== RUN   TestDeleteStateNonRecurseBlocked
+--- PASS: TestDeleteStateNonRecurseBlocked (0.00s)
+=== RUN   TestDeleteStateNonRecurseDeletes
+--- PASS: TestDeleteStateNonRecurseDeletes (0.01s)
+=== RUN   TestDeleteStateNonRecurseDryRun
+--- PASS: TestDeleteStateNonRecurseDryRun (0.00s)
+=== RUN   TestDeleteStateRecurseBlockedByConnections
+--- PASS: TestDeleteStateRecurseBlockedByConnections (0.00s)
+=== RUN   TestDeleteStateRecurseForceDeletes
+--- PASS: TestDeleteStateRecurseForceDeletes (0.02s)
+=== RUN   TestDeleteStateRecurseStopsRuntime
+--- PASS: TestDeleteStateRecurseStopsRuntime (0.04s)
+=== RUN   TestDeleteStateNotFound
+--- PASS: TestDeleteStateNotFound (0.00s)
+=== RUN   TestDeleteInstancePropagatesErrors
+--- PASS: TestDeleteInstancePropagatesErrors (0.00s)
+=== RUN   TestDeleteInstanceConnectionError
+--- PASS: TestDeleteInstanceConnectionError (0.00s)
+=== RUN   TestDeleteInstanceDeleteError
+--- PASS: TestDeleteInstanceDeleteError (0.00s)
+=== RUN   TestDeleteStateListInstancesError
+--- PASS: TestDeleteStateListInstancesError (0.00s)
+=== RUN   TestDeleteStateListStatesError
+--- PASS: TestDeleteStateListStatesError (0.00s)
+=== RUN   TestDeleteStateRecurseConnectionError
+--- PASS: TestDeleteStateRecurseConnectionError (0.00s)
+=== RUN   TestDeleteStateRecurseDeleteError
+--- PASS: TestDeleteStateRecurseDeleteError (0.00s)
+=== RUN   TestDeleteTreeUnknownKind
+--- PASS: TestDeleteTreeUnknownKind (0.00s)
+=== RUN   TestStateDirForErrors
+--- PASS: TestStateDirForErrors (0.01s)
+=== RUN   TestParseImageIDVariants
+--- PASS: TestParseImageIDVariants (0.00s)
+=== RUN   TestRemoveStateDir
+--- PASS: TestRemoveStateDir (0.07s)
+=== RUN   TestRemoveStateDirNoop
+--- PASS: TestRemoveStateDirNoop (0.00s)
+PASS
+ok  	sqlrs/engine/internal/deletion	2.632s
+=== RUN   TestConfigGetValue
+--- PASS: TestConfigGetValue (0.00s)
+=== RUN   TestConfigGetRoot
+--- PASS: TestConfigGetRoot (0.00s)
+=== RUN   TestConfigGetMissingPath
+--- PASS: TestConfigGetMissingPath (0.00s)
+=== RUN   TestConfigSetValue
+--- PASS: TestConfigSetValue (0.00s)
+=== RUN   TestConfigRemoveValue
+--- PASS: TestConfigRemoveValue (0.00s)
+=== RUN   TestConfigSchema
+--- PASS: TestConfigSchema (0.00s)
+=== RUN   TestDeleteInstanceDryRunWouldDelete
+--- PASS: TestDeleteInstanceDryRunWouldDelete (2.35s)
+=== RUN   TestDeleteInstanceBlockedWithoutForce
+--- PASS: TestDeleteInstanceBlockedWithoutForce (2.07s)
+=== RUN   TestDeleteInstanceForceDeletes
+--- PASS: TestDeleteInstanceForceDeletes (0.57s)
+=== RUN   TestDeleteInstanceInvalidForceQuery
+--- PASS: TestDeleteInstanceInvalidForceQuery (0.24s)
+=== RUN   TestDeleteInstanceInvalidDryRunQuery
+--- PASS: TestDeleteInstanceInvalidDryRunQuery (0.45s)
+=== RUN   TestDeleteInstanceNotFound
+--- PASS: TestDeleteInstanceNotFound (0.41s)
+=== RUN   TestDeleteStateBlockedWithoutRecurse
+--- PASS: TestDeleteStateBlockedWithoutRecurse (0.55s)
+=== RUN   TestDeleteStateRecurseBlockedByConnections
+--- PASS: TestDeleteStateRecurseBlockedByConnections (0.32s)
+=== RUN   TestDeleteStateRecurseForceDeletes
+--- PASS: TestDeleteStateRecurseForceDeletes (0.21s)
+=== RUN   TestDeleteStateDryRunReturns200
+--- PASS: TestDeleteStateDryRunReturns200 (1.29s)
+=== RUN   TestDeleteStateNotFound
+--- PASS: TestDeleteStateNotFound (2.61s)
+=== RUN   TestDeleteStateInvalidDryRunQuery
+--- PASS: TestDeleteStateInvalidDryRunQuery (1.97s)
+=== RUN   TestDeleteStateInvalidRecurseQuery
+--- PASS: TestDeleteStateInvalidRecurseQuery (0.26s)
+=== RUN   TestDeleteStateInvalidForceQuery
+--- PASS: TestDeleteStateInvalidForceQuery (0.82s)
+=== RUN   TestListStatesIncludesParentID
+--- PASS: TestListStatesIncludesParentID (0.68s)
+=== RUN   TestListNamesInternalError
+--- PASS: TestListNamesInternalError (0.01s)
+=== RUN   TestGetNameInternalError
+--- PASS: TestGetNameInternalError (0.00s)
+=== RUN   TestListInstancesInternalError
+--- PASS: TestListInstancesInternalError (0.00s)
+=== RUN   TestGetInstanceInternalError
+--- PASS: TestGetInstanceInternalError (0.00s)
+=== RUN   TestListStatesInternalError
+--- PASS: TestListStatesInternalError (0.00s)
+=== RUN   TestGetStateInternalError
+--- PASS: TestGetStateInternalError (0.00s)
+=== RUN   TestPrepareJobsNilManager
+--- PASS: TestPrepareJobsNilManager (0.00s)
+=== RUN   TestPrepareJobStatusNilManager
+--- PASS: TestPrepareJobStatusNilManager (0.00s)
+=== RUN   TestDeleteInstanceNilDeletion
+--- PASS: TestDeleteInstanceNilDeletion (0.00s)
+=== RUN   TestDeleteInstanceInternalError
+--- PASS: TestDeleteInstanceInternalError (0.00s)
+=== RUN   TestDeleteStateNilDeletion
+--- PASS: TestDeleteStateNilDeletion (0.00s)
+=== RUN   TestDeleteStateInternalError
+--- PASS: TestDeleteStateInternalError (0.00s)
+=== RUN   TestInstancesIDPrefixFilter
+--- PASS: TestInstancesIDPrefixFilter (1.31s)
+=== RUN   TestInstancesIDPrefixInvalid
+--- PASS: TestInstancesIDPrefixInvalid (0.33s)
+=== RUN   TestInstancesIDPrefixTooShort
+--- PASS: TestInstancesIDPrefixTooShort (0.42s)
+=== RUN   TestStatesIDPrefixFilter
+--- PASS: TestStatesIDPrefixFilter (0.28s)
+=== RUN   TestStatesIDPrefixInvalid
+--- PASS: TestStatesIDPrefixInvalid (0.32s)
+=== RUN   TestStatesIDPrefixTooShort
+--- PASS: TestStatesIDPrefixTooShort (0.23s)
+=== RUN   TestPrepareJobsRequireAuth
+--- PASS: TestPrepareJobsRequireAuth (0.28s)
+=== RUN   TestPrepareJobsMethodNotAllowed
+--- PASS: TestPrepareJobsMethodNotAllowed (0.36s)
+=== RUN   TestPrepareJobsRejectsInvalidKind
+--- PASS: TestPrepareJobsRejectsInvalidKind (0.42s)
+=== RUN   TestPrepareJobsInternalError
+--- PASS: TestPrepareJobsInternalError (0.21s)
+=== RUN   TestPrepareJobStatusMethodNotAllowed
+--- PASS: TestPrepareJobStatusMethodNotAllowed (0.26s)
+=== RUN   TestPrepareJobStatusNotFoundPath
+--- PASS: TestPrepareJobStatusNotFoundPath (0.30s)
+=== RUN   TestPrepareJobStatusRequiresAuth
+--- PASS: TestPrepareJobStatusRequiresAuth (0.18s)
+=== RUN   TestPrepareJobEventsInvalidPath
+--- PASS: TestPrepareJobEventsInvalidPath (0.17s)
+=== RUN   TestPrepareJobEventsMethodNotAllowed
+--- PASS: TestPrepareJobEventsMethodNotAllowed (0.18s)
+=== RUN   TestPrepareJobsCreateAndEvents
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 running
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 planned tasks count=4 state_id=1b7c4d74abf403a9f9bc5fc1886c029577e9140645bcd0133910186b6d229a80
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 stored tasks count=4
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=plan status=running
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=plan status=succeeded
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=resolve-image status=running
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=resolve-image status=succeeded
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=execute-0 status=running
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=execute-0 status=succeeded
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=prepare-instance status=running
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 task=prepare-instance status=succeeded
+2026/01/27 23:11:11 prepare job=4be096cd13c12a1d39040181de58c029 succeeded instance=5a5a5d905d71069956a536ee5406a8fe state=1b7c4d74abf403a9f9bc5fc1886c029577e9140645bcd0133910186b6d229a80
+--- PASS: TestPrepareJobsCreateAndEvents (0.60s)
+=== RUN   TestPrepareJobsPlanOnly
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 running
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 stored tasks count=4
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 task=plan status=succeeded
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 task=resolve-image status=succeeded
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 task=execute-0 status=succeeded
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 task=prepare-instance status=succeeded
+2026/01/27 23:11:11 prepare job=60bea1ed3ace0aeb6e9850a995893173 succeeded plan_only=true
+--- PASS: TestPrepareJobsPlanOnly (0.25s)
+=== RUN   TestPrepareJobsListAndFilter
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 running
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 stored tasks count=4
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 task=plan status=succeeded
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 task=resolve-image status=succeeded
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 task=execute-0 status=succeeded
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 task=prepare-instance status=succeeded
+2026/01/27 23:11:12 prepare job=337067ac4227f387005f2f5d391f8ce4 succeeded plan_only=true
+--- PASS: TestPrepareJobsListAndFilter (0.26s)
+=== RUN   TestPrepareJobsDelete
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d running
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d stored tasks count=4
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d task=plan status=succeeded
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d task=resolve-image status=succeeded
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d task=execute-0 status=succeeded
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d task=prepare-instance status=succeeded
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d succeeded plan_only=true
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d deleted
+2026/01/27 23:11:12 prepare job=34e349ccb4a34041e38236c4de0a7b2d lookup missing
+--- PASS: TestPrepareJobsDelete (0.29s)
+=== RUN   TestPrepareJobsDeleteDryRun
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 running
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 stored tasks count=4
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 task=plan status=succeeded
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 task=resolve-image status=succeeded
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 task=execute-0 status=succeeded
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 task=prepare-instance status=succeeded
+2026/01/27 23:11:12 prepare job=76fa402c71097268e95c0dfd5132d2d0 succeeded plan_only=true
+--- PASS: TestPrepareJobsDeleteDryRun (0.26s)
+=== RUN   TestPrepareJobsDeleteInvalidForce
+2026/01/27 23:11:12 prepare job=68e62c065fa4154f85a27a328d6f2e82 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:12 prepare job=68e62c065fa4154f85a27a328d6f2e82 running
+2026/01/27 23:11:12 prepare job=68e62c065fa4154f85a27a328d6f2e82 planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:12 prepare job=68e62c065fa4154f85a27a328d6f2e82 stored tasks count=4
+2026/01/27 23:11:12 prepare job=68e62c065fa4154f85a27a328d6f2e82 task=plan status=succeeded
+2026/01/27 23:11:12 prepare job=68e62c065fa4154f85a27a328d6f2e82 task=resolve-image status=succeeded
+2026/01/27 23:11:13 prepare job=68e62c065fa4154f85a27a328d6f2e82 task=execute-0 status=succeeded
+2026/01/27 23:11:13 prepare job=68e62c065fa4154f85a27a328d6f2e82 task=prepare-instance status=succeeded
+2026/01/27 23:11:13 prepare job=68e62c065fa4154f85a27a328d6f2e82 succeeded plan_only=true
+--- PASS: TestPrepareJobsDeleteInvalidForce (0.26s)
+=== RUN   TestPrepareJobsDeleteInvalidDryRun
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 running
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 stored tasks count=4
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 task=plan status=succeeded
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 task=resolve-image status=succeeded
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 task=execute-0 status=succeeded
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 task=prepare-instance status=succeeded
+2026/01/27 23:11:13 prepare job=a03bc22113a83c8d1f4684b816cf2c59 succeeded plan_only=true
+--- PASS: TestPrepareJobsDeleteInvalidDryRun (0.25s)
+=== RUN   TestPrepareJobsDeleteNotFound
+--- PASS: TestPrepareJobsDeleteNotFound (0.15s)
+=== RUN   TestPrepareJobsDeleteBlockedWithoutForce
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 running
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 stored tasks count=4
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 task=plan status=running
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 task=plan status=succeeded
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 task=resolve-image status=running
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 task=resolve-image status=succeeded
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 task=execute-0 status=running
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 delete blocked active_tasks=true
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 task=execute-0 status=failed
+2026/01/27 23:11:13 prepare job=2da709ed064c7fb3a5dc1f577cd30779 failed code=internal_error message=cannot store state
+--- PASS: TestPrepareJobsDeleteBlockedWithoutForce (0.45s)
+=== RUN   TestPrepareEventsWithoutFlusher
+--- PASS: TestPrepareEventsWithoutFlusher (0.00s)
+=== RUN   TestRunEndpointRejectsUnknownKind
+--- PASS: TestRunEndpointRejectsUnknownKind (0.07s)
+=== RUN   TestRunEndpointMissingInstance
+--- PASS: TestRunEndpointMissingInstance (0.07s)
+=== RUN   TestRunEndpointStreamsStartExit
+--- PASS: TestRunEndpointStreamsStartExit (0.08s)
+=== RUN   TestRunEndpointStreamsSteps
+--- PASS: TestRunEndpointStreamsSteps (0.08s)
+=== RUN   TestRunEndpointStreamsRecoveryEvents
+--- PASS: TestRunEndpointStreamsRecoveryEvents (0.10s)
+=== RUN   TestRunEndpointRejectsStepsWithArgs
+--- PASS: TestRunEndpointRejectsStepsWithArgs (0.08s)
+=== RUN   TestRunEndpointRequiresAuth
+--- PASS: TestRunEndpointRequiresAuth (0.11s)
+=== RUN   TestRunEndpointMethodNotAllowed
+--- PASS: TestRunEndpointMethodNotAllowed (0.08s)
+=== RUN   TestRunEndpointInvalidJSON
+--- PASS: TestRunEndpointInvalidJSON (0.07s)
+=== RUN   TestRunEndpointStepsWithStdin
+--- PASS: TestRunEndpointStepsWithStdin (0.08s)
+=== RUN   TestRunEndpointConflictError
+--- PASS: TestRunEndpointConflictError (0.08s)
+=== RUN   TestRunEndpointInternalError
+--- PASS: TestRunEndpointInternalError (0.08s)
+=== RUN   TestRunEndpointNilManager
+--- PASS: TestRunEndpointNilManager (0.00s)
+=== RUN   TestTasksListAndFilter
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 running
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 planned tasks count=4 state_id=aab61f1836dfb0020afbe4489a165f5aaf17fcc5d2704674129034f4d04f6db4
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 stored tasks count=4
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 task=plan status=succeeded
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 task=resolve-image status=succeeded
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 task=execute-0 status=succeeded
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 task=prepare-instance status=succeeded
+2026/01/27 23:11:15 prepare job=10cddbc71d4f46ea6a6df7e080a121d6 succeeded plan_only=true
+--- PASS: TestTasksListAndFilter (0.26s)
+=== RUN   TestTasksRequireAuth
+--- PASS: TestTasksRequireAuth (0.17s)
+=== RUN   TestTasksMethodNotAllowed
+--- PASS: TestTasksMethodNotAllowed (0.20s)
+=== RUN   TestTasksNilManager
+--- PASS: TestTasksNilManager (0.00s)
+=== RUN   TestAuthAndHealth
+--- PASS: TestAuthAndHealth (0.13s)
+=== RUN   TestNameDetailRequiresAuth
+--- PASS: TestNameDetailRequiresAuth (0.13s)
+=== RUN   TestInstancesRequireAuth
+--- PASS: TestInstancesRequireAuth (0.13s)
+=== RUN   TestStatesRequireAuth
+--- PASS: TestStatesRequireAuth (0.18s)
+=== RUN   TestInstanceDetailRequiresAuth
+--- PASS: TestInstanceDetailRequiresAuth (0.13s)
+=== RUN   TestStateDetailRequiresAuth
+--- PASS: TestStateDetailRequiresAuth (0.12s)
+=== RUN   TestHealthMethodNotAllowed
+--- PASS: TestHealthMethodNotAllowed (0.13s)
+=== RUN   TestNamesNDJSON
+--- PASS: TestNamesNDJSON (0.16s)
+=== RUN   TestNamesMethodNotAllowed
+--- PASS: TestNamesMethodNotAllowed (0.12s)
+=== RUN   TestNamesNotFound
+--- PASS: TestNamesNotFound (0.12s)
+=== RUN   TestNameDetailNotFound
+--- PASS: TestNameDetailNotFound (0.12s)
+=== RUN   TestNameDetailMethodNotAllowed
+--- PASS: TestNameDetailMethodNotAllowed (0.12s)
+=== RUN   TestInstancesAliasRedirect
+--- PASS: TestInstancesAliasRedirect (0.12s)
+=== RUN   TestInstancesNotFound
+--- PASS: TestInstancesNotFound (0.13s)
+=== RUN   TestInstanceDetailMethodNotAllowed
+--- PASS: TestInstanceDetailMethodNotAllowed (0.18s)
+=== RUN   TestInstancesMethodNotAllowed
+--- PASS: TestInstancesMethodNotAllowed (0.13s)
+=== RUN   TestInstancesEmptyPathNotFound
+--- PASS: TestInstancesEmptyPathNotFound (0.12s)
+=== RUN   TestStatesMethodNotAllowed
+--- PASS: TestStatesMethodNotAllowed (0.13s)
+=== RUN   TestStatesEmptyPathNotFound
+--- PASS: TestStatesEmptyPathNotFound (0.15s)
+=== RUN   TestStateDetailMethodNotAllowed
+--- PASS: TestStateDetailMethodNotAllowed (0.22s)
+=== RUN   TestNamesFilterByInstance
+--- PASS: TestNamesFilterByInstance (0.26s)
+=== RUN   TestInstancesRejectInvalidPrefix
+--- PASS: TestInstancesRejectInvalidPrefix (0.17s)
+=== RUN   TestPrepareJobsInvalidJSON
+--- PASS: TestPrepareJobsInvalidJSON (0.17s)
+=== RUN   TestPrepareJobStatusNotFound
+2026/01/27 23:11:19 prepare job=missing lookup missing
+--- PASS: TestPrepareJobStatusNotFound (0.16s)
+=== RUN   TestPrepareJobEventsNotFound
+--- PASS: TestPrepareJobEventsNotFound (0.16s)
+=== RUN   TestFakeRuntimeExec
+--- PASS: TestFakeRuntimeExec (0.00s)
+=== RUN   TestFakeRuntimeWaitForReady
+--- PASS: TestFakeRuntimeWaitForReady (0.00s)
+=== RUN   TestFakeRuntimeInitBase
+--- PASS: TestFakeRuntimeInitBase (0.00s)
+=== RUN   TestFakeSnapshotCloneDestroy
+--- PASS: TestFakeSnapshotCloneDestroy (0.01s)
+PASS
+ok  	sqlrs/engine/internal/httpapi	29.282s
+=== RUN   TestIsInstanceID
+=== RUN   TestIsInstanceID/valid_lower
+=== RUN   TestIsInstanceID/valid_mixed
+=== RUN   TestIsInstanceID/invalid_length
+=== RUN   TestIsInstanceID/invalid_char
+--- PASS: TestIsInstanceID (0.00s)
+    --- PASS: TestIsInstanceID/valid_lower (0.00s)
+    --- PASS: TestIsInstanceID/valid_mixed (0.00s)
+    --- PASS: TestIsInstanceID/invalid_length (0.00s)
+    --- PASS: TestIsInstanceID/invalid_char (0.00s)
+PASS
+ok  	sqlrs/engine/internal/id	2.061s
+=== RUN   TestEnsureBaseStateUsesInitMarker
+--- PASS: TestEnsureBaseStateUsesInitMarker (0.79s)
+=== RUN   TestEnsureBaseStateCreatesInitMarker
+--- PASS: TestEnsureBaseStateCreatesInitMarker (0.93s)
+=== RUN   TestEnsureBaseStateSerializesInit
+--- PASS: TestEnsureBaseStateSerializesInit (0.81s)
+=== RUN   TestValidationErrorMessage
+--- PASS: TestValidationErrorMessage (0.00s)
+=== RUN   TestToErrorResponse
+--- PASS: TestToErrorResponse (0.00s)
+=== RUN   TestExecuteStateTaskWaitsForStateBuild
+2026/01/27 23:11:04 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskWaitsForStateBuild (0.70s)
+=== RUN   TestExecuteStateTaskCreatesBuildMarker
+2026/01/27 23:11:05 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskCreatesBuildMarker (0.52s)
+=== RUN   TestExecuteStateTaskRebuildsWhenMarkerStale
+2026/01/27 23:11:06 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskRebuildsWhenMarkerStale (0.41s)
+=== RUN   TestParseImageID
+--- PASS: TestParseImageID (0.00s)
+=== RUN   TestResolveStatePaths
+--- PASS: TestResolveStatePaths (0.00s)
+=== RUN   TestResolveStatePathsEmptyRoot
+--- PASS: TestResolveStatePathsEmptyRoot (0.00s)
+=== RUN   TestMergeEnvOverrides
+--- PASS: TestMergeEnvOverrides (0.00s)
+=== RUN   TestMergeEnvCaseInsensitiveOnWindows
+--- PASS: TestMergeEnvCaseInsensitiveOnWindows (0.00s)
+=== RUN   TestStateHasherDeterministic
+--- PASS: TestStateHasherDeterministic (0.00s)
+=== RUN   TestStateHasherDifferentInput
+--- PASS: TestStateHasherDifferentInput (0.00s)
+=== RUN   TestNewManagerRequiresStore
+--- PASS: TestNewManagerRequiresStore (0.84s)
+=== RUN   TestNewManagerRequiresQueue
+--- PASS: TestNewManagerRequiresQueue (0.00s)
+=== RUN   TestNewManagerRequiresRuntime
+--- PASS: TestNewManagerRequiresRuntime (0.08s)
+=== RUN   TestNewManagerRequiresSnapshot
+--- PASS: TestNewManagerRequiresSnapshot (0.08s)
+=== RUN   TestNewManagerRequiresDBMS
+--- PASS: TestNewManagerRequiresDBMS (0.08s)
+=== RUN   TestNewManagerRequiresStateStoreRoot
+--- PASS: TestNewManagerRequiresStateStoreRoot (0.07s)
+=== RUN   TestSubmitRejectsInvalidKind
+--- PASS: TestSubmitRejectsInvalidKind (0.09s)
+=== RUN   TestSubmitRejectsMissingImageID
+--- PASS: TestSubmitRejectsMissingImageID (0.16s)
+=== RUN   TestSubmitIDGenFails
+--- PASS: TestSubmitIDGenFails (0.08s)
+=== RUN   TestSubmitCreateJobFails
+--- PASS: TestSubmitCreateJobFails (0.08s)
+=== RUN   TestSubmitStoresStateAndInstance
+2026/01/27 23:11:07 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:07 prepare job=job-1 running
+2026/01/27 23:11:07 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:07 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:07 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:07 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:07 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:08 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:08 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:08 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:08 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:08 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:08 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:08 prepare job=job-1 succeeded instance=a5db18ea69e2ec57b381d6da94867e62 state=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+--- PASS: TestSubmitStoresStateAndInstance (0.57s)
+=== RUN   TestSubmitEmitsPsqlOutputLog
+2026/01/27 23:11:08 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:08 prepare job=job-1 running
+2026/01/27 23:11:08 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:08 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:08 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:08 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:08 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:08 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:08 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:08 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:08 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:08 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:08 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:08 prepare job=job-1 succeeded instance=634c80d7a214b14b4fc9ec159a00d5ab state=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+--- PASS: TestSubmitEmitsPsqlOutputLog (0.59s)
+=== RUN   TestSubmitSkipsPsqlOutputReplayWhenLogSinkStreams
+2026/01/27 23:11:08 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:08 prepare job=job-1 running
+2026/01/27 23:11:09 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:09 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:09 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:09 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:09 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:09 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:09 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:09 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 succeeded instance=f03cd6b732b799ac69369609fcd578c2 state=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+--- PASS: TestSubmitSkipsPsqlOutputReplayWhenLogSinkStreams (0.64s)
+=== RUN   TestSubmitPlanOnlyBuildsTasks
+2026/01/27 23:11:09 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:09 prepare job=job-1 running
+2026/01/27 23:11:09 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:09 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:09 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:09 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestSubmitPlanOnlyBuildsTasks (0.35s)
+=== RUN   TestSubmitPlanOnlyCachedFlag
+2026/01/27 23:11:09 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:09 prepare job=job-1 running
+2026/01/27 23:11:10 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:10 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:10 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestSubmitPlanOnlyCachedFlag (0.27s)
+=== RUN   TestPrepareResolvesImageDigestRequired
+2026/01/27 23:11:10 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:10 prepare job=job-1 running
+2026/01/27 23:11:10 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:10 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:10 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestPrepareResolvesImageDigestRequired (0.22s)
+=== RUN   TestPrepareResolveImageFailureFailsJob
+2026/01/27 23:11:10 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:10 prepare job=job-1 running
+2026/01/27 23:11:10 prepare job=job-1 failed code=internal_error message=cannot resolve image
+--- PASS: TestPrepareResolveImageFailureFailsJob (0.24s)
+=== RUN   TestPlanIncludesResolveImageTask
+2026/01/27 23:11:10 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:10 prepare job=job-1 running
+2026/01/27 23:11:10 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:10 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:10 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestPlanIncludesResolveImageTask (0.18s)
+=== RUN   TestPlanSkipsResolveImageTaskWhenDigestProvided
+2026/01/27 23:11:10 prepare job=job-1 created kind=psql image=image-1@sha256:abc plan_only=true
+2026/01/27 23:11:10 prepare job=job-1 running
+2026/01/27 23:11:10 prepare job=job-1 planned tasks count=3 state_id=8a4e5f6e0c83d2e1ee1134fdde16f510ca6976196c147680a2f6639d30ed918b
+2026/01/27 23:11:10 prepare job=job-1 stored tasks count=3
+2026/01/27 23:11:10 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:10 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestPlanSkipsResolveImageTaskWhenDigestProvided (0.14s)
+=== RUN   TestStateIDUsesResolvedImageID
+2026/01/27 23:11:10 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:10 prepare job=job-1 running
+2026/01/27 23:11:10 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:11 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:11 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:11 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:11 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:11 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:11 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:11 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 succeeded instance=14b8ac6ee4d6de508128d77f1f182c65 state=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+--- PASS: TestStateIDUsesResolvedImageID (0.28s)
+=== RUN   TestResolveImageTaskStatusReported
+2026/01/27 23:11:11 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:11 prepare job=job-1 running
+2026/01/27 23:11:11 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:11 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:11 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestResolveImageTaskStatusReported (0.17s)
+=== RUN   TestListJobsAndTasks
+2026/01/27 23:11:11 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:11 prepare job=job-1 running
+2026/01/27 23:11:11 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:11 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:11 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestListJobsAndTasks (0.26s)
+=== RUN   TestListJobsErrorReturnsEmpty
+--- PASS: TestListJobsErrorReturnsEmpty (0.04s)
+=== RUN   TestListTasksErrorReturnsEmpty
+--- PASS: TestListTasksErrorReturnsEmpty (0.04s)
+=== RUN   TestGetListTasksErrorReturnsJob
+2026/01/27 23:11:11 prepare job=job-1 task list failed error=boom
+--- PASS: TestGetListTasksErrorReturnsJob (0.05s)
+=== RUN   TestDeleteJobRemovesEntry
+2026/01/27 23:11:11 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:11 prepare job=job-1 running
+2026/01/27 23:11:11 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:11 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:11 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:11 prepare job=job-1 succeeded plan_only=true
+2026/01/27 23:11:11 prepare job=job-1 deleted
+--- PASS: TestDeleteJobRemovesEntry (0.15s)
+=== RUN   TestDeleteJobBlockedWithoutForce
+2026/01/27 23:11:11 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:11 prepare job=job-1 running
+2026/01/27 23:11:11 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:12 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:12 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:12 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:12 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:12 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:12 prepare job=job-1 succeeded plan_only=true
+2026/01/27 23:11:12 prepare job=job-1 delete blocked active_tasks=true
+--- PASS: TestDeleteJobBlockedWithoutForce (0.15s)
+=== RUN   TestJobSignatureDiffersForPlanOnly
+--- PASS: TestJobSignatureDiffersForPlanOnly (0.04s)
+=== RUN   TestUpdateJobSignatureError
+--- PASS: TestUpdateJobSignatureError (0.05s)
+=== RUN   TestTrimCompletedJobsBySignature
+2026/01/27 23:11:12 prepare job=job-old retention deleted
+--- PASS: TestTrimCompletedJobsBySignature (0.07s)
+=== RUN   TestTrimCompletedJobsForJob
+2026/01/27 23:11:12 prepare job=job-old retention deleted
+--- PASS: TestTrimCompletedJobsForJob (0.07s)
+=== RUN   TestTrimCompletedJobsForJobNoopCases
+--- PASS: TestTrimCompletedJobsForJobNoopCases (0.05s)
+=== RUN   TestTrimCompletedJobsBySignatureNoop
+--- PASS: TestTrimCompletedJobsBySignatureNoop (0.04s)
+=== RUN   TestTrimCompletedJobsFallbackToCreatedAt
+2026/01/27 23:11:12 prepare job=job-old retention deleted
+--- PASS: TestTrimCompletedJobsFallbackToCreatedAt (0.07s)
+=== RUN   TestTrimCompletedJobsNoopWhenLimitDisabled
+--- PASS: TestTrimCompletedJobsNoopWhenLimitDisabled (0.06s)
+=== RUN   TestTrimCompletedJobsNoopBelowLimit
+--- PASS: TestTrimCompletedJobsNoopBelowLimit (0.06s)
+=== RUN   TestHasImageDigest
+--- PASS: TestHasImageDigest (0.00s)
+=== RUN   TestTrimCompletedJobsSkipsOnSignatureError
+2026/01/27 23:11:12 prepare job retention skipped: resolved image id is required
+--- PASS: TestTrimCompletedJobsSkipsOnSignatureError (0.05s)
+=== RUN   TestTrimCompletedJobsListJobsError
+2026/01/27 23:11:12 prepare job retention failed: boom
+--- PASS: TestTrimCompletedJobsListJobsError (0.05s)
+=== RUN   TestTrimCompletedJobsDeleteError
+2026/01/27 23:11:12 prepare job=job-old job retention delete failed: boom
+--- PASS: TestTrimCompletedJobsDeleteError (0.05s)
+=== RUN   TestDeleteListTasksError
+--- PASS: TestDeleteListTasksError (0.05s)
+=== RUN   TestDeleteJobForceCancels
+2026/01/27 23:11:12 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:12 prepare job=job-1 running
+2026/01/27 23:11:12 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:12 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:12 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:12 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:12 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:12 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:12 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:12 prepare job=job-1 delete force cancel
+2026/01/27 23:11:12 prepare job=job-1 failed code=cancelled message=task cancelled
+2026/01/27 23:11:12 prepare job=job-1 deleted
+--- PASS: TestDeleteJobForceCancels (0.18s)
+=== RUN   TestRecoverQueuedJob
+2026/01/27 23:11:13 prepare job=job-1 recover status=queued
+2026/01/27 23:11:13 prepare job=job-1 running
+2026/01/27 23:11:13 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:13 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:13 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:13 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:13 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:13 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:13 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:13 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:13 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:13 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:13 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:13 prepare job=job-1 succeeded instance=7df8dbfc28f7a1741b763579f7ce73ff state=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+--- PASS: TestRecoverQueuedJob (0.26s)
+=== RUN   TestRecoverListJobsError
+--- PASS: TestRecoverListJobsError (0.04s)
+=== RUN   TestRecoverMissingRequestMarksFailed
+2026/01/27 23:11:13 prepare job=job-1 recover status=queued
+2026/01/27 23:11:13 prepare job=job-1 failed code=internal_error message=cannot restore job request
+--- PASS: TestRecoverMissingRequestMarksFailed (0.07s)
+=== RUN   TestPrepareFromJobInvalidJSON
+--- PASS: TestPrepareFromJobInvalidJSON (0.04s)
+=== RUN   TestLoadOrPlanTasksPromotesRunningTasks
+2026/01/27 23:11:13 prepare job=job-1 task=execute-0 status=succeeded
+--- PASS: TestLoadOrPlanTasksPromotesRunningTasks (0.06s)
+=== RUN   TestLoadOrPlanTasksListError
+--- PASS: TestLoadOrPlanTasksListError (0.07s)
+=== RUN   TestLoadOrPlanTasksReplaceError
+2026/01/27 23:11:13 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+--- PASS: TestLoadOrPlanTasksReplaceError (0.05s)
+=== RUN   TestExecuteStateTaskCachedSkipsCreate
+2026/01/27 23:11:13 prepare job=job-1 task=execute-0 cached output_state=state-1
+--- PASS: TestExecuteStateTaskCachedSkipsCreate (0.06s)
+=== RUN   TestExecuteStateTaskCreateStateError
+2026/01/27 23:11:13 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskCreateStateError (0.08s)
+=== RUN   TestExecuteStateTaskCancelled
+--- PASS: TestExecuteStateTaskCancelled (0.06s)
+=== RUN   TestExecuteStateTaskPsqlError
+2026/01/27 23:11:13 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskPsqlError (0.07s)
+=== RUN   TestExecuteStateTaskSnapshotError
+2026/01/27 23:11:13 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskSnapshotError (0.06s)
+=== RUN   TestExecuteStateTaskMissingOutputState
+--- PASS: TestExecuteStateTaskMissingOutputState (0.04s)
+=== RUN   TestExecuteStateTaskMissingInput
+--- PASS: TestExecuteStateTaskMissingInput (0.05s)
+=== RUN   TestExecuteStateTaskPrepareSnapshotError
+2026/01/27 23:11:14 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskPrepareSnapshotError (0.06s)
+=== RUN   TestExecuteStateTaskResumeSnapshotError
+2026/01/27 23:11:14 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestExecuteStateTaskResumeSnapshotError (0.06s)
+=== RUN   TestCreateInstanceMissingState
+--- PASS: TestCreateInstanceMissingState (0.04s)
+=== RUN   TestCreateInstanceMissingStateID
+--- PASS: TestCreateInstanceMissingStateID (0.04s)
+=== RUN   TestCreateInstanceMissingConnectionInfo
+2026/01/27 23:11:14 prepare job=job-1 runtime started container=container-1 host= port=0 snapshot=fake
+--- PASS: TestCreateInstanceMissingConnectionInfo (0.05s)
+=== RUN   TestStartRuntimeRejectsNilInput
+--- PASS: TestStartRuntimeRejectsNilInput (0.05s)
+=== RUN   TestStartRuntimeUnknownInputKind
+--- PASS: TestStartRuntimeUnknownInputKind (0.04s)
+=== RUN   TestStartRuntimeMissingState
+--- PASS: TestStartRuntimeMissingState (0.04s)
+=== RUN   TestStartRuntimeMissingStateID
+--- PASS: TestStartRuntimeMissingStateID (0.04s)
+=== RUN   TestStartRuntimeGetStateError
+--- PASS: TestStartRuntimeGetStateError (0.08s)
+=== RUN   TestStartRuntimeFromImageSuccess
+2026/01/27 23:11:14 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestStartRuntimeFromImageSuccess (0.07s)
+=== RUN   TestEnsureRuntimeRequiresRunner
+--- PASS: TestEnsureRuntimeRequiresRunner (0.04s)
+=== RUN   TestRunnerForJobEphemeral
+--- PASS: TestRunnerForJobEphemeral (0.04s)
+=== RUN   TestEnsureBaseStateSkipsInit
+--- PASS: TestEnsureBaseStateSkipsInit (0.05s)
+=== RUN   TestEnsureBaseStateInitError
+--- PASS: TestEnsureBaseStateInitError (0.05s)
+=== RUN   TestEnsureBaseStateRequiresDir
+--- PASS: TestEnsureBaseStateRequiresDir (0.04s)
+=== RUN   TestCreateInstanceErrors
+2026/01/27 23:11:14 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestCreateInstanceErrors (0.05s)
+=== RUN   TestCreateInstanceCancelled
+--- PASS: TestCreateInstanceCancelled (0.04s)
+=== RUN   TestCreateInstanceStoresRuntimeDir
+2026/01/27 23:11:14 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+--- PASS: TestCreateInstanceStoresRuntimeDir (0.05s)
+=== RUN   TestEventFromRecordParsesPayloads
+--- PASS: TestEventFromRecordParsesPayloads (0.00s)
+=== RUN   TestFindOutputStateID
+--- PASS: TestFindOutputStateID (0.00s)
+=== RUN   TestWaitForEvent
+2026/01/27 23:11:14 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:14 prepare job=job-1 running
+2026/01/27 23:11:15 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:15 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:15 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:15 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:15 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:15 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:15 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestWaitForEvent (0.15s)
+=== RUN   TestWaitForEventDoneNoEvents
+--- PASS: TestWaitForEventDoneNoEvents (0.05s)
+=== RUN   TestWaitForEventCountError
+--- PASS: TestWaitForEventCountError (0.04s)
+=== RUN   TestWaitForEventNotifies
+--- PASS: TestWaitForEventNotifies (0.06s)
+=== RUN   TestWaitForEventGetJobError
+--- PASS: TestWaitForEventGetJobError (0.07s)
+=== RUN   TestWaitForEventCancel
+--- PASS: TestWaitForEventCancel (0.07s)
+=== RUN   TestHeartbeatRepeatsRunningTask
+2026/01/27 23:11:15 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:15 prepare job=job-1 task=prepare-instance status=succeeded
+--- PASS: TestHeartbeatRepeatsRunningTask (0.53s)
+=== RUN   TestHeartbeatRepeatsLogEvent
+2026/01/27 23:11:15 prepare job=job-1 task=execute-0 status=running
+--- PASS: TestHeartbeatRepeatsLogEvent (0.54s)
+=== RUN   TestHeartbeatStopsAfterTaskComplete
+2026/01/27 23:11:16 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:16 prepare job=job-1 task=execute-0 status=succeeded
+--- PASS: TestHeartbeatStopsAfterTaskComplete (0.80s)
+=== RUN   TestAppendLogIgnoresEmpty
+--- PASS: TestAppendLogIgnoresEmpty (0.05s)
+=== RUN   TestAppendLogLines
+--- PASS: TestAppendLogLines (0.06s)
+=== RUN   TestNormalizeHeartbeat
+--- PASS: TestNormalizeHeartbeat (0.00s)
+=== RUN   TestHeartbeatStopsOnStatusEvent
+--- PASS: TestHeartbeatStopsOnStatusEvent (0.04s)
+=== RUN   TestHeartbeatDoesNotRecreateAfterTerminalStatus
+--- PASS: TestHeartbeatDoesNotRecreateAfterTerminalStatus (0.04s)
+=== RUN   TestStartHeartbeatNoopWhenCancelSet
+--- PASS: TestStartHeartbeatNoopWhenCancelSet (0.08s)
+=== RUN   TestStartHeartbeatNoEvent
+--- PASS: TestStartHeartbeatNoEvent (0.29s)
+=== RUN   TestUpdateHeartbeatEmptyJobID
+--- PASS: TestUpdateHeartbeatEmptyJobID (0.04s)
+=== RUN   TestEventBusNotify
+--- PASS: TestEventBusNotify (0.00s)
+=== RUN   TestEventsSinceUnknown
+--- PASS: TestEventsSinceUnknown (0.04s)
+=== RUN   TestEventsSinceListError
+--- PASS: TestEventsSinceListError (0.05s)
+=== RUN   TestGetUnknownJob
+2026/01/27 23:11:17 prepare job=missing lookup missing
+--- PASS: TestGetUnknownJob (0.05s)
+=== RUN   TestGetIncludesErrorPayload
+--- PASS: TestGetIncludesErrorPayload (0.05s)
+=== RUN   TestPrepareRequestPsqlError
+--- PASS: TestPrepareRequestPsqlError (0.04s)
+=== RUN   TestIsStateCachedEmpty
+--- PASS: TestIsStateCachedEmpty (0.06s)
+=== RUN   TestIsStateCachedError
+--- PASS: TestIsStateCachedError (0.07s)
+=== RUN   TestRandomHex
+--- PASS: TestRandomHex (0.00s)
+=== RUN   TestRandomHexError
+--- PASS: TestRandomHexError (0.00s)
+=== RUN   TestNewManagerDefaultIDGen
+--- PASS: TestNewManagerDefaultIDGen (0.08s)
+=== RUN   TestSubmitAsyncRunsJob
+2026/01/27 23:11:18 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:18 prepare job=job-1 running
+2026/01/27 23:11:18 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:18 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:18 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestSubmitAsyncRunsJob (0.26s)
+=== RUN   TestDeleteUnknownJob
+--- PASS: TestDeleteUnknownJob (0.05s)
+=== RUN   TestDeleteJobDryRun
+2026/01/27 23:11:18 prepare job=job-1 created kind=psql image=image-1 plan_only=true
+2026/01/27 23:11:18 prepare job=job-1 running
+2026/01/27 23:11:18 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:18 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:18 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 succeeded plan_only=true
+--- PASS: TestDeleteJobDryRun (0.16s)
+=== RUN   TestListJobsMissingJob
+--- PASS: TestListJobsMissingJob (0.05s)
+=== RUN   TestSubmitCreateStateFails
+2026/01/27 23:11:18 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:18 prepare job=job-1 running
+2026/01/27 23:11:18 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:18 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:18 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:18 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:18 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:18 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:18 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:19 prepare job=job-1 task=execute-0 status=failed
+2026/01/27 23:11:19 prepare job=job-1 failed code=internal_error message=cannot store state
+--- PASS: TestSubmitCreateStateFails (0.26s)
+=== RUN   TestSubmitCreateInstanceFails
+2026/01/27 23:11:19 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:19 prepare job=job-1 running
+2026/01/27 23:11:19 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:19 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:19 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:19 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:19 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:19 prepare job=job-1 task=prepare-instance status=failed
+2026/01/27 23:11:19 prepare job=job-1 failed code=internal_error message=cannot store instance
+--- PASS: TestSubmitCreateInstanceFails (0.25s)
+=== RUN   TestSubmitInstanceIDFails
+2026/01/27 23:11:19 prepare job=job-1 created kind=psql image=image-1 plan_only=false
+2026/01/27 23:11:19 prepare job=job-1 running
+2026/01/27 23:11:19 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:19 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 task=resolve-image status=running
+2026/01/27 23:11:19 prepare job=job-1 task=resolve-image status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:19 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:19 prepare job=job-1 task=execute-0 status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:19 prepare job=job-1 task=prepare-instance status=failed
+2026/01/27 23:11:19 prepare job=job-1 failed code=internal_error message=cannot generate instance id
+--- PASS: TestSubmitInstanceIDFails (0.27s)
+=== RUN   TestRecoverWithFailedTask
+2026/01/27 23:11:19 prepare job=job-1 recover status=running
+2026/01/27 23:11:19 prepare job=job-1 running
+2026/01/27 23:11:19 prepare job=job-1 failed code=internal_error message=task failed
+--- PASS: TestRecoverWithFailedTask (0.08s)
+=== RUN   TestRecoverMissingStateIDFailsJob
+2026/01/27 23:11:19 prepare job=job-1 recover status=running
+2026/01/27 23:11:19 prepare job=job-1 running
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 failed code=internal_error message=missing output state
+--- PASS: TestRecoverMissingStateIDFailsJob (0.10s)
+=== RUN   TestBuildPlanCacheError
+--- PASS: TestBuildPlanCacheError (0.04s)
+=== RUN   TestRunJobTaskFailed
+2026/01/27 23:11:19 prepare job=job-1 running
+2026/01/27 23:11:19 prepare job=job-1 failed code=internal_error message=task failed
+--- PASS: TestRunJobTaskFailed (0.08s)
+=== RUN   TestRunJobMissingOutputState
+2026/01/27 23:11:19 prepare job=job-1 running
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:19 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:19 prepare job=job-1 failed code=internal_error message=missing output state
+--- PASS: TestRunJobMissingOutputState (0.09s)
+=== RUN   TestRunJobPlanOnlyMarkTasksFail
+2026/01/27 23:11:20 prepare job=job-1 running
+2026/01/27 23:11:20 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:20 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:20 prepare job=job-1 failed code=internal_error message=cannot update task status
+--- PASS: TestRunJobPlanOnlyMarkTasksFail (0.10s)
+=== RUN   TestRunJobUpdateTaskStatusFails
+2026/01/27 23:11:20 prepare job=job-1 running
+2026/01/27 23:11:20 prepare job=job-1 planned tasks count=4 state_id=f86ce175afd2702e85f22ca127a2adc60c60247988c67bae9000c9d4a08293de
+2026/01/27 23:11:20 prepare job=job-1 stored tasks count=4
+2026/01/27 23:11:20 prepare job=job-1 failed code=internal_error message=cannot update task status
+--- PASS: TestRunJobUpdateTaskStatusFails (0.10s)
+=== RUN   TestRunJobStateExecuteMissingOutputState
+2026/01/27 23:11:20 prepare job=job-1 running
+2026/01/27 23:11:20 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:20 prepare job=job-1 task=execute-0 status=failed
+2026/01/27 23:11:20 prepare job=job-1 failed code=internal_error message=missing output state id
+--- PASS: TestRunJobStateExecuteMissingOutputState (0.10s)
+=== RUN   TestRunJobSkipsSucceededTask
+2026/01/27 23:11:20 prepare job=job-1 running
+2026/01/27 23:11:20 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:20 prepare job=job-1 runtime started container=container-1 host=127.0.0.1 port=5432 snapshot=fake
+2026/01/27 23:11:20 prepare job=job-1 task=prepare-instance status=succeeded
+2026/01/27 23:11:20 prepare job=job-1 succeeded instance=7ad6900dd23bf03746e3c25572e586af state=state-1
+--- PASS: TestRunJobSkipsSucceededTask (0.14s)
+=== RUN   TestRunJobCreateInstanceAfterLoopFails
+2026/01/27 23:11:20 prepare job=job-1 running
+2026/01/27 23:11:20 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:20 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:20 prepare job=job-1 task=execute-0 status=running
+2026/01/27 23:11:20 prepare job=job-1 task=execute-0 status=failed
+2026/01/27 23:11:20 prepare job=job-1 failed code=internal_error message=task input is required
+--- PASS: TestRunJobCreateInstanceAfterLoopFails (0.25s)
+=== RUN   TestRunJobPrepareInstanceUpdateTaskError
+2026/01/27 23:11:20 prepare job=job-1 running
+2026/01/27 23:11:20 prepare job=job-1 task=plan status=running
+2026/01/27 23:11:20 prepare job=job-1 task=plan status=succeeded
+2026/01/27 23:11:20 prepare job=job-1 task=prepare-instance status=running
+2026/01/27 23:11:20 prepare job=job-1 failed code=internal_error message=state id is required
+--- PASS: TestRunJobPrepareInstanceUpdateTaskError (0.11s)
+=== RUN   TestWaitForEventNotFound
+--- PASS: TestWaitForEventNotFound (0.05s)
+=== RUN   TestEventsSinceError
+--- PASS: TestEventsSinceError (0.05s)
+=== RUN   TestFormatTimeHelpers
+--- PASS: TestFormatTimeHelpers (0.00s)
+=== RUN   TestSucceedUpdateJobError
+--- PASS: TestSucceedUpdateJobError (0.04s)
+=== RUN   TestSucceedAppendEventError
+--- PASS: TestSucceedAppendEventError (0.05s)
+=== RUN   TestSucceedPlanUpdateJobError
+--- PASS: TestSucceedPlanUpdateJobError (0.04s)
+=== RUN   TestFailJobAppendEventError
+--- PASS: TestFailJobAppendEventError (0.05s)
+=== RUN   TestFailJobUpdateJobError
+--- PASS: TestFailJobUpdateJobError (0.05s)
+=== RUN   TestMaxIdenticalJobsDefaults
+--- PASS: TestMaxIdenticalJobsDefaults (0.00s)
+=== RUN   TestMaxIdenticalJobsFromConfig
+--- PASS: TestMaxIdenticalJobsFromConfig (0.00s)
+=== RUN   TestConfigValueToInt
+--- PASS: TestConfigValueToInt (0.00s)
+=== RUN   TestRemoveJobDirNoopAndDelete
+--- PASS: TestRemoveJobDirNoopAndDelete (0.00s)
+=== RUN   TestEnsureResolvedImageIDUsesTasks
+--- PASS: TestEnsureResolvedImageIDUsesTasks (0.04s)
+=== RUN   TestEnsureResolvedImageIDNilPrepared
+--- PASS: TestEnsureResolvedImageIDNilPrepared (0.04s)
+=== RUN   TestEnsureResolvedImageIDUsesRequestWhenTasksPresent
+--- PASS: TestEnsureResolvedImageIDUsesRequestWhenTasksPresent (0.04s)
+=== RUN   TestEnsureResolvedImageIDSkipsResolveForDigest
+--- PASS: TestEnsureResolvedImageIDSkipsResolveForDigest (0.04s)
+=== RUN   TestEnsureResolvedImageIDResolveErrors
+--- PASS: TestEnsureResolvedImageIDResolveErrors (0.04s)
+=== RUN   TestEnsureResolvedImageIDResolveEmpty
+--- PASS: TestEnsureResolvedImageIDResolveEmpty (0.04s)
+=== RUN   TestEnsureResolvedImageIDResolvesImage
+--- PASS: TestEnsureResolvedImageIDResolvesImage (0.06s)
+=== RUN   TestEnsureResolvedImageIDAlreadyResolved
+--- PASS: TestEnsureResolvedImageIDAlreadyResolved (0.05s)
+=== RUN   TestManagerLogHelpers
+--- PASS: TestManagerLogHelpers (0.00s)
+=== RUN   TestRewritePsqlFileArgs
+--- PASS: TestRewritePsqlFileArgs (0.01s)
+=== RUN   TestBuildPsqlExecArgsPrependsConnectionFlags
+--- PASS: TestBuildPsqlExecArgsPrependsConnectionFlags (0.00s)
+=== RUN   TestRewritePsqlFileArgsMissingValueForFileFlag
+--- PASS: TestRewritePsqlFileArgsMissingValueForFileFlag (0.00s)
+=== RUN   TestRewritePsqlFileArgsSupportsLongAndShortForms
+--- PASS: TestRewritePsqlFileArgsSupportsLongAndShortForms (0.00s)
+=== RUN   TestMapScriptPathErrors
+--- PASS: TestMapScriptPathErrors (0.01s)
+=== RUN   TestScriptMountForFilesCommonDir
+--- PASS: TestScriptMountForFilesCommonDir (0.01s)
+=== RUN   TestRuntimeMountsFromNil
+--- PASS: TestRuntimeMountsFromNil (0.00s)
+=== RUN   TestRewritePsqlFileArgsWithoutMount
+--- PASS: TestRewritePsqlFileArgsWithoutMount (0.00s)
+=== RUN   TestMapScriptPathStdin
+--- PASS: TestMapScriptPathStdin (0.00s)
+=== RUN   TestCommonDirEmpty
+--- PASS: TestCommonDirEmpty (0.00s)
+=== RUN   TestScriptMountForFilesEmpty
+--- PASS: TestScriptMountForFilesEmpty (0.00s)
+=== RUN   TestRuntimeMountsFrom
+--- PASS: TestRuntimeMountsFrom (0.00s)
+=== RUN   TestPreparePsqlArgsAddsDefaults
+--- PASS: TestPreparePsqlArgsAddsDefaults (0.01s)
+=== RUN   TestPreparePsqlArgsRespectsProvidedDefaults
+--- PASS: TestPreparePsqlArgsRespectsProvidedDefaults (0.01s)
+=== RUN   TestPreparePsqlArgsRejectsConnectionFlags
+--- PASS: TestPreparePsqlArgsRejectsConnectionFlags (0.00s)
+=== RUN   TestPreparePsqlArgsRejectsPositionalArgs
+--- PASS: TestPreparePsqlArgsRejectsPositionalArgs (0.00s)
+=== RUN   TestPreparePsqlArgsHandlesStdin
+--- PASS: TestPreparePsqlArgsHandlesStdin (0.01s)
+=== RUN   TestPreparePsqlArgsRejectsInvalidFileFlag
+--- PASS: TestPreparePsqlArgsRejectsInvalidFileFlag (0.00s)
+=== RUN   TestPreparePsqlArgsHandlesCommandFlags
+--- PASS: TestPreparePsqlArgsHandlesCommandFlags (0.00s)
+=== RUN   TestPreparePsqlArgsHandlesVarFlags
+--- PASS: TestPreparePsqlArgsHandlesVarFlags (0.00s)
+=== RUN   TestPreparePsqlArgsIgnoresMiscFlags
+--- PASS: TestPreparePsqlArgsIgnoresMiscFlags (0.00s)
+=== RUN   TestPreparePsqlArgsAllowsTerminator
+--- PASS: TestPreparePsqlArgsAllowsTerminator (0.00s)
+=== RUN   TestPreparePsqlArgsHandlesInlineFileFlag
+--- PASS: TestPreparePsqlArgsHandlesInlineFileFlag (0.01s)
+=== RUN   TestPreparePsqlArgsHandlesLongFileFlag
+--- PASS: TestPreparePsqlArgsHandlesLongFileFlag (0.00s)
+=== RUN   TestPreparePsqlArgsHandlesFileFlagEquals
+--- PASS: TestPreparePsqlArgsHandlesFileFlagEquals (0.00s)
+=== RUN   TestPreparePsqlArgsRejectsInlineRelativeFile
+--- PASS: TestPreparePsqlArgsRejectsInlineRelativeFile (0.00s)
+=== RUN   TestPreparePsqlArgsRejectsEmptyFilePath
+--- PASS: TestPreparePsqlArgsRejectsEmptyFilePath (0.00s)
+=== RUN   TestPreparePsqlArgsRejectsUnreadableFile
+--- PASS: TestPreparePsqlArgsRejectsUnreadableFile (0.00s)
+PASS
+ok  	sqlrs/engine/internal/prepare	23.190s
+=== RUN   TestSQLiteStoreJobTaskEventRoundTrip
+--- PASS: TestSQLiteStoreJobTaskEventRoundTrip (1.21s)
+=== RUN   TestSQLiteStoreListJobsByStatus
+--- PASS: TestSQLiteStoreListJobsByStatus (0.23s)
+=== RUN   TestSQLiteStoreOpenEmptyPath
+--- PASS: TestSQLiteStoreOpenEmptyPath (0.00s)
+=== RUN   TestSQLiteStoreNewRequiresDB
+--- PASS: TestSQLiteStoreNewRequiresDB (0.00s)
+=== RUN   TestSQLiteStoreCloseNil
+--- PASS: TestSQLiteStoreCloseNil (0.00s)
+=== RUN   TestSQLiteStoreGetJobMissing
+--- PASS: TestSQLiteStoreGetJobMissing (1.20s)
+=== RUN   TestSQLiteStoreListJobsFilter
+--- PASS: TestSQLiteStoreListJobsFilter (0.28s)
+=== RUN   TestSQLiteStoreListJobsBySignatureEmpty
+--- PASS: TestSQLiteStoreListJobsBySignatureEmpty (0.34s)
+=== RUN   TestSQLiteStoreUpdateJobNoFields
+--- PASS: TestSQLiteStoreUpdateJobNoFields (0.18s)
+=== RUN   TestSQLiteStoreUpdateJobInvalidID
+--- PASS: TestSQLiteStoreUpdateJobInvalidID (0.41s)
+=== RUN   TestSQLiteStoreUpdateJobAllFields
+--- PASS: TestSQLiteStoreUpdateJobAllFields (0.52s)
+=== RUN   TestSQLiteStoreReplaceTasksEmpty
+--- PASS: TestSQLiteStoreReplaceTasksEmpty (0.88s)
+=== RUN   TestSQLiteStoreUpdateTaskInvalidID
+--- PASS: TestSQLiteStoreUpdateTaskInvalidID (0.37s)
+=== RUN   TestEnsureJobSignatureColumn
+--- PASS: TestEnsureJobSignatureColumn (0.00s)
+=== RUN   TestSQLiteStoreListJobsBySignatureOrder
+--- PASS: TestSQLiteStoreListJobsBySignatureOrder (0.11s)
+=== RUN   TestSQLiteStoreDeleteJobCascades
+--- PASS: TestSQLiteStoreDeleteJobCascades (0.11s)
+=== RUN   TestSQLiteStoreClosedDatabase
+--- PASS: TestSQLiteStoreClosedDatabase (0.08s)
+=== RUN   TestOpenRequiresPath
+--- PASS: TestOpenRequiresPath (0.00s)
+=== RUN   TestNewRequiresDB
+--- PASS: TestNewRequiresDB (0.00s)
+=== RUN   TestNewWithDB
+--- PASS: TestNewWithDB (0.00s)
+=== RUN   TestEnsureTaskImageColumnsNoTable
+--- PASS: TestEnsureTaskImageColumnsNoTable (0.00s)
+=== RUN   TestEnsureTaskImageColumnsDuplicate
+--- PASS: TestEnsureTaskImageColumnsDuplicate (0.00s)
+=== RUN   TestEnsureJobSignatureColumnNoTable
+--- PASS: TestEnsureJobSignatureColumnNoTable (0.00s)
+=== RUN   TestEnsureJobSignatureColumnDuplicate
+--- PASS: TestEnsureJobSignatureColumnDuplicate (0.00s)
+=== RUN   TestUpdateJobRequiresID
+--- PASS: TestUpdateJobRequiresID (0.09s)
+=== RUN   TestUpdateJobNoFields
+--- PASS: TestUpdateJobNoFields (0.18s)
+=== RUN   TestListJobsByStatusEmpty
+--- PASS: TestListJobsByStatusEmpty (0.12s)
+=== RUN   TestUpdateTaskRequiresIDs
+--- PASS: TestUpdateTaskRequiresIDs (0.11s)
+=== RUN   TestUpdateTaskNoFields
+--- PASS: TestUpdateTaskNoFields (0.14s)
+=== RUN   TestJobSnapshotModeDefault
+--- PASS: TestJobSnapshotModeDefault (0.00s)
+=== RUN   TestNullBoolAndBoolPtr
+--- PASS: TestNullBoolAndBoolPtr (0.00s)
+=== RUN   TestScanHelpersReturnErrors
+--- PASS: TestScanHelpersReturnErrors (0.00s)
+PASS
+ok  	sqlrs/engine/internal/prepare/queue	9.620s
+=== RUN   TestRegistryListNamesPassesFilters
+--- PASS: TestRegistryListNamesPassesFilters (0.00s)
+=== RUN   TestRegistryListInstancesPassesFilters
+--- PASS: TestRegistryListInstancesPassesFilters (0.00s)
+=== RUN   TestRegistryGetNameTrimsWhitespace
+--- PASS: TestRegistryGetNameTrimsWhitespace (0.00s)
+=== RUN   TestRegistryGetInstanceByID
+--- PASS: TestRegistryGetInstanceByID (0.00s)
+=== RUN   TestRegistryGetInstanceFallsBackToName
+--- PASS: TestRegistryGetInstanceFallsBackToName (0.00s)
+=== RUN   TestRegistryGetInstanceBlank
+--- PASS: TestRegistryGetInstanceBlank (0.00s)
+=== RUN   TestRegistryGetInstanceNameMissingID
+--- PASS: TestRegistryGetInstanceNameMissingID (0.00s)
+=== RUN   TestRegistryGetInstanceNameError
+--- PASS: TestRegistryGetInstanceNameError (0.00s)
+=== RUN   TestRegistryGetInstanceIDError
+--- PASS: TestRegistryGetInstanceIDError (0.00s)
+=== RUN   TestRegistryListStatesAndGetState
+--- PASS: TestRegistryListStatesAndGetState (0.00s)
+=== RUN   TestRegistryCloseCallsStore
+--- PASS: TestRegistryCloseCallsStore (0.00s)
+=== RUN   TestRegistryUpdateInstanceRuntimeUnsupported
+--- PASS: TestRegistryUpdateInstanceRuntimeUnsupported (0.00s)
+=== RUN   TestRegistryUpdateInstanceRuntimeCallsStore
+--- PASS: TestRegistryUpdateInstanceRuntimeCallsStore (0.00s)
+PASS
+ok  	sqlrs/engine/internal/registry	1.481s
+=== RUN   TestValidationErrorMessage
+--- PASS: TestValidationErrorMessage (0.00s)
+=== RUN   TestNotFoundErrorMessage
+--- PASS: TestNotFoundErrorMessage (0.00s)
+=== RUN   TestConflictErrorMessage
+--- PASS: TestConflictErrorMessage (0.00s)
+=== RUN   TestManagerRunStepsConcatenatesOutput
+--- PASS: TestManagerRunStepsConcatenatesOutput (1.53s)
+=== RUN   TestManagerRunStepsRejectsNonPsql
+--- PASS: TestManagerRunStepsRejectsNonPsql (0.52s)
+=== RUN   TestManagerRunStepsRejectsConflictingArgs
+--- PASS: TestManagerRunStepsRejectsConflictingArgs (0.97s)
+=== RUN   TestManagerRunStepsRejectsMixedArgs
+--- PASS: TestManagerRunStepsRejectsMixedArgs (0.61s)
+=== RUN   TestManagerRunValidationErrors
+--- PASS: TestManagerRunValidationErrors (0.58s)
+=== RUN   TestManagerRunMissingInstance
+--- PASS: TestManagerRunMissingInstance (1.29s)
+=== RUN   TestManagerRunMissingRuntimeID
+--- PASS: TestManagerRunMissingRuntimeID (0.25s)
+=== RUN   TestManagerRunPgbenchConflictArgs
+--- PASS: TestManagerRunPgbenchConflictArgs (0.16s)
+=== RUN   TestManagerRunCommandOverrideAndStdin
+--- PASS: TestManagerRunCommandOverrideAndStdin (0.14s)
+=== RUN   TestManagerRunStepsRejectsStdin
+--- PASS: TestManagerRunStepsRejectsStdin (0.24s)
+=== RUN   TestManagerRunPgbenchExecArgs
+--- PASS: TestManagerRunPgbenchExecArgs (0.22s)
+=== RUN   TestManagerRunPsqlConflictArgs
+--- PASS: TestManagerRunPsqlConflictArgs (0.16s)
+=== RUN   TestManagerRunExecError
+--- PASS: TestManagerRunExecError (0.14s)
+=== RUN   TestManagerRunRecreatesMissingContainerAndUpdatesRuntimeID
+--- PASS: TestManagerRunRecreatesMissingContainerAndUpdatesRuntimeID (0.16s)
+=== RUN   TestManagerRunRecreateFailsWhenRuntimeDirMissing
+--- PASS: TestManagerRunRecreateFailsWhenRuntimeDirMissing (0.20s)
+=== RUN   TestManagerRunRecreateFailsWhenStartFails
+--- PASS: TestManagerRunRecreateFailsWhenStartFails (0.16s)
+=== RUN   TestManagerRunRecreateStopsContainerOnUpdateRuntimeError
+--- PASS: TestManagerRunRecreateStopsContainerOnUpdateRuntimeError (0.11s)
+=== RUN   TestHasPsqlConnectionArgs
+--- PASS: TestHasPsqlConnectionArgs (0.00s)
+=== RUN   TestHasPgbenchConnectionArgs
+--- PASS: TestHasPgbenchConnectionArgs (0.00s)
+=== RUN   TestIsPsqlConnFlag
+--- PASS: TestIsPsqlConnFlag (0.00s)
+PASS
+ok  	sqlrs/engine/internal/run	10.432s
+=== RUN   TestDockerRuntimeStart
+--- PASS: TestDockerRuntimeStart (0.00s)
+=== RUN   TestDockerRuntimeInitBaseRejectsEmpty
+--- PASS: TestDockerRuntimeInitBaseRejectsEmpty (0.00s)
+=== RUN   TestDockerRuntimeInitBaseSuccess
+--- PASS: TestDockerRuntimeInitBaseSuccess (0.00s)
+=== RUN   TestDockerRuntimeInitBaseDockerUnavailable
+--- PASS: TestDockerRuntimeInitBaseDockerUnavailable (0.00s)
+=== RUN   TestDockerRuntimeInitBasePermissionError
+--- PASS: TestDockerRuntimeInitBasePermissionError (0.00s)
+=== RUN   TestDockerRuntimeStartRejectsEmptyInputs
+--- PASS: TestDockerRuntimeStartRejectsEmptyInputs (0.00s)
+=== RUN   TestDockerRuntimeStartRunError
+--- PASS: TestDockerRuntimeStartRunError (0.00s)
+=== RUN   TestDockerRuntimeStartDockerUnavailable
+--- PASS: TestDockerRuntimeStartDockerUnavailable (0.00s)
+=== RUN   TestDockerRuntimeStartEmptyContainerID
+--- PASS: TestDockerRuntimeStartEmptyContainerID (0.00s)
+=== RUN   TestDockerRuntimeStartExecError
+--- PASS: TestDockerRuntimeStartExecError (0.00s)
+=== RUN   TestDockerRuntimeStartPortParseError
+--- PASS: TestDockerRuntimeStartPortParseError (0.00s)
+=== RUN   TestDockerRuntimeExecRejectsEmptyID
+--- PASS: TestDockerRuntimeExecRejectsEmptyID (0.00s)
+=== RUN   TestDockerRuntimeExecReportsRunnerError
+--- PASS: TestDockerRuntimeExecReportsRunnerError (0.00s)
+=== RUN   TestDockerRuntimeExecIncludesEnvDirStdin
+--- PASS: TestDockerRuntimeExecIncludesEnvDirStdin (0.00s)
+=== RUN   TestDockerRuntimeStopEmptyID
+--- PASS: TestDockerRuntimeStopEmptyID (0.00s)
+=== RUN   TestDockerRuntimeStopIgnoresMissingContainer
+--- PASS: TestDockerRuntimeStopIgnoresMissingContainer (0.00s)
+=== RUN   TestDockerRuntimeWaitForReadyTimeout
+--- PASS: TestDockerRuntimeWaitForReadyTimeout (0.23s)
+=== RUN   TestDockerRuntimeWaitForReadySuccess
+--- PASS: TestDockerRuntimeWaitForReadySuccess (0.00s)
+=== RUN   TestDockerRuntimeRunPermissionCommandDockerUnavailable
+--- PASS: TestDockerRuntimeRunPermissionCommandDockerUnavailable (0.00s)
+=== RUN   TestDockerRuntimeRunPermissionCommandPermissionError
+--- PASS: TestDockerRuntimeRunPermissionCommandPermissionError (0.00s)
+=== RUN   TestDockerRuntimeResolveImageWithDigest
+--- PASS: TestDockerRuntimeResolveImageWithDigest (0.00s)
+=== RUN   TestDockerRuntimeResolveImageInspectSuccess
+--- PASS: TestDockerRuntimeResolveImageInspectSuccess (0.00s)
+=== RUN   TestDockerRuntimeResolveImagePullOnInspectError
+--- PASS: TestDockerRuntimeResolveImagePullOnInspectError (0.00s)
+=== RUN   TestDockerRuntimeResolveImageDockerUnavailable
+--- PASS: TestDockerRuntimeResolveImageDockerUnavailable (0.00s)
+=== RUN   TestParseHostPort
+--- PASS: TestParseHostPort (0.00s)
+=== RUN   TestIsDockerUnavailableOutput
+--- PASS: TestIsDockerUnavailableOutput (0.00s)
+=== RUN   TestIsDockerNotFoundOutput
+--- PASS: TestIsDockerNotFoundOutput (0.00s)
+=== RUN   TestDockerUnavailableErrorMessage
+--- PASS: TestDockerUnavailableErrorMessage (0.00s)
+=== RUN   TestDockerUnavailableHint
+--- PASS: TestDockerUnavailableHint (0.00s)
+=== RUN   TestIsDockerUnavailable
+--- PASS: TestIsDockerUnavailable (0.00s)
+=== RUN   TestWrapDockerError
+--- PASS: TestWrapDockerError (0.00s)
+=== RUN   TestDockerRuntimeRunUsesStreamingRunner
+--- PASS: TestDockerRuntimeRunUsesStreamingRunner (0.00s)
+=== RUN   TestDockerRuntimeRunStreamingErrorWrapsUnavailable
+--- PASS: TestDockerRuntimeRunStreamingErrorWrapsUnavailable (0.00s)
+=== RUN   TestNewDockerDefaults
+--- PASS: TestNewDockerDefaults (0.00s)
+=== RUN   TestDockerRuntimeResolveImageRejectsEmpty
+--- PASS: TestDockerRuntimeResolveImageRejectsEmpty (0.00s)
+=== RUN   TestDockerRuntimeResolveImagePullError
+--- PASS: TestDockerRuntimeResolveImagePullError (0.00s)
+=== RUN   TestDockerRuntimeResolveImageInspectAfterPullDockerUnavailable
+--- PASS: TestDockerRuntimeResolveImageInspectAfterPullDockerUnavailable (0.00s)
+=== RUN   TestDockerRuntimeResolveImageEmptyDigest
+--- PASS: TestDockerRuntimeResolveImageEmptyDigest (0.00s)
+=== RUN   TestDockerRuntimeResolveImageInspectAfterPullError
+--- PASS: TestDockerRuntimeResolveImageInspectAfterPullError (0.00s)
+=== RUN   TestDockerRuntimeInitBaseEnsureDataDirOwnerError
+--- PASS: TestDockerRuntimeInitBaseEnsureDataDirOwnerError (0.00s)
+=== RUN   TestDockerRuntimeInitBaseInitdbError
+--- PASS: TestDockerRuntimeInitBaseInitdbError (0.00s)
+=== RUN   TestDockerRuntimeInitBaseInitdbDockerUnavailable
+--- PASS: TestDockerRuntimeInitBaseInitdbDockerUnavailable (0.00s)
+=== RUN   TestDockerRuntimeInitBaseInitdbPermissionOutput
+--- PASS: TestDockerRuntimeInitBaseInitdbPermissionOutput (0.00s)
+=== RUN   TestDockerRuntimeStartPortCommandError
+--- PASS: TestDockerRuntimeStartPortCommandError (0.00s)
+=== RUN   TestDockerRuntimeStartDockerRunUnavailable
+--- PASS: TestDockerRuntimeStartDockerRunUnavailable (0.00s)
+=== RUN   TestDockerRuntimeStartWaitForReadyCanceled
+--- PASS: TestDockerRuntimeStartWaitForReadyCanceled (0.00s)
+=== RUN   TestDockerRuntimeWaitForReadyTimeoutWithoutError
+--- PASS: TestDockerRuntimeWaitForReadyTimeoutWithoutError (0.22s)
+=== RUN   TestDockerRuntimeWaitForReadyContextCancelled
+--- PASS: TestDockerRuntimeWaitForReadyContextCancelled (0.00s)
+=== RUN   TestDockerRuntimeWaitForReadyDefaultTimeout
+--- PASS: TestDockerRuntimeWaitForReadyDefaultTimeout (0.00s)
+=== RUN   TestExecRunnerRunWithStdin
+--- PASS: TestExecRunnerRunWithStdin (0.49s)
+=== RUN   TestExecRunnerRun
+--- PASS: TestExecRunnerRun (0.55s)
+=== RUN   TestExecRunnerRunError
+--- PASS: TestExecRunnerRunError (0.21s)
+=== RUN   TestExecRunnerRunStreaming
+--- PASS: TestExecRunnerRunStreaming (0.09s)
+=== RUN   TestExecRunnerRunStreamingWithStdin
+--- PASS: TestExecRunnerRunStreamingWithStdin (0.07s)
+=== RUN   TestExecRunnerRunStreamingNilSink
+--- PASS: TestExecRunnerRunStreamingNilSink (0.06s)
+=== RUN   TestExecRunnerRunStreamingStdoutPipeError
+--- PASS: TestExecRunnerRunStreamingStdoutPipeError (0.01s)
+=== RUN   TestExecRunnerRunStreamingStderrPipeError
+--- PASS: TestExecRunnerRunStreamingStderrPipeError (0.00s)
+=== RUN   TestExecRunnerRunStreamingStartError
+--- PASS: TestExecRunnerRunStreamingStartError (0.01s)
+=== RUN   TestDockerRuntimeLogSink
+--- PASS: TestDockerRuntimeLogSink (0.00s)
+=== RUN   TestIsInitdbPermissionOutput
+--- PASS: TestIsInitdbPermissionOutput (0.00s)
+=== RUN   TestLogSinkContext
+--- PASS: TestLogSinkContext (0.00s)
+PASS
+ok  	sqlrs/engine/internal/runtime	3.528s
+=== RUN   TestCopyManagerCloneSnapshotDestroy
+--- PASS: TestCopyManagerCloneSnapshotDestroy (0.05s)
+=== RUN   TestNewManagerPrefersCopyWhenOverlayUnavailable
+--- PASS: TestNewManagerPrefersCopyWhenOverlayUnavailable (0.00s)
+=== RUN   TestNewManagerWithoutOverlayPreference
+--- PASS: TestNewManagerWithoutOverlayPreference (0.00s)
+=== RUN   TestCopyDirRejectsMissingSource
+--- PASS: TestCopyDirRejectsMissingSource (0.00s)
+=== RUN   TestCopyManagerCloneMissingSource
+--- PASS: TestCopyManagerCloneMissingSource (0.03s)
+=== RUN   TestCopyDirRejectsDestInsideSource
+--- PASS: TestCopyDirRejectsDestInsideSource (0.01s)
+=== RUN   TestCopyDirRejectsFileSource
+--- PASS: TestCopyDirRejectsFileSource (0.00s)
+=== RUN   TestCopyDirCopiesSymlink
+    copy_test.go:114: symlink requires privileges on Windows
+--- SKIP: TestCopyDirCopiesSymlink (0.01s)
+=== RUN   TestCopyDirRejectsEmptyPaths
+--- PASS: TestCopyDirRejectsEmptyPaths (0.00s)
+=== RUN   TestCopyDirDestIsFile
+--- PASS: TestCopyDirDestIsFile (0.01s)
+=== RUN   TestCopyDirContextCanceled
+--- PASS: TestCopyDirContextCanceled (0.01s)
+=== RUN   TestCopyFileMissingSource
+--- PASS: TestCopyFileMissingSource (0.01s)
+=== RUN   TestCopyFileRejectsDirectoryDest
+--- PASS: TestCopyFileRejectsDirectoryDest (0.01s)
+=== RUN   TestCopyManagerCapabilities
+--- PASS: TestCopyManagerCapabilities (0.00s)
+=== RUN   TestCopyDirAbsError
+--- PASS: TestCopyDirAbsError (0.00s)
+=== RUN   TestCopyDirRelErrorSkipsInsideCheck
+--- PASS: TestCopyDirRelErrorSkipsInsideCheck (0.01s)
+=== RUN   TestCopyDirWalkError
+--- PASS: TestCopyDirWalkError (0.01s)
+=== RUN   TestCopyDirRelErrorDuringWalk
+--- PASS: TestCopyDirRelErrorDuringWalk (0.09s)
+=== RUN   TestCopyDirEntryInfoErrorDir
+--- PASS: TestCopyDirEntryInfoErrorDir (0.04s)
+=== RUN   TestCopyDirEntryInfoErrorFile
+--- PASS: TestCopyDirEntryInfoErrorFile (0.41s)
+=== RUN   TestCopyDirMkdirAllError
+--- PASS: TestCopyDirMkdirAllError (0.11s)
+=== RUN   TestCopyDirReadlinkError
+--- PASS: TestCopyDirReadlinkError (0.26s)
+=== RUN   TestCopyDirSymlinkSuccess
+--- PASS: TestCopyDirSymlinkSuccess (0.06s)
+=== RUN   TestCopyFileOpenFileError
+--- PASS: TestCopyFileOpenFileError (0.09s)
+=== RUN   TestCopyFileCopyError
+--- PASS: TestCopyFileCopyError (0.13s)
+=== RUN   TestNewManagerPreferOverlayFalseReturnsCopyManager
+--- PASS: TestNewManagerPreferOverlayFalseReturnsCopyManager (0.00s)
+=== RUN   TestNewManagerPreferOverlayUsesOverlayWhenAvailable
+--- PASS: TestNewManagerPreferOverlayUsesOverlayWhenAvailable (0.00s)
+=== RUN   TestOverlayUnsupportedOnNonLinux
+--- PASS: TestOverlayUnsupportedOnNonLinux (0.00s)
+PASS
+ok  	sqlrs/engine/internal/snapshot	3.648s
+?   	sqlrs/engine/internal/store	[no test files]
+=== RUN   TestOpenMigratesParentStateColumn
+--- PASS: TestOpenMigratesParentStateColumn (0.18s)
+=== RUN   TestStoreCreateAndDelete
+--- PASS: TestStoreCreateAndDelete (0.17s)
+=== RUN   TestAddPrefixFilter
+--- PASS: TestAddPrefixFilter (0.00s)
+=== RUN   TestParseTime
+--- PASS: TestParseTime (0.00s)
+=== RUN   TestOpenEmptyPath
+--- PASS: TestOpenEmptyPath (0.00s)
+=== RUN   TestOpenInvalidDirectory
+--- PASS: TestOpenInvalidDirectory (0.00s)
+=== RUN   TestOpenDirectoryPath
+--- PASS: TestOpenDirectoryPath (0.00s)
+=== RUN   TestStoreCloseNil
+--- PASS: TestStoreCloseNil (0.00s)
+=== RUN   TestIsExpired
+--- PASS: TestIsExpired (0.00s)
+=== RUN   TestEnsureParentStateColumnDuplicate
+--- PASS: TestEnsureParentStateColumnDuplicate (0.00s)
+=== RUN   TestEnsureRuntimeDirColumnDuplicate
+--- PASS: TestEnsureRuntimeDirColumnDuplicate (0.00s)
+=== RUN   TestInitDBClosedDatabase
+--- PASS: TestInitDBClosedDatabase (0.00s)
+=== RUN   TestEnsureParentStateColumnClosedDB
+--- PASS: TestEnsureParentStateColumnClosedDB (0.00s)
+=== RUN   TestInitDBReadOnly
+--- PASS: TestInitDBReadOnly (0.01s)
+=== RUN   TestInitDBSchemaError
+--- PASS: TestInitDBSchemaError (0.00s)
+=== RUN   TestInitDBParentColumnError
+--- PASS: TestInitDBParentColumnError (0.00s)
+=== RUN   TestStoreListAndGet
+--- PASS: TestStoreListAndGet (0.21s)
+=== RUN   TestInstanceRuntimeDirPersisted
+--- PASS: TestInstanceRuntimeDirPersisted (0.12s)
+=== RUN   TestEnsureRuntimeColumnsMissingTable
+--- PASS: TestEnsureRuntimeColumnsMissingTable (0.00s)
+=== RUN   TestEnsureRuntimeColumnsDuplicate
+--- PASS: TestEnsureRuntimeColumnsDuplicate (0.00s)
+=== RUN   TestNewRequiresDB
+--- PASS: TestNewRequiresDB (0.00s)
+=== RUN   TestNewUsesExistingDB
+--- PASS: TestNewUsesExistingDB (0.11s)
+=== RUN   TestStoreStatusFlags
+--- PASS: TestStoreStatusFlags (0.24s)
+=== RUN   TestStoreGetMissingEntries
+--- PASS: TestStoreGetMissingEntries (0.15s)
+=== RUN   TestStoreListNamesStatuses
+--- PASS: TestStoreListNamesStatuses (0.29s)
+=== RUN   TestStoreListInstancesStatuses
+--- PASS: TestStoreListInstancesStatuses (0.23s)
+=== RUN   TestStoreQueryErrors
+--- PASS: TestStoreQueryErrors (0.12s)
+=== RUN   TestAddFilter
+--- PASS: TestAddFilter (0.00s)
+=== RUN   TestGetNameReturnsErrorOnMissingTable
+--- PASS: TestGetNameReturnsErrorOnMissingTable (0.11s)
+=== RUN   TestListStatesParentFilter
+--- PASS: TestListStatesParentFilter (0.12s)
+PASS
+ok  	sqlrs/engine/internal/store/sqlite	5.988s
+=== RUN   TestWantsNDJSON
+--- PASS: TestWantsNDJSON (0.00s)
+=== RUN   TestWriteListNDJSON
+--- PASS: TestWriteListNDJSON (0.00s)
+=== RUN   TestWriteListJSON
+--- PASS: TestWriteListJSON (0.00s)
+=== RUN   TestWriteListNDJSONError
+--- PASS: TestWriteListNDJSONError (0.00s)
+PASS
+ok  	sqlrs/engine/internal/stream	2.497s
