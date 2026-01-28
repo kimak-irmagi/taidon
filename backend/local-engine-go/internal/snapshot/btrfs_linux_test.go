@@ -222,7 +222,7 @@ func TestBtrfsSupportedStatfsError(t *testing.T) {
 func TestBtrfsSupportedNonBtrfs(t *testing.T) {
 	prevStatfs := statfsFn
 	prevLookPath := execLookPathBtrfs
-	statfsFn = func(string, stat *syscall.Statfs_t) error {
+	statfsFn = func(path string, stat *syscall.Statfs_t) error {
 		stat.Type = 0
 		return nil
 	}
