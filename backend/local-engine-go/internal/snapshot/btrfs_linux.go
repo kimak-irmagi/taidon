@@ -20,6 +20,7 @@ var statfsFn = func(path string, stat *syscall.Statfs_t) error {
 
 var osMkdirAllBtrfs = os.MkdirAll
 var execLookPathBtrfs = exec.LookPath
+var osStatBtrfs = os.Stat
 
 type btrfsManager struct {
 	runner commandRunner
@@ -89,4 +90,21 @@ func (m btrfsManager) Snapshot(ctx context.Context, srcDir string, destDir strin
 
 func (m btrfsManager) Destroy(ctx context.Context, dir string) error {
 	return m.runner.Run(ctx, "btrfs", []string{"subvolume", "delete", dir})
+}
+
+func (m btrfsManager) EnsureSubvolume(ctx context.Context, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("path is required")
+	}
+	path = filepath.Clean(path)
+	if err := osMkdirAllBtrfs(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if _, err := osStatBtrfs(path); err == nil {
+		if m.runner.Run(ctx, "btrfs", []string{"subvolume", "show", path}) == nil {
+			return nil
+		}
+		return fmt.Errorf("path exists but is not a btrfs subvolume: %s", path)
+	}
+	return m.runner.Run(ctx, "btrfs", []string{"subvolume", "create", path})
 }

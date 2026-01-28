@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 type btrfsFakeRunner struct {
@@ -173,6 +174,83 @@ func TestBtrfsManagerDestroyCommandError(t *testing.T) {
 	}
 }
 
+func TestBtrfsEnsureSubvolumeCreates(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	runner := &btrfsFakeRunner{}
+	mgr := btrfsManager{runner: runner}
+	path := filepath.Join(t.TempDir(), "state-1")
+	if err := mgr.EnsureSubvolume(context.Background(), path); err != nil {
+		t.Fatalf("EnsureSubvolume: %v", err)
+	}
+	if len(runner.calls) != 1 || !equalArgs(runner.calls[0].args, []string{"subvolume", "create", path}) {
+		t.Fatalf("unexpected calls: %+v", runner.calls)
+	}
+}
+
+func TestBtrfsEnsureSubvolumeExistingSubvolume(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return &fakeFileInfo{}, nil
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	runner := &btrfsFakeRunner{}
+	mgr := btrfsManager{runner: runner}
+	path := filepath.Join(t.TempDir(), "state-1")
+	if err := mgr.EnsureSubvolume(context.Background(), path); err != nil {
+		t.Fatalf("EnsureSubvolume: %v", err)
+	}
+	if len(runner.calls) != 1 || !equalArgs(runner.calls[0].args, []string{"subvolume", "show", path}) {
+		t.Fatalf("unexpected calls: %+v", runner.calls)
+	}
+}
+
+func TestBtrfsEnsureSubvolumeRejectsNonSubvolume(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return &fakeFileInfo{}, nil
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	runner := &btrfsFakeRunner{err: errors.New("not subvolume")}
+	mgr := btrfsManager{runner: runner}
+	path := filepath.Join(t.TempDir(), "state-1")
+	if err := mgr.EnsureSubvolume(context.Background(), path); err == nil {
+		t.Fatalf("expected error for non-subvolume")
+	}
+}
+
+func TestBtrfsEnsureSubvolumeMkdirError(t *testing.T) {
+	prevMkdir := osMkdirAllBtrfs
+	osMkdirAllBtrfs = func(string, os.FileMode) error {
+		return errors.New("mkdir failed")
+	}
+	t.Cleanup(func() { osMkdirAllBtrfs = prevMkdir })
+
+	mgr := btrfsManager{runner: &btrfsFakeRunner{}}
+	if err := mgr.EnsureSubvolume(context.Background(), "state"); err == nil {
+		t.Fatalf("expected mkdir error")
+	}
+}
+
+func TestBtrfsEnsureSubvolumeCreateError(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	mgr := btrfsManager{runner: &btrfsFakeRunner{err: errors.New("boom")}}
+	if err := mgr.EnsureSubvolume(context.Background(), "state"); err == nil {
+		t.Fatalf("expected create error")
+	}
+}
+
 func TestBtrfsSupportedUsesStatfs(t *testing.T) {
 	prevStatfs := statfsFn
 	prevLookPath := execLookPathBtrfs
@@ -266,3 +344,12 @@ func equalArgs(got, want []string) bool {
 	}
 	return true
 }
+
+type fakeFileInfo struct{}
+
+func (fakeFileInfo) Name() string       { return "fake" }
+func (fakeFileInfo) Size() int64        { return 0 }
+func (fakeFileInfo) Mode() os.FileMode  { return 0 }
+func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (fakeFileInfo) IsDir() bool        { return true }
+func (fakeFileInfo) Sys() any           { return nil }
