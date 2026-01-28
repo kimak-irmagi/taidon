@@ -496,6 +496,22 @@ func TestEnsureTaskImageColumnsDuplicate(t *testing.T) {
 	}
 }
 
+func TestEnsureTaskImageColumnsAddsMissingColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE prepare_tasks (task_id TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := ensureTaskImageColumns(db); err != nil {
+		t.Fatalf("ensureTaskImageColumns: %v", err)
+	}
+}
+
 func TestEnsureTaskImageColumnsReturnsExecError(t *testing.T) {
 	db := openErrorDB(t, []error{errors.New("boom")})
 	if err := ensureTaskImageColumns(db); err == nil {
