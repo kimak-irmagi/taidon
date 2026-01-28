@@ -3,8 +3,11 @@ package queue
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -493,6 +496,23 @@ func TestEnsureTaskImageColumnsDuplicate(t *testing.T) {
 	}
 }
 
+func TestEnsureTaskImageColumnsReturnsExecError(t *testing.T) {
+	db := openErrorDB(t, []error{errors.New("boom")})
+	if err := ensureTaskImageColumns(db); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestEnsureTaskImageColumnsSecondExecError(t *testing.T) {
+	db := openErrorDB(t, []error{
+		errors.New("duplicate column name: image_id"),
+		errors.New("boom"),
+	})
+	if err := ensureTaskImageColumns(db); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
 func TestEnsureJobSignatureColumnNoTable(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -503,6 +523,66 @@ func TestEnsureJobSignatureColumnNoTable(t *testing.T) {
 	if err := ensureJobSignatureColumn(db); err != nil {
 		t.Fatalf("ensureJobSignatureColumn: %v", err)
 	}
+}
+
+type execErrorDriver struct{}
+
+type execErrorConn struct{}
+
+var (
+	execErrOnce  sync.Once
+	execErrMutex sync.Mutex
+	execErrQueue []error
+)
+
+func registerExecErrorDriver() {
+	execErrOnce.Do(func() {
+		sql.Register("exec-error-driver", execErrorDriver{})
+	})
+}
+
+func openErrorDB(t *testing.T, errs []error) *sql.DB {
+	t.Helper()
+	registerExecErrorDriver()
+	execErrMutex.Lock()
+	execErrQueue = append([]error{}, errs...)
+	execErrMutex.Unlock()
+	db, err := sql.Open("exec-error-driver", "ignored")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func (execErrorDriver) Open(name string) (driver.Conn, error) {
+	return execErrorConn{}, nil
+}
+
+func (execErrorConn) Prepare(query string) (driver.Stmt, error) {
+	return nil, errors.New("prepare not supported")
+}
+
+func (execErrorConn) Close() error {
+	return nil
+}
+
+func (execErrorConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("tx not supported")
+}
+
+func (execErrorConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	execErrMutex.Lock()
+	defer execErrMutex.Unlock()
+	if len(execErrQueue) == 0 {
+		return driver.RowsAffected(0), nil
+	}
+	err := execErrQueue[0]
+	execErrQueue = execErrQueue[1:]
+	if err != nil {
+		return nil, err
+	}
+	return driver.RowsAffected(0), nil
 }
 
 func TestEnsureJobSignatureColumnDuplicate(t *testing.T) {

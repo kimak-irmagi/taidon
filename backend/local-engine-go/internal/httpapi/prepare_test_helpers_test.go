@@ -24,6 +24,13 @@ func TestFakeRuntimeWaitForReady(t *testing.T) {
 	}
 }
 
+func TestFakeRuntimeStop(t *testing.T) {
+	rt := &fakeRuntime{}
+	if err := rt.Stop(context.Background(), "container-1"); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+}
+
 func TestFakeRuntimeInitBase(t *testing.T) {
 	rt := &fakeRuntime{}
 	dataDir := filepath.Join(t.TempDir(), "data")
@@ -58,5 +65,13 @@ func TestFakeSnapshotCloneDestroy(t *testing.T) {
 	}
 	if _, err := os.Stat(snapshotDir); !os.IsNotExist(err) {
 		t.Fatalf("expected snapshot dir removed")
+	}
+}
+
+func TestFakeSnapshotCapabilities(t *testing.T) {
+	snap := &fakeSnapshot{}
+	caps := snap.Capabilities()
+	if !caps.RequiresDBStop || !caps.SupportsWritableClone || caps.SupportsSendReceive {
+		t.Fatalf("unexpected capabilities: %+v", caps)
 	}
 }

@@ -174,6 +174,17 @@ func TestBtrfsManagerDestroyCommandError(t *testing.T) {
 	}
 }
 
+func TestNewBtrfsManagerKindAndCapabilities(t *testing.T) {
+	mgr := newBtrfsManager()
+	if mgr.Kind() != "btrfs" {
+		t.Fatalf("expected btrfs kind, got %s", mgr.Kind())
+	}
+	caps := mgr.Capabilities()
+	if !caps.RequiresDBStop || !caps.SupportsWritableClone || caps.SupportsSendReceive {
+		t.Fatalf("unexpected capabilities: %+v", caps)
+	}
+}
+
 func TestBtrfsEnsureSubvolumeCreates(t *testing.T) {
 	prevStat := osStatBtrfs
 	osStatBtrfs = func(string) (os.FileInfo, error) {

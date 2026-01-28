@@ -119,3 +119,11 @@ func TestOverlayManagerSnapshotCopies(t *testing.T) {
 		t.Fatalf("expected snapshot file: %v", err)
 	}
 }
+
+func TestOverlayManagerCapabilities(t *testing.T) {
+	manager := overlayManager{runner: &fakeRunner{}}
+	caps := manager.Capabilities()
+	if !caps.RequiresDBStop || !caps.SupportsWritableClone || caps.SupportsSendReceive {
+		t.Fatalf("unexpected capabilities: %+v", caps)
+	}
+}
