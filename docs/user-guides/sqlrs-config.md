@@ -55,6 +55,32 @@ sqlrs config set featureFlag null
 
 ---
 
+## Snapshot backend selection
+
+The local engine can select a snapshot backend via configuration.
+
+Path: `snapshot.backend`
+
+Allowed values:
+
+- `"auto"` (default) - pick the best available backend.
+- `"overlay"` - force OverlayFS (Linux only).
+- `"btrfs"` - force btrfs subvolume snapshots (Linux/WSL2 only).
+- `"copy"` - force full copy snapshots (works everywhere).
+
+If the requested backend is unavailable, the engine falls back to `"copy"` and
+emits a warning event in the prepare job logs.
+
+Examples:
+
+```text
+sqlrs config set snapshot.backend "auto"
+sqlrs config set snapshot.backend "btrfs"
+sqlrs config set snapshot.backend "copy"
+```
+
+---
+
 ## Commands
 
 ### 1) `get`

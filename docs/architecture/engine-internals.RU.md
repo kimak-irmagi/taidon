@@ -100,8 +100,8 @@ flowchart LR
 
 ### 1.7 Менеджер снапшотов
 
-- Предпочитает OverlayFS на Linux; fallback — копирование.
-- Windows/WSL backend для снапшотов добавим позже.
+- Предпочитает OverlayFS или btrfs на Linux; fallback — копирование.
+- Windows использует те же Linux-снапшоттеры при запуске engine внутри WSL2.
 - Экспортирует `Clone`, `Snapshot`, `Destroy` для states и instances.
 - Использует path resolver из State Store, чтобы найти корни `PGDATA` и каталоги states.
 

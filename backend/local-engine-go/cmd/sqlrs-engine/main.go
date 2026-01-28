@@ -93,6 +93,23 @@ func (r *statusRecorderFlusher) Flush() {
 	}
 }
 
+func snapshotBackendFromConfig(cfg config.Store) string {
+	value, err := cfg.Get("snapshot.backend", true)
+	if err != nil {
+		return "auto"
+	}
+	backend, ok := value.(string)
+	if !ok {
+		return "auto"
+	}
+	switch backend {
+	case "auto", "overlay", "btrfs", "copy":
+		return backend
+	default:
+		return "auto"
+	}
+}
+
 var serveHTTP = func(server *http.Server, listener net.Listener) error {
 	return server.Serve(listener)
 }
@@ -214,12 +231,15 @@ func run(args []string) (int, error) {
 	activity.Touch()
 	reg := registry.New(store)
 	rt := engineRuntime.NewDocker(engineRuntime.Options{})
-	snap := snapshot.NewManager(snapshot.Options{PreferOverlay: true})
-	connector := dbms.NewPostgres(rt)
 	configMgr, err := config.NewManager(config.Options{StateStoreRoot: stateStoreRoot})
 	if err != nil {
 		return 1, fmt.Errorf("config manager: %v", err)
 	}
+	snap := snapshot.NewManager(snapshot.Options{
+		Backend:        snapshotBackendFromConfig(configMgr),
+		StateStoreRoot: stateStoreRoot,
+	})
+	connector := dbms.NewPostgres(rt)
 	prepareMgr, err := newPrepareManagerFn(prepare.Options{
 		Store:          store,
 		Queue:          queueStore,

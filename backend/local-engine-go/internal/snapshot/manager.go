@@ -1,6 +1,9 @@
 package snapshot
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 type CloneResult struct {
 	MountDir string
@@ -22,17 +25,49 @@ type Capabilities struct {
 }
 
 type Options struct {
-	PreferOverlay bool
+	PreferOverlay  bool
+	Backend        string
+	StateStoreRoot string
 }
 
 func NewManager(opts Options) Manager {
-	if opts.PreferOverlay && overlaySupportedFn() {
-		return newOverlayManagerFn()
+	backend := strings.TrimSpace(opts.Backend)
+	if backend == "" {
+		if opts.PreferOverlay {
+			backend = "overlay"
+		} else {
+			backend = "auto"
+		}
 	}
-	return CopyManager{}
+	switch backend {
+	case "overlay":
+		if overlaySupportedFn() {
+			return newOverlayManagerFn()
+		}
+		return CopyManager{}
+	case "btrfs":
+		if btrfsSupportedFn(opts.StateStoreRoot) {
+			return newBtrfsManagerFn()
+		}
+		return CopyManager{}
+	case "copy":
+		return CopyManager{}
+	case "auto":
+		if overlaySupportedFn() {
+			return newOverlayManagerFn()
+		}
+		if btrfsSupportedFn(opts.StateStoreRoot) {
+			return newBtrfsManagerFn()
+		}
+		return CopyManager{}
+	default:
+		return CopyManager{}
+	}
 }
 
 var (
 	overlaySupportedFn  = overlaySupported
 	newOverlayManagerFn = newOverlayManager
+	btrfsSupportedFn    = btrfsSupported
+	newBtrfsManagerFn   = newBtrfsManager
 )

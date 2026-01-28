@@ -8,6 +8,6 @@ import (
 )
 
 func TestHideWindowNoop(t *testing.T) {
-	cmd := exec.Command("sh", "-c", "true")
+	cmd := exec.Command("true")
 	hideWindow(cmd)
 }

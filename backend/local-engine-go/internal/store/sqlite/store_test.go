@@ -88,6 +88,43 @@ func TestInstanceRuntimeDirPersisted(t *testing.T) {
 	}
 }
 
+func TestUpdateInstanceRuntime(t *testing.T) {
+	st := openTestStore(t)
+	created := time.Now().UTC().Format(time.RFC3339Nano)
+	exec(t, st, `INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		"state-1", "state-1", "image-1", "psql", "args", created)
+	exec(t, st, `INSERT INTO instances (instance_id, state_id, image_id, created_at, runtime_id)
+		VALUES (?, ?, ?, ?, ?)`,
+		"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "state-1", "image-1", created, "runtime-1")
+
+	newRuntime := "runtime-2"
+	if err := st.UpdateInstanceRuntime(context.Background(), "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", &newRuntime); err != nil {
+		t.Fatalf("UpdateInstanceRuntime: %v", err)
+	}
+	entry, ok, err := st.GetInstance(context.Background(), "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+	if err != nil || !ok || entry.RuntimeID == nil || *entry.RuntimeID != newRuntime {
+		t.Fatalf("unexpected runtime id: %+v err=%v ok=%v", entry.RuntimeID, err, ok)
+	}
+
+	empty := " "
+	if err := st.UpdateInstanceRuntime(context.Background(), "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", &empty); err != nil {
+		t.Fatalf("UpdateInstanceRuntime empty: %v", err)
+	}
+	entry, ok, err = st.GetInstance(context.Background(), "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+	if err != nil || !ok || entry.RuntimeID != nil {
+		t.Fatalf("expected runtime id cleared, got %+v err=%v ok=%v", entry.RuntimeID, err, ok)
+	}
+
+	if err := st.UpdateInstanceRuntime(context.Background(), "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", nil); err != nil {
+		t.Fatalf("UpdateInstanceRuntime nil: %v", err)
+	}
+	entry, ok, err = st.GetInstance(context.Background(), "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+	if err != nil || !ok || entry.RuntimeID != nil {
+		t.Fatalf("expected runtime id cleared, got %+v err=%v ok=%v", entry.RuntimeID, err, ok)
+	}
+}
+
 func TestEnsureRuntimeColumnsMissingTable(t *testing.T) {
 	db := openMemoryDB(t)
 	if err := ensureRuntimeIDColumn(db); err != nil {

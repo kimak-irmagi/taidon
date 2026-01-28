@@ -391,6 +391,24 @@ func TestConfigEffectiveMerged(t *testing.T) {
 	}
 }
 
+func TestConfigDefaultSnapshotBackend(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Options{
+		StateStoreRoot: dir,
+		Defaults:       testDefaults(),
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	value, err := mgr.Get("snapshot.backend", true)
+	if err != nil {
+		t.Fatalf("Get effective: %v", err)
+	}
+	if value != "auto" {
+		t.Fatalf("expected default snapshot backend auto, got %#v", value)
+	}
+}
+
 func TestConfigSchemaValidationRejects(t *testing.T) {
 	dir := t.TempDir()
 	mgr, err := NewManager(Options{
@@ -402,6 +420,9 @@ func TestConfigSchemaValidationRejects(t *testing.T) {
 	}
 	if _, err := mgr.Set("orchestrator.jobs.maxIdentical", -1); err == nil {
 		t.Fatalf("expected validation error for negative maxIdentical")
+	}
+	if _, err := mgr.Set("snapshot.backend", "bad"); err == nil {
+		t.Fatalf("expected validation error for snapshot backend")
 	}
 }
 
@@ -417,6 +438,27 @@ func TestValidateValueVariants(t *testing.T) {
 	}
 	if err := validateValue("orchestrator.jobs.maxIdentical", "bad"); err == nil {
 		t.Fatalf("expected invalid type to be rejected")
+	}
+	if err := validateValue("snapshot.backend", nil); err != nil {
+		t.Fatalf("expected nil snapshot backend to be allowed")
+	}
+	if err := validateValue("snapshot.backend", "auto"); err != nil {
+		t.Fatalf("expected snapshot backend auto to be valid")
+	}
+	if err := validateValue("snapshot.backend", "overlay"); err != nil {
+		t.Fatalf("expected snapshot backend overlay to be valid")
+	}
+	if err := validateValue("snapshot.backend", "btrfs"); err != nil {
+		t.Fatalf("expected snapshot backend btrfs to be valid")
+	}
+	if err := validateValue("snapshot.backend", "copy"); err != nil {
+		t.Fatalf("expected snapshot backend copy to be valid")
+	}
+	if err := validateValue("snapshot.backend", "bad"); err == nil {
+		t.Fatalf("expected invalid snapshot backend to be rejected")
+	}
+	if err := validateValue("snapshot.backend", 1); err == nil {
+		t.Fatalf("expected non-string snapshot backend to be rejected")
 	}
 	if err := validateValue("features.other", "ok"); err != nil {
 		t.Fatalf("expected other path to pass")
@@ -996,6 +1038,9 @@ func writeConfigFile(t *testing.T, path string, value map[string]any) {
 
 func testDefaults() map[string]any {
 	return map[string]any{
+		"snapshot": map[string]any{
+			"backend": "auto",
+		},
 		"orchestrator": map[string]any{
 			"jobs": map[string]any{
 				"maxIdentical": 2,

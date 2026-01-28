@@ -48,7 +48,7 @@
     `runtime_id` перед выполнением run-команд.
 - `internal/snapshot`
   - Интерфейс менеджера снапшотов и выбор backend.
-  - OverlayFS в MVP, fallback на копирование.
+  - OverlayFS или btrfs в MVP, fallback на копирование.
 - `internal/dbms`
   - DBMS-специфичные хуки для подготовки и возобновления.
   - Postgres использует `pg_ctl` для fast shutdown/restart без остановки контейнера.

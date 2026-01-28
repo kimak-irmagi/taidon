@@ -12,6 +12,7 @@ import (
 	"time"
 
 	engineRuntime "sqlrs/engine/internal/runtime"
+	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store"
 )
 
@@ -187,8 +188,10 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 	if err := os.MkdirAll(paths.statesDir, 0o700); err != nil {
 		return errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
-	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
-		return errorResponse("internal_error", "cannot create state dir", err.Error())
+	if m.snapshot == nil || m.snapshot.Kind() != "btrfs" {
+		if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+			return errorResponse("internal_error", "cannot create state dir", err.Error())
+		}
 	}
 
 	runner, ephemeral := m.runnerForJob(jobID)
@@ -200,7 +203,8 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 	}
 
 	var errResp *ErrorResponse
-	lockErr := withStateBuildLock(ctx, paths.stateDir, func() error {
+	lockPath := stateBuildLockPath(paths.stateDir, snapshotKind(m.snapshot))
+	lockErr := withStateBuildLock(ctx, paths.stateDir, lockPath, func() error {
 		cached, err := m.isStateCached(task.OutputStateID)
 		if err != nil {
 			errResp = errorResponse("internal_error", "cannot check state cache", err.Error())
@@ -211,12 +215,8 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			return nil
 		}
 		if stateBuildMarkerExists(paths.stateDir) {
-			if err := os.RemoveAll(paths.stateDir); err != nil {
+			if err := resetStateDir(ctx, m.snapshot, paths.stateDir); err != nil {
 				errResp = errorResponse("internal_error", "cannot reset state dir", err.Error())
-				return errStateBuildFailed
-			}
-			if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
-				errResp = errorResponse("internal_error", "cannot create state dir", err.Error())
 				return errStateBuildFailed
 			}
 		}
@@ -528,7 +528,7 @@ func (m *Manager) ensureBaseState(ctx context.Context, imageID string, baseDir s
 	if initMarkerExists(baseDir) {
 		return nil
 	}
-	if err := os.MkdirAll(baseDir, 0o700); err != nil {
+	if err := ensureBaseDir(ctx, m.snapshot, baseDir); err != nil {
 		return err
 	}
 	if err := withInitLock(ctx, baseDir, func() error {
@@ -607,11 +607,34 @@ func writeStateBuildMarker(stateDir string) error {
 	return os.WriteFile(path, []byte("ok"), 0o600)
 }
 
-func withStateBuildLock(ctx context.Context, stateDir string, fn func() error) error {
+const stateBuildLockDirName = ".build"
+
+func snapshotKind(snap snapshot.Manager) string {
+	if snap == nil {
+		return ""
+	}
+	return snap.Kind()
+}
+
+func stateBuildLockPath(stateDir string, kind string) string {
+	if kind == "btrfs" {
+		base := filepath.Dir(stateDir)
+		stateID := filepath.Base(stateDir)
+		return filepath.Join(base, stateBuildLockDirName, stateID+".lock")
+	}
+	return filepath.Join(stateDir, stateBuildLockName)
+}
+
+func withStateBuildLock(ctx context.Context, stateDir string, lockPath string, fn func() error) error {
 	if fn == nil {
 		return fmt.Errorf("lock callback is required")
 	}
-	lockPath := filepath.Join(stateDir, stateBuildLockName)
+	if strings.TrimSpace(lockPath) == "" {
+		return fmt.Errorf("lock path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return err
+	}
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -632,6 +655,29 @@ func withStateBuildLock(ctx context.Context, stateDir string, fn func() error) e
 		}
 		return err
 	}
+}
+
+type subvolumeEnsurer interface {
+	EnsureSubvolume(ctx context.Context, path string) error
+}
+
+func ensureBaseDir(ctx context.Context, snap snapshot.Manager, baseDir string) error {
+	if snap != nil {
+		if ensurer, ok := snap.(subvolumeEnsurer); ok {
+			return ensurer.EnsureSubvolume(ctx, baseDir)
+		}
+	}
+	return os.MkdirAll(baseDir, 0o700)
+}
+
+func resetStateDir(ctx context.Context, snap snapshot.Manager, stateDir string) error {
+	if snap != nil && snap.Kind() == "btrfs" {
+		return snap.Destroy(ctx, stateDir)
+	}
+	if err := os.RemoveAll(stateDir); err != nil {
+		return err
+	}
+	return os.MkdirAll(stateDir, 0o700)
 }
 
 func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) {

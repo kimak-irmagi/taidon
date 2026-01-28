@@ -355,8 +355,8 @@ To keep keys meaningful:
 
 ### 12.3 Platform specifics
 
-- **Linux/macOS (local engine)**: `<StateDir>/state-store`, using native filesystem; OverlayFS when available, otherwise copy fallback.
-- **Windows (local engine)**: `<StateDir>/state-store`, copy fallback; WSL backend is added later.
+- **Linux/macOS (local engine)**: `<StateDir>/state-store`, using native filesystem; OverlayFS or btrfs when available, otherwise copy fallback.
+- **Windows (local engine)**: engine runs inside WSL2; use btrfs on the WSL2 state-store volume for CoW when available, otherwise copy fallback.
 
 ### 12.4 Access and locking
 

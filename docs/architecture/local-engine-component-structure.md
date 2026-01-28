@@ -48,7 +48,7 @@ This document defines the internal component layout of the local sqlrs engine.
     `runtime_id` before executing run commands.
 - `internal/snapshot`
   - Snapshot manager interface and backend selection.
-  - OverlayFS-backed snapshots in the MVP, copy fallback.
+  - OverlayFS or btrfs snapshots in the MVP, copy fallback.
 - `internal/dbms`
   - DBMS-specific hooks for snapshot preparation and resume.
   - Postgres implementation uses `pg_ctl` for fast shutdown/restart without stopping the container.

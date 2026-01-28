@@ -201,6 +201,55 @@ func TestRemoveEngineStateError(t *testing.T) {
 	}
 }
 
+type fakeConfigStore struct {
+	value any
+	err   error
+}
+
+func (f fakeConfigStore) Get(path string, effective bool) (any, error) {
+	return f.value, f.err
+}
+
+func (f fakeConfigStore) Set(path string, value any) (any, error) {
+	return nil, nil
+}
+
+func (f fakeConfigStore) Remove(path string) (any, error) {
+	return nil, nil
+}
+
+func (f fakeConfigStore) Schema() any {
+	return nil
+}
+
+func TestSnapshotBackendFromConfigDefaultsOnError(t *testing.T) {
+	backend := snapshotBackendFromConfig(fakeConfigStore{err: errors.New("boom")})
+	if backend != "auto" {
+		t.Fatalf("expected auto fallback, got %s", backend)
+	}
+}
+
+func TestSnapshotBackendFromConfigValidValues(t *testing.T) {
+	cases := []string{"auto", "overlay", "btrfs", "copy"}
+	for _, value := range cases {
+		backend := snapshotBackendFromConfig(fakeConfigStore{value: value})
+		if backend != value {
+			t.Fatalf("expected %s, got %s", value, backend)
+		}
+	}
+}
+
+func TestSnapshotBackendFromConfigRejectsInvalidValues(t *testing.T) {
+	backend := snapshotBackendFromConfig(fakeConfigStore{value: "bad"})
+	if backend != "auto" {
+		t.Fatalf("expected auto fallback, got %s", backend)
+	}
+	backend = snapshotBackendFromConfig(fakeConfigStore{value: 1})
+	if backend != "auto" {
+		t.Fatalf("expected auto fallback, got %s", backend)
+	}
+}
+
 func TestSetupLoggingWritesToFile(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "engine.json")

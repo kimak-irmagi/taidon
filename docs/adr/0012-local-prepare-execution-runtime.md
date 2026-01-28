@@ -28,6 +28,7 @@ Date: 2026-01-19
   - Full copy snapshots.
 - Decision: Start with OverlayFS-based snapshots and fall back to full copy. Add a Windows/WSL backend later.
 - Rationale: OverlayFS is widely available on Linux and keeps the MVP simple while preserving CoW benefits.
+- Superseded by: ADR 2026-01-28 btrfs snapshotter via WSL2 on Windows (adds btrfs as a supported backend and formalizes WSL2 usage on Windows).
 
 ## Decision Record 3: snapshot consistency and DBMS coordination
 

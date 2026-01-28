@@ -100,8 +100,8 @@ flowchart LR
 
 ### 1.7 Snapshot Manager
 
-- Prefers OverlayFS on Linux; falls back to copy-based snapshots.
-- Windows/WSL snapshot backend is added later.
+- Prefers OverlayFS or btrfs on Linux; falls back to copy-based snapshots.
+- Windows uses the same Linux snapshotters by running the engine inside WSL2.
 - Exposes `Clone`, `Snapshot`, `Destroy` for states and instances.
 - Uses path resolver from State Store to locate `PGDATA` roots and state directories.
 

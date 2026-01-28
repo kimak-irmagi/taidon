@@ -38,8 +38,9 @@
 
 ### 3.2 Стратегия host-хранилища (по платформам)
 
-- **Linux (primary):** host-managed state store на OverlayFS.
-- **Windows / WSL2:** backend снапшотов добавим позже; fallback на полное копирование.
+- **Linux (primary):** host-managed state store на OverlayFS или btrfs.
+- **Windows:** engine запускается внутри WSL2; используем btrfs на томе state-store
+  для блочного CoW, при отсутствии btrfs — fallback на полное копирование.
 
 Runtime код не раскрывает конкретные пути: engine/adapter сам разрешает data dirs и передает mounts в runtime.
 Для локального engine корень state store - `<StateDir>/state-store`.
@@ -103,11 +104,11 @@ Base states хранятся как **CoW-способные файловые н
 ### 6.1 Основной бэкенд (MVP)
 
 - **OverlayFS слои** (Linux хосты) для copy-on-write снапшотов.
+- **btrfs subvolume snapshots** (Linux/WSL2) для блочного CoW.
 
 ### 6.2 Fallback бэкенд
 
-- Любой хост без OverlayFS: рекурсивное копирование (MVP).
-- Windows/WSL2 backend добавим позже.
+- Любой хост без CoW-бэкенда: рекурсивное копирование (MVP).
 
 ### 6.3 Плагинный интерфейс snapshotter
 
@@ -122,12 +123,13 @@ Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_rec
 
 - `OverlayFSSnapshotter`
 - `CopySnapshotter`
-- (future) `BtrfsSnapshotter`, `ZfsSnapshotter`, `CsiSnapshotter`
+- `BtrfsSnapshotter`
+- (future) `ZfsSnapshotter`, `CsiSnapshotter`
 
 ### 6.4 Политика выбора бэкенда
 
 - Runtime выбирает snapshotter по возможностям хоста и опциональному конфиг-override
-  (например, `engine.config.snapshot.backend`).
+  (например, `snapshot.backend`).
 - Если предпочтительный backend недоступен, происходит **fallback** на `CopySnapshotter`.
 - Выбранный backend фиксируется в метаданных состояния для совместимости GC/restore.
 
@@ -239,7 +241,7 @@ Snapshotter лишь сообщает, нужна ли остановка БД, 
 
 ### Phase 1 (MVP)
 
-- Docker + OverlayFS
+- Docker + OverlayFS/btrfs
 - Postgres 15 & 17
 - Локальный state store
 
@@ -248,7 +250,7 @@ Snapshotter лишь сообщает, нужна ли остановка БД, 
 - Remote/shared cache
 - ZFS / send-receive
 - Pre-warmed pinned states
-- Windows/WSL backend для снапшотов
+- Автоматизация Windows-установки для WSL2+btrfs
 
 ### Phase 3
 

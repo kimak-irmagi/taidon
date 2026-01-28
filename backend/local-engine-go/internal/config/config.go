@@ -89,6 +89,9 @@ func NewManager(opts Options) (*Manager, error) {
 
 func DefaultConfig() map[string]any {
 	return map[string]any{
+		"snapshot": map[string]any{
+			"backend": "auto",
+		},
 		"orchestrator": map[string]any{
 			"jobs": map[string]any{
 				"maxIdentical": 2,
@@ -102,6 +105,16 @@ func DefaultSchema() map[string]any {
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
 		"type":    "object",
 		"properties": map[string]any{
+			"snapshot": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"backend": map[string]any{
+						"type": []any{"string", "null"},
+						"enum": []any{"auto", "overlay", "btrfs", "copy", nil},
+					},
+				},
+				"additionalProperties": true,
+			},
 			"orchestrator": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -240,6 +253,21 @@ func validateValue(path string, value any) error {
 			return nil
 		}
 		return ErrInvalidValue
+	}
+	if path == "snapshot.backend" {
+		if value == nil {
+			return nil
+		}
+		str, ok := value.(string)
+		if !ok {
+			return ErrInvalidValue
+		}
+		switch str {
+		case "auto", "overlay", "btrfs", "copy":
+			return nil
+		default:
+			return ErrInvalidValue
+		}
 	}
 	return nil
 }
