@@ -77,6 +77,12 @@ jobs:
         shell: bash
         run: go test ./... -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}.out
 
+      - name: Collect engine test timings (windows)
+        if: matrix.runner == 'windows-latest'
+        working-directory: backend/local-engine-go
+        shell: bash
+        run: go test ./... -count=1 -json > ../../test-timing-engine-windows.json
+
       - name: Set up Go (cli)
         uses: actions/setup-go@v5
         with:
@@ -94,6 +100,13 @@ jobs:
           path: |
             coverage-engine-${{ matrix.runner }}.out
             coverage-cli-${{ matrix.runner }}.out
+
+      - name: Upload windows timing artifacts
+        if: matrix.runner == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timing-windows
+          path: test-timing-engine-windows.json
 
   coverage-merge:
     runs-on: ubuntu-latest

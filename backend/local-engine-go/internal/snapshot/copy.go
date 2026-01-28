@@ -11,8 +11,29 @@ import (
 
 type CopyManager struct{}
 
+var (
+	filepathAbs     = filepath.Abs
+	filepathRel     = filepath.Rel
+	osStat          = os.Stat
+	osMkdirAll      = os.MkdirAll
+	filepathWalkDir = filepath.WalkDir
+	osReadlink      = os.Readlink
+	osSymlink       = os.Symlink
+	osOpen          = os.Open
+	osOpenFile      = os.OpenFile
+	ioCopyFn        = io.Copy
+)
+
 func (CopyManager) Kind() string {
 	return "copy"
+}
+
+func (CopyManager) Capabilities() Capabilities {
+	return Capabilities{
+		RequiresDBStop:       true,
+		SupportsWritableClone: true,
+		SupportsSendReceive:   false,
+	}
 }
 
 func (CopyManager) Clone(ctx context.Context, srcDir string, destDir string) (CloneResult, error) {
@@ -41,38 +62,38 @@ func copyDir(ctx context.Context, srcDir string, destDir string) error {
 	if srcDir == "" || destDir == "" {
 		return fmt.Errorf("source and destination are required")
 	}
-	srcAbs, err := filepath.Abs(srcDir)
+	srcAbs, err := filepathAbs(srcDir)
 	if err != nil {
 		return err
 	}
-	destAbs, err := filepath.Abs(destDir)
+	destAbs, err := filepathAbs(destDir)
 	if err != nil {
 		return err
 	}
-	rel, err := filepath.Rel(srcAbs, destAbs)
+	rel, err := filepathRel(srcAbs, destAbs)
 	if err == nil {
 		if rel == "." || (!strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != "..") {
 			return fmt.Errorf("destination must not be inside source: %s", destDir)
 		}
 	}
-	info, err := os.Stat(srcDir)
+	info, err := osStat(srcDir)
 	if err != nil {
 		return err
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("source is not a directory: %s", srcDir)
 	}
-	if err := os.MkdirAll(destDir, info.Mode()); err != nil {
+	if err := osMkdirAll(destDir, info.Mode()); err != nil {
 		return err
 	}
-	return filepath.WalkDir(srcDir, func(path string, entry os.DirEntry, walkErr error) error {
+	return filepathWalkDir(srcDir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		rel, err := filepath.Rel(srcDir, path)
+		rel, err := filepathRel(srcDir, path)
 		if err != nil {
 			return err
 		}
@@ -82,38 +103,38 @@ func copyDir(ctx context.Context, srcDir string, destDir string) error {
 			if err != nil {
 				return err
 			}
-			return os.MkdirAll(target, info.Mode())
+			return osMkdirAll(target, info.Mode())
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			link, err := os.Readlink(path)
+			link, err := osReadlink(path)
 			if err != nil {
 				return err
 			}
-			return os.Symlink(link, target)
+			return osSymlink(link, target)
 		}
 		return copyFile(path, target, info.Mode())
 	})
 }
 
 func copyFile(src string, dest string, mode os.FileMode) error {
-	in, err := os.Open(src)
+	in, err := osOpen(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
 
-	out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	out, err := osOpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		_ = out.Close()
 	}()
-	if _, err := io.Copy(out, in); err != nil {
+	if _, err := ioCopyFn(out, in); err != nil {
 		return err
 	}
 	return out.Close()

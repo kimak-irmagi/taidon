@@ -279,6 +279,14 @@ func (f *fakeSnapshot) Kind() string {
 	return "fake"
 }
 
+func (f *fakeSnapshot) Capabilities() snapshot.Capabilities {
+	return snapshot.Capabilities{
+		RequiresDBStop:       true,
+		SupportsWritableClone: true,
+		SupportsSendReceive:   false,
+	}
+}
+
 func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
 	f.cloneCalls = append(f.cloneCalls, srcDir)
 	if f.cloneErr != nil {
@@ -2489,7 +2497,7 @@ func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 		Now:            time.Now,
 		IDGen:          func() (string, error) { return "job-1", nil },
 		Async:          false,
-		HeartbeatEvery: 200 * time.Millisecond,
+		HeartbeatEvery: 50 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -2505,20 +2513,27 @@ func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 	if err := mgr.updateTaskStatus(context.Background(), "job-1", "prepare-instance", StatusRunning, &startedAt, nil, nil); err != nil {
 		t.Fatalf("updateTaskStatus: %v", err)
 	}
-	time.Sleep(450 * time.Millisecond)
-
-	events, ok, _, err := mgr.EventsSince("job-1", 0)
-	if err != nil || !ok {
-		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	offset := 0
 	runningCount := 0
-	for _, event := range events {
-		if event.Type == "task" && event.TaskID == "prepare-instance" && event.Status == StatusRunning {
-			runningCount++
+	for runningCount < 1 {
+		events, ok, _, err := mgr.EventsSince("job-1", offset)
+		if err != nil || !ok {
+			t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
 		}
-	}
-	if runningCount < 2 {
-		t.Fatalf("expected heartbeat task events, got %d events %+v", runningCount, events)
+		offset += len(events)
+		for _, event := range events {
+			if event.Type == "task" && event.TaskID == "prepare-instance" && event.Status == StatusRunning {
+				runningCount++
+			}
+		}
+		if runningCount >= 1 {
+			break
+		}
+		if err := mgr.WaitForEvent(ctx, "job-1", offset); err != nil {
+			t.Fatalf("WaitForEvent: %v", err)
+		}
 	}
 
 	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
@@ -2542,7 +2557,7 @@ func TestHeartbeatRepeatsLogEvent(t *testing.T) {
 		Now:            time.Now,
 		IDGen:          func() (string, error) { return "job-1", nil },
 		Async:          false,
-		HeartbeatEvery: 200 * time.Millisecond,
+		HeartbeatEvery: 50 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -2559,20 +2574,27 @@ func TestHeartbeatRepeatsLogEvent(t *testing.T) {
 		t.Fatalf("updateTaskStatus: %v", err)
 	}
 	mgr.appendLog("job-1", "docker: pulling layers")
-	time.Sleep(450 * time.Millisecond)
-
-	events, ok, _, err := mgr.EventsSince("job-1", 0)
-	if err != nil || !ok {
-		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	offset := 0
 	logCount := 0
-	for _, event := range events {
-		if event.Type == "log" && event.Message == "docker: pulling layers" {
-			logCount++
+	for logCount < 2 {
+		events, ok, _, err := mgr.EventsSince("job-1", offset)
+		if err != nil || !ok {
+			t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
 		}
-	}
-	if logCount < 2 {
-		t.Fatalf("expected heartbeat log events, got %d events %+v", logCount, events)
+		offset += len(events)
+		for _, event := range events {
+			if event.Type == "log" && event.Message == "docker: pulling layers" {
+				logCount++
+			}
+		}
+		if logCount >= 2 {
+			break
+		}
+		if err := mgr.WaitForEvent(ctx, "job-1", offset); err != nil {
+			t.Fatalf("WaitForEvent: %v", err)
+		}
 	}
 }
 
@@ -2591,7 +2613,7 @@ func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 		Now:            time.Now,
 		IDGen:          func() (string, error) { return "job-1", nil },
 		Async:          false,
-		HeartbeatEvery: 200 * time.Millisecond,
+		HeartbeatEvery: 50 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -2608,18 +2630,31 @@ func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 		t.Fatalf("updateTaskStatus: %v", err)
 	}
 	mgr.appendLog("job-1", "docker: pulling layers")
-	time.Sleep(450 * time.Millisecond)
-
-	if _, ok, _, err := mgr.EventsSince("job-1", 0); err != nil || !ok {
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
 		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	offset := len(events)
+	runningCount := 0
+	for _, event := range events {
+		if event.Type == "task" && event.TaskID == "execute-0" && event.Status == StatusRunning {
+			runningCount++
+		}
+	}
+	if runningCount == 0 {
+		t.Fatalf("expected running task event, got %+v", events)
 	}
 	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	if err := mgr.updateTaskStatus(context.Background(), "job-1", "execute-0", StatusSucceeded, nil, &finishedAt, nil); err != nil {
 		t.Fatalf("updateTaskStatus: %v", err)
 	}
-	time.Sleep(250 * time.Millisecond)
-
-	eventsAfter, ok, _, err := mgr.EventsSince("job-1", 0)
+	ctxAfter, cancelAfter := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelAfter()
+	waitErr := mgr.WaitForEvent(ctxAfter, "job-1", offset)
+	if waitErr != nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+		t.Fatalf("WaitForEvent after completion: %v", waitErr)
+	}
+	eventsAfter, ok, _, err := mgr.EventsSince("job-1", offset)
 	if err != nil || !ok {
 		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
 	}
@@ -2718,7 +2753,7 @@ func TestHeartbeatStopsOnStatusEvent(t *testing.T) {
 		Now:            time.Now,
 		IDGen:          func() (string, error) { return "job-1", nil },
 		Async:          false,
-		HeartbeatEvery: 200 * time.Millisecond,
+		HeartbeatEvery: 50 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -2784,7 +2819,7 @@ func TestStartHeartbeatNoEvent(t *testing.T) {
 		Now:            time.Now,
 		IDGen:          func() (string, error) { return "job-1", nil },
 		Async:          false,
-		HeartbeatEvery: 200 * time.Millisecond,
+		HeartbeatEvery: 50 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -2795,7 +2830,7 @@ func TestStartHeartbeatNoEvent(t *testing.T) {
 	}
 	mgr.mu.Unlock()
 	mgr.startHeartbeat("job-1")
-	time.Sleep(250 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 }
 
 func TestUpdateHeartbeatEmptyJobID(t *testing.T) {
@@ -2990,15 +3025,26 @@ func TestSubmitAsyncRunsJob(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		status, ok := mgr.Get("job-1")
-		if ok && status.Status != StatusQueued && status.Status != StatusRunning {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	index := 0
+	for {
+		_, ok, done, err := mgr.EventsSince("job-1", index)
+		if err != nil {
+			t.Fatalf("EventsSince: %v", err)
+		}
+		if ok && done {
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		count, err := mgr.queue.CountEvents(ctx, "job-1")
+		if err != nil {
+			t.Fatalf("CountEvents: %v", err)
+		}
+		index = count
+		if err := mgr.WaitForEvent(ctx, "job-1", index); err != nil {
+			t.Fatalf("job did not finish: %v", err)
+		}
 	}
-	t.Fatalf("job did not finish")
 }
 
 func TestDeleteUnknownJob(t *testing.T) {
