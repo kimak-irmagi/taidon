@@ -57,12 +57,13 @@ jobs:
         if: github.event.pull_request.head.repo.full_name != github.repository
         run: git diff --exit-code
 
-  coverage:
+  coverage-engine:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         runner: [ubuntu-latest, macos-latest, windows-latest]
+        group: [fast, slow]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -72,16 +73,52 @@ jobs:
         with:
           go-version-file: backend/local-engine-go/go.mod
 
-      - name: Run engine coverage
+      - name: Run engine coverage (${{ matrix.group }})
         working-directory: backend/local-engine-go
         shell: bash
-        run: go test ./... -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}.out
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.group }}" == "slow" ]]; then
+            pkgs=(
+              ./internal/httpapi
+              ./internal/prepare
+              ./cmd/sqlrs-engine
+              ./internal/run
+              ./internal/store/sqlite
+              ./internal/prepare/queue
+            )
+          else
+            mapfile -t pkgs < <(go list ./... | grep -v -E 'sqlrs/engine/internal/httpapi$|sqlrs/engine/internal/prepare$|sqlrs/engine/cmd/sqlrs-engine$|sqlrs/engine/internal/run$|sqlrs/engine/internal/store/sqlite$|sqlrs/engine/internal/prepare/queue$')
+          fi
+          if [[ "${{ matrix.runner }}" == "windows-latest" ]]; then
+            go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out -json \
+              | tee ../../test-timing-engine-windows-${{ matrix.group }}.json
+          else
+            go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out
+          fi
 
-      - name: Collect engine test timings (windows)
+      - name: Upload engine coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-engine-${{ matrix.runner }}-${{ matrix.group }}
+          path: coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out
+
+      - name: Upload windows timing artifacts (${{ matrix.group }})
         if: matrix.runner == 'windows-latest'
-        working-directory: backend/local-engine-go
-        shell: bash
-        run: go test ./... -count=1 -json > ../../test-timing-engine-windows.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timing-windows-${{ matrix.group }}
+          path: test-timing-engine-windows-${{ matrix.group }}.json
+
+  coverage-cli:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Go (cli)
         uses: actions/setup-go@v5
@@ -93,24 +130,17 @@ jobs:
         shell: bash
         run: go test ./... -covermode=count -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
 
-      - name: Upload coverage artifacts
+      - name: Upload CLI coverage artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.runner }}
-          path: |
-            coverage-engine-${{ matrix.runner }}.out
-            coverage-cli-${{ matrix.runner }}.out
-
-      - name: Upload windows timing artifacts
-        if: matrix.runner == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-timing-windows
-          path: test-timing-engine-windows.json
+          name: coverage-cli-${{ matrix.runner }}
+          path: coverage-cli-${{ matrix.runner }}.out
 
   coverage-merge:
     runs-on: ubuntu-latest
-    needs: coverage
+    needs:
+      - coverage-engine
+      - coverage-cli
     permissions:
       contents: write
       pull-requests: write
