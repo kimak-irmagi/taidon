@@ -53,5 +53,28 @@ export const plainBackend = {
         return null;
       }
     }
+  },
+
+  async snapshotVolume({ workspace, volume, runId, storage, image, stateId, prepareCmd }) {
+    const stateDir = path.join(workspace, "states", stateId);
+    if (fs.existsSync(stateDir)) {
+      throw new Error(`State already exists: ${stateDir}`);
+    }
+  
+    const pgdataDir = path.join(stateDir, "pgdata");
+    ensureDir(pgdataDir);
+    copyDir(volume.path, pgdataDir);
+  
+    await writeJson(path.join(stateDir, "state.json"), {
+      state_id: stateId,
+      run_id: runId,
+      created_at: new Date().toISOString(),
+      storage,
+      image,
+      pgdata: "pgdata",
+      prepare: prepareCmd ? { cmd: prepareCmd } : null
+    });
+  
+    return { stateId, stateDir };
   }
 };

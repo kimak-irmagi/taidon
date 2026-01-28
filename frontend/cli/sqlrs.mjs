@@ -492,29 +492,6 @@ function parseStepArgs(argv) {
   return { globalArgs, prepareCmd, runCmd };
 }
 
-async function snapshotVolume({ workspace, volume, runId, storage, image, stateId, prepareCmd }) {
-  const stateDir = path.join(workspace, "states", stateId);
-  if (fs.existsSync(stateDir)) {
-    throw new Error(`State already exists: ${stateDir}`);
-  }
-
-  const pgdataDir = path.join(stateDir, "pgdata");
-  ensureDir(pgdataDir);
-  copyDir(volume.path, pgdataDir);
-
-  await writeJson(path.join(stateDir, "state.json"), {
-    state_id: stateId,
-    run_id: runId,
-    created_at: new Date().toISOString(),
-    storage,
-    image,
-    pgdata: "pgdata",
-    prepare: prepareCmd ? { cmd: prepareCmd } : null
-  });
-
-  return { stateId, stateDir };
-}
-
 async function main() {
   const { globalArgs, prepareCmd, runCmd } = parseStepArgs(process.argv.slice(2));
   const args = parseGlobalArgs(globalArgs);
@@ -685,7 +662,7 @@ async function main() {
       metrics.times_ms.pg_stop = nowMs() - tStop;
 
       const tSnap = nowMs();
-      const snap = await snapshotVolume({
+      const snap = await backend.snapshotVolume({
         workspace: ws,
         volume: vol,
         runId,
