@@ -38,8 +38,9 @@ Containers are **stateless executors**.
 
 ### 3.2 Host Storage Strategy (by platform)
 
-- **Linux (primary):** host-managed state store with OverlayFS copy-on-write.
-- **Windows / WSL2:** snapshot backend added later; fallback is full copy.
+- **Linux (primary):** host-managed state store with OverlayFS or btrfs copy-on-write.
+- **Windows:** engine runs inside WSL2; use btrfs on the WSL2 state-store volume for
+  block-level CoW when available, otherwise fall back to full copy.
 
 Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
 For local engine, the state store root is `<StateDir>/state-store`.
@@ -103,6 +104,7 @@ Base states are stored as **CoW-capable filesystem datasets** and treated like a
 ### 6.1 Primary Backend (MVP)
 
 - **OverlayFS layers** (Linux hosts) for copy-on-write snapshots.
+- **btrfs subvolume snapshots** (Linux/WSL2) for block-level CoW.
 
 Rationale:
 
@@ -112,8 +114,7 @@ Rationale:
 
 ### 6.2 Fallback Backend
 
-- Any host without OverlayFS: recursive copy (MVP).
-- Windows/WSL2 snapshot backend is added later.
+- Any host without a supported CoW backend: recursive copy (MVP).
 
 Used when CoW FS is unavailable.
 
@@ -129,13 +130,14 @@ Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_rec
 Implementation variants:
 
 - `OverlayFSSnapshotter`
+- `BtrfsSnapshotter`
 - `CopySnapshotter`
-- (future) `BtrfsSnapshotter`, `ZfsSnapshotter`, `CsiSnapshotter`
+- (future) `ZfsSnapshotter`, `CsiSnapshotter`
 
 ### 6.4 Backend Selection Policy
 
 - The runtime selects a snapshotter based on host capabilities and optional config override
-  (e.g., `engine.config.snapshot.backend`).
+  (e.g., `snapshot.backend`).
 - If the preferred backend is unavailable, it **falls back to** `CopySnapshotter`.
 - The chosen backend is recorded in state metadata for GC/restore compatibility.
 
@@ -247,7 +249,7 @@ This prevents accidental coupling to a single engine or layout.
 
 ### Phase 1 (MVP)
 
-- Docker + OverlayFS
+- Docker + OverlayFS/btrfs
 - Postgres 15 & 17
 - Local state store
 
@@ -256,7 +258,7 @@ This prevents accidental coupling to a single engine or layout.
 - Remote/shared cache
 - ZFS / send-receive
 - Pre-warmed pinned states
-- Windows/WSL snapshot backend
+- Windows setup automation for WSL2+btrfs
 
 ### Phase 3
 

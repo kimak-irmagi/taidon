@@ -114,8 +114,8 @@ For local profiles, the engine performs real execution:
 - Images must expose `PGDATA` at `/var/lib/postgresql/data` and allow trust auth
   (`POSTGRES_HOST_AUTH_METHOD=trust`).
 - State data is stored under `<StateDir>/state-store` (outside containers).
-- Each task snapshots the DB state; the engine uses OverlayFS-based copy-on-write
-  when available and falls back to full copy.
+- Each task snapshots the DB state; the engine prefers OverlayFS on Linux, can use
+  btrfs subvolume snapshots when configured, and falls back to full copy.
 - The prepare container stays running after the job; the instance is recorded as
   warm and a future `sqlrs run` will decide when to stop it.
 - When `-f/--file` inputs are present, the engine mounts the workspace scripts

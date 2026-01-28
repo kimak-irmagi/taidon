@@ -355,8 +355,8 @@ Taidon может работать в двух режимах, когда Liquib
 
 ### 12.3 Платформенные особенности
 
-- **Linux/macOS (local engine)**: `<StateDir>/state-store`, нативная ФС; OverlayFS при наличии, иначе fallback на копирование.
-- **Windows (local engine)**: `<StateDir>/state-store`, fallback на копирование; WSL backend добавим позже.
+- **Linux/macOS (local engine)**: `<StateDir>/state-store`, нативная ФС; OverlayFS или btrfs при наличии, иначе fallback на копирование.
+- **Windows (local engine)**: engine запускается внутри WSL2; btrfs на томе state-store дает CoW при наличии, иначе fallback на копирование.
 
 ### 12.4 Доступ и блокировки
 
