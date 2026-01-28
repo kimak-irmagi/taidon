@@ -85,10 +85,17 @@ The Windows local bundle **includes**:
 `sqlrs init` is responsible for:
 
 - validation (existing volume),
-- initialization (create VHDX + btrfs),
+- initialization (create loopback image + btrfs mount),
 - re-initialization (explicit flag).
 
 Additional flags can be added to control size/path/re-init behavior.
+
+Current implementation details:
+
+- Loopback image path: `~/.local/share/sqlrs/btrfs.img`
+- Default image size: `10G`
+- Mount point (state dir): `~/.local/state/sqlrs`
+- Mount command uses `sudo` inside the distro (may prompt for a password).
 
 ### C) WSL auto-start
 

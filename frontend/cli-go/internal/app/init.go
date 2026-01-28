@@ -19,9 +19,14 @@ import (
 type initOptions struct {
 	Workspace   string
 	Force       bool
+	Update      bool
 	EnginePath  string
 	SharedCache bool
 	DryRun      bool
+	WSL         bool
+	WSLDistro   string
+	WSLRequire  bool
+	WSLNoStart  bool
 }
 
 func runInit(w io.Writer, cwd, globalWorkspace string, args []string) error {
@@ -48,36 +53,75 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string) error {
 	}
 
 	configPath := filepath.Join(localMarker, "config.yaml")
+	hasUpdateFlags := opts.EnginePath != "" || opts.SharedCache || opts.WSL
+	configExists := fileExists(configPath)
+	configValid := false
 
 	if localExists {
-		if fileExists(configPath) {
+		if configExists {
 			if err := validateConfig(configPath); err != nil {
-				return ExitErrorf(3, "Workspace config is corrupted: %v", err)
+				if !opts.Update {
+					return ExitErrorf(3, "Workspace config is corrupted: %v", err)
+				}
+			} else {
+				configValid = true
 			}
 		}
-		if opts.DryRun {
-			fmt.Fprintf(w, "Workspace already initialized at %s (dry-run)\n", target)
-		} else {
-			fmt.Fprintf(w, "Workspace already initialized at %s\n", target)
+		if !opts.Update {
+			if opts.DryRun {
+				fmt.Fprintf(w, "Workspace already initialized at %s (dry-run)\n", target)
+			} else {
+				fmt.Fprintf(w, "Workspace already initialized at %s\n", target)
+			}
+			return nil
 		}
-		return nil
+		if configExists && configValid && !hasUpdateFlags {
+			if opts.DryRun {
+				fmt.Fprintf(w, "Workspace already initialized at %s (dry-run)\n", target)
+			} else {
+				fmt.Fprintf(w, "Workspace already initialized at %s\n", target)
+			}
+			return nil
+		}
 	}
 
 	if opts.EnginePath != "" {
 		opts.EnginePath = normalizeEnginePath(opts.EnginePath, cwd, target)
 	}
 
+	var wslResult *wslInitResult
+	if opts.WSL {
+		result, err := initWSLFn(wslInitOptions{
+			Enable:    opts.WSL,
+			Distro:    opts.WSLDistro,
+			Require:   opts.WSLRequire,
+			NoStart:   opts.WSLNoStart,
+			Workspace: target,
+		})
+		if err != nil {
+			return ExitErrorf(1, "WSL init failed: %v", err)
+		}
+		if result.Warning != "" {
+			fmt.Fprintln(os.Stderr, result.Warning)
+		}
+		wslResult = &result
+	}
+
 	if opts.DryRun {
-		fmt.Fprintf(w, "Would create %s\n", localMarker)
+		if !localExists {
+			fmt.Fprintf(w, "Would create %s\n", localMarker)
+		}
 		fmt.Fprintf(w, "Would write %s\n", configPath)
 		return nil
 	}
 
-	if err := os.MkdirAll(localMarker, 0o700); err != nil {
-		return ExitErrorf(4, "Cannot create .sqlrs directory: %v", err)
+	if !localExists {
+		if err := os.MkdirAll(localMarker, 0o700); err != nil {
+			return ExitErrorf(4, "Cannot create .sqlrs directory: %v", err)
+		}
 	}
 
-	configData, err := buildWorkspaceConfig(opts)
+	configData, err := buildWorkspaceConfig(opts, wslResult)
 	if err != nil {
 		return ExitErrorf(1, "Internal error: %v", err)
 	}
@@ -85,7 +129,11 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string) error {
 		return ExitErrorf(4, "Cannot write config.yaml: %v", err)
 	}
 
-	fmt.Fprintf(w, "Initialized workspace at %s\n", target)
+	if localExists {
+		fmt.Fprintf(w, "Updated workspace at %s\n", target)
+	} else {
+		fmt.Fprintf(w, "Initialized workspace at %s\n", target)
+	}
 	return nil
 }
 
@@ -99,6 +147,11 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 	force := fs.Bool("force", false, "allow nested workspace")
 	engine := fs.String("engine", "", "engine binary path")
 	sharedCache := fs.Bool("shared-cache", false, "use shared cache")
+	update := fs.Bool("update", false, "update existing workspace config")
+	wsl := fs.Bool("wsl", false, "setup WSL2 integration")
+	wslDistro := fs.String("distro", "", "WSL distro name")
+	wslRequire := fs.Bool("require", false, "require WSL2+btrfs (no fallback)")
+	wslNoStart := fs.Bool("no-start", false, "skip WSL engine auto-start")
 	dryRun := fs.Bool("dry-run", false, "dry run")
 	help := fs.Bool("help", false, "show help")
 	helpShort := fs.Bool("h", false, "show help")
@@ -120,9 +173,14 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 		opts.Workspace = strings.TrimSpace(globalWorkspace)
 	}
 	opts.Force = *force
+	opts.Update = *update
 	opts.EnginePath = strings.TrimSpace(*engine)
 	opts.SharedCache = *sharedCache
 	opts.DryRun = *dryRun
+	opts.WSL = *wsl
+	opts.WSLDistro = strings.TrimSpace(*wslDistro)
+	opts.WSLRequire = *wslRequire
+	opts.WSLNoStart = *wslNoStart
 	return opts, false, nil
 }
 
@@ -169,13 +227,35 @@ func findParentWorkspace(target string) bool {
 	return false
 }
 
-func buildWorkspaceConfig(opts initOptions) ([]byte, error) {
+func buildWorkspaceConfig(opts initOptions, wslResult *wslInitResult) ([]byte, error) {
 	cfg := config.DefaultConfigMap()
 	if opts.EnginePath != "" {
 		setNested(cfg, []string{"orchestrator", "daemonPath"}, opts.EnginePath)
 	}
 	if opts.SharedCache {
 		setNested(cfg, []string{"cache", "shared"}, true)
+	}
+	if opts.WSL {
+		mode := "auto"
+		if opts.WSLRequire {
+			mode = "required"
+		}
+		setNested(cfg, []string{"engine", "wsl", "mode"}, mode)
+		distro := opts.WSLDistro
+		if wslResult != nil && wslResult.Distro != "" {
+			distro = wslResult.Distro
+		}
+		if distro != "" {
+			setNested(cfg, []string{"engine", "wsl", "distro"}, distro)
+		}
+		if wslResult != nil {
+			if wslResult.StateDir != "" {
+				setNested(cfg, []string{"engine", "wsl", "stateDir"}, wslResult.StateDir)
+			}
+			if wslResult.EnginePath != "" {
+				setNested(cfg, []string{"engine", "wsl", "enginePath"}, wslResult.EnginePath)
+			}
+		}
 	}
 
 	data, err := yaml.Marshal(cfg)

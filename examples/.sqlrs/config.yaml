@@ -3,8 +3,10 @@ client:
     retries: 1
     timeout: 30s
 defaultProfile: local
+engine:
+    wsl:
+        mode: auto
 orchestrator:
-    daemonPath: ..\..\dist\bin\sqlrs-engine.exe
     idleTimeout: 120s
     runDir: ${StateDir}/run
     startupTimeout: 5s
@@ -15,5 +17,3 @@ profiles:
         autostart: true
         endpoint: auto
         mode: local
-dbms:
-  image: postgres:17
