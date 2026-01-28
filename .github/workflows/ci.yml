@@ -88,7 +88,10 @@ jobs:
               ./internal/prepare/queue
             )
           else
-            mapfile -t pkgs < <(go list ./... | grep -v -E 'sqlrs/engine/internal/httpapi$|sqlrs/engine/internal/prepare$|sqlrs/engine/cmd/sqlrs-engine$|sqlrs/engine/internal/run$|sqlrs/engine/internal/store/sqlite$|sqlrs/engine/internal/prepare/queue$')
+            pkgs=()
+            while IFS= read -r pkg; do
+              pkgs+=("$pkg")
+            done < <(go list ./... | grep -v -E 'sqlrs/engine/internal/httpapi$|sqlrs/engine/internal/prepare$|sqlrs/engine/cmd/sqlrs-engine$|sqlrs/engine/internal/run$|sqlrs/engine/internal/store/sqlite$|sqlrs/engine/internal/prepare/queue$')
           fi
           if [[ "${{ matrix.runner }}" == "windows-latest" ]]; then
             go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out -json \
