@@ -206,7 +206,7 @@ func TestBtrfsEnsureSubvolumeCreates(t *testing.T) {
 func TestBtrfsEnsureSubvolumeExistingSubvolume(t *testing.T) {
 	prevStat := osStatBtrfs
 	osStatBtrfs = func(string) (os.FileInfo, error) {
-		return &fakeFileInfo{}, nil
+		return &btrfsFakeFileInfo{}, nil
 	}
 	t.Cleanup(func() { osStatBtrfs = prevStat })
 
@@ -224,7 +224,7 @@ func TestBtrfsEnsureSubvolumeExistingSubvolume(t *testing.T) {
 func TestBtrfsEnsureSubvolumeRejectsNonSubvolume(t *testing.T) {
 	prevStat := osStatBtrfs
 	osStatBtrfs = func(string) (os.FileInfo, error) {
-		return &fakeFileInfo{}, nil
+		return &btrfsFakeFileInfo{}, nil
 	}
 	t.Cleanup(func() { osStatBtrfs = prevStat })
 
@@ -356,11 +356,11 @@ func equalArgs(got, want []string) bool {
 	return true
 }
 
-type fakeFileInfo struct{}
+type btrfsFakeFileInfo struct{}
 
-func (fakeFileInfo) Name() string       { return "fake" }
-func (fakeFileInfo) Size() int64        { return 0 }
-func (fakeFileInfo) Mode() os.FileMode  { return 0 }
-func (fakeFileInfo) ModTime() time.Time { return time.Time{} }
-func (fakeFileInfo) IsDir() bool        { return true }
-func (fakeFileInfo) Sys() any           { return nil }
+func (btrfsFakeFileInfo) Name() string       { return "fake" }
+func (btrfsFakeFileInfo) Size() int64        { return 0 }
+func (btrfsFakeFileInfo) Mode() os.FileMode  { return 0 }
+func (btrfsFakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (btrfsFakeFileInfo) IsDir() bool        { return true }
+func (btrfsFakeFileInfo) Sys() any           { return nil }
