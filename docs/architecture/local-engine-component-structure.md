@@ -13,6 +13,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - `cmd/sqlrs-engine`
   - Parse flags and build dependencies.
   - Start the HTTP server.
+  - Resolve `SQLRS_STATE_STORE` and ensure WSL btrfs mount when configured (`SQLRS_WSL_MOUNT_DEVICE`/`SQLRS_WSL_MOUNT_FSTYPE`).
 - `internal/httpapi`
   - HTTP routing and handlers.
   - JSON/NDJSON encoding.
@@ -107,7 +108,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - Persistent data (names/instances/states) lives in SQLite under `<StateDir>`.
 - Jobs, tasks, and job events live in SQLite under `<StateDir>`.
 - In-memory structures are caches or request-scoped only.
-- State store data lives under `<StateDir>/state-store`.
+- State store data lives under `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
 - Server config is stored in `<StateDir>/state-store/config.json` and mirrored in memory.
 
 ## 5. Dependency diagram

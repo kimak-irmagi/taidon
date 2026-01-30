@@ -10,20 +10,27 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"strings"
 
 	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/util"
 )
 
 type ConnectOptions struct {
-	Endpoint       string
-	Autostart      bool
-	DaemonPath     string
-	RunDir         string
-	StateDir       string
-	StartupTimeout time.Duration
-	ClientTimeout  time.Duration
-	Verbose        bool
+	Endpoint        string
+	Autostart       bool
+	DaemonPath      string
+	RunDir          string
+	StateDir        string
+	EngineRunDir    string
+	EngineStatePath string
+	WSLDistro       string
+	EngineStoreDir  string
+	WSLMountDevice  string
+	WSLMountFSType  string
+	StartupTimeout  time.Duration
+	ClientTimeout   time.Duration
+	Verbose         bool
 }
 
 type ConnectResult struct {
@@ -36,6 +43,10 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	endpoint := opts.Endpoint
 	if endpoint != "" && endpoint != "auto" {
 		return ConnectResult{Endpoint: endpoint}, nil
+	}
+
+	if err := ensureWSLStoreMount(ctx, opts); err != nil {
+		return ConnectResult{}, err
 	}
 
 	enginePath := filepath.Join(opts.StateDir, "engine.json")
@@ -80,13 +91,25 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	}
 
 	logPath := filepath.Join(logsDir, "engine.log")
+	isWSL := opts.WSLDistro != ""
+	if isWSL {
+		logPath = filepath.Join(logsDir, "engine-wsl.log")
+	}
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return ConnectResult{}, err
 	}
 	defer logFile.Close()
 
-	cmd, err := buildDaemonCommand(opts.DaemonPath, opts.RunDir, enginePath)
+	daemonRunDir := opts.EngineRunDir
+	if daemonRunDir == "" {
+		daemonRunDir = opts.RunDir
+	}
+	daemonStatePath := opts.EngineStatePath
+	if daemonStatePath == "" {
+		daemonStatePath = enginePath
+	}
+	cmd, err := buildDaemonCommand(opts.DaemonPath, daemonRunDir, daemonStatePath, opts.WSLDistro, opts.EngineStoreDir, opts.WSLMountDevice, opts.WSLMountFSType, logPath)
 	if err != nil {
 		return ConnectResult{}, err
 	}
@@ -173,6 +196,77 @@ func formatEngineExit(err error) error {
 		return fmt.Errorf("engine exited before becoming healthy (exit code %d)", exitErr.ExitCode())
 	}
 	return fmt.Errorf("engine exited before becoming healthy: %v", err)
+}
+
+var runWSLCommandFn = runWSLCommand
+
+func ensureWSLStoreMount(ctx context.Context, opts ConnectOptions) error {
+	if strings.TrimSpace(opts.WSLDistro) == "" {
+		return nil
+	}
+	device := strings.TrimSpace(opts.WSLMountDevice)
+	fstype := strings.TrimSpace(opts.WSLMountFSType)
+	storeDir := strings.TrimSpace(opts.EngineStoreDir)
+	if device == "" || fstype == "" || storeDir == "" {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	logVerbose(opts.Verbose, "ensuring WSL store mount (%s) at %s", fstype, storeDir)
+
+	var out string
+	_, err := runWSLCommandFn(ctx, opts.WSLDistro, "mountpoint", "-q", storeDir)
+	if err == nil {
+		out, err = runWSLCommandFn(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
+		if err != nil {
+			return err
+		}
+		fs := strings.TrimSpace(out)
+		if fs == fstype {
+			return nil
+		}
+		if fs != "" {
+			return fmt.Errorf("WSL store mount is %s, expected %s", fs, fstype)
+		}
+	} else if !isExitStatus(err, 1) && !isExitStatus(err, 32) {
+		return err
+	}
+
+	if _, err := runWSLCommandFn(ctx, opts.WSLDistro, "mkdir", "-p", storeDir); err != nil {
+		return err
+	}
+	if _, err := runWSLCommandFn(ctx, opts.WSLDistro, "mount", "-t", fstype, device, storeDir); err != nil {
+		return err
+	}
+	out, err = runWSLCommandFn(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
+	if err != nil {
+		return err
+	}
+	fs := strings.TrimSpace(out)
+	if fs != fstype {
+		return fmt.Errorf("WSL store mount is %s, expected %s", fs, fstype)
+	}
+	return nil
+}
+
+func runWSLCommand(ctx context.Context, distro string, args ...string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmdArgs := []string{"-d", distro, "-u", "root", "--"}
+	cmdArgs = append(cmdArgs, args...)
+	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+func isExitStatus(err error, code int) bool {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode() == code
+	}
+	return false
 }
 
 type logTail struct {

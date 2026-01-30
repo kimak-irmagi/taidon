@@ -100,7 +100,10 @@ flowchart LR
 
 ### 1.7 Менеджер снапшотов
 
-- Предпочитает OverlayFS или btrfs на Linux; fallback — копирование.
+- Выбирает снапшоттер по файловой системе `SQLRS_STATE_STORE`:
+  - btrfs → btrfs снапшоттер
+  - zfs dataset mount point (в будущем) → zfs снапшоттер
+  - иначе → fallback copy/reflink
 - Windows использует те же Linux-снапшоттеры при запуске engine внутри WSL2.
 - Экспортирует `Clone`, `Snapshot`, `Destroy` для states и instances.
 - Использует path resolver из State Store, чтобы найти корни `PGDATA` и каталоги states.
@@ -157,7 +160,8 @@ flowchart LR
 
 ### 1.14 State Store (Paths + Metadata)
 
-- Разрешает корень хранилища в `<StateDir>/state-store`.
+- Разрешает корень хранилища в `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
+- В WSL монтирует настроенное btrfs устройство в `SQLRS_STATE_STORE` при старте, чтобы Docker видел общий mount namespace (`SQLRS_WSL_MOUNT_DEVICE`/`SQLRS_WSL_MOUNT_FSTYPE`).
 - Владеет metadata DB (SQLite WAL) и layout путей (`engines/<engine>/<version>/base|states/<uuid>`).
 - Пишет `engine.json` в state directory (endpoint + PID + auth token + lock) для discovery со стороны CLI.
 - Хранит `parent_state_id` для поддержки иерархии состояний и рекурсивного удаления.

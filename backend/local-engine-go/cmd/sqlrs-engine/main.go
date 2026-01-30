@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -119,6 +120,7 @@ var randReader = rand.Reader
 var writeFileFn = os.WriteFile
 var renameFn = os.Rename
 var idleTickerEvery = time.Second
+var runMountCommandFn = runMountCommand
 var openDBFn = func(path string) (*sql.DB, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("sqlite path is empty")
@@ -194,11 +196,17 @@ func run(args []string) (int, error) {
 	}
 
 	stateDir := filepath.Dir(*statePath)
-	stateStoreRoot := filepath.Join(stateDir, "state-store")
+	stateStoreRoot := strings.TrimSpace(os.Getenv("SQLRS_STATE_STORE"))
+	if stateStoreRoot == "" {
+		stateStoreRoot = filepath.Join(stateDir, "state-store")
+	}
+	if err := ensureWSLMount(stateStoreRoot); err != nil {
+		return 1, fmt.Errorf("wsl mount: %v", err)
+	}
 	if err := os.MkdirAll(stateStoreRoot, 0o700); err != nil {
 		return 1, fmt.Errorf("create state store root: %v", err)
 	}
-	db, err := openDBFn(filepath.Join(stateDir, "state.db"))
+	db, err := openDBFn(filepath.Join(stateStoreRoot, "state.db"))
 	if err != nil {
 		return 1, fmt.Errorf("open state db: %v", err)
 	}
@@ -423,4 +431,73 @@ func isCharDevice(file *os.File) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func ensureWSLMount(stateStoreRoot string) error {
+	device := strings.TrimSpace(os.Getenv("SQLRS_WSL_MOUNT_DEVICE"))
+	fstype := strings.TrimSpace(os.Getenv("SQLRS_WSL_MOUNT_FSTYPE"))
+	if device == "" && fstype == "" {
+		return nil
+	}
+	if device == "" || fstype == "" {
+		return fmt.Errorf("SQLRS_WSL_MOUNT_DEVICE and SQLRS_WSL_MOUNT_FSTYPE must be set")
+	}
+	if strings.TrimSpace(stateStoreRoot) == "" {
+		return fmt.Errorf("SQLRS_STATE_STORE is required to mount WSL device")
+	}
+	if err := os.MkdirAll(stateStoreRoot, 0o700); err != nil {
+		return err
+	}
+	fsType, mounted, err := findmntFSType(stateStoreRoot)
+	if err != nil {
+		return err
+	}
+	if mounted {
+		if fsType == "" {
+			return fmt.Errorf("mount verification failed for %s", stateStoreRoot)
+		}
+		if fsType != fstype {
+			return fmt.Errorf("mounted filesystem is %s, expected %s", fsType, fstype)
+		}
+		return nil
+	}
+	if _, err := runMountCommandFn("mount", "-t", fstype, device, stateStoreRoot); err != nil {
+		return fmt.Errorf("mount failed: %w", err)
+	}
+	fsType, mounted, err = findmntFSType(stateStoreRoot)
+	if err != nil {
+		return err
+	}
+	if !mounted {
+		return fmt.Errorf("mount verification failed for %s", stateStoreRoot)
+	}
+	if fsType != fstype {
+		return fmt.Errorf("mounted filesystem is %s, expected %s", fsType, fstype)
+	}
+	return nil
+}
+
+func findmntFSType(target string) (string, bool, error) {
+	out, err := runMountCommandFn("findmnt", "-n", "-o", "FSTYPE", "-T", target)
+	if err == nil {
+		return strings.TrimSpace(out), true, nil
+	}
+	if isExitStatus(err, 1) {
+		return "", false, nil
+	}
+	return "", false, err
+}
+
+func isExitStatus(err error, code int) bool {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode() == code
+	}
+	return false
+}
+
+func runMountCommand(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
 }

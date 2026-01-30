@@ -218,7 +218,7 @@ func buildFileStep(shared []string, value string, workspaceRoot string, cwd stri
 		stepArgs = append(stepArgs, "-f", "-")
 		return cli.RunStep{Args: stepArgs}, true, nil
 	}
-	path, _, err := normalizeFilePath(value, workspaceRoot, cwd)
+	path, _, err := normalizeFilePath(value, workspaceRoot, cwd, nil)
 	if err != nil {
 		return cli.RunStep{}, false, err
 	}

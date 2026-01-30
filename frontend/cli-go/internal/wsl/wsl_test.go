@@ -22,6 +22,18 @@ func TestParseDistroList(t *testing.T) {
 	}
 }
 
+func TestParseDistroListUTF16Nulls(t *testing.T) {
+	input := " \x00N\x00A\x00M\x00E\x00 \x00S\x00T\x00A\x00T\x00E\x00 \x00V\x00E\x00R\x00S\x00I\x00O\x00N\x00\n" +
+		"\x00*\x00 \x00U\x00b\x00u\x00n\x00t\x00u\x00 \x00R\x00u\x00n\x00n\x00i\x00n\x00g\x00 \x002\x00\n"
+	distros, err := ParseDistroList(input)
+	if err != nil {
+		t.Fatalf("ParseDistroList: %v", err)
+	}
+	if len(distros) != 1 || distros[0].Name != "Ubuntu" || !distros[0].Default {
+		t.Fatalf("unexpected distros: %+v", distros)
+	}
+}
+
 func TestParseDistroListNoRows(t *testing.T) {
 	_, err := ParseDistroList("NAME STATE VERSION\n")
 	if err == nil {

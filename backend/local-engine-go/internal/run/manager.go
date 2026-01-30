@@ -199,6 +199,7 @@ func (m *Manager) recreateContainer(ctx context.Context, entry store.InstanceEnt
 		ImageID: entry.ImageID,
 		DataDir: dataDir,
 		Name:    "sqlrs-run-" + entry.InstanceID,
+		AllowInitdb: false,
 	})
 	if err != nil {
 		return "", fmt.Errorf("runtime start failed: %w", err)

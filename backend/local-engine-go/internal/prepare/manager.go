@@ -34,6 +34,7 @@ type Options struct {
 	Queue          queue.Store
 	Runtime        runtime.Runtime
 	Snapshot       snapshot.Manager
+	ValidateStore  func(kind string, root string) error
 	DBMS           dbms.Connector
 	StateStoreRoot string
 	Config         config.Store
@@ -55,6 +56,7 @@ type Manager struct {
 	config         config.Store
 	psql           psqlRunner
 	version        string
+	validateStore  func(kind string, root string) error
 	now            func() time.Time
 	idGen          func() (string, error)
 	async          bool
@@ -123,6 +125,10 @@ func NewManager(opts Options) (*Manager, error) {
 	if psql == nil {
 		psql = containerPsqlRunner{runtime: opts.Runtime}
 	}
+	validateStore := opts.ValidateStore
+	if validateStore == nil {
+		validateStore = snapshot.ValidateStore
+	}
 	return &Manager{
 		store:          opts.Store,
 		queue:          opts.Queue,
@@ -133,6 +139,7 @@ func NewManager(opts Options) (*Manager, error) {
 		config:         opts.Config,
 		psql:           psql,
 		version:        opts.Version,
+		validateStore:  validateStore,
 		now:            now,
 		idGen:          idGen,
 		async:          opts.Async,
@@ -435,6 +442,11 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		PrepareArgsNormalized: &prepared.argsNormalized,
 	})
 	m.logJob(jobID, "running")
+
+	if err := m.validateStore(m.snapshot.Kind(), m.stateStoreRoot); err != nil {
+		_ = m.failJob(jobID, errorResponse("internal_error", "state store not ready", err.Error()))
+		return
+	}
 
 	tasks, stateID, errResp := m.loadOrPlanTasks(ctx, jobID, prepared)
 	if errResp != nil {

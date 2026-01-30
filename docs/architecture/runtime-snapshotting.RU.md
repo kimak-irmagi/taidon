@@ -38,12 +38,12 @@
 
 ### 3.2 Стратегия host-хранилища (по платформам)
 
-- **Linux (primary):** host-managed state store на OverlayFS или btrfs.
-- **Windows:** engine запускается внутри WSL2; используем btrfs на томе state-store
-  для блочного CoW, при отсутствии btrfs — fallback на полное копирование.
+- **Linux (primary):** снапшоттер выбирается по FS `SQLRS_STATE_STORE` (btrfs/zfs → CoW, иначе copy/reflink).
+- **Windows:** engine запускается внутри WSL2; state store — host VHDX, смонтированный в WSL и отформатированный в btrfs при наличии, иначе fallback на полное копирование.
 
 Runtime код не раскрывает конкретные пути: engine/adapter сам разрешает data dirs и передает mounts в runtime.
-Для локального engine корень state store - `<StateDir>/state-store`.
+Для локального engine корень state store по умолчанию `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
+В WSL движок проверяет/монтирует btrfs устройство при старте, чтобы Docker видел тот же mount namespace.
 
 ---
 

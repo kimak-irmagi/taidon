@@ -19,6 +19,8 @@ This document defines **CLI behavior**, **discovery rules**, and **configuration
 - **Host CLI**: `sqlrs` running on Windows.
 - **WSL engine**: `sqlrs-engine` running inside WSL2.
 - **Host engine**: `sqlrs-engine` running on Windows without WSL2.
+- **SQLRS_STATE_HOME (host)**: `%APPDATA%\\sqlrs` (engine.json lives here).
+- **SQLRS_STATE_STORE (host)**: `%LOCALAPPDATA%\\sqlrs\\store` (VHDX lives here).
 
 ---
 
@@ -42,7 +44,7 @@ Purpose: one-time setup of WSL2 + btrfs + config for local engine auto-start.
 Proposed syntax:
 
 ```text
-sqlrs init [--wsl] [--distro <name>] [--require] [--no-start]
+sqlrs init [--wsl] [--distro <name>] [--require] [--no-start] [--store-size <N>GB] [--reinit]
 ```
 
 Behavior:
@@ -57,13 +59,19 @@ Behavior:
 - `--no-start`:
   - Do not start engine after init.
   - Still validates prerequisites and writes config if successful.
+- `--store-size <N>GB`:
+  - Size of the host VHDX used as the WSL btrfs store.
+  - Suffix `GB` is required.
+- `--reinit`:
+  - Recreate the VHDX + partition from scratch.
+  - Use only when you are ok with data loss in the state store.
 
 Success criteria:
 
 - WSL is available (if `--wsl`).
 - WSL distro resolved (explicit or default).
 - btrfs state-store path is valid (see below).
-- Config written (WSL mode/distro/stateDir).
+- Config written (WSL mode/distro/stateDir/storePath + mount metadata).
 - Optional: engine auto-start (unless `--no-start`).
 
 ---
@@ -85,17 +93,29 @@ The Windows local bundle **includes**:
 `sqlrs init` is responsible for:
 
 - validation (existing volume),
-- initialization (create loopback image + btrfs mount),
+- initialization (create host VHDX + GPT + btrfs mount),
 - re-initialization (explicit flag).
-
-Additional flags can be added to control size/path/re-init behavior.
 
 Current implementation details:
 
-- Loopback image path: `~/.local/share/sqlrs/btrfs.img`
-- Default image size: `10G`
-- Mount point (state dir): `~/.local/state/sqlrs`
-- Mount command uses `sudo` inside the distro (may prompt for a password).
+- Host VHDX path: `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`
+- Default image size: `100GB`
+- WSL mount point (state dir): `~/.local/state/sqlrs/store`
+- Mount command uses `wsl.exe -u root` (no `sudo`).
+
+Initialization steps:
+
+1. Create a **dynamic VHDX** on the host with the requested size.
+2. Create a **GPT partition** that consumes the full disk.
+3. Attach the VHDX to the selected WSL distro as **bare**.
+4. Ensure `btrfs-progs` is installed inside the distro.
+5. Format the partition as **btrfs**.
+6. Mount the partition at `engine.wsl.stateDir` (inside WSL) using `-t btrfs`.
+7. Verify mount via `findmnt -T <stateDir>`.
+8. Create btrfs subvolumes in the mount root:
+   - `@instances`
+   - `@states`
+9. `chown -R <user>:<group>` for the mount root so the engine can create `run/`.
 
 ### C) WSL auto-start
 
@@ -123,9 +143,9 @@ If stale or missing: spawn engine.
 
 ### WSL engine.json path
 
-- WSL state dir is inside Linux filesystem.
-- Windows CLI reads it via `/mnt/...` path that maps to the WSL state dir.
-- The file path is resolved through `wslpath` + interop when WSL is in use.
+- Engine writes `engine.json` to the **host** SQLRS_STATE_HOME directory
+  (`%APPDATA%\\sqlrs`), but the CLI passes it to the WSL engine via a `/mnt/...`
+  path (Windows host path translated to the WSL mount).
 
 ---
 
@@ -173,7 +193,7 @@ If any condition fails: **error** (no fallback).
 
 `engine.wsl.stateDir`
 
-- default: `~/.local/state/sqlrs`,
+- default: `~/.local/state/sqlrs/store`,
 - must be inside Linux filesystem (not `/mnt/c/...`).
 
 ### 4) WSL engine binary path (Linux path)
@@ -182,13 +202,34 @@ If any condition fails: **error** (no fallback).
 
 - default: auto (see binary provisioning below).
 
-### 5) Snapshot backend (already implemented)
+### 4.1 Orchestrator daemon path (host)
 
-`snapshot.backend`
+`orchestrator.daemonPath` points to the **linux** engine binary in the host bundle.
+When launching inside WSL, the CLI converts this host path to a `/mnt/...` path
+and passes it to `wsl.exe` to start the engine.
 
-- `"auto" | "overlay" | "btrfs" | "copy"`.
+### 5) Host store path (Windows)
 
-When WSL is used, `"btrfs"` is expected.
+`engine.storePath`
+
+- host path to the VHDX backing the WSL state store,
+- default: `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`.
+
+### 6) WSL mount metadata (Linux)
+
+`engine.wsl.mount.device` and `engine.wsl.mount.fstype`
+
+- recorded by `sqlrs init` after attaching/formatting the VHDX,
+- passed by the CLI to the engine at startup,
+- the engine always mounts to `SQLRS_STATE_STORE` (the target is not configurable).
+
+### 6) Snapshot backend (auto by FS)
+
+Engine selects snapshotter by **filesystem** of `SQLRS_STATE_STORE`:
+
+- btrfs → btrfs snapshotter
+- zfs dataset mount point (future) → zfs snapshotter
+- otherwise → fallback copy/reflink
 
 ---
 
@@ -200,13 +241,25 @@ If WSL mode is active:
 2. CLI checks btrfs for the **state-store** mount.
 3. CLI starts engine inside WSL using `wsl.exe`:
    - engine binds loopback TCP
-   - engine writes `engine.json` in WSL state dir
+   - engine writes `engine.json` under the **host** `SQLRS_STATE_HOME` path,
+     passed as `/mnt/...` via `--write-engine-json`.
 4. CLI reads `engine.json` and connects.
 
 If WSL not used:
 
 1. CLI spawns Windows `sqlrs-engine` as today.
 2. CLI reads host `<StateDir>/engine.json` and connects.
+
+### Engine mount check (WSL)
+
+On startup, the engine ensures the btrfs device is mounted to `SQLRS_STATE_STORE`:
+
+1. Read `engine.wsl.mount.*` from workspace config (CLI) and pass via env:
+   - `SQLRS_WSL_MOUNT_DEVICE`
+   - `SQLRS_WSL_MOUNT_FSTYPE`
+2. Check mount via `findmnt -T $SQLRS_STATE_STORE`.
+3. If missing, mount `device` using `-t <fstype>`.
+4. Verify mount before touching the state store.
 
 ---
 

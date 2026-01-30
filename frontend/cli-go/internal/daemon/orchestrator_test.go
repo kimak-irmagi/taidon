@@ -31,6 +31,196 @@ func TestConnectOrStartWithExplicitEndpoint(t *testing.T) {
 	}
 }
 
+func TestEnsureWSLStoreMountSkippedWithoutMetadata(t *testing.T) {
+	prev := runWSLCommandFn
+	runWSLCommandFn = func(context.Context, string, ...string) (string, error) {
+		t.Fatalf("unexpected wsl command")
+		return "", nil
+	}
+	t.Cleanup(func() { runWSLCommandFn = prev })
+
+	if err := ensureWSLStoreMount(context.Background(), ConnectOptions{WSLDistro: "Ubuntu"}); err != nil {
+		t.Fatalf("ensureWSLStoreMount: %v", err)
+	}
+}
+
+func TestEnsureWSLStoreMountAlreadyMounted(t *testing.T) {
+	prev := runWSLCommandFn
+	calls := 0
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			if args[0] != "mountpoint" {
+				t.Fatalf("expected mountpoint, got %+v", args)
+			}
+			return "", nil
+		case 2:
+			if args[0] != "findmnt" {
+				t.Fatalf("expected findmnt, got %+v", args)
+			}
+			return "btrfs\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runWSLCommandFn = prev })
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountDevice: "/dev/sda2",
+		WSLMountFSType: "btrfs",
+	})
+	if err != nil {
+		t.Fatalf("ensureWSLStoreMount: %v", err)
+	}
+}
+
+func TestEnsureWSLStoreMountWrongFSType(t *testing.T) {
+	prev := runWSLCommandFn
+	calls := 0
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			if args[0] != "mountpoint" {
+				t.Fatalf("expected mountpoint, got %+v", args)
+			}
+			return "", nil
+		case 2:
+			if args[0] != "findmnt" {
+				t.Fatalf("expected findmnt, got %+v", args)
+			}
+			return "ext4\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runWSLCommandFn = prev })
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountDevice: "/dev/sda2",
+		WSLMountFSType: "btrfs",
+	})
+	if err == nil || !strings.Contains(err.Error(), "expected btrfs") {
+		t.Fatalf("expected fstype error, got %v", err)
+	}
+}
+
+func TestEnsureWSLStoreMountMountsWhenMissing(t *testing.T) {
+	prev := runWSLCommandFn
+	calls := 0
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			if args[0] != "mountpoint" {
+				t.Fatalf("expected mountpoint, got %+v", args)
+			}
+			return "", exitError(1)
+		case 2:
+			if args[0] != "mkdir" {
+				t.Fatalf("expected mkdir, got %+v", args)
+			}
+			return "", nil
+		case 3:
+			if args[0] != "mount" {
+				t.Fatalf("expected mount, got %+v", args)
+			}
+			return "", nil
+		case 4:
+			if args[0] != "findmnt" {
+				t.Fatalf("expected findmnt, got %+v", args)
+			}
+			return "btrfs\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runWSLCommandFn = prev })
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountDevice: "/dev/sda2",
+		WSLMountFSType: "btrfs",
+	})
+	if err != nil {
+		t.Fatalf("ensureWSLStoreMount: %v", err)
+	}
+}
+
+func TestEnsureWSLStoreMountMountsWhenMissingExit32(t *testing.T) {
+	prev := runWSLCommandFn
+	calls := 0
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			if args[0] != "mountpoint" {
+				t.Fatalf("expected mountpoint, got %+v", args)
+			}
+			return "", exitError(32)
+		case 2:
+			if args[0] != "mkdir" {
+				t.Fatalf("expected mkdir, got %+v", args)
+			}
+			return "", nil
+		case 3:
+			if args[0] != "mount" {
+				t.Fatalf("expected mount, got %+v", args)
+			}
+			return "", nil
+		case 4:
+			if args[0] != "findmnt" {
+				t.Fatalf("expected findmnt, got %+v", args)
+			}
+			return "btrfs\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runWSLCommandFn = prev })
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountDevice: "/dev/sda2",
+		WSLMountFSType: "btrfs",
+	})
+	if err != nil {
+		t.Fatalf("ensureWSLStoreMount: %v", err)
+	}
+}
+
+func TestEnsureWSLStoreMountFindmntError(t *testing.T) {
+	prev := runWSLCommandFn
+	calls := 0
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			return "", nil
+		default:
+			return "", errors.New("boom")
+		}
+	}
+	t.Cleanup(func() { runWSLCommandFn = prev })
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountDevice: "/dev/sda2",
+		WSLMountFSType: "btrfs",
+	})
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
 func TestConnectOrStartAutostartDisabled(t *testing.T) {
 	temp := t.TempDir()
 	_, err := ConnectOrStart(context.Background(), ConnectOptions{
@@ -278,6 +468,15 @@ func exitCommand(code int) *exec.Cmd {
 		return exec.Command("cmd.exe", "/c", "exit", "/b", fmt.Sprintf("%d", code))
 	}
 	return exec.Command("sh", "-c", fmt.Sprintf("exit %d", code))
+}
+
+func exitError(code int) error {
+	cmd := exitCommand(code)
+	err := cmd.Run()
+	if err == nil {
+		return errors.New("expected exit error")
+	}
+	return err
 }
 
 type lockedBuffer struct {

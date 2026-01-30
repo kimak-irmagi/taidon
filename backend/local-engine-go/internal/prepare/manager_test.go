@@ -663,6 +663,36 @@ func TestSubmitStoresStateAndInstance(t *testing.T) {
 	}
 }
 
+func TestSubmitFailsWhenStoreNotReady(t *testing.T) {
+	queueStore := newQueueStore(t)
+	deps := &testDeps{
+		validate: func(kind string, root string) error {
+			return errors.New("missing mount")
+		},
+	}
+	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, deps)
+
+	accepted, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	status, ok := mgr.Get(accepted.JobID)
+	if !ok {
+		t.Fatalf("expected job to exist")
+	}
+	if status.Status != StatusFailed {
+		t.Fatalf("expected failed status, got %s", status.Status)
+	}
+	if status.Error == nil || status.Error.Message != "state store not ready" {
+		t.Fatalf("expected store not ready error, got %+v", status.Error)
+	}
+}
+
 func TestSubmitEmitsPsqlOutputLog(t *testing.T) {
 	store := &fakeStore{}
 	queueStore := newQueueStore(t)
@@ -3681,6 +3711,7 @@ type testDeps struct {
 	psql      psqlRunner
 	stateRoot string
 	config    config.Store
+	validate  func(kind string, root string) error
 }
 
 type fakeConfigStore struct {
@@ -3767,6 +3798,7 @@ func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store,
 		Queue:          queueStore,
 		Runtime:        deps.runtime,
 		Snapshot:       deps.snapshot,
+		ValidateStore:  deps.validate,
 		DBMS:           deps.dbms,
 		StateStoreRoot: stateRoot,
 		Config:         deps.config,

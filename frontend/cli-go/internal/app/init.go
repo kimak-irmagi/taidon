@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -27,9 +28,12 @@ type initOptions struct {
 	WSLDistro   string
 	WSLRequire  bool
 	WSLNoStart  bool
+	WSLReinit   bool
+	StoreSizeGB int
+	Verbose     bool
 }
 
-func runInit(w io.Writer, cwd, globalWorkspace string, args []string) error {
+func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bool) error {
 	opts, showHelp, err := parseInitFlags(args, globalWorkspace)
 	if err != nil {
 		return err
@@ -38,6 +42,7 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string) error {
 		cli.PrintInitUsage(w)
 		return nil
 	}
+	opts.Verbose = verbose
 
 	target, err := resolveWorkspacePath(opts.Workspace, cwd)
 	if err != nil {
@@ -92,17 +97,23 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string) error {
 	var wslResult *wslInitResult
 	if opts.WSL {
 		result, err := initWSLFn(wslInitOptions{
-			Enable:    opts.WSL,
-			Distro:    opts.WSLDistro,
-			Require:   opts.WSLRequire,
-			NoStart:   opts.WSLNoStart,
-			Workspace: target,
+			Enable:      opts.WSL,
+			Distro:      opts.WSLDistro,
+			Require:     opts.WSLRequire,
+			NoStart:     opts.WSLNoStart,
+			Workspace:   target,
+			Verbose:     opts.Verbose,
+			StoreSizeGB: opts.StoreSizeGB,
+			Reinit:      opts.WSLReinit,
 		})
 		if err != nil {
 			return ExitErrorf(1, "WSL init failed: %v", err)
 		}
 		if result.Warning != "" {
-			fmt.Fprintln(os.Stderr, result.Warning)
+			fmt.Fprintln(os.Stderr, strings.TrimSpace(result.Warning))
+		}
+		if opts.Update && !result.UseWSL {
+			return ExitErrorf(1, "WSL init failed: %s", strings.TrimSpace(result.Warning))
 		}
 		wslResult = &result
 	}
@@ -121,7 +132,15 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string) error {
 		}
 	}
 
-	configData, err := buildWorkspaceConfig(opts, wslResult)
+	baseConfig := map[string]any(nil)
+	if opts.Update && configExists && configValid {
+		loaded, err := readConfigMap(configPath)
+		if err != nil {
+			return ExitErrorf(4, "Cannot read config.yaml: %v", err)
+		}
+		baseConfig = loaded
+	}
+	configData, err := buildWorkspaceConfig(opts, wslResult, baseConfig)
 	if err != nil {
 		return ExitErrorf(1, "Internal error: %v", err)
 	}
@@ -152,6 +171,8 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 	wslDistro := fs.String("distro", "", "WSL distro name")
 	wslRequire := fs.Bool("require", false, "require WSL2+btrfs (no fallback)")
 	wslNoStart := fs.Bool("no-start", false, "skip WSL engine auto-start")
+	wslReinit := fs.Bool("reinit", false, "recreate WSL btrfs store")
+	storeSize := fs.String("store-size", "", "btrfs store size (example: 100GB)")
 	dryRun := fs.Bool("dry-run", false, "dry run")
 	help := fs.Bool("help", false, "show help")
 	helpShort := fs.Bool("h", false, "show help")
@@ -181,6 +202,17 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 	opts.WSLDistro = strings.TrimSpace(*wslDistro)
 	opts.WSLRequire = *wslRequire
 	opts.WSLNoStart = *wslNoStart
+	opts.WSLReinit = *wslReinit
+	if size := strings.TrimSpace(*storeSize); size != "" {
+		value, err := parseStoreSizeGB(size)
+		if err != nil {
+			return opts, false, ExitErrorf(64, "Invalid arguments: %v", err)
+		}
+		opts.StoreSizeGB = value
+	}
+	if (opts.StoreSizeGB > 0 || opts.WSLReinit) && !opts.WSL {
+		return opts, false, ExitErrorf(64, "Invalid arguments: --store-size/--reinit require --wsl")
+	}
 	return opts, false, nil
 }
 
@@ -227,8 +259,13 @@ func findParentWorkspace(target string) bool {
 	return false
 }
 
-func buildWorkspaceConfig(opts initOptions, wslResult *wslInitResult) ([]byte, error) {
-	cfg := config.DefaultConfigMap()
+func buildWorkspaceConfig(opts initOptions, wslResult *wslInitResult, base map[string]any) ([]byte, error) {
+	var cfg map[string]any
+	if base != nil {
+		cfg = base
+	} else {
+		cfg = config.DefaultConfigMap()
+	}
 	if opts.EnginePath != "" {
 		setNested(cfg, []string{"orchestrator", "daemonPath"}, opts.EnginePath)
 	}
@@ -254,6 +291,15 @@ func buildWorkspaceConfig(opts initOptions, wslResult *wslInitResult) ([]byte, e
 			}
 			if wslResult.EnginePath != "" {
 				setNested(cfg, []string{"engine", "wsl", "enginePath"}, wslResult.EnginePath)
+			}
+			if wslResult.MountDevice != "" {
+				setNested(cfg, []string{"engine", "wsl", "mount", "device"}, wslResult.MountDevice)
+			}
+			if wslResult.MountFSType != "" {
+				setNested(cfg, []string{"engine", "wsl", "mount", "fstype"}, wslResult.MountFSType)
+			}
+			if wslResult.StorePath != "" {
+				setNested(cfg, []string{"engine", "storePath"}, wslResult.StorePath)
 			}
 		}
 	}
@@ -316,6 +362,21 @@ func validateConfig(path string) error {
 	return nil
 }
 
+func readConfigMap(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return map[string]any{}, nil
+	}
+	return raw, nil
+}
+
 func setNested(root map[string]any, keys []string, value any) {
 	current := root
 	for i, key := range keys {
@@ -330,6 +391,26 @@ func setNested(root map[string]any, keys []string, value any) {
 		}
 		current = next
 	}
+}
+
+func parseStoreSizeGB(value string) (int, error) {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return 0, fmt.Errorf("store size is empty")
+	}
+	upper := strings.ToUpper(raw)
+	if !strings.HasSuffix(upper, "GB") {
+		return 0, fmt.Errorf("store size must use GB suffix")
+	}
+	num := strings.TrimSpace(raw[:len(raw)-2])
+	if num == "" {
+		return 0, fmt.Errorf("store size is empty")
+	}
+	size, err := strconv.Atoi(num)
+	if err != nil || size <= 0 {
+		return 0, fmt.Errorf("store size must be a positive integer")
+	}
+	return size, nil
 }
 
 func fileExists(path string) bool {

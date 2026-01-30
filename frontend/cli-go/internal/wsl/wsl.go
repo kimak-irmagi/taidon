@@ -22,7 +22,10 @@ var (
 
 // ParseDistroList parses `wsl --list --verbose` output.
 func ParseDistroList(output string) ([]Distro, error) {
-	lines := strings.Split(output, "\n")
+	if strings.Contains(output, "\x00") {
+		output = strings.ReplaceAll(output, "\x00", "")
+	}
+	lines := strings.Split(output,  "\n")
 	var distros []Distro
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)

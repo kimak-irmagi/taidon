@@ -16,16 +16,22 @@ import (
 )
 
 type StatusOptions struct {
-	ProfileName    string
-	Mode           string
-	Endpoint       string
-	Autostart      bool
-	DaemonPath     string
-	RunDir         string
-	StateDir       string
-	Timeout        time.Duration
-	StartupTimeout time.Duration
-	Verbose        bool
+	ProfileName     string
+	Mode            string
+	Endpoint        string
+	Autostart       bool
+	DaemonPath      string
+	RunDir          string
+	StateDir        string
+	EngineRunDir    string
+	EngineStatePath string
+	EngineStoreDir  string
+	WSLMountDevice  string
+	WSLMountFSType  string
+	WSLDistro       string
+	Timeout         time.Duration
+	StartupTimeout  time.Duration
+	Verbose         bool
 }
 
 type StatusResult struct {
@@ -70,14 +76,20 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 				fmt.Fprintln(os.Stderr, "checking local engine state")
 			}
 			resolved, err := daemon.ConnectOrStart(ctx, daemon.ConnectOptions{
-				Endpoint:       endpoint,
-				Autostart:      opts.Autostart,
-				DaemonPath:     opts.DaemonPath,
-				RunDir:         opts.RunDir,
-				StateDir:       opts.StateDir,
-				StartupTimeout: opts.StartupTimeout,
-				ClientTimeout:  opts.Timeout,
-				Verbose:        opts.Verbose,
+				Endpoint:        endpoint,
+				Autostart:       opts.Autostart,
+				DaemonPath:      opts.DaemonPath,
+				RunDir:          opts.RunDir,
+				StateDir:        opts.StateDir,
+				EngineRunDir:    opts.EngineRunDir,
+				EngineStatePath: opts.EngineStatePath,
+				EngineStoreDir:  opts.EngineStoreDir,
+				WSLMountDevice:  opts.WSLMountDevice,
+				WSLMountFSType:  opts.WSLMountFSType,
+				WSLDistro:       opts.WSLDistro,
+				StartupTimeout:  opts.StartupTimeout,
+				ClientTimeout:   opts.Timeout,
+				Verbose:         opts.Verbose,
 			})
 			if err != nil {
 				return StatusResult{Endpoint: endpoint, Profile: opts.ProfileName, Mode: mode}, err
@@ -210,7 +222,7 @@ func probeLocalDeps(ctx context.Context, opts LocalDepsOptions) (LocalDepsStatus
 	return status, nil
 }
 
-const defaultWSLStateDir = "~/.local/state/sqlrs"
+const defaultWSLStateDir = "~/.local/state/sqlrs/store"
 
 func checkDocker(ctx context.Context, verbose bool) (bool, string) {
 	if _, err := exec.LookPath("docker"); err != nil {
@@ -295,8 +307,11 @@ func listWSLDistros(ctx context.Context) ([]wsl.Distro, error) {
 func statWSLFSType(ctx context.Context, distro, stateDir string) (string, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "--", "sh", "-lc",
-		fmt.Sprintf("mkdir -p %s && stat -f -c %%T %s", stateDir, stateDir))
+	cmd := exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "--", "mkdir", "-p", stateDir)
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	cmd = exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "--", "stat", "-f", "-c", "%T", stateDir)
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

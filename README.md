@@ -178,7 +178,7 @@ Initialize WSL + btrfs (loopback image) and write workspace config:
 Notes:
 
 - `sqlrs init --wsl` validates WSL, resolves the distro, and ensures the WSL state dir is on **btrfs**.
-- The current implementation uses a loopback image at `~/.local/share/sqlrs/btrfs.img` and mounts it to `~/.local/state/sqlrs` inside the distro (via `sudo`).
+- The current implementation creates a host VHDX at `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`, formats it as btrfs inside WSL, and mounts it to `~/.local/state/sqlrs/store`.
 - If WSL or btrfs is missing, `sqlrs init --wsl` warns and falls back to the Windows engine. Use `--require` to fail instead of falling back.
 - Use `--no-start` to skip auto-starting the WSL distro during init.
 

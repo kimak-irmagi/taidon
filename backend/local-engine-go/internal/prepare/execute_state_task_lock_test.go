@@ -98,7 +98,7 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
-	if !stateBuildMarkerExists(paths.stateDir) {
+	if !stateBuildMarkerExists(paths.stateDir, snapshotKind(mgr.snapshot)) {
 		t.Fatalf("expected build marker")
 	}
 }
@@ -131,7 +131,7 @@ func TestExecuteStateTaskCreatesBuildMarker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
-	markerPath := filepath.Join(paths.stateDir, stateBuildMarkerName)
+	markerPath := stateBuildMarkerPath(paths.stateDir, snapshotKind(mgr.snapshot))
 	if _, err := os.Stat(markerPath); err != nil {
 		t.Fatalf("expected marker, got %v", err)
 	}
@@ -171,7 +171,7 @@ func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 	if err := os.WriteFile(stalePath, []byte("stale"), 0o600); err != nil {
 		t.Fatalf("write stale: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.stateDir, stateBuildMarkerName), []byte("ok"), 0o600); err != nil {
+	if err := os.WriteFile(stateBuildMarkerPath(paths.stateDir, snapshotKind(mgr.snapshot)), []byte("ok"), 0o600); err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
 
@@ -204,4 +204,102 @@ func newManagerWithSnapshot(t *testing.T, store *fakeStore, snap snapshot.Manage
 		t.Fatalf("NewManager: %v", err)
 	}
 	return mgr
+}
+
+type btrfsSnapshot struct {
+	fakeSnapshot
+	isSubvolume bool
+}
+
+func (b *btrfsSnapshot) Kind() string {
+	return "btrfs"
+}
+
+func (b *btrfsSnapshot) IsSubvolume(ctx context.Context, path string) (bool, error) {
+	return b.isSubvolume, nil
+}
+
+func TestExecuteStateTaskCleansNonSubvolumeStateDirForBtrfs(t *testing.T) {
+	store := &fakeStore{}
+	snap := &btrfsSnapshot{isSubvolume: false}
+	mgr := newManagerWithSnapshot(t, store, snap)
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	stalePath := filepath.Join(paths.stateDir, "stale.txt")
+	if err := os.WriteFile(stalePath, []byte("stale"), 0o600); err != nil {
+		t.Fatalf("write stale: %v", err)
+	}
+
+	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("expected stale file to be removed")
+	}
+	if len(store.states) != 1 {
+		t.Fatalf("expected state to be stored, got %+v", store.states)
+	}
+}
+
+func TestExecuteStateTaskDestroysSubvolumeStateDirForBtrfs(t *testing.T) {
+	store := &fakeStore{}
+	snap := &btrfsSnapshot{isSubvolume: true}
+	mgr := newManagerWithSnapshot(t, store, snap)
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if len(snap.destroyCalls) == 0 {
+		t.Fatalf("expected destroy to be called")
+	}
 }

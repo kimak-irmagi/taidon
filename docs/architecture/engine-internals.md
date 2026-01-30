@@ -100,7 +100,10 @@ flowchart LR
 
 ### 1.7 Snapshot Manager
 
-- Prefers OverlayFS or btrfs on Linux; falls back to copy-based snapshots.
+- Selects snapshotter by filesystem of `SQLRS_STATE_STORE`:
+  - btrfs → btrfs snapshotter
+  - zfs dataset mount point (future) → zfs snapshotter
+  - otherwise → fallback copy/reflink snapshotter
 - Windows uses the same Linux snapshotters by running the engine inside WSL2.
 - Exposes `Clone`, `Snapshot`, `Destroy` for states and instances.
 - Uses path resolver from State Store to locate `PGDATA` roots and state directories.
@@ -158,7 +161,8 @@ flowchart LR
 
 ### 1.14 State Store (Paths + Metadata)
 
-- Resolves storage root under `<StateDir>/state-store`.
+- Resolves storage root under `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
+- On WSL, mounts the configured btrfs device to `SQLRS_STATE_STORE` on startup to ensure a shared mount namespace for Docker (`SQLRS_WSL_MOUNT_DEVICE`/`SQLRS_WSL_MOUNT_FSTYPE`).
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
 - Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
 - Stores `parent_state_id` to support state ancestry and recursive deletion.

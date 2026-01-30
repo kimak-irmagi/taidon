@@ -157,7 +157,8 @@ Liquibase integration is planned; provider selection details live in
 On Windows:
 
 - Docker runs inside WSL2
-- State store lives inside the Linux filesystem
+- State store lives inside the Linux filesystem (btrfs loopback volume)
+- Engine ensures the btrfs mount is present on startup before touching the store
 
 ---
 
@@ -166,7 +167,8 @@ On Windows:
 - Engine and snapshotter run inside WSL2
 - CLI may run on Windows host or inside WSL2
 - Communication via localhost forwarding
-- Engine writes `engine.json` inside the WSL state directory; Windows CLI reads it via `wslpath`/interop to connect through forwarded TCP port
+- Engine writes `engine.json` to the Windows state directory and receives that path via `/mnt/...`
+- Engine verifies and mounts the btrfs device to `SQLRS_STATE_STORE` at startup
 - Snapshot backend may fall back to copy-based strategy
 
 ---

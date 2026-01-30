@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -22,7 +23,7 @@ func TestInitUpdateExistingWorkspaceAppliesOverrides(t *testing.T) {
 
 	enginePath := filepath.Join(workspace, "bin", "sqlrs-engine")
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--update", "--engine", enginePath, "--shared-cache"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--update", "--engine", enginePath, "--shared-cache"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -48,11 +49,18 @@ func TestInitUpdateExistingWorkspaceWSL(t *testing.T) {
 	}
 
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
-		return wslInitResult{UseWSL: true, Distro: "Ubuntu", StateDir: "/var/lib/sqlrs"}, nil
+		return wslInitResult{
+			UseWSL:      true,
+			Distro:      "Ubuntu",
+			StateDir:    "/var/lib/sqlrs",
+			StorePath:   "C:\\sqlrs\\store\\btrfs.vhdx",
+			MountDevice: "/dev/sda2",
+			MountFSType: "btrfs",
+		}, nil
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--update", "--wsl"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--update", "--wsl"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -65,6 +73,120 @@ func TestInitUpdateExistingWorkspaceWSL(t *testing.T) {
 	}
 	if got := nestedString(raw, "engine", "wsl", "stateDir"); got != "/var/lib/sqlrs" {
 		t.Fatalf("expected stateDir, got %q", got)
+	}
+	if got := nestedString(raw, "engine", "storePath"); got != "C:\\sqlrs\\store\\btrfs.vhdx" {
+		t.Fatalf("expected storePath, got %q", got)
+	}
+	if got := nestedString(raw, "engine", "wsl", "mount", "device"); got != "/dev/sda2" {
+		t.Fatalf("expected mount device, got %q", got)
+	}
+	if got := nestedString(raw, "engine", "wsl", "mount", "fstype"); got != "btrfs" {
+		t.Fatalf("expected mount fstype, got %q", got)
+	}
+}
+
+func TestInitUpdatePreservesDBMSConfig(t *testing.T) {
+	workspace := t.TempDir()
+	marker := filepath.Join(workspace, ".sqlrs")
+	if err := os.MkdirAll(marker, 0o700); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+	configPath := filepath.Join(marker, "config.yaml")
+	original := []byte("dbms:\n  image: custom-image\nclient:\n  output: human\n")
+	if err := os.WriteFile(configPath, original, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
+		return wslInitResult{UseWSL: true, Distro: "Ubuntu", StateDir: "/var/lib/sqlrs"}, nil
+	})
+
+	var out bytes.Buffer
+	if err := runInit(&out, workspace, "", []string{"--update", "--wsl"}, false); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	raw := loadConfigMap(t, configPath)
+	if got := nestedString(raw, "dbms", "image"); got != "custom-image" {
+		t.Fatalf("expected dbms.image to be preserved, got %q", got)
+	}
+}
+
+func TestInitUpdatePreservesAllOtherSettings(t *testing.T) {
+	workspace := t.TempDir()
+	marker := filepath.Join(workspace, ".sqlrs")
+	if err := os.MkdirAll(marker, 0o700); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+	configPath := filepath.Join(marker, "config.yaml")
+	original := []byte(strings.TrimSpace(`
+client:
+  timeout: 45s
+dbms:
+  image: custom-image
+profiles:
+  local:
+    mode: local
+    endpoint: auto
+custom:
+  flag: true
+`))
+	if err := os.WriteFile(configPath, append(original, '\n'), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
+		return wslInitResult{UseWSL: true, Distro: "Ubuntu", StateDir: "/var/lib/sqlrs"}, nil
+	})
+
+	var out bytes.Buffer
+	if err := runInit(&out, workspace, "", []string{"--update", "--wsl"}, false); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	raw := loadConfigMap(t, configPath)
+	if got := nestedString(raw, "client", "timeout"); got != "45s" {
+		t.Fatalf("expected client.timeout preserved, got %q", got)
+	}
+	if got := nestedString(raw, "dbms", "image"); got != "custom-image" {
+		t.Fatalf("expected dbms.image preserved, got %q", got)
+	}
+	if got := nestedString(raw, "profiles", "local", "mode"); got != "local" {
+		t.Fatalf("expected profiles.local.mode preserved, got %q", got)
+	}
+	custom, ok := raw["custom"].(map[string]any)
+	if !ok || custom["flag"] != true {
+		t.Fatalf("expected custom.flag preserved, got %v", raw["custom"])
+	}
+}
+
+func TestInitUpdateWSLFailureDoesNotModifyConfig(t *testing.T) {
+	workspace := t.TempDir()
+	marker := filepath.Join(workspace, ".sqlrs")
+	if err := os.MkdirAll(marker, 0o700); err != nil {
+		t.Fatalf("mkdir marker: %v", err)
+	}
+	configPath := filepath.Join(marker, "config.yaml")
+	original := []byte("client:\n  output: json\n")
+	if err := os.WriteFile(configPath, original, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
+		return wslInitResult{UseWSL: false, Warning: "WSL unavailable"}, nil
+	})
+
+	var out bytes.Buffer
+	if err := runInit(&out, workspace, "", []string{"--update", "--wsl"}, false); err == nil {
+		t.Fatalf("expected error")
+	}
+
+	updated, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if string(updated) != string(original) {
+		t.Fatalf("expected config unchanged")
 	}
 }
 
@@ -81,7 +203,7 @@ func TestInitUpdateExistingWorkspaceNoFlagsNoChange(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--update"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--update"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -97,7 +219,7 @@ func TestInitUpdateExistingWorkspaceNoFlagsNoChange(t *testing.T) {
 func TestInitUpdateCreatesWorkspaceWhenMissing(t *testing.T) {
 	workspace := t.TempDir()
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--update"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--update"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !dirExists(filepath.Join(workspace, ".sqlrs")) {
@@ -114,7 +236,7 @@ func TestInitUpdateMissingConfigCreatesNew(t *testing.T) {
 	configPath := filepath.Join(marker, "config.yaml")
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--update"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--update"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !fileExists(configPath) {
@@ -134,7 +256,7 @@ func TestInitUpdateCorruptConfigRecreates(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--update"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--update"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 

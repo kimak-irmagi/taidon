@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"sqlrs/cli/internal/cli"
 	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/config"
+	"sqlrs/cli/internal/paths"
+	"sqlrs/cli/internal/wsl"
 )
 
 const defaultTimeout = 30 * time.Second
@@ -43,7 +47,7 @@ func Run(args []string) error {
 		if len(commands) > 1 {
 			return fmt.Errorf("init cannot be combined with other commands")
 		}
-		return runInit(os.Stdout, cwd, opts.Workspace, commands[0].Args)
+		return runInit(os.Stdout, cwd, opts.Workspace, commands[0].Args, opts.Verbose)
 	}
 
 	cfgResult, err := config.Load(config.LoadOptions{WorkingDir: cwd})
@@ -121,6 +125,18 @@ func Run(args []string) error {
 	if daemonPath == "" {
 		daemonPath = cfg.Orchestrator.DaemonPath
 	}
+	engineRunDir := ""
+	engineStatePath := ""
+	engineStoreDir := strings.TrimSpace(cfg.Engine.StorePath)
+	engineWSLMountDevice := ""
+	engineWSLMountFSType := ""
+	wslDistro := ""
+	if runtime.GOOS == "windows" {
+		daemonPath, engineRunDir, engineStatePath, engineStoreDir, wslDistro, engineWSLMountDevice, engineWSLMountFSType, err = resolveWSLSettings(cfg, dirs, daemonPath)
+		if err != nil {
+			return err
+		}
+	}
 
 	var prepared *client.PrepareJobResult
 	for _, cmd := range commands {
@@ -130,16 +146,22 @@ func Run(args []string) error {
 				return fmt.Errorf("ls cannot be combined with other commands")
 			}
 			runOpts := cli.LsOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 			return runLs(os.Stdout, runOpts, cmd.Args, output)
 		case "rm":
@@ -147,30 +169,42 @@ func Run(args []string) error {
 				return fmt.Errorf("rm cannot be combined with other commands")
 			}
 			runOpts := cli.RmOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 			return runRm(os.Stdout, runOpts, cmd.Args, output)
 		case "prepare:psql":
 			runOpts := cli.PrepareOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 			if len(commands) == 1 {
 				return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
@@ -188,30 +222,42 @@ func Run(args []string) error {
 				return fmt.Errorf("plan cannot be combined with other commands")
 			}
 			runOpts := cli.PrepareOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 			return runPlan(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output)
 		case "run:psql":
 			runOpts := cli.RunOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
@@ -224,16 +270,22 @@ func Run(args []string) error {
 			}
 		case "run:pgbench":
 			runOpts := cli.RunOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
@@ -252,16 +304,22 @@ func Run(args []string) error {
 				return fmt.Errorf("status does not accept arguments")
 			}
 			statusOpts := cli.StatusOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 
 			result, err := cli.RunStatus(context.Background(), statusOpts)
@@ -289,16 +347,22 @@ func Run(args []string) error {
 				return fmt.Errorf("config cannot be combined with other commands")
 			}
 			runOpts := cli.ConfigOptions{
-				ProfileName:    profileName,
-				Mode:           mode,
-				Endpoint:       profile.Endpoint,
-				Autostart:      profile.Autostart,
-				DaemonPath:     daemonPath,
-				RunDir:         runDir,
-				StateDir:       dirs.StateDir,
-				Timeout:        timeout,
-				StartupTimeout: startupTimeout,
-				Verbose:        opts.Verbose,
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLMountDevice:  engineWSLMountDevice,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
 			}
 			return runConfig(os.Stdout, runOpts, cmd.Args, output)
 		case "prepare":
@@ -342,4 +406,86 @@ func writeJSON(w io.Writer, v any) error {
 	}
 	_, err = w.Write(append(data, '\n'))
 	return err
+}
+
+func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (string, string, string, string, string, string, string, error) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Engine.WSL.Mode))
+	if mode == "" {
+		return daemonPath, "", "", "", "", "", "", nil
+	}
+	if mode != "auto" && mode != "required" {
+		return daemonPath, "", "", "", "", "", "", nil
+	}
+
+	stateDir := strings.TrimSpace(cfg.Engine.WSL.StateDir)
+	distro := strings.TrimSpace(cfg.Engine.WSL.Distro)
+	mountDevice := strings.TrimSpace(cfg.Engine.WSL.Mount.Device)
+	mountFSType := strings.TrimSpace(cfg.Engine.WSL.Mount.FSType)
+	if distro == "" {
+		distros, err := listWSLDistros()
+		if err != nil {
+			if mode == "required" {
+				return "", "", "", "", "", "", "", fmt.Errorf("WSL unavailable: %v", err)
+			}
+			return daemonPath, "", "", "", "", "", "", nil
+		}
+		distro, err = wsl.SelectDistro(distros, "")
+		if err != nil {
+			if mode == "required" {
+				return "", "", "", "", "", "", "", fmt.Errorf("WSL distro resolution failed: %v", err)
+			}
+			return daemonPath, "", "", "", "", "", "", nil
+		}
+	}
+	if distro == "" || stateDir == "" {
+		if mode == "required" {
+			return "", "", "", "", "", "", "", fmt.Errorf("WSL configuration is missing distro or stateDir")
+		}
+		return daemonPath, "", "", "", "", "", "", nil
+	}
+
+	engineBinary := daemonPath
+	if cfg.Engine.WSL.EnginePath != "" {
+		engineBinary = cfg.Engine.WSL.EnginePath
+	}
+	wslDaemonPath, err := windowsToWSLPath(engineBinary)
+	if err != nil {
+		if mode == "required" {
+			return "", "", "", "", "", "", "", err
+		}
+		return daemonPath, "", "", "", "", "", "", nil
+	}
+
+	statePath := filepath.Join(dirs.StateDir, "engine.json")
+	wslStatePath, err := windowsToWSLPath(statePath)
+	if err != nil {
+		if mode == "required" {
+			return "", "", "", "", "", "", "", err
+		}
+		return daemonPath, "", "", "", "", "", "", nil
+	}
+
+	runDir := path.Join(stateDir, "run")
+	return wslDaemonPath, runDir, wslStatePath, stateDir, distro, mountDevice, mountFSType, nil
+}
+
+func windowsToWSLPath(value string) (string, error) {
+	cleaned := strings.TrimSpace(value)
+	if cleaned == "" {
+		return "", fmt.Errorf("path is empty")
+	}
+	if strings.HasPrefix(cleaned, "/") {
+		return cleaned, nil
+	}
+	vol := filepath.VolumeName(cleaned)
+	if vol == "" {
+		return "", fmt.Errorf("path is not absolute: %s", cleaned)
+	}
+	drive := strings.TrimSuffix(strings.ToLower(vol), ":")
+	rest := strings.TrimPrefix(cleaned[len(vol):], string(filepath.Separator))
+	rest = strings.ReplaceAll(rest, "\\", "/")
+	if rest == "" {
+		return fmt.Sprintf("/mnt/%s", drive), nil
+	}
+	return fmt.Sprintf("/mnt/%s/%s", drive, rest), nil
 }

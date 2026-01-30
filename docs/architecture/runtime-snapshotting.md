@@ -38,12 +38,12 @@ Containers are **stateless executors**.
 
 ### 3.2 Host Storage Strategy (by platform)
 
-- **Linux (primary):** host-managed state store with OverlayFS or btrfs copy-on-write.
-- **Windows:** engine runs inside WSL2; use btrfs on the WSL2 state-store volume for
-  block-level CoW when available, otherwise fall back to full copy.
+- **Linux (primary):** snapshotter is selected by filesystem of `SQLRS_STATE_STORE` (btrfs/zfs → CoW, otherwise copy/reflink).
+- **Windows:** engine runs inside WSL2; state store is backed by a host VHDX mounted into WSL and formatted as btrfs when available, otherwise fall back to full copy.
 
 Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
-For local engine, the state store root is `<StateDir>/state-store`.
+For local engine, the state store root defaults to `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
+On WSL, the engine verifies/mounts the btrfs device at startup to ensure Docker sees the same mount namespace.
 
 ---
 

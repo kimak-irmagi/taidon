@@ -129,6 +129,7 @@ Allow updating an existing workspace configuration.
 - Without `--update`, an existing workspace remains unchanged.
 - If `.sqlrs/` does not exist, `--update` behaves like a normal init (creates workspace).
 - If `config.yaml` is missing or corrupted, `--update` recreates it.
+- If `--update` is used with `--wsl` and WSL init fails, the workspace config is left unchanged.
 
 ### `--wsl`
 
@@ -136,10 +137,21 @@ Enable WSL2 setup flow on Windows:
 
 - validates WSL availability,
 - resolves the target distro (default or `--distro`),
-- ensures the WSL state dir is backed by btrfs (initializes loopback btrfs if needed),
-- writes `engine.wsl.*` settings into `.sqlrs/config.yaml`.
+- ensures the WSL state dir is backed by btrfs (host VHDX + GPT + btrfs mount),
+- writes `engine.wsl.*` settings into `.sqlrs/config.yaml` (including mount metadata).
 
 If `--require` is **not** set, WSL failures produce a warning and fallback to non-WSL configuration.
+
+### `--store-size <N>GB`
+
+Set the size of the **host VHDX** used for the WSL btrfs state store.
+
+- Required suffix: `GB`
+- Default: `100GB`
+
+### `--reinit`
+
+Recreate the WSL btrfs store from scratch (destructive).
 
 ### `--distro <name>`
 

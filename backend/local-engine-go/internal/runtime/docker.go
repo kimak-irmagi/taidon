@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +22,9 @@ var (
 	cmdStderrPipe = func(cmd *exec.Cmd) (io.ReadCloser, error) { return cmd.StderrPipe() }
 	cmdStart      = func(cmd *exec.Cmd) error { return cmd.Start() }
 	cmdWait       = func(cmd *exec.Cmd) error { return cmd.Wait() }
+	execLookPath  = exec.LookPath
+	osStat        = os.Stat
+	ensureMountFn = ensureStateStoreMount
 )
 
 const (
@@ -124,6 +130,15 @@ func NewDocker(opts Options) *DockerRuntime {
 	if binary == "" {
 		binary = defaultDockerBinary
 	}
+	if runtime.GOOS == "linux" && binary == defaultDockerBinary {
+		if path, err := execLookPath(binary); err == nil {
+			if strings.HasSuffix(strings.ToLower(path), ".exe") {
+				if _, err := osStat("/usr/bin/docker"); err == nil {
+					binary = "/usr/bin/docker"
+				}
+			}
+		}
+	}
 	runner := opts.Runner
 	if runner == nil {
 		runner = execRunner{}
@@ -140,6 +155,11 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	}
 	if err := r.ensureDataDirOwner(ctx, imageID, dataDir); err != nil {
 		return err
+	}
+	if ok, err := r.pgVersionReady(ctx, imageID, dataDir); err != nil {
+		return err
+	} else if ok {
+		return nil
 	}
 	args := []string{
 		"run", "--rm",
@@ -161,9 +181,60 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 		if isInitdbPermissionOutput(output) || isInitdbPermissionOutput(err.Error()) {
 			return fmt.Errorf("initdb failed: data directory permissions are not supported on this filesystem; use WSL2/ext4 or a docker volume")
 		}
+		if ok, checkErr := r.pgVersionReady(ctx, imageID, dataDir); checkErr == nil && ok {
+			return nil
+		}
 		return fmt.Errorf("initdb failed: %w", err)
 	}
-	return nil
+	if ok, checkErr := r.pgVersionReady(ctx, imageID, dataDir); checkErr == nil && ok {
+		return nil
+	} else if checkErr != nil {
+		return checkErr
+	}
+	return fmt.Errorf("initdb did not produce PG_VERSION (check docker WSL integration and store path)")
+}
+
+func (r *DockerRuntime) pgVersionReady(ctx context.Context, imageID string, dataDir string) (bool, error) {
+	if hasPGVersion(dataDir) {
+		return true, nil
+	}
+	return r.hasPGVersionInContainer(ctx, imageID, dataDir)
+}
+
+func (r *DockerRuntime) hasPGVersionInContainer(ctx context.Context, imageID string, dataDir string) (bool, error) {
+	args := []string{
+		"run", "--rm",
+		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		imageID,
+		"test", "-f", filepath.ToSlash(filepath.Join(PostgresDataDirRoot, "pgdata", "PG_VERSION")),
+	}
+	_, err := r.run(ctx, args, nil)
+	if err != nil {
+		if isDockerUnavailable(err) {
+			return false, fmt.Errorf("docker is not running: %w", err)
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+func hasPGVersion(dataDir string) bool {
+	if strings.TrimSpace(dataDir) == "" {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(dataDir, "PG_VERSION")); err == nil {
+		return true
+	}
+	rel := strings.TrimPrefix(PostgresDataDir, PostgresDataDirRoot)
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" {
+		return false
+	}
+	pgdataDir := filepath.Join(dataDir, filepath.FromSlash(rel))
+	if _, err := os.Stat(filepath.Join(pgdataDir, "PG_VERSION")); err == nil {
+		return true
+	}
+	return false
 }
 
 func (r *DockerRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
@@ -297,6 +368,22 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 		return Instance{}, fmt.Errorf("docker run returned empty container id")
 	}
 
+	ok, err := r.pgVersionReadyInContainer(ctx, containerID)
+	if err != nil {
+		_ = r.Stop(ctx, containerID)
+		return Instance{}, err
+	}
+	if !ok {
+		if !req.AllowInitdb {
+			_ = r.Stop(ctx, containerID)
+			return Instance{}, fmt.Errorf("postgres data directory is not initialized (missing PG_VERSION)")
+		}
+		if err := r.initdbInContainer(ctx, containerID); err != nil {
+			_ = r.Stop(ctx, containerID)
+			return Instance{}, err
+		}
+	}
+
 	if _, err := r.Exec(ctx, containerID, ExecRequest{
 		User: "postgres",
 		Args: []string{
@@ -329,6 +416,50 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 		Host: "127.0.0.1",
 		Port: port,
 	}, nil
+}
+
+func (r *DockerRuntime) pgVersionReadyInContainer(ctx context.Context, id string) (bool, error) {
+	_, err := r.Exec(ctx, id, ExecRequest{
+		Args: []string{"test", "-f", filepath.ToSlash(filepath.Join(PostgresDataDirRoot, "pgdata", "PG_VERSION"))},
+	})
+	if err == nil {
+		return true, nil
+	}
+	if isDockerUnavailable(err) {
+		return false, fmt.Errorf("docker is not running: %w", err)
+	}
+	return false, nil
+}
+
+func (r *DockerRuntime) initdbInContainer(ctx context.Context, id string) error {
+	output, err := r.Exec(ctx, id, ExecRequest{
+		User: "postgres",
+		Args: []string{
+			"initdb",
+			"--username=sqlrs",
+			"--auth=trust",
+			"--auth-host=trust",
+			"--auth-local=trust",
+			"-D", PostgresDataDir,
+		},
+	})
+	if err != nil {
+		if isDockerUnavailable(err) {
+			return fmt.Errorf("docker is not running: %w", err)
+		}
+		if isInitdbPermissionOutput(output) || isInitdbPermissionOutput(err.Error()) {
+			return fmt.Errorf("initdb failed: data directory permissions are not supported on this filesystem; use WSL2/ext4 or a docker volume")
+		}
+		return fmt.Errorf("initdb failed: %w", err)
+	}
+	ok, err := r.pgVersionReadyInContainer(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("initdb did not produce PG_VERSION (check docker WSL integration and store path)")
+	}
+	return nil
 }
 
 func (r *DockerRuntime) Stop(ctx context.Context, id string) error {
@@ -396,6 +527,11 @@ func (r *DockerRuntime) WaitForReady(ctx context.Context, id string, timeout tim
 }
 
 func (r *DockerRuntime) run(ctx context.Context, args []string, stdin *string) (string, error) {
+	if ensureMountFn != nil {
+		if err := ensureMountFn(); err != nil {
+			return "", err
+		}
+	}
 	sink := logSinkFromContext(ctx)
 	if sink != nil {
 		if runner, ok := r.runner.(streamingRunner); ok {

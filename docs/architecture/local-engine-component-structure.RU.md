@@ -13,6 +13,7 @@
 - `cmd/sqlrs-engine`
   - Парсинг флагов и сборка зависимостей.
   - Старт HTTP сервера.
+  - Разрешает `SQLRS_STATE_STORE` и при необходимости монтирует btrfs в WSL (`SQLRS_WSL_MOUNT_DEVICE`/`SQLRS_WSL_MOUNT_FSTYPE`).
 - `internal/httpapi`
   - Роутинг и handlers.
   - JSON/NDJSON кодирование.
@@ -107,7 +108,7 @@
 - Персистентные данные (names/instances/states) живут в SQLite под `<StateDir>`.
 - Jobs, tasks и события jobs живут в SQLite под `<StateDir>`.
 - In-memory структуры - только кэши или request-scoped данные.
-- Данные state store живут в `<StateDir>/state-store`.
+- Данные state store живут в `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
 - Server config хранится в `<StateDir>/state-store/config.json` и дублируется в памяти.
 
 ## 5. Диаграмма зависимостей

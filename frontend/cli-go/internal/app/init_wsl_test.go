@@ -21,11 +21,12 @@ func TestInitWSLHappyAutoDistro(t *testing.T) {
 			Distro:     "Ubuntu",
 			StateDir:   "/var/lib/sqlrs",
 			EnginePath: "/opt/sqlrs/sqlrs-engine",
+			StorePath:  "C:\\sqlrs\\store\\btrfs.vhdx",
 		}, nil
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--wsl"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -48,6 +49,9 @@ func TestInitWSLHappyAutoDistro(t *testing.T) {
 	if got := nestedString(raw, "engine", "wsl", "enginePath"); got != "/opt/sqlrs/sqlrs-engine" {
 		t.Fatalf("expected enginePath, got %q", got)
 	}
+	if got := nestedString(raw, "engine", "storePath"); got != "C:\\sqlrs\\store\\btrfs.vhdx" {
+		t.Fatalf("expected storePath, got %q", got)
+	}
 }
 
 func TestInitWSLUsesExplicitDistro(t *testing.T) {
@@ -59,7 +63,7 @@ func TestInitWSLUsesExplicitDistro(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl", "--distro", "Debian"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--wsl", "--distro", "Debian"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -77,11 +81,31 @@ func TestInitWSLNoStartSkipsWSLStart(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl", "--no-start"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--wsl", "--no-start"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !captured.NoStart {
 		t.Fatalf("expected NoStart true")
+	}
+}
+
+func TestInitWSLPassesStoreFlags(t *testing.T) {
+	workspace := t.TempDir()
+	var captured wslInitOptions
+	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
+		captured = opts
+		return wslInitResult{UseWSL: true}, nil
+	})
+
+	var out bytes.Buffer
+	if err := runInit(&out, workspace, "", []string{"--wsl", "--store-size", "120GB", "--reinit"}, false); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	if captured.StoreSizeGB != 120 {
+		t.Fatalf("expected store size 120, got %d", captured.StoreSizeGB)
+	}
+	if !captured.Reinit {
+		t.Fatalf("expected reinit true")
 	}
 }
 
@@ -92,7 +116,7 @@ func TestInitWSLRequireFailsWhenWSLMissing(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl", "--require"}); err == nil {
+	if err := runInit(&out, workspace, "", []string{"--wsl", "--require"}, false); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -116,7 +140,7 @@ func TestInitWSLWarnsAndFallbackWhenWSLMissing(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--wsl"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	_ = w.Close()

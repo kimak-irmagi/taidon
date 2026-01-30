@@ -77,7 +77,7 @@ func TestFormatImageSourceEmptyInPrepareResult(t *testing.T) {
 }
 
 func TestNormalizePsqlArgsMissingFileValue(t *testing.T) {
-	_, _, err := normalizePsqlArgs([]string{"-f"}, "", "", strings.NewReader(""))
+	_, _, err := normalizePsqlArgs([]string{"-f"}, "", "", strings.NewReader(""), nil)
 	if err == nil || !strings.Contains(err.Error(), "Missing value") {
 		t.Fatalf("expected missing value error, got %v", err)
 	}
@@ -89,7 +89,7 @@ func TestNormalizePsqlArgsFileForms(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("select 1;"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	args, _, err := normalizePsqlArgs([]string{"--file=query.sql", "-fquery.sql"}, dir, dir, strings.NewReader(""))
+	args, _, err := normalizePsqlArgs([]string{"--file=query.sql", "-fquery.sql"}, dir, dir, strings.NewReader(""), nil)
 	if err != nil {
 		t.Fatalf("normalizePsqlArgs: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestNormalizeFilePathOutsideWorkspace(t *testing.T) {
 	if err := os.MkdirAll(cwd, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	_, _, err := normalizeFilePath(filepath.Join(root, "..", "outside.sql"), root, cwd)
+	_, _, err := normalizeFilePath(filepath.Join(root, "..", "outside.sql"), root, cwd, nil)
 	if err == nil || !strings.Contains(err.Error(), "within workspace root") {
 		t.Fatalf("expected workspace error, got %v", err)
 	}

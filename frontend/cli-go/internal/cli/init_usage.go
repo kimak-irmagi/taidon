@@ -15,6 +15,8 @@ func PrintInitUsage(w io.Writer) {
 	io.WriteString(w, "  --distro <name>      WSL distro name\n")
 	io.WriteString(w, "  --require            Require WSL2+btrfs (no fallback)\n")
 	io.WriteString(w, "  --no-start           Skip WSL auto-start during init\n")
+	io.WriteString(w, "  --store-size <NGB>   WSL btrfs store size (default: 100GB)\n")
+	io.WriteString(w, "  --reinit             Recreate WSL btrfs store\n")
 	io.WriteString(w, "  --dry-run            Show intended actions only\n")
 	io.WriteString(w, "  -h, --help           Show help\n")
 }
