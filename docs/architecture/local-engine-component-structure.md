@@ -13,7 +13,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - `cmd/sqlrs-engine`
   - Parse flags and build dependencies.
   - Start the HTTP server.
-  - Resolve `SQLRS_STATE_STORE` and ensure WSL btrfs mount when configured (`SQLRS_WSL_MOUNT_DEVICE`/`SQLRS_WSL_MOUNT_FSTYPE`).
+  - Resolve `SQLRS_STATE_STORE` and validate the WSL systemd mount when configured.
 - `internal/httpapi`
   - HTTP routing and handlers.
   - JSON/NDJSON encoding.

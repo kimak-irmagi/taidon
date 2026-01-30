@@ -101,7 +101,7 @@ Current implementation details:
 - Host VHDX path: `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`
 - Default image size: `100GB`
 - WSL mount point (state dir): `~/.local/state/sqlrs/store`
-- Mount command uses `wsl.exe -u root` (no `sudo`).
+- Mount is managed by a **systemd mount unit** created by `sqlrs init`.
 
 Initialization steps:
 
@@ -110,12 +110,15 @@ Initialization steps:
 3. Attach the VHDX to the selected WSL distro as **bare**.
 4. Ensure `btrfs-progs` is installed inside the distro.
 5. Format the partition as **btrfs**.
-6. Mount the partition at `engine.wsl.stateDir` (inside WSL) using `-t btrfs`.
-7. Verify mount via `findmnt -T <stateDir>`.
+6. Install and enable a **systemd mount unit** that mounts the partition at
+   `engine.wsl.stateDir` (inside WSL) using `Type=btrfs`.
+7. Verify mount via `systemctl is-active` and `findmnt -T <stateDir>`.
 8. Create btrfs subvolumes in the mount root:
    - `@instances`
    - `@states`
 9. `chown -R <user>:<group>` for the mount root so the engine can create `run/`.
+
+After init, WSL must be restarted (`wsl.exe --shutdown`) so systemd loads the unit.
 
 ### C) WSL auto-start
 
@@ -217,11 +220,12 @@ and passes it to `wsl.exe` to start the engine.
 
 ### 6) WSL mount metadata (Linux)
 
-`engine.wsl.mount.device` and `engine.wsl.mount.fstype`
+`engine.wsl.mount.device`, `engine.wsl.mount.fstype`, `engine.wsl.mount.deviceUUID`,
+and `engine.wsl.mount.unit`
 
-- recorded by `sqlrs init` after attaching/formatting the VHDX,
-- passed by the CLI to the engine at startup,
-- the engine always mounts to `SQLRS_STATE_STORE` (the target is not configurable).
+- recorded by `sqlrs init` after attaching/formatting the VHDX and writing the systemd unit,
+- used by `sqlrs init` for idempotency and validation,
+- used by `sqlrs status` to verify mount health.
 
 ### 6) Snapshot backend (auto by FS)
 
@@ -252,14 +256,10 @@ If WSL not used:
 
 ### Engine mount check (WSL)
 
-On startup, the engine ensures the btrfs device is mounted to `SQLRS_STATE_STORE`:
-
-1. Read `engine.wsl.mount.*` from workspace config (CLI) and pass via env:
-   - `SQLRS_WSL_MOUNT_DEVICE`
-   - `SQLRS_WSL_MOUNT_FSTYPE`
-2. Check mount via `findmnt -T $SQLRS_STATE_STORE`.
-3. If missing, mount `device` using `-t <fstype>`.
-4. Verify mount before touching the state store.
+On startup, the engine validates that the systemd mount unit is active and that
+`SQLRS_STATE_STORE` is mounted as btrfs. It does **not** mount the device itself.
+If the mount is missing, the engine fails with a hint to run `sqlrs init --wsl`
+and restart WSL.
 
 ---
 

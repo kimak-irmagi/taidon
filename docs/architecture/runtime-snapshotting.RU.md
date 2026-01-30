@@ -43,7 +43,7 @@
 
 Runtime код не раскрывает конкретные пути: engine/adapter сам разрешает data dirs и передает mounts в runtime.
 Для локального engine корень state store по умолчанию `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
-В WSL движок проверяет/монтирует btrfs устройство при старте, чтобы Docker видел тот же mount namespace.
+В WSL `sqlrs init --wsl` устанавливает systemd mount unit; движок проверяет активность маунта перед работой со store.
 
 ---
 

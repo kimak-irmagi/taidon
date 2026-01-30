@@ -158,7 +158,9 @@ On Windows:
 
 - Docker runs inside WSL2
 - State store lives inside the Linux filesystem (btrfs loopback volume)
-- Engine ensures the btrfs mount is present on startup before touching the store
+- `sqlrs init --wsl` installs a systemd mount unit inside the selected distro
+  so the btrfs volume is visible to Docker and all child processes
+- Engine verifies the mount is active before touching the store
 
 ---
 
@@ -168,7 +170,7 @@ On Windows:
 - CLI may run on Windows host or inside WSL2
 - Communication via localhost forwarding
 - Engine writes `engine.json` to the Windows state directory and receives that path via `/mnt/...`
-- Engine verifies and mounts the btrfs device to `SQLRS_STATE_STORE` at startup
+- Engine verifies the systemd mount for `SQLRS_STATE_STORE` at startup
 - Snapshot backend may fall back to copy-based strategy
 
 ---

@@ -13,7 +13,7 @@
 - `cmd/sqlrs-engine`
   - Парсинг флагов и сборка зависимостей.
   - Старт HTTP сервера.
-  - Разрешает `SQLRS_STATE_STORE` и при необходимости монтирует btrfs в WSL (`SQLRS_WSL_MOUNT_DEVICE`/`SQLRS_WSL_MOUNT_FSTYPE`).
+  - Разрешает `SQLRS_STATE_STORE` и проверяет systemd-маунт WSL (если настроен).
 - `internal/httpapi`
   - Роутинг и handlers.
   - JSON/NDJSON кодирование.

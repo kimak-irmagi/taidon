@@ -138,7 +138,17 @@ Enable WSL2 setup flow on Windows:
 - validates WSL availability,
 - resolves the target distro (default or `--distro`),
 - ensures the WSL state dir is backed by btrfs (host VHDX + GPT + btrfs mount),
+- installs a systemd mount unit inside the WSL distro so the btrfs mount is visible
+  to Docker and all child processes,
 - writes `engine.wsl.*` settings into `.sqlrs/config.yaml` (including mount metadata).
+
+WSL+btrfs requires **systemd** inside the selected distro. If systemd is not enabled:
+
+- with `--require`: init fails,
+- without `--require`: init warns and falls back to non-WSL configuration.
+
+After a successful WSL init, WSL must be restarted (`wsl.exe --shutdown`) so the
+systemd unit is activated.
 
 If `--require` is **not** set, WSL failures produce a warning and fallback to non-WSL configuration.
 
@@ -152,6 +162,8 @@ Set the size of the **host VHDX** used for the WSL btrfs state store.
 ### `--reinit`
 
 Recreate the WSL btrfs store from scratch (destructive).
+
+Also disables and removes the WSL systemd mount unit before recreating the volume.
 
 ### `--distro <name>`
 

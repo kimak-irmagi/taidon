@@ -162,7 +162,7 @@ flowchart LR
 ### 1.14 State Store (Paths + Metadata)
 
 - Resolves storage root under `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
-- On WSL, mounts the configured btrfs device to `SQLRS_STATE_STORE` on startup to ensure a shared mount namespace for Docker (`SQLRS_WSL_MOUNT_DEVICE`/`SQLRS_WSL_MOUNT_FSTYPE`).
+- On WSL, validates that the systemd mount for `SQLRS_STATE_STORE` is active before touching the store.
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
 - Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
 - Stores `parent_state_id` to support state ancestry and recursive deletion.

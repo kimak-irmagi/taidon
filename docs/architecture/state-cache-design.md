@@ -356,7 +356,7 @@ To keep keys meaningful:
 ### 12.3 Platform specifics
 
 - **Linux/macOS (local engine)**: `SQLRS_STATE_STORE` on native filesystem; snapshotter is selected by FS (btrfs/zfs → CoW, otherwise copy/reflink).
-- **Windows (local engine)**: engine runs inside WSL2; state store is a host VHDX mounted into WSL and formatted as btrfs when available; otherwise copy/reflink fallback.
+- **Windows (local engine)**: engine runs inside WSL2; state store is a host VHDX mounted into WSL and formatted as btrfs when available; a systemd mount unit (installed by `sqlrs init --wsl`) makes the mount visible to Docker; otherwise copy/reflink fallback.
 
 ### 12.4 Access and locking
 

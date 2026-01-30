@@ -158,7 +158,9 @@ Engine выполняет `psql` внутри DB-контейнера через
 
 - Docker работает внутри WSL2
 - State store живет внутри Linux файловой системы (btrfs loopback)
-- Engine проверяет и монтирует btrfs перед работой со state store
+- `sqlrs init --wsl` устанавливает systemd mount unit внутри выбранного дистрибутива,
+  чтобы btrfs-том был виден Docker и всем дочерним процессам
+- Engine проверяет активность маунта перед работой со state store
 
 ---
 
@@ -168,7 +170,7 @@ Engine выполняет `psql` внутри DB-контейнера через
 - CLI может работать на Windows host или внутри WSL2
 - Коммуникация через localhost forwarding
 - Engine пишет `engine.json` в Windows state dir и получает путь через `/mnt/...`
-- Engine проверяет и монтирует btrfs устройство в `SQLRS_STATE_STORE` при старте
+- Engine проверяет systemd-маунт `SQLRS_STATE_STORE` при старте
 - Snapshot backend может откатываться на copy-based стратегию
 
 ---

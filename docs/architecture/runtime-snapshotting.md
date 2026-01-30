@@ -43,7 +43,7 @@ Containers are **stateless executors**.
 
 Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
 For local engine, the state store root defaults to `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
-On WSL, the engine verifies/mounts the btrfs device at startup to ensure Docker sees the same mount namespace.
+On WSL, `sqlrs init --wsl` installs a systemd mount unit; the engine verifies the mount is active before touching the store.
 
 ---
 
