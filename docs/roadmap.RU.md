@@ -33,8 +33,8 @@ gantt
     Каркас Core API + Engine                  :done, a1, 2026-01-01, 30d
     Локальный runtime + lifecycle экземпляра   :done, a2, after a1, 45d
     Бэкенд snapshot ФС (overlayfs)            :done, a2fs, after a2, 20d
-    Бэкенд snapshot ФС (ZFS)                  :a2z, after a2fs, 30d
-    Бэкенд snapshot ФС (Btrfs)                :a2b, after a2z, 30d
+    Бэкенд snapshot ФС (Btrfs)                :done, a2b, after a2fs, 30d
+    Бэкенд snapshot ФС (ZFS)                  :a2z, after a2b, 30d
     Адаптер Liquibase (применение миграций)   :a3, after a2b, 30d
 
     section Продуктовый MVP (локальный)
@@ -69,11 +69,11 @@ gantt
 
 ---
 
-## Статус (на 2026-01-27)
+## Статус (на 2026-01-31)
 
-- **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, локальный pipeline plan/prepare/run, хранение job/task и события, базовая часть state cache и ретеншн, CLI-основа (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`).
-- **Сделано (ФС)**: заглушка snapshot на overlayfs (copy).
-- **В работе**: UX CLI и детерминизм выполнения end-to-end (ещё нет Liquibase-адаптера и эквивалентов `apply/status/logs/destroy`).
+- **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, CLI-основа (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
+- **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
+- **В работе**: UX CLI и детерминизм выполнения (ещё нет Liquibase-адаптера и эквивалентов `apply/status/logs/destroy`).
 - **Запланировано**: drop-in подключение, git-aware CLI, team on-prem оркестрация, облачный sharing, образование.
 
 ---
@@ -115,7 +115,7 @@ gantt
 - Локальный runtime (контейнеры) с lifecycle экземпляра — **сделано**
 - CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm` — **сделано**
 - Cache v1 (prepare jobs + reuse state + retention) — **сделано (ядро)**
-- Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy), **в планах** (ZFS, Btrfs)
+- Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs), **в планах** (ZFS)
 - Liquibase адаптер (apply changelog) — **в планах**
 - CLI parity с исходным MVP списком (`apply/status/logs/destroy`) — **в планах**
 
