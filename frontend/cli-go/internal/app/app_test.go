@@ -566,17 +566,6 @@ func TestRunDefaultsFromConfig(t *testing.T) {
 		t.Fatalf("write project config: %v", err)
 	}
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(workspace); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(oldWd)
-	}()
-
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -591,7 +580,7 @@ func TestRunDefaultsFromConfig(t *testing.T) {
 		_ = r.Close()
 	}()
 
-	if err := Run([]string{"status"}); err != nil {
+	if err := Run([]string{"--workspace", workspace, "status"}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	_ = w.Close()
