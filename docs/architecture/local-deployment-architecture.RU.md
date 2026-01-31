@@ -166,12 +166,12 @@ Engine выполняет `psql` внутри DB-контейнера через
 
 ## 7. Особенности Windows / WSL2
 
-- Engine и snapshotter работают внутри WSL2
+- Engine и StateFS работают внутри WSL2
 - CLI может работать на Windows host или внутри WSL2
 - Коммуникация через localhost forwarding
 - Engine пишет `engine.json` в Windows state dir и получает путь через `/mnt/...`
 - Engine проверяет systemd-маунт `SQLRS_STATE_STORE` при старте
-- Snapshot backend может откатываться на copy-based стратегию
+- StateFS backend может откатываться на copy-based стратегию
 
 ---
 

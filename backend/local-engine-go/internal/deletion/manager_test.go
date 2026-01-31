@@ -6,11 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store"
 )
 
@@ -90,34 +91,80 @@ func (f *fakeRuntime) WaitForReady(ctx context.Context, id string, timeout time.
 	return nil
 }
 
-type fakeSnapshot struct {
-	isSubvolume  bool
-	destroyCalls []string
+type fakeStateFS struct {
+	kind         string
+	removeCalls  []string
+	stateDirErr  error
+	stateRootErr error
 }
 
-func (f *fakeSnapshot) Kind() string {
-	return "btrfs"
+var deletionLayoutFS = statefs.NewManager(statefs.Options{Backend: "copy"})
+
+func (f *fakeStateFS) Kind() string {
+	if f == nil {
+		return ""
+	}
+	if f.kind != "" {
+		return f.kind
+	}
+	return "fake"
 }
 
-func (f *fakeSnapshot) Capabilities() snapshot.Capabilities {
-	return snapshot.Capabilities{}
+func (f *fakeStateFS) Capabilities() statefs.Capabilities {
+	return statefs.Capabilities{}
 }
 
-func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
-	return snapshot.CloneResult{}, nil
+func (f *fakeStateFS) Validate(root string) error {
+	return f.stateRootErr
 }
 
-func (f *fakeSnapshot) Snapshot(ctx context.Context, srcDir string, destDir string) error {
-	return nil
+func (f *fakeStateFS) BaseDir(root, imageID string) (string, error) {
+	return deletionLayoutFS.BaseDir(root, imageID)
 }
 
-func (f *fakeSnapshot) Destroy(ctx context.Context, dir string) error {
-	f.destroyCalls = append(f.destroyCalls, dir)
-	return nil
+func (f *fakeStateFS) StatesDir(root, imageID string) (string, error) {
+	return deletionLayoutFS.StatesDir(root, imageID)
 }
 
-func (f *fakeSnapshot) IsSubvolume(ctx context.Context, path string) (bool, error) {
-	return f.isSubvolume, nil
+func (f *fakeStateFS) StateDir(root, imageID, stateID string) (string, error) {
+	if f.stateDirErr != nil {
+		return "", f.stateDirErr
+	}
+	return deletionLayoutFS.StateDir(root, imageID, stateID)
+}
+
+func (f *fakeStateFS) JobRuntimeDir(root, jobID string) (string, error) {
+	return deletionLayoutFS.JobRuntimeDir(root, jobID)
+}
+
+func (f *fakeStateFS) EnsureBaseDir(ctx context.Context, baseDir string) error {
+	return os.MkdirAll(baseDir, 0o700)
+}
+
+func (f *fakeStateFS) EnsureStateDir(ctx context.Context, stateDir string) error {
+	return os.MkdirAll(stateDir, 0o700)
+}
+
+func (f *fakeStateFS) Clone(ctx context.Context, srcDir string, destDir string) (statefs.CloneResult, error) {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return statefs.CloneResult{}, err
+	}
+	return statefs.CloneResult{
+		MountDir: destDir,
+		Cleanup:  func() error { return nil },
+	}, nil
+}
+
+func (f *fakeStateFS) Snapshot(ctx context.Context, srcDir string, destDir string) error {
+	return os.MkdirAll(destDir, 0o700)
+}
+
+func (f *fakeStateFS) RemovePath(ctx context.Context, dir string) error {
+	f.removeCalls = append(f.removeCalls, dir)
+	if strings.TrimSpace(dir) == "" {
+		return nil
+	}
+	return os.RemoveAll(dir)
 }
 
 func newFakeStore() *fakeStore {
@@ -352,10 +399,10 @@ func TestDeleteInstanceBtrfsRuntimeSubvolume(t *testing.T) {
 		StateID:    "state-1",
 		RuntimeDir: strPtr(dir),
 	}
-	snap := &fakeSnapshot{isSubvolume: true}
+	fs := &fakeStateFS{kind: "btrfs"}
 	mgr, err := NewManager(Options{
-		Store:    st,
-		Snapshot: snap,
+		Store:   st,
+		StateFS: fs,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -368,8 +415,8 @@ func TestDeleteInstanceBtrfsRuntimeSubvolume(t *testing.T) {
 	if !found {
 		t.Fatalf("expected instance to be found")
 	}
-	if len(snap.destroyCalls) != 1 || snap.destroyCalls[0] != dir {
-		t.Fatalf("expected destroy to be called for runtime dir, got %+v", snap.destroyCalls)
+	if len(fs.removeCalls) != 1 || fs.removeCalls[0] != dir {
+		t.Fatalf("expected remove to be called for runtime dir, got %+v", fs.removeCalls)
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("expected runtime dir to be removed")
@@ -445,15 +492,16 @@ func TestDeleteStateNonRecurseDeletes(t *testing.T) {
 	st := newFakeStore()
 	statesRoot := t.TempDir()
 	st.states["root"] = store.StateEntry{StateID: "root", ImageID: "postgres:17"}
-	stateDir, err := stateDirFor(statesRoot, "postgres:17", "root")
+	fs := &fakeStateFS{}
+	stateDir, err := fs.StateDir(statesRoot, "postgres:17", "root")
 	if err != nil {
-		t.Fatalf("stateDirFor: %v", err)
+		t.Fatalf("stateDir: %v", err)
 	}
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	mgr, err := NewManager(Options{Store: st, StateStoreRoot: statesRoot})
+	mgr, err := NewManager(Options{Store: st, StateStoreRoot: statesRoot, StateFS: fs})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -540,13 +588,14 @@ func TestDeleteStateRecurseForceDeletes(t *testing.T) {
 	statesRoot := t.TempDir()
 	st.states["root"] = store.StateEntry{StateID: "root", ImageID: "postgres:17"}
 	st.states["child"] = store.StateEntry{StateID: "child", ParentStateID: &parent, ImageID: "postgres:17"}
-	rootDir, err := stateDirFor(statesRoot, "postgres:17", "root")
+	fs := &fakeStateFS{}
+	rootDir, err := fs.StateDir(statesRoot, "postgres:17", "root")
 	if err != nil {
-		t.Fatalf("stateDirFor root: %v", err)
+		t.Fatalf("stateDir root: %v", err)
 	}
-	childDir, err := stateDirFor(statesRoot, "postgres:17", "child")
+	childDir, err := fs.StateDir(statesRoot, "postgres:17", "child")
 	if err != nil {
-		t.Fatalf("stateDirFor child: %v", err)
+		t.Fatalf("stateDir child: %v", err)
 	}
 	if err := os.MkdirAll(rootDir, 0o700); err != nil {
 		t.Fatalf("mkdir root: %v", err)
@@ -560,6 +609,7 @@ func TestDeleteStateRecurseForceDeletes(t *testing.T) {
 		Store:          st,
 		Conn:           fakeConn{counts: map[string]int{"inst-1": 2}},
 		StateStoreRoot: statesRoot,
+		StateFS:        fs,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -788,50 +838,19 @@ func findNode(root DeleteNode, kind, id string) *DeleteNode {
 	return nil
 }
 
-func TestStateDirForErrors(t *testing.T) {
-	if _, err := stateDirFor("", "image", "state"); err == nil {
-		t.Fatalf("expected error for empty root")
-	}
-	if _, err := stateDirFor(t.TempDir(), "image", ""); err == nil {
-		t.Fatalf("expected error for empty state id")
-	}
-}
-
-func TestParseImageIDVariants(t *testing.T) {
-	engine, tag := parseImageID("")
-	if engine != "unknown" || tag != "latest" {
-		t.Fatalf("unexpected defaults: %s %s", engine, tag)
-	}
-	engine, tag = parseImageID("postgres")
-	if engine != "postgres" || tag != "latest" {
-		t.Fatalf("unexpected parse: %s %s", engine, tag)
-	}
-	engine, tag = parseImageID("repo/postgres:15")
-	if engine != "repo_postgres" || tag != "15" {
-		t.Fatalf("unexpected parse: %s %s", engine, tag)
-	}
-	engine, tag = parseImageID("repo/postgres@sha256:abc")
-	if engine != "repo_postgres" || tag != "latest" {
-		t.Fatalf("unexpected parse: %s %s", engine, tag)
-	}
-	engine, tag = parseImageID("repo/postgres:16@sha256:abc")
-	if engine != "repo_postgres" || tag != "16" {
-		t.Fatalf("unexpected parse: %s %s", engine, tag)
-	}
-}
-
 func TestRemoveStateDir(t *testing.T) {
 	root := t.TempDir()
 	imageID := "repo/postgres:15"
 	stateID := "state-1"
-	dir, err := stateDirFor(root, imageID, stateID)
+	fs := &fakeStateFS{}
+	dir, err := fs.StateDir(root, imageID, stateID)
 	if err != nil {
-		t.Fatalf("stateDirFor: %v", err)
+		t.Fatalf("stateDir: %v", err)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
-	manager := &Manager{stateStoreRoot: root}
+	manager := &Manager{stateStoreRoot: root, statefs: fs}
 	if err := manager.removeStateDir(strPtr(imageID), stateID); err != nil {
 		t.Fatalf("removeStateDir: %v", err)
 	}
@@ -845,7 +864,7 @@ func TestRemoveStateDirNoop(t *testing.T) {
 	if err := manager.removeStateDir(nil, "state"); err != nil {
 		t.Fatalf("expected noop remove, got %v", err)
 	}
-	manager = &Manager{stateStoreRoot: t.TempDir()}
+	manager = &Manager{stateStoreRoot: t.TempDir(), statefs: &fakeStateFS{}}
 	if err := manager.removeStateDir(nil, ""); err != nil {
 		t.Fatalf("expected noop for empty state id, got %v", err)
 	}

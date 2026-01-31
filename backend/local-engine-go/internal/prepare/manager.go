@@ -18,7 +18,7 @@ import (
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store"
 )
 
@@ -33,8 +33,8 @@ type Options struct {
 	Store          store.Store
 	Queue          queue.Store
 	Runtime        runtime.Runtime
-	Snapshot       snapshot.Manager
-	ValidateStore  func(kind string, root string) error
+	StateFS        statefs.StateFS
+	ValidateStore  func(root string) error
 	DBMS           dbms.Connector
 	StateStoreRoot string
 	Config         config.Store
@@ -50,13 +50,13 @@ type Manager struct {
 	store          store.Store
 	queue          queue.Store
 	runtime        runtime.Runtime
-	snapshot       snapshot.Manager
+	statefs        statefs.StateFS
 	dbms           dbms.Connector
 	stateStoreRoot string
 	config         config.Store
 	psql           psqlRunner
 	version        string
-	validateStore  func(kind string, root string) error
+	validateStore  func(root string) error
 	now            func() time.Time
 	idGen          func() (string, error)
 	async          bool
@@ -102,8 +102,8 @@ func NewManager(opts Options) (*Manager, error) {
 	if opts.Runtime == nil {
 		return nil, fmt.Errorf("runtime is required")
 	}
-	if opts.Snapshot == nil {
-		return nil, fmt.Errorf("snapshot manager is required")
+	if opts.StateFS == nil {
+		return nil, fmt.Errorf("statefs is required")
 	}
 	if opts.DBMS == nil {
 		return nil, fmt.Errorf("dbms connector is required")
@@ -127,13 +127,15 @@ func NewManager(opts Options) (*Manager, error) {
 	}
 	validateStore := opts.ValidateStore
 	if validateStore == nil {
-		validateStore = snapshot.ValidateStore
+		validateStore = func(root string) error {
+			return opts.StateFS.Validate(root)
+		}
 	}
 	return &Manager{
 		store:          opts.Store,
 		queue:          opts.Queue,
 		runtime:        opts.Runtime,
-		snapshot:       opts.Snapshot,
+		statefs:        opts.StateFS,
 		dbms:           opts.DBMS,
 		stateStoreRoot: opts.StateStoreRoot,
 		config:         opts.Config,
@@ -443,7 +445,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 	})
 	m.logJob(jobID, "running")
 
-	if err := m.validateStore(m.snapshot.Kind(), m.stateStoreRoot); err != nil {
+	if err := m.validateStore(m.stateStoreRoot); err != nil {
 		_ = m.failJob(jobID, errorResponse("internal_error", "state store not ready", err.Error()))
 		return
 	}
@@ -1392,13 +1394,9 @@ func (m *Manager) removeJobDir(jobID string) error {
 		return nil
 	}
 	path := filepath.Join(m.stateStoreRoot, "jobs", jobID)
-	if m.snapshot != nil && m.snapshot.Kind() == "btrfs" {
+	if m.statefs != nil {
 		runtimeDir := filepath.Join(path, "runtime")
-		if checker, ok := m.snapshot.(subvolumeChecker); ok {
-			if isSub, err := checker.IsSubvolume(context.Background(), runtimeDir); err == nil && isSub {
-				_ = m.snapshot.Destroy(context.Background(), runtimeDir)
-			}
-		}
+		_ = m.statefs.RemovePath(context.Background(), runtimeDir)
 	}
 	return os.RemoveAll(path)
 }

@@ -261,7 +261,7 @@ func newManagerWithRuntime(t *testing.T, rt engineRuntime.Runtime) *Manager {
 		Store:          &fakeStore{},
 		Queue:          newQueueStore(t),
 		Runtime:        rt,
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: filepath.Join(t.TempDir(), "state-store"),
 		Version:        "v1",

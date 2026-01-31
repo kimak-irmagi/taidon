@@ -33,7 +33,7 @@ import (
 	"sqlrs/engine/internal/registry"
 	runpkg "sqlrs/engine/internal/run"
 	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store/sqlite"
 )
 
@@ -243,7 +243,7 @@ func run(args []string) (int, error) {
 	if err != nil {
 		return 1, fmt.Errorf("config manager: %v", err)
 	}
-	snap := snapshot.NewManager(snapshot.Options{
+	stateFS := statefs.NewManager(statefs.Options{
 		Backend:        snapshotBackendFromConfig(configMgr),
 		StateStoreRoot: stateStoreRoot,
 	})
@@ -252,7 +252,7 @@ func run(args []string) (int, error) {
 		Store:          store,
 		Queue:          queueStore,
 		Runtime:        rt,
-		Snapshot:       snap,
+		StateFS:        stateFS,
 		DBMS:           connector,
 		StateStoreRoot: stateStoreRoot,
 		Config:         configMgr,
@@ -270,7 +270,7 @@ func run(args []string) (int, error) {
 		Store:          store,
 		Conn:           conntrack.Noop{},
 		Runtime:        rt,
-		Snapshot:       snap,
+		StateFS:        stateFS,
 		StateStoreRoot: stateStoreRoot,
 	})
 	if err != nil {

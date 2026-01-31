@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"sqlrs/engine/internal/conntrack"
 	"sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store"
 )
 
@@ -28,7 +27,7 @@ type Options struct {
 	Store          store.Store
 	Conn           conntrack.Tracker
 	Runtime        runtime.Runtime
-	Snapshot       snapshot.Manager
+	StateFS        statefs.StateFS
 	StateStoreRoot string
 }
 
@@ -36,7 +35,7 @@ type Manager struct {
 	store          store.Store
 	conn           conntrack.Tracker
 	runtime        runtime.Runtime
-	snapshot       snapshot.Manager
+	statefs        statefs.StateFS
 	stateStoreRoot string
 }
 
@@ -75,7 +74,7 @@ func NewManager(opts Options) (*Manager, error) {
 		store:          opts.Store,
 		conn:           tracker,
 		runtime:        opts.Runtime,
-		snapshot:       opts.Snapshot,
+		statefs:        opts.StateFS,
 		stateStoreRoot: strings.TrimSpace(opts.StateStoreRoot),
 	}, nil
 }
@@ -162,9 +161,9 @@ func (m *Manager) DeleteState(ctx context.Context, stateID string, opts DeleteOp
 		if opts.DryRun {
 			return result, true, nil
 		}
-		if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
-			return DeleteResult{}, true, err
-		}
+	if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
+		return DeleteResult{}, true, err
+	}
 		if err := m.store.DeleteState(ctx, stateID); err != nil {
 			return DeleteResult{}, true, err
 		}
@@ -279,10 +278,10 @@ func (m *Manager) deleteTree(ctx context.Context, node DeleteNode) error {
 		}
 		return m.store.DeleteInstance(ctx, node.ID)
 	case "state":
-		if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
-			return err
-		}
-		return m.store.DeleteState(ctx, node.ID)
+			if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
+				return err
+			}
+			return m.store.DeleteState(ctx, node.ID)
 	default:
 		return nil
 	}
@@ -316,10 +315,6 @@ func (m *Manager) stopRuntime(ctx context.Context, runtimeID *string) error {
 	return nil
 }
 
-type subvolumeChecker interface {
-	IsSubvolume(ctx context.Context, path string) (bool, error)
-}
-
 func (m *Manager) removeRuntimeDir(runtimeDir *string) error {
 	if runtimeDir == nil {
 		return nil
@@ -328,11 +323,9 @@ func (m *Manager) removeRuntimeDir(runtimeDir *string) error {
 	if dir == "" {
 		return nil
 	}
-	if m != nil && m.snapshot != nil && m.snapshot.Kind() == "btrfs" {
-		if checker, ok := m.snapshot.(subvolumeChecker); ok {
-			if isSub, err := checker.IsSubvolume(context.Background(), dir); err == nil && isSub {
-				_ = m.snapshot.Destroy(context.Background(), dir)
-			}
+	if m != nil && m.statefs != nil {
+		if err := m.statefs.RemovePath(context.Background(), dir); err == nil {
+			return nil
 		}
 	}
 	return os.RemoveAll(dir)
@@ -348,51 +341,18 @@ func (m *Manager) removeStateDir(imageID *string, stateID string) error {
 	if strings.TrimSpace(stateID) == "" {
 		return nil
 	}
+	if m.statefs == nil {
+		return nil
+	}
 	img := ""
 	if imageID != nil {
 		img = *imageID
 	}
-	path, err := stateDirFor(m.stateStoreRoot, img, stateID)
+	path, err := m.statefs.StateDir(m.stateStoreRoot, img, stateID)
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(path)
-}
-
-func stateDirFor(root string, imageID string, stateID string) (string, error) {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		return "", storeError("state store root is required")
-	}
-	engineID, version := parseImageID(imageID)
-	if strings.TrimSpace(stateID) == "" {
-		return "", storeError("state id is required")
-	}
-	return filepath.Join(root, "engines", engineID, version, "states", stateID), nil
-}
-
-func parseImageID(imageID string) (string, string) {
-	imageID = strings.TrimSpace(imageID)
-	if imageID == "" {
-		return "unknown", "latest"
-	}
-	tag := ""
-	withoutDigest := imageID
-	if at := strings.Index(imageID, "@"); at >= 0 {
-		withoutDigest = imageID[:at]
-	}
-	if colon := strings.LastIndex(withoutDigest, ":"); colon >= 0 {
-		tag = withoutDigest[colon+1:]
-		withoutDigest = withoutDigest[:colon]
-	}
-	if strings.TrimSpace(tag) == "" {
-		tag = "latest"
-	}
-	engineID := strings.ReplaceAll(withoutDigest, "/", "_")
-	if engineID == "" {
-		engineID = "unknown"
-	}
-	return engineID, tag
+	return m.statefs.RemovePath(context.Background(), path)
 }
 
 func strPtr(value string) *string {

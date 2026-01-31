@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 )
 
 type blockingSnapshot struct {
-	fakeSnapshot
-	started  chan struct{}
-	proceed  chan struct{}
-	calls    int
+	fakeStateFS
+	started chan struct{}
+	proceed chan struct{}
+	calls   int
 }
 
 func (b *blockingSnapshot) Snapshot(ctx context.Context, srcDir string, destDir string) error {
@@ -25,7 +25,7 @@ func (b *blockingSnapshot) Snapshot(ctx context.Context, srcDir string, destDir 
 		close(b.started)
 	}
 	<-b.proceed
-	return b.fakeSnapshot.Snapshot(ctx, srcDir, destDir)
+	return b.fakeStateFS.Snapshot(ctx, srcDir, destDir)
 }
 
 func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
@@ -34,7 +34,7 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 		started: make(chan struct{}),
 		proceed: make(chan struct{}),
 	}
-	mgr := newManagerWithSnapshot(t, store, snap)
+	mgr := newManagerWithStateFS(t, store, snap)
 
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -94,18 +94,18 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 		t.Fatalf("expected single state, got %+v", store.states)
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
-	if !stateBuildMarkerExists(paths.stateDir, snapshotKind(mgr.snapshot)) {
+	if !stateBuildMarkerExists(paths.stateDir, snapshotKind(mgr.statefs)) {
 		t.Fatalf("expected build marker")
 	}
 }
 
 func TestExecuteStateTaskCreatesBuildMarker(t *testing.T) {
 	store := &fakeStore{}
-	mgr := newManagerWithSnapshot(t, store, &fakeSnapshot{})
+	mgr := newManagerWithStateFS(t, store, &fakeStateFS{})
 
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -127,11 +127,11 @@ func TestExecuteStateTaskCreatesBuildMarker(t *testing.T) {
 	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
-	markerPath := stateBuildMarkerPath(paths.stateDir, snapshotKind(mgr.snapshot))
+	markerPath := stateBuildMarkerPath(paths.stateDir, snapshotKind(mgr.statefs))
 	if _, err := os.Stat(markerPath); err != nil {
 		t.Fatalf("expected marker, got %v", err)
 	}
@@ -139,8 +139,8 @@ func TestExecuteStateTaskCreatesBuildMarker(t *testing.T) {
 
 func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 	store := &fakeStore{}
-	snap := &fakeSnapshot{}
-	mgr := newManagerWithSnapshot(t, store, snap)
+	snap := &fakeStateFS{}
+	mgr := newManagerWithStateFS(t, store, snap)
 
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -160,7 +160,7 @@ func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 		},
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 	if err := os.WriteFile(stalePath, []byte("stale"), 0o600); err != nil {
 		t.Fatalf("write stale: %v", err)
 	}
-	if err := os.WriteFile(stateBuildMarkerPath(paths.stateDir, snapshotKind(mgr.snapshot)), []byte("ok"), 0o600); err != nil {
+	if err := os.WriteFile(stateBuildMarkerPath(paths.stateDir, snapshotKind(mgr.statefs)), []byte("ok"), 0o600); err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
 
@@ -189,13 +189,13 @@ func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 	}
 }
 
-func newManagerWithSnapshot(t *testing.T, store *fakeStore, snap snapshot.Manager) *Manager {
+func newManagerWithStateFS(t *testing.T, store *fakeStore, fs statefs.StateFS) *Manager {
 	t.Helper()
 	mgr, err := NewManager(Options{
 		Store:          store,
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},
-		Snapshot:       snap,
+		StateFS:        fs,
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: filepath.Join(t.TempDir(), "state-store"),
 		Version:        "v1",
@@ -207,22 +207,17 @@ func newManagerWithSnapshot(t *testing.T, store *fakeStore, snap snapshot.Manage
 }
 
 type btrfsSnapshot struct {
-	fakeSnapshot
-	isSubvolume bool
+	fakeStateFS
 }
 
 func (b *btrfsSnapshot) Kind() string {
 	return "btrfs"
 }
 
-func (b *btrfsSnapshot) IsSubvolume(ctx context.Context, path string) (bool, error) {
-	return b.isSubvolume, nil
-}
-
 func TestExecuteStateTaskCleansNonSubvolumeStateDirForBtrfs(t *testing.T) {
 	store := &fakeStore{}
-	snap := &btrfsSnapshot{isSubvolume: false}
-	mgr := newManagerWithSnapshot(t, store, snap)
+	snap := &btrfsSnapshot{}
+	mgr := newManagerWithStateFS(t, store, snap)
 
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -242,7 +237,7 @@ func TestExecuteStateTaskCleansNonSubvolumeStateDirForBtrfs(t *testing.T) {
 		},
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -267,8 +262,8 @@ func TestExecuteStateTaskCleansNonSubvolumeStateDirForBtrfs(t *testing.T) {
 
 func TestExecuteStateTaskDestroysSubvolumeStateDirForBtrfs(t *testing.T) {
 	store := &fakeStore{}
-	snap := &btrfsSnapshot{isSubvolume: true}
-	mgr := newManagerWithSnapshot(t, store, snap)
+	snap := &btrfsSnapshot{}
+	mgr := newManagerWithStateFS(t, store, snap)
 
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -288,7 +283,7 @@ func TestExecuteStateTaskDestroysSubvolumeStateDirForBtrfs(t *testing.T) {
 		},
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -299,7 +294,7 @@ func TestExecuteStateTaskDestroysSubvolumeStateDirForBtrfs(t *testing.T) {
 	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
-	if len(snap.destroyCalls) == 0 {
-		t.Fatalf("expected destroy to be called")
+	if len(snap.removeCalls) == 0 {
+		t.Fatalf("expected remove to be called")
 	}
 }

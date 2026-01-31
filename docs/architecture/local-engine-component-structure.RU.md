@@ -36,7 +36,7 @@
   - Удаляет `state-store/jobs/<job_id>` при удалении job.
 - `internal/executor`
   - Последовательно исполняет задачи job и эмитит события.
-  - Вызывает менеджер снапшотов и DBMS-коннектор вокруг снапшотов.
+  - Вызывает StateFS и DBMS-коннектор вокруг снапшотов.
 - `internal/runtime`
   - Адаптер Docker runtime (CLI в MVP).
   - Старт/стоп контейнеров; задает `PGDATA` и trust auth для Postgres.
@@ -47,9 +47,10 @@
   - Выполняет команды внутри контейнера и стримит вывод.
   - Пересоздает отсутствующие контейнеры из `runtime_dir` и обновляет
     `runtime_id` перед выполнением run-команд.
-- `internal/snapshot`
-  - Интерфейс менеджера снапшотов и выбор backend.
+- `internal/statefs`
+  - Интерфейс StateFS, выбор backend и валидация стора.
   - OverlayFS или btrfs в MVP, fallback на копирование.
+  - Владеет структурой путей и FS-specific cleanup.
 - `internal/dbms`
   - DBMS-специфичные хуки для подготовки и возобновления.
   - Postgres использует `pg_ctl` для fast shutdown/restart без остановки контейнера.
@@ -121,7 +122,7 @@ flowchart TD
   QUEUE["internal/prepare/queue"]
   EXEC["internal/executor"]
   RT["internal/runtime"]
-  SNAP["internal/snapshot"]
+  SNAP["internal/statefs"]
   DBMS["internal/dbms"]
   DEL["internal/deletion"]
   CONN["internal/conntrack"]

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store"
 )
 
@@ -53,81 +53,36 @@ type statePaths struct {
 	stateDir  string
 }
 
-func resolveStatePaths(root string, imageID string, stateID string) (statePaths, error) {
+func resolveStatePaths(root string, imageID string, stateID string, fs statefs.StateFS) (statePaths, error) {
 	if strings.TrimSpace(root) == "" {
 		return statePaths{}, fmt.Errorf("state store root is required")
 	}
-	engineID, version := parseImageID(imageID)
-	baseDir := filepath.Join(root, "engines", engineID, version, "base")
-	statesDir := filepath.Join(root, "engines", engineID, version, "states")
+	if fs == nil {
+		return statePaths{}, fmt.Errorf("statefs is required")
+	}
+	baseDir, err := fs.BaseDir(root, imageID)
+	if err != nil {
+		return statePaths{}, err
+	}
+	statesDir, err := fs.StatesDir(root, imageID)
+	if err != nil {
+		return statePaths{}, err
+	}
 	stateDir := ""
 	if strings.TrimSpace(stateID) != "" {
-		stateDir = filepath.Join(statesDir, stateID)
+		stateDir, err = fs.StateDir(root, imageID, stateID)
+		if err != nil {
+			return statePaths{}, err
+		}
 	}
 	return statePaths{
 		root:      root,
-		engine:    engineID,
-		version:   version,
+		engine:    filepath.Base(filepath.Dir(filepath.Dir(baseDir))),
+		version:   filepath.Base(filepath.Dir(baseDir)),
 		baseDir:   baseDir,
 		statesDir: statesDir,
 		stateDir:  stateDir,
 	}, nil
-}
-
-func parseImageID(imageID string) (string, string) {
-	imageID = strings.TrimSpace(imageID)
-	if imageID == "" {
-		return "unknown", "latest"
-	}
-	tag := ""
-	digest := ""
-	if at := strings.Index(imageID, "@"); at != -1 {
-		if at+1 < len(imageID) {
-			digest = imageID[at+1:]
-		}
-		imageID = imageID[:at]
-	}
-	if digest == "" {
-		if colon := strings.LastIndex(imageID, ":"); colon != -1 && colon > strings.LastIndex(imageID, "/") {
-			tag = imageID[colon+1:]
-			imageID = imageID[:colon]
-		}
-	} else {
-		tag = digest
-	}
-	engine := imageID
-	if slash := strings.LastIndex(engine, "/"); slash != -1 {
-		engine = engine[slash+1:]
-	}
-	engine = sanitizeSegment(engine)
-	tag = sanitizeSegment(tag)
-	if tag == "" {
-		tag = "latest"
-	}
-	return engine, tag
-}
-
-func sanitizeSegment(value string) string {
-	if value == "" {
-		return ""
-	}
-	var b strings.Builder
-	for _, r := range value {
-		if r > 127 {
-			b.WriteByte('_')
-			continue
-		}
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_' {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte('_')
-	}
-	out := b.String()
-	if out == "" || out == "." || out == ".." {
-		return "unknown"
-	}
-	return out
 }
 
 func mergeEnv(base []string, overrides map[string]string) []string {
@@ -181,17 +136,15 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 	if strings.TrimSpace(imageID) == "" {
 		return errorResponse("internal_error", "resolved image id is required", "")
 	}
-	paths, err := resolveStatePaths(m.stateStoreRoot, imageID, task.OutputStateID)
+	paths, err := resolveStatePaths(m.stateStoreRoot, imageID, task.OutputStateID, m.statefs)
 	if err != nil {
 		return errorResponse("internal_error", "cannot resolve state paths", err.Error())
 	}
 	if err := os.MkdirAll(paths.statesDir, 0o700); err != nil {
 		return errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
-	if m.snapshot == nil || m.snapshot.Kind() != "btrfs" {
-		if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
-			return errorResponse("internal_error", "cannot create state dir", err.Error())
-		}
+	if err := m.statefs.EnsureStateDir(ctx, paths.stateDir); err != nil {
+		return errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
 
 	runner, ephemeral := m.runnerForJob(jobID)
@@ -203,7 +156,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 	}
 
 	var errResp *ErrorResponse
-	kind := snapshotKind(m.snapshot)
+	kind := snapshotKind(m.statefs)
 	lockPath := stateBuildLockPath(paths.stateDir, kind)
 	lockErr := withStateBuildLock(ctx, paths.stateDir, lockPath, kind, func() error {
 		cached, err := m.isStateCached(task.OutputStateID)
@@ -215,13 +168,8 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			m.logTask(jobID, task.TaskID, "cached output_state=%s", task.OutputStateID)
 			return nil
 		}
-		if kind == "btrfs" {
-			if err := m.ensureCleanBtrfsStateDir(ctx, paths.stateDir); err != nil {
-				errResp = errorResponse("internal_error", "cannot reset state dir", err.Error())
-				return errStateBuildFailed
-			}
-		} else if stateBuildMarkerExists(paths.stateDir, kind) {
-			if err := resetStateDir(ctx, m.snapshot, paths.stateDir); err != nil {
+		if kind == "btrfs" || stateBuildMarkerExists(paths.stateDir, kind) {
+			if err := resetStateDir(ctx, m.statefs, paths.stateDir); err != nil {
 				errResp = errorResponse("internal_error", "cannot reset state dir", err.Error())
 				return errStateBuildFailed
 			}
@@ -287,7 +235,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		}()
 
 		m.appendLog(jobID, "snapshot: start")
-		if err := m.snapshot.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil {
+		if err := m.statefs.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil {
 			errResp = errorResponse("internal_error", "snapshot failed", err.Error())
 			return errStateBuildFailed
 		}
@@ -318,7 +266,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 				errResp = errorResponse("cancelled", "task cancelled", "")
 				return errStateBuildFailed
 			}
-			_ = m.snapshot.Destroy(context.Background(), paths.stateDir)
+			_ = m.statefs.RemovePath(context.Background(), paths.stateDir)
 			errResp = errorResponse("internal_error", "cannot store state", err.Error())
 			return errStateBuildFailed
 		}
@@ -447,7 +395,7 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	switch input.Kind {
 	case "image":
 		m.appendLog(jobID, fmt.Sprintf("docker: init base %s", imageID))
-		paths, err := resolveStatePaths(m.stateStoreRoot, imageID, "")
+		paths, err := resolveStatePaths(m.stateStoreRoot, imageID, "", m.statefs)
 		if err != nil {
 			return nil, errorResponse("internal_error", "cannot resolve state paths", err.Error())
 		}
@@ -472,7 +420,7 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		if strings.TrimSpace(entry.ImageID) != "" {
 			imageID = entry.ImageID
 		}
-		paths, err := resolveStatePaths(m.stateStoreRoot, imageID, input.ID)
+		paths, err := resolveStatePaths(m.stateStoreRoot, imageID, input.ID, m.statefs)
 		if err != nil {
 			return nil, errorResponse("internal_error", "cannot resolve state paths", err.Error())
 		}
@@ -486,7 +434,7 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	if err := os.MkdirAll(filepath.Dir(runtimeDir), 0o700); err != nil {
 		return nil, errorResponse("internal_error", "cannot create runtime dir", err.Error())
 	}
-	clone, err := m.snapshot.Clone(ctx, srcDir, runtimeDir)
+	clone, err := m.statefs.Clone(ctx, srcDir, runtimeDir)
 	if err != nil {
 		return nil, errorResponse("internal_error", "cannot clone state", err.Error())
 	}
@@ -517,7 +465,7 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		return nil, errorResponse("internal_error", "cannot start runtime", err.Error())
 	}
 	m.appendLog(jobID, fmt.Sprintf("docker: container started %s", instance.ID))
-	m.logJob(jobID, "runtime started container=%s host=%s port=%d snapshot=%s", instance.ID, instance.Host, instance.Port, m.snapshot.Kind())
+	m.logJob(jobID, "runtime started container=%s host=%s port=%d snapshot=%s", instance.ID, instance.Host, instance.Port, m.statefs.Kind())
 	m.appendLog(jobID, "docker: postgres ready")
 
 	return &jobRuntime{
@@ -536,7 +484,7 @@ func (m *Manager) ensureBaseState(ctx context.Context, imageID string, baseDir s
 	if initMarkerExists(baseDir) {
 		return nil
 	}
-	if err := ensureBaseDir(ctx, m.snapshot, baseDir); err != nil {
+	if err := ensureBaseDir(ctx, m.statefs, baseDir); err != nil {
 		return err
 	}
 	if err := withInitLock(ctx, baseDir, func() error {
@@ -692,11 +640,11 @@ func writeStateBuildMarker(stateDir string, kind string) error {
 
 const stateBuildLockDirName = ".build"
 
-func snapshotKind(snap snapshot.Manager) string {
-	if snap == nil {
+func snapshotKind(fs statefs.StateFS) string {
+	if fs == nil {
 		return ""
 	}
-	return snap.Kind()
+	return fs.Kind()
 }
 
 func stateBuildMarkerPath(stateDir string, kind string) string {
@@ -760,57 +708,21 @@ func isLockBusyError(err error, lockPath string) bool {
 	return false
 }
 
-type subvolumeEnsurer interface {
-	EnsureSubvolume(ctx context.Context, path string) error
-}
-
-type subvolumeChecker interface {
-	IsSubvolume(ctx context.Context, path string) (bool, error)
-}
-
-func ensureBaseDir(ctx context.Context, snap snapshot.Manager, baseDir string) error {
-	if snap != nil {
-		if ensurer, ok := snap.(subvolumeEnsurer); ok {
-			return ensurer.EnsureSubvolume(ctx, baseDir)
-		}
+func ensureBaseDir(ctx context.Context, fs statefs.StateFS, baseDir string) error {
+	if fs == nil {
+		return fmt.Errorf("statefs is required")
 	}
-	return os.MkdirAll(baseDir, 0o700)
+	return fs.EnsureBaseDir(ctx, baseDir)
 }
 
-func resetStateDir(ctx context.Context, snap snapshot.Manager, stateDir string) error {
-	if snap != nil && snap.Kind() == "btrfs" {
-		return snap.Destroy(ctx, stateDir)
+func resetStateDir(ctx context.Context, fs statefs.StateFS, stateDir string) error {
+	if fs == nil {
+		return fmt.Errorf("statefs is required")
 	}
-	if err := os.RemoveAll(stateDir); err != nil {
+	if err := fs.RemovePath(ctx, stateDir); err != nil {
 		return err
 	}
-	return os.MkdirAll(stateDir, 0o700)
-}
-
-func (m *Manager) ensureCleanBtrfsStateDir(ctx context.Context, stateDir string) error {
-	if strings.TrimSpace(stateDir) == "" {
-		return nil
-	}
-	info, err := os.Stat(stateDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if info == nil {
-		return nil
-	}
-	if checker, ok := m.snapshot.(subvolumeChecker); ok {
-		isSub, err := checker.IsSubvolume(ctx, stateDir)
-		if err != nil {
-			return err
-		}
-		if isSub {
-			return m.snapshot.Destroy(ctx, stateDir)
-		}
-	}
-	return os.RemoveAll(stateDir)
+	return fs.EnsureStateDir(ctx, stateDir)
 }
 
 func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) {

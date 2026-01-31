@@ -166,12 +166,12 @@ On Windows:
 
 ## 7. Windows / WSL2 Considerations
 
-- Engine and snapshotter run inside WSL2
+- Engine and StateFS run inside WSL2
 - CLI may run on Windows host or inside WSL2
 - Communication via localhost forwarding
 - Engine writes `engine.json` to the Windows state directory and receives that path via `/mnt/...`
 - Engine verifies the systemd mount for `SQLRS_STATE_STORE` at startup
-- Snapshot backend may fall back to copy-based strategy
+- StateFS backend may fall back to copy-based strategy
 
 ---
 

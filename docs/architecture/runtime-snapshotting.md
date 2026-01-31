@@ -38,7 +38,7 @@ Containers are **stateless executors**.
 
 ### 3.2 Host Storage Strategy (by platform)
 
-- **Linux (primary):** snapshotter is selected by filesystem of `SQLRS_STATE_STORE` (btrfs/zfs → CoW, otherwise copy/reflink).
+- **Linux (primary):** StateFS backend is selected by filesystem of `SQLRS_STATE_STORE` (btrfs/zfs → CoW, otherwise copy/reflink).
 - **Windows:** engine runs inside WSL2; state store is backed by a host VHDX mounted into WSL and formatted as btrfs when available, otherwise fall back to full copy.
 
 Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
@@ -118,16 +118,17 @@ Rationale:
 
 Used when CoW FS is unavailable.
 
-### 6.3 Pluggable Snapshotter Interface
+### 6.3 Pluggable StateFS Interface
 
 ```text
+Validate(state_store_root)
 Clone(base_state) -> sandbox_state
 Snapshot(sandbox_state) -> new_state
-Destroy(state_or_sandbox)
+RemovePath(state_or_sandbox)
 Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_receive }
 ```
 
-Implementation variants:
+Implementation variants (behind StateFS):
 
 - `OverlayFSSnapshotter`
 - `BtrfsSnapshotter`
@@ -136,15 +137,15 @@ Implementation variants:
 
 ### 6.4 Backend Selection Policy
 
-- The runtime selects a snapshotter based on host capabilities and optional config override
+- The runtime selects a StateFS backend based on host capabilities and optional config override
   (e.g., `snapshot.backend`).
 - If the preferred backend is unavailable, it **falls back to** `CopySnapshotter`.
 - The chosen backend is recorded in state metadata for GC/restore compatibility.
 
-### 6.5 Snapshotter Invariants
+### 6.5 StateFS Invariants
 
 - **Immutability:** a state is immutable after `Snapshot`.
-- **Idempotent destroy:** `Destroy` is safe to call repeatedly.
+- **Idempotent removal:** `RemovePath` is safe to call repeatedly (including subvolume deletion).
 - **Writable clone:** `Clone` always produces a writable sandbox independent of the base.
 - **Non-destructive snapshot:** `Snapshot` must not mutate the sandbox state.
 
@@ -191,8 +192,8 @@ Used for:
 
 ### 8.3 Consistency Control Boundary
 
-Consistency mode is decided by **orchestration** (prepare/run policy), not by the snapshotter.
-Snapshotters only declare whether they require a DB stop via `Capabilities().requires_db_stop`.
+Consistency mode is decided by **orchestration** (prepare/run policy), not by StateFS.
+StateFS only declares whether it requires a DB stop via `Capabilities().requires_db_stop`.
 If a backend requires a stop, orchestration **must** pause the DBMS before calling `Snapshot`.
 
 ---
@@ -270,6 +271,6 @@ This prevents accidental coupling to a single engine or layout.
 
 ## 12. Open Questions
 
-- Minimum viable abstraction for volume handles across snapshotters?
+- Minimum viable abstraction for volume handles across StateFS implementations?
 - How aggressively to snapshot large seed steps?
 - Default cooldown policy for instances?

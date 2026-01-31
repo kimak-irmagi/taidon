@@ -42,11 +42,11 @@ func TestFakeRuntimeInitBase(t *testing.T) {
 	}
 }
 
-func TestFakeSnapshotCloneDestroy(t *testing.T) {
-	snap := &fakeSnapshot{}
+func TestFakeStateFSCloneRemove(t *testing.T) {
+	fs := &fakeStateFS{}
 	src := t.TempDir()
 	dest := filepath.Join(t.TempDir(), "clone")
-	clone, err := snap.Clone(context.Background(), src, dest)
+	clone, err := fs.Clone(context.Background(), src, dest)
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
@@ -60,17 +60,17 @@ func TestFakeSnapshotCloneDestroy(t *testing.T) {
 	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot: %v", err)
 	}
-	if err := snap.Destroy(context.Background(), snapshotDir); err != nil {
-		t.Fatalf("Destroy: %v", err)
+	if err := fs.RemovePath(context.Background(), snapshotDir); err != nil {
+		t.Fatalf("RemovePath: %v", err)
 	}
 	if _, err := os.Stat(snapshotDir); !os.IsNotExist(err) {
 		t.Fatalf("expected snapshot dir removed")
 	}
 }
 
-func TestFakeSnapshotCapabilities(t *testing.T) {
-	snap := &fakeSnapshot{}
-	caps := snap.Capabilities()
+func TestFakeStateFSCapabilities(t *testing.T) {
+	fs := &fakeStateFS{}
+	caps := fs.Capabilities()
 	if !caps.RequiresDBStop || !caps.SupportsWritableClone || caps.SupportsSendReceive {
 		t.Fatalf("unexpected capabilities: %+v", caps)
 	}
