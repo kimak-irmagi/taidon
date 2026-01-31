@@ -44,29 +44,17 @@ func TestBuildDaemonCommandWSL(t *testing.T) {
 	if cmd.SysProcAttr == nil {
 		t.Fatalf("expected SysProcAttr to be set")
 	}
-	if runtime.GOOS == "windows" {
-		if !containsArg(cmd.Args, "SQLRS_STATE_STORE=/var/lib/sqlrs/store") {
-			t.Fatalf("expected SQLRS_STATE_STORE to be passed via args")
-		}
-		if !containsArg(cmd.Args, "SQLRS_WSL_MOUNT_UNIT=sqlrs-state-store.mount") {
-			t.Fatalf("expected SQLRS_WSL_MOUNT_UNIT to be passed via args")
-		}
-		if !containsArg(cmd.Args, "SQLRS_WSL_MOUNT_FSTYPE=btrfs") {
-			t.Fatalf("expected SQLRS_WSL_MOUNT_FSTYPE to be passed via args")
-		}
-		if !containsArg(cmd.Args, "nsenter") {
-			t.Fatalf("expected nsenter to be used in WSL command")
-		}
-	} else {
-		if cmd.Env == nil || !containsEnv(cmd.Env, "SQLRS_STATE_STORE=/var/lib/sqlrs/store") {
-			t.Fatalf("expected SQLRS_STATE_STORE env")
-		}
-		if !containsEnv(cmd.Env, "SQLRS_WSL_MOUNT_UNIT=sqlrs-state-store.mount") {
-			t.Fatalf("expected SQLRS_WSL_MOUNT_UNIT env")
-		}
-		if !containsEnv(cmd.Env, "SQLRS_WSL_MOUNT_FSTYPE=btrfs") {
-			t.Fatalf("expected SQLRS_WSL_MOUNT_FSTYPE env")
-		}
+	if !containsArg(cmd.Args, "SQLRS_STATE_STORE=/var/lib/sqlrs/store") {
+		t.Fatalf("expected SQLRS_STATE_STORE to be passed via args")
+	}
+	if !containsArg(cmd.Args, "SQLRS_WSL_MOUNT_UNIT=sqlrs-state-store.mount") {
+		t.Fatalf("expected SQLRS_WSL_MOUNT_UNIT to be passed via args")
+	}
+	if !containsArg(cmd.Args, "SQLRS_WSL_MOUNT_FSTYPE=btrfs") {
+		t.Fatalf("expected SQLRS_WSL_MOUNT_FSTYPE to be passed via args")
+	}
+	if !containsArg(cmd.Args, "nsenter") {
+		t.Fatalf("expected nsenter to be used in WSL command")
 	}
 }
 
