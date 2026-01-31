@@ -90,6 +90,9 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 	if err := ensureBtrfsProgs(distro, opts.Verbose); err != nil {
 		return wslUnavailable(opts, err.Error())
 	}
+	if err := ensureNsenter(distro, opts.Verbose); err != nil {
+		return wslUnavailable(opts, err.Error())
+	}
 	if err := ensureSystemdAvailable(distro, opts.Verbose); err != nil {
 		return wslUnavailable(opts, err.Error())
 	}
@@ -270,6 +273,25 @@ func ensureBtrfsProgs(distro string, verbose bool) error {
 	defer cancel()
 	if _, err := runWSLCommandFn(installCtx, distro, verbose, "apt-get install (root)", "apt-get", "install", "-y", "btrfs-progs"); err != nil {
 		return fmt.Errorf("btrfs-progs install failed: %v", err)
+	}
+	return nil
+}
+
+func ensureNsenter(distro string, verbose bool) error {
+	_, err := runWSLCommandFn(context.Background(), distro, verbose, "check nsenter", "which", "nsenter")
+	if err == nil {
+		return nil
+	}
+	logWSLInit(verbose, "installing nsenter (util-linux)")
+	updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	if _, err := runWSLCommandFn(updateCtx, distro, verbose, "apt-get update (root)", "apt-get", "update"); err != nil {
+		return fmt.Errorf("nsenter install failed: %v", err)
+	}
+	installCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	if _, err := runWSLCommandFn(installCtx, distro, verbose, "apt-get install (root)", "apt-get", "install", "-y", "util-linux"); err != nil {
+		return fmt.Errorf("nsenter install failed: %v", err)
 	}
 	return nil
 }

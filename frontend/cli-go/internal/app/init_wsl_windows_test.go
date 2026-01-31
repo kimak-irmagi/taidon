@@ -39,6 +39,8 @@ func TestInitWSLHappyPathWithStubs(t *testing.T) {
 			return "nodev   btrfs\n", nil
 		case "check btrfs-progs":
 			return "/usr/sbin/mkfs.btrfs\n", nil
+		case "check nsenter":
+			return "/usr/bin/nsenter\n", nil
 		case "check systemd (root)":
 			return "running\n", nil
 		case "check docker in WSL":
