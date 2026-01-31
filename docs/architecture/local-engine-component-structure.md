@@ -13,6 +13,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - `cmd/sqlrs-engine`
   - Parse flags and build dependencies.
   - Start the HTTP server.
+  - Resolve `SQLRS_STATE_STORE` and validate the WSL systemd mount when configured.
 - `internal/httpapi`
   - HTTP routing and handlers.
   - JSON/NDJSON encoding.
@@ -35,7 +36,7 @@ This document defines the internal component layout of the local sqlrs engine.
   - Removes `state-store/jobs/<job_id>` when jobs are deleted.
 - `internal/executor`
   - Runs job tasks sequentially and emits task/job events.
-  - Invokes snapshot manager and DBMS connector around snapshots.
+  - Invokes StateFS and DBMS connector around snapshots.
 - `internal/runtime`
   - Docker runtime adapter (CLI-based in MVP).
   - Starts/stops containers; sets `PGDATA` and trust auth for Postgres images.
@@ -46,9 +47,10 @@ This document defines the internal component layout of the local sqlrs engine.
   - Executes commands inside instance containers and streams output.
   - Recreates missing instance containers from `runtime_dir` and updates
     `runtime_id` before executing run commands.
-- `internal/snapshot`
-  - Snapshot manager interface and backend selection.
+- `internal/statefs`
+  - StateFS interface, backend selection, and store validation.
   - OverlayFS or btrfs snapshots in the MVP, copy fallback.
+  - Owns path layout and FS-specific cleanup.
 - `internal/dbms`
   - DBMS-specific hooks for snapshot preparation and resume.
   - Postgres implementation uses `pg_ctl` for fast shutdown/restart without stopping the container.
@@ -107,7 +109,7 @@ This document defines the internal component layout of the local sqlrs engine.
 - Persistent data (names/instances/states) lives in SQLite under `<StateDir>`.
 - Jobs, tasks, and job events live in SQLite under `<StateDir>`.
 - In-memory structures are caches or request-scoped only.
-- State store data lives under `<StateDir>/state-store`.
+- State store data lives under `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
 - Server config is stored in `<StateDir>/state-store/config.json` and mirrored in memory.
 
 ## 5. Dependency diagram
@@ -120,7 +122,7 @@ flowchart TD
   QUEUE["internal/prepare/queue"]
   EXEC["internal/executor"]
   RT["internal/runtime"]
-  SNAP["internal/snapshot"]
+  SNAP["internal/statefs"]
   DBMS["internal/dbms"]
   DEL["internal/deletion"]
   CONN["internal/conntrack"]

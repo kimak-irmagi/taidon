@@ -37,7 +37,7 @@ go build -o ../../dist/bin/sqlrs-engine ./cmd/sqlrs-engine
 
 ## Health check
 
-```
+```http
 GET /v1/health
 ```
 

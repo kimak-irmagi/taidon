@@ -24,3 +24,11 @@ func TestConfigureDetached(t *testing.T) {
 		t.Fatalf("expected SysProcAttr to be set")
 	}
 }
+
+func TestConfigureDetachedWSL(t *testing.T) {
+	cmd := exec.Command("wsl.exe")
+	configureDetachedWSL(cmd)
+	if cmd.SysProcAttr == nil {
+		t.Fatalf("expected SysProcAttr to be set")
+	}
+}

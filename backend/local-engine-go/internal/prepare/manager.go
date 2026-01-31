@@ -18,7 +18,7 @@ import (
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store"
 )
 
@@ -33,7 +33,8 @@ type Options struct {
 	Store          store.Store
 	Queue          queue.Store
 	Runtime        runtime.Runtime
-	Snapshot       snapshot.Manager
+	StateFS        statefs.StateFS
+	ValidateStore  func(root string) error
 	DBMS           dbms.Connector
 	StateStoreRoot string
 	Config         config.Store
@@ -49,12 +50,13 @@ type Manager struct {
 	store          store.Store
 	queue          queue.Store
 	runtime        runtime.Runtime
-	snapshot       snapshot.Manager
+	statefs        statefs.StateFS
 	dbms           dbms.Connector
 	stateStoreRoot string
 	config         config.Store
 	psql           psqlRunner
 	version        string
+	validateStore  func(root string) error
 	now            func() time.Time
 	idGen          func() (string, error)
 	async          bool
@@ -100,8 +102,8 @@ func NewManager(opts Options) (*Manager, error) {
 	if opts.Runtime == nil {
 		return nil, fmt.Errorf("runtime is required")
 	}
-	if opts.Snapshot == nil {
-		return nil, fmt.Errorf("snapshot manager is required")
+	if opts.StateFS == nil {
+		return nil, fmt.Errorf("statefs is required")
 	}
 	if opts.DBMS == nil {
 		return nil, fmt.Errorf("dbms connector is required")
@@ -123,16 +125,23 @@ func NewManager(opts Options) (*Manager, error) {
 	if psql == nil {
 		psql = containerPsqlRunner{runtime: opts.Runtime}
 	}
+	validateStore := opts.ValidateStore
+	if validateStore == nil {
+		validateStore = func(root string) error {
+			return opts.StateFS.Validate(root)
+		}
+	}
 	return &Manager{
 		store:          opts.Store,
 		queue:          opts.Queue,
 		runtime:        opts.Runtime,
-		snapshot:       opts.Snapshot,
+		statefs:        opts.StateFS,
 		dbms:           opts.DBMS,
 		stateStoreRoot: opts.StateStoreRoot,
 		config:         opts.Config,
 		psql:           psql,
 		version:        opts.Version,
+		validateStore:  validateStore,
 		now:            now,
 		idGen:          idGen,
 		async:          opts.Async,
@@ -435,6 +444,11 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		PrepareArgsNormalized: &prepared.argsNormalized,
 	})
 	m.logJob(jobID, "running")
+
+	if err := m.validateStore(m.stateStoreRoot); err != nil {
+		_ = m.failJob(jobID, errorResponse("internal_error", "state store not ready", err.Error()))
+		return
+	}
 
 	tasks, stateID, errResp := m.loadOrPlanTasks(ctx, jobID, prepared)
 	if errResp != nil {
@@ -1380,6 +1394,10 @@ func (m *Manager) removeJobDir(jobID string) error {
 		return nil
 	}
 	path := filepath.Join(m.stateStoreRoot, "jobs", jobID)
+	if m.statefs != nil {
+		runtimeDir := filepath.Join(path, "runtime")
+		_ = m.statefs.RemovePath(context.Background(), runtimeDir)
+	}
 	return os.RemoveAll(path)
 }
 

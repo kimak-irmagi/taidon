@@ -16,16 +16,23 @@ import (
 )
 
 type RunOptions struct {
-	ProfileName    string
-	Mode           string
-	Endpoint       string
-	Autostart      bool
-	DaemonPath     string
-	RunDir         string
-	StateDir       string
-	Timeout        time.Duration
-	StartupTimeout time.Duration
-	Verbose        bool
+	ProfileName     string
+	Mode            string
+	Endpoint        string
+	Autostart       bool
+	DaemonPath      string
+	RunDir          string
+	StateDir        string
+	EngineRunDir    string
+	EngineStatePath string
+	EngineStoreDir  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
+	WSLMountFSType  string
+	WSLDistro       string
+	Timeout         time.Duration
+	StartupTimeout  time.Duration
+	Verbose         bool
 
 	Kind        string
 	InstanceRef string
@@ -100,12 +107,19 @@ func DeleteInstance(ctx context.Context, opts RunOptions, instanceID string) err
 	if strings.TrimSpace(instanceID) == "" {
 		return nil
 	}
+	_, _, err := DeleteInstanceDetailed(ctx, opts, instanceID)
+	return err
+}
+
+func DeleteInstanceDetailed(ctx context.Context, opts RunOptions, instanceID string) (client.DeleteResult, int, error) {
+	if strings.TrimSpace(instanceID) == "" {
+		return client.DeleteResult{}, 0, nil
+	}
 	cliClient, err := runClient(ctx, opts)
 	if err != nil {
-		return err
+		return client.DeleteResult{}, 0, err
 	}
-	_, _, err = cliClient.DeleteInstance(ctx, instanceID, client.DeleteOptions{})
-	return err
+	return cliClient.DeleteInstance(ctx, instanceID, client.DeleteOptions{})
 }
 
 func runClient(ctx context.Context, opts RunOptions) (*client.Client, error) {
@@ -122,14 +136,21 @@ func runClient(ctx context.Context, opts RunOptions) (*client.Client, error) {
 				fmt.Fprintln(os.Stderr, "checking local engine state")
 			}
 			resolved, err := daemon.ConnectOrStart(ctx, daemon.ConnectOptions{
-				Endpoint:       endpoint,
-				Autostart:      opts.Autostart,
-				DaemonPath:     opts.DaemonPath,
-				RunDir:         opts.RunDir,
-				StateDir:       opts.StateDir,
-				StartupTimeout: opts.StartupTimeout,
-				ClientTimeout:  opts.Timeout,
-				Verbose:        opts.Verbose,
+				Endpoint:        endpoint,
+				Autostart:       opts.Autostart,
+				DaemonPath:      opts.DaemonPath,
+				RunDir:          opts.RunDir,
+				StateDir:        opts.StateDir,
+				EngineRunDir:    opts.EngineRunDir,
+				EngineStatePath: opts.EngineStatePath,
+				EngineStoreDir:  opts.EngineStoreDir,
+				WSLVHDXPath:     opts.WSLVHDXPath,
+				WSLMountUnit:  opts.WSLMountUnit,
+				WSLMountFSType:  opts.WSLMountFSType,
+				WSLDistro:       opts.WSLDistro,
+				StartupTimeout:  opts.StartupTimeout,
+				ClientTimeout:   opts.Timeout,
+				Verbose:         opts.Verbose,
 			})
 			if err != nil {
 				return nil, err

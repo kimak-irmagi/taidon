@@ -221,18 +221,33 @@ func TestBtrfsEnsureSubvolumeExistingSubvolume(t *testing.T) {
 	}
 }
 
-func TestBtrfsEnsureSubvolumeRejectsNonSubvolume(t *testing.T) {
+func TestBtrfsEnsureSubvolumeRecreatesNonSubvolume(t *testing.T) {
 	prevStat := osStatBtrfs
 	osStatBtrfs = func(string) (os.FileInfo, error) {
 		return &btrfsFakeFileInfo{}, nil
 	}
 	t.Cleanup(func() { osStatBtrfs = prevStat })
 
-	runner := &btrfsFakeRunner{err: errors.New("not subvolume")}
+	prevRemove := osRemoveAllBtrfs
+	removed := ""
+	osRemoveAllBtrfs = func(path string) error {
+		removed = path
+		return nil
+	}
+	t.Cleanup(func() { osRemoveAllBtrfs = prevRemove })
+
+	runner := &btrfsSequencedRunner{failOnCall: 1, err: errors.New("not subvolume")}
 	mgr := btrfsManager{runner: runner}
 	path := filepath.Join(t.TempDir(), "state-1")
-	if err := mgr.EnsureSubvolume(context.Background(), path); err == nil {
-		t.Fatalf("expected error for non-subvolume")
+	if err := mgr.EnsureSubvolume(context.Background(), path); err != nil {
+		t.Fatalf("expected recreate, got %v", err)
+	}
+	if removed != path {
+		t.Fatalf("expected remove of %s, got %s", path, removed)
+	}
+	if len(runner.calls) != 2 || !equalArgs(runner.calls[0].args, []string{"subvolume", "show", path}) ||
+		!equalArgs(runner.calls[1].args, []string{"subvolume", "create", path}) {
+		t.Fatalf("unexpected calls: %+v", runner.calls)
 	}
 }
 
@@ -259,6 +274,83 @@ func TestBtrfsEnsureSubvolumeCreateError(t *testing.T) {
 	mgr := btrfsManager{runner: &btrfsFakeRunner{err: errors.New("boom")}}
 	if err := mgr.EnsureSubvolume(context.Background(), "state"); err == nil {
 		t.Fatalf("expected create error")
+	}
+}
+
+func TestBtrfsEnsureSubvolumeRemoveError(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return &btrfsFakeFileInfo{}, nil
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	prevRemove := osRemoveAllBtrfs
+	osRemoveAllBtrfs = func(string) error {
+		return errors.New("remove failed")
+	}
+	t.Cleanup(func() { osRemoveAllBtrfs = prevRemove })
+
+	runner := &btrfsSequencedRunner{failOnCall: 1, err: errors.New("not subvolume")}
+	mgr := btrfsManager{runner: runner}
+	if err := mgr.EnsureSubvolume(context.Background(), "state"); err == nil {
+		t.Fatalf("expected remove error")
+	}
+}
+
+func TestBtrfsIsSubvolumeMissingPath(t *testing.T) {
+	mgr := btrfsManager{runner: &btrfsFakeRunner{}}
+	if _, err := mgr.IsSubvolume(context.Background(), " "); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestBtrfsIsSubvolumeNotExists(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	mgr := btrfsManager{runner: &btrfsFakeRunner{}}
+	ok, err := mgr.IsSubvolume(context.Background(), "/data/subvol")
+	if err != nil || ok {
+		t.Fatalf("expected missing to be false, got ok=%v err=%v", ok, err)
+	}
+}
+
+func TestBtrfsIsSubvolumeShowErrorReturnsFalse(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return &btrfsFakeFileInfo{}, nil
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	mgr := btrfsManager{runner: &btrfsFakeRunner{err: errors.New("boom")}}
+	ok, err := mgr.IsSubvolume(context.Background(), "/data/subvol")
+	if err != nil || ok {
+		t.Fatalf("expected false on show error, got ok=%v err=%v", ok, err)
+	}
+}
+
+func TestBtrfsIsSubvolumeSuccess(t *testing.T) {
+	prevStat := osStatBtrfs
+	osStatBtrfs = func(string) (os.FileInfo, error) {
+		return &btrfsFakeFileInfo{}, nil
+	}
+	t.Cleanup(func() { osStatBtrfs = prevStat })
+
+	runner := &btrfsFakeRunner{}
+	mgr := btrfsManager{runner: runner}
+	ok, err := mgr.IsSubvolume(context.Background(), "/data/subvol")
+	if err != nil || !ok {
+		t.Fatalf("expected true, got ok=%v err=%v", ok, err)
+	}
+	if len(runner.calls) == 0 {
+		t.Fatalf("expected subvolume show call")
+	}
+	call := runner.calls[0]
+	if call.name != "btrfs" || len(call.args) < 3 || call.args[0] != "subvolume" || call.args[1] != "show" || call.args[2] != "/data/subvol" {
+		t.Fatalf("expected subvolume show call, got %+v", call)
 	}
 }
 

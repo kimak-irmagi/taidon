@@ -31,7 +31,7 @@ func runPlan(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.Lo
 		fmt.Fprint(stderr, formatImageSource(imageID, source))
 	}
 
-	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin)
+	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin, buildPathConverter(runOpts))
 	if err != nil {
 		return err
 	}

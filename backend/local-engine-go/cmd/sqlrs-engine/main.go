@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,7 @@ import (
 	"sqlrs/engine/internal/registry"
 	runpkg "sqlrs/engine/internal/run"
 	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store/sqlite"
 )
 
@@ -119,6 +120,7 @@ var randReader = rand.Reader
 var writeFileFn = os.WriteFile
 var renameFn = os.Rename
 var idleTickerEvery = time.Second
+var runMountCommandFn = runMountCommand
 var openDBFn = func(path string) (*sql.DB, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("sqlite path is empty")
@@ -194,11 +196,17 @@ func run(args []string) (int, error) {
 	}
 
 	stateDir := filepath.Dir(*statePath)
-	stateStoreRoot := filepath.Join(stateDir, "state-store")
+	stateStoreRoot := strings.TrimSpace(os.Getenv("SQLRS_STATE_STORE"))
+	if stateStoreRoot == "" {
+		stateStoreRoot = filepath.Join(stateDir, "state-store")
+	}
+	if err := ensureWSLMount(stateStoreRoot); err != nil {
+		return 1, fmt.Errorf("wsl mount: %v", err)
+	}
 	if err := os.MkdirAll(stateStoreRoot, 0o700); err != nil {
 		return 1, fmt.Errorf("create state store root: %v", err)
 	}
-	db, err := openDBFn(filepath.Join(stateDir, "state.db"))
+	db, err := openDBFn(filepath.Join(stateStoreRoot, "state.db"))
 	if err != nil {
 		return 1, fmt.Errorf("open state db: %v", err)
 	}
@@ -235,7 +243,7 @@ func run(args []string) (int, error) {
 	if err != nil {
 		return 1, fmt.Errorf("config manager: %v", err)
 	}
-	snap := snapshot.NewManager(snapshot.Options{
+	stateFS := statefs.NewManager(statefs.Options{
 		Backend:        snapshotBackendFromConfig(configMgr),
 		StateStoreRoot: stateStoreRoot,
 	})
@@ -244,7 +252,7 @@ func run(args []string) (int, error) {
 		Store:          store,
 		Queue:          queueStore,
 		Runtime:        rt,
-		Snapshot:       snap,
+		StateFS:        stateFS,
 		DBMS:           connector,
 		StateStoreRoot: stateStoreRoot,
 		Config:         configMgr,
@@ -262,6 +270,7 @@ func run(args []string) (int, error) {
 		Store:          store,
 		Conn:           conntrack.Noop{},
 		Runtime:        rt,
+		StateFS:        stateFS,
 		StateStoreRoot: stateStoreRoot,
 	})
 	if err != nil {
@@ -423,4 +432,87 @@ func isCharDevice(file *os.File) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func ensureWSLMount(stateStoreRoot string) error {
+	unit := strings.TrimSpace(os.Getenv("SQLRS_WSL_MOUNT_UNIT"))
+	fstype := strings.TrimSpace(os.Getenv("SQLRS_WSL_MOUNT_FSTYPE"))
+	if unit == "" && fstype == "" {
+		return nil
+	}
+	if unit == "" {
+		return fmt.Errorf("SQLRS_WSL_MOUNT_UNIT must be set")
+	}
+	if strings.TrimSpace(stateStoreRoot) == "" {
+		return fmt.Errorf("SQLRS_STATE_STORE is required to mount WSL device")
+	}
+	if fstype == "" {
+		fstype = "btrfs"
+	}
+	if err := os.MkdirAll(stateStoreRoot, 0o700); err != nil {
+		return err
+	}
+	active, err := isSystemdUnitActive(unit)
+	if err != nil {
+		return fmt.Errorf("mount unit check failed: %w", err)
+	}
+	if !active {
+		if _, err := runMountCommandFn("systemctl", "start", unit); err != nil {
+			return fmt.Errorf("mount unit start failed: %w", err)
+		}
+		active, err = isSystemdUnitActive(unit)
+		if err != nil {
+			return fmt.Errorf("mount unit check failed: %w", err)
+		}
+		if !active {
+			return fmt.Errorf("mount unit is not active")
+		}
+	}
+	fsType, mounted, err := findmntFSType(stateStoreRoot)
+	if err != nil {
+		return err
+	}
+	if !mounted || fsType == "" {
+		return fmt.Errorf("mount verification failed for %s", stateStoreRoot)
+	}
+	if fsType != fstype {
+		return fmt.Errorf("mounted filesystem is %s, expected %s", fsType, fstype)
+	}
+	return nil
+}
+
+func findmntFSType(target string) (string, bool, error) {
+	out, err := runMountCommandFn("findmnt", "-n", "-o", "FSTYPE", "-T", target)
+	if err == nil {
+		return strings.TrimSpace(out), true, nil
+	}
+	if isExitStatus(err, 1) {
+		return "", false, nil
+	}
+	return "", false, err
+}
+
+func isExitStatus(err error, code int) bool {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode() == code
+	}
+	return false
+}
+
+func isSystemdUnitActive(unit string) (bool, error) {
+	out, err := runMountCommandFn("systemctl", "is-active", unit)
+	if err != nil {
+		if isExitStatus(err, 3) || isExitStatus(err, 4) {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(out) == "active", nil
+}
+
+func runMountCommand(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
 }

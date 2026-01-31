@@ -6,6 +6,7 @@ type Config struct {
 	DefaultProfile string                   `yaml:"defaultProfile"`
 	Client         ClientConfig             `yaml:"client"`
 	Orchestrator   OrchestratorConfig       `yaml:"orchestrator"`
+	Engine         EngineConfig             `yaml:"engine"`
 	DBMS           DBMSConfig               `yaml:"dbms"`
 	Profiles       map[string]ProfileConfig `yaml:"profiles"`
 }
@@ -25,6 +26,26 @@ type OrchestratorConfig struct {
 
 type DBMSConfig struct {
 	Image string `yaml:"image"`
+}
+
+type EngineConfig struct {
+	StorePath string          `yaml:"storePath"`
+	WSL       EngineWSLConfig `yaml:"wsl"`
+}
+
+type EngineWSLConfig struct {
+	Mode       string `yaml:"mode"`
+	Distro     string `yaml:"distro"`
+	StateDir   string `yaml:"stateDir"`
+	EnginePath string `yaml:"enginePath"`
+	Mount      EngineWSLMountConfig `yaml:"mount"`
+}
+
+type EngineWSLMountConfig struct {
+	Device     string `yaml:"device"`
+	FSType     string `yaml:"fstype"`
+	DeviceUUID string `yaml:"deviceUUID"`
+	Unit       string `yaml:"unit"`
 }
 
 type ProfileConfig struct {

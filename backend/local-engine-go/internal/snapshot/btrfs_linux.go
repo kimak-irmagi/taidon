@@ -4,6 +4,7 @@ package snapshot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ var statfsFn = func(path string, stat *syscall.Statfs_t) error {
 var osMkdirAllBtrfs = os.MkdirAll
 var execLookPathBtrfs = exec.LookPath
 var osStatBtrfs = os.Stat
+var osRemoveAllBtrfs = os.RemoveAll
 
 type btrfsManager struct {
 	runner commandRunner
@@ -104,7 +106,29 @@ func (m btrfsManager) EnsureSubvolume(ctx context.Context, path string) error {
 		if m.runner.Run(ctx, "btrfs", []string{"subvolume", "show", path}) == nil {
 			return nil
 		}
-		return fmt.Errorf("path exists but is not a btrfs subvolume: %s", path)
+		if err := osRemoveAllBtrfs(path); err != nil {
+			return fmt.Errorf("path exists but is not a btrfs subvolume: %s", path)
+		}
+		return m.runner.Run(ctx, "btrfs", []string{"subvolume", "create", path})
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return m.runner.Run(ctx, "btrfs", []string{"subvolume", "create", path})
+}
+
+func (m btrfsManager) IsSubvolume(ctx context.Context, path string) (bool, error) {
+	if strings.TrimSpace(path) == "" {
+		return false, fmt.Errorf("path is required")
+	}
+	path = filepath.Clean(path)
+	if _, err := osStatBtrfs(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := m.runner.Run(ctx, "btrfs", []string{"subvolume", "show", path}); err != nil {
+		return false, nil
+	}
+	return true, nil
 }

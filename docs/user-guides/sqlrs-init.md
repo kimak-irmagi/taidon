@@ -78,7 +78,7 @@ Behavior:
 
 - Local workspace config format: **YAML**
 - Default file name: `.sqlrs/config.yaml`
-- Editing config files is **out of scope** for `sqlrs init`
+- `sqlrs init` may write workspace config when flags require it (e.g., `--engine`, `--shared-cache`, `--wsl`)
 - If config exists but cannot be parsed → treated as corruption
 
 Global config is NOT created or modified by default.
@@ -120,6 +120,62 @@ Global cache initialization is deferred.
 
 Do not create or modify any files.
 Print intended actions.
+
+### `--update`
+
+Allow updating an existing workspace configuration.
+
+- If `.sqlrs/` already exists, config updates are applied.
+- Without `--update`, an existing workspace remains unchanged.
+- If `.sqlrs/` does not exist, `--update` behaves like a normal init (creates workspace).
+- If `config.yaml` is missing or corrupted, `--update` recreates it.
+- If `--update` is used with `--wsl` and WSL init fails, the workspace config is left unchanged.
+
+### `--wsl`
+
+Enable WSL2 setup flow on Windows:
+
+- validates WSL availability,
+- resolves the target distro (default or `--distro`),
+- ensures the WSL state dir is backed by btrfs (host VHDX + GPT + btrfs mount),
+- installs a systemd mount unit inside the WSL distro so the btrfs mount is visible
+  to Docker and all child processes,
+- writes `engine.wsl.*` settings into `.sqlrs/config.yaml` (including mount metadata).
+
+WSL+btrfs requires **systemd** inside the selected distro. If systemd is not enabled:
+
+- with `--require`: init fails,
+- without `--require`: init warns and falls back to non-WSL configuration.
+
+After a successful WSL init, WSL must be restarted (`wsl.exe --shutdown`) so the
+systemd unit is activated.
+
+If `--require` is **not** set, WSL failures produce a warning and fallback to non-WSL configuration.
+
+### `--store-size <N>GB`
+
+Set the size of the **host VHDX** used for the WSL btrfs state store.
+
+- Required suffix: `GB`
+- Default: `100GB`
+
+### `--reinit`
+
+Recreate the WSL btrfs store from scratch (destructive).
+
+Also disables and removes the WSL systemd mount unit before recreating the volume.
+
+### `--distro <name>`
+
+Use a specific WSL distro name. If omitted, the default distro is used (or a single available distro).
+
+### `--require`
+
+Require WSL+btrfs. If unavailable, `sqlrs init` fails (no fallback).
+
+### `--no-start`
+
+Do not start the WSL distro during init.
 
 ---
 
@@ -171,6 +227,24 @@ sqlrs init --engine /opt/sqlrs/engine
 
 ```bash
 sqlrs init --force
+```
+
+### Initialize WSL (Windows)
+
+```bash
+sqlrs init --wsl
+```
+
+### Update an existing workspace config
+
+```bash
+sqlrs init --update --wsl
+```
+
+### Initialize WSL with explicit distro and no autostart
+
+```bash
+sqlrs init --wsl --distro Ubuntu-22.04 --no-start
 ```
 
 ---

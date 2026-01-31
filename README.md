@@ -155,6 +155,39 @@ node scripts/dev/local-status.mjs
 node scripts/dev/run-local-engine.mjs
 ```
 
+### Windows (WSL2)
+
+Prerequisites:
+
+- Docker Desktop (Linux containers)
+- WSL2 installed with at least one Linux distro
+
+Build binaries (PowerShell):
+
+```powershell
+go build -o dist/bin/sqlrs-engine.exe ./backend/local-engine-go/cmd/sqlrs-engine
+go build -o dist/bin/sqlrs.exe ./frontend/cli-go/cmd/sqlrs
+```
+
+Initialize WSL + btrfs (loopback image) and write workspace config:
+
+```powershell
+.\dist\bin\sqlrs.exe init --wsl
+```
+
+Notes:
+
+- `sqlrs init --wsl` validates WSL, resolves the distro, and ensures the WSL state dir is on **btrfs**.
+- The current implementation creates a host VHDX at `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`, formats it as btrfs inside WSL, and mounts it to `~/.local/state/sqlrs/store`.
+- If WSL or btrfs is missing, `sqlrs init --wsl` warns and falls back to the Windows engine. Use `--require` to fail instead of falling back.
+- Use `--no-start` to skip auto-starting the WSL distro during init.
+
+Check status:
+
+```powershell
+.\dist\bin\sqlrs.exe status
+```
+
 ---
 
 ### **Documentation**

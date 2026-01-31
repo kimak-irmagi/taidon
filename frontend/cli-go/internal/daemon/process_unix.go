@@ -22,3 +22,7 @@ func processExists(pid int) bool {
 func configureDetached(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
+
+func configureDetachedWSL(cmd *exec.Cmd) {
+	configureDetached(cmd)
+}

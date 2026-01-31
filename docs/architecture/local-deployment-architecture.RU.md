@@ -157,17 +157,21 @@ Engine выполняет `psql` внутри DB-контейнера через
 На Windows:
 
 - Docker работает внутри WSL2
-- State store живет внутри Linux файловой системы
+- State store живет внутри Linux файловой системы (btrfs loopback)
+- `sqlrs init --wsl` устанавливает systemd mount unit внутри выбранного дистрибутива,
+  чтобы btrfs-том был виден Docker и всем дочерним процессам
+- Engine проверяет активность маунта перед работой со state store
 
 ---
 
 ## 7. Особенности Windows / WSL2
 
-- Engine и snapshotter работают внутри WSL2
+- Engine и StateFS работают внутри WSL2
 - CLI может работать на Windows host или внутри WSL2
 - Коммуникация через localhost forwarding
-- Engine пишет `engine.json` внутри WSL state directory; Windows CLI читает его через `wslpath`/interop, чтобы подключиться через проброшенный TCP порт
-- Snapshot backend может откатываться на copy-based стратегию
+- Engine пишет `engine.json` в Windows state dir и получает путь через `/mnt/...`
+- Engine проверяет systemd-маунт `SQLRS_STATE_STORE` при старте
+- StateFS backend может откатываться на copy-based стратегию
 
 ---
 

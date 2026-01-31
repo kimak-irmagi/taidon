@@ -11,7 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -387,6 +390,29 @@ func TestRunOpenStateDBError(t *testing.T) {
 	}
 }
 
+func TestRunUsesStateStoreRootForDB(t *testing.T) {
+	prevOpen := openDBFn
+	var gotPath string
+	openDBFn = func(path string) (*sql.DB, error) {
+		gotPath = path
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { openDBFn = prevOpen })
+
+	stateDir := t.TempDir()
+	storeRoot := filepath.Join(t.TempDir(), "store-root")
+	t.Setenv("SQLRS_STATE_STORE", storeRoot)
+	statePath := filepath.Join(stateDir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "open state db") {
+		t.Fatalf("expected state db error, got code=%d err=%v", code, err)
+	}
+	expected := filepath.Join(storeRoot, "state.db")
+	if gotPath != expected {
+		t.Fatalf("expected state db path %s, got %s", expected, gotPath)
+	}
+}
+
 func TestRunOpenQueueDBError(t *testing.T) {
 	prevNew := newQueueFn
 	newQueueFn = func(*sql.DB) (*queue.SQLiteStore, error) {
@@ -494,6 +520,28 @@ func TestRunStateStoreRootError(t *testing.T) {
 	}
 }
 
+func TestRunStateStoreRootFromEnv(t *testing.T) {
+	previousServe := serveHTTP
+	serveHTTP = func(server *http.Server, listener net.Listener) error {
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
+	t.Cleanup(func() { serveHTTP = previousServe })
+
+	dir := t.TempDir()
+	storeRoot := filepath.Join(dir, "custom-store")
+	t.Setenv("SQLRS_STATE_STORE", storeRoot)
+
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=0"})
+	if code != 0 || err != nil {
+		t.Fatalf("expected success, got code=%d err=%v", code, err)
+	}
+	if _, err := os.Stat(storeRoot); err != nil {
+		t.Fatalf("expected state store root created, got %v", err)
+	}
+}
+
 func TestRunConfigManagerError(t *testing.T) {
 	dir := t.TempDir()
 	stateStoreRoot := filepath.Join(dir, "state-store")
@@ -567,6 +615,187 @@ func TestRunWithRunDir(t *testing.T) {
 	}
 }
 
+func TestEnsureWSLMountSkippedWithoutEnv(t *testing.T) {
+	prevRun := runMountCommandFn
+	runMountCommandFn = func(string, ...string) (string, error) {
+		t.Fatalf("unexpected mount command")
+		return "", nil
+	}
+	t.Cleanup(func() { runMountCommandFn = prevRun })
+
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "")
+	if err := ensureWSLMount("/tmp/sqlrs"); err != nil {
+		t.Fatalf("ensureWSLMount: %v", err)
+	}
+}
+
+func TestEnsureWSLMountRequiresStateStore(t *testing.T) {
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
+	if err := ensureWSLMount(""); err == nil {
+		t.Fatalf("expected error for empty state store")
+	}
+}
+
+func TestEnsureWSLMountAlreadyMountedBtrfs(t *testing.T) {
+	prevRun := runMountCommandFn
+	calls := 0
+	runMountCommandFn = func(name string, args ...string) (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl, got %s", name)
+			}
+			return "active\n", nil
+		case 2:
+			if name != "findmnt" {
+				t.Fatalf("expected findmnt, got %s", name)
+			}
+			return "btrfs\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runMountCommandFn = prevRun })
+
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
+	if err := ensureWSLMount(t.TempDir()); err != nil {
+		t.Fatalf("ensureWSLMount: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("expected systemctl and findmnt calls, got %d", calls)
+	}
+}
+
+func TestEnsureWSLMountAlreadyMountedWrongFS(t *testing.T) {
+	prevRun := runMountCommandFn
+	runMountCommandFn = func(name string, args ...string) (string, error) {
+		switch name {
+		case "systemctl":
+			return "active\n", nil
+		case "findmnt":
+			return "ext4\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runMountCommandFn = prevRun })
+
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
+	if err := ensureWSLMount(t.TempDir()); err == nil {
+		t.Fatalf("expected error for wrong fs")
+	}
+}
+
+func TestEnsureWSLMountMountsAndVerifies(t *testing.T) {
+	prevRun := runMountCommandFn
+	var calls []string
+	runMountCommandFn = func(name string, args ...string) (string, error) {
+		calls = append(calls, name)
+		switch len(calls) {
+		case 1:
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl, got %s", name)
+			}
+			return "inactive\n", exitError(3)
+		case 2:
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl start, got %s", name)
+			}
+			return "", nil
+		case 3:
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl is-active, got %s", name)
+			}
+			return "active\n", nil
+		case 4:
+			if name != "findmnt" {
+				t.Fatalf("expected findmnt, got %s", name)
+			}
+			return "btrfs\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runMountCommandFn = prevRun })
+
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
+	if err := ensureWSLMount(t.TempDir()); err != nil {
+		t.Fatalf("ensureWSLMount: %v", err)
+	}
+}
+
+func TestEnsureWSLMountMountFails(t *testing.T) {
+	prevRun := runMountCommandFn
+	runMountCommandFn = func(name string, args ...string) (string, error) {
+		if name == "systemctl" && len(args) > 0 && args[0] == "is-active" {
+			return "inactive\n", exitError(3)
+		}
+		if name == "systemctl" && len(args) > 0 && args[0] == "start" {
+			return "boom\n", errors.New("fail")
+		}
+		return "", nil
+	}
+	t.Cleanup(func() { runMountCommandFn = prevRun })
+
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
+	if err := ensureWSLMount(t.TempDir()); err == nil {
+		t.Fatalf("expected mount error")
+	}
+}
+
+func TestEnsureWSLMountVerifyFails(t *testing.T) {
+	prevRun := runMountCommandFn
+	runMountCommandFn = func(name string, args ...string) (string, error) {
+		switch name {
+		case "systemctl":
+			if len(args) > 0 && args[0] == "is-active" {
+				return "active\n", nil
+			}
+			return "", nil
+		case "findmnt":
+			return "ext4\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runMountCommandFn = prevRun })
+
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
+	if err := ensureWSLMount(t.TempDir()); err == nil {
+		t.Fatalf("expected verification error")
+	}
+}
+
+func TestEnsureWSLMountFindmntUnexpectedError(t *testing.T) {
+	prevRun := runMountCommandFn
+	runMountCommandFn = func(name string, args ...string) (string, error) {
+		switch name {
+		case "systemctl":
+			return "active\n", nil
+		case "findmnt":
+			return "", errors.New("boom")
+		default:
+			t.Fatalf("unexpected command: %s", name)
+		}
+		return "", nil
+	}
+	t.Cleanup(func() { runMountCommandFn = prevRun })
+
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
+	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
+	if err := ensureWSLMount(t.TempDir()); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
 func TestRunIdleTimeoutShutdown(t *testing.T) {
 	previousServe := serveHTTP
 	serveHTTP = func(server *http.Server, listener net.Listener) error {
@@ -583,6 +812,18 @@ func TestRunIdleTimeoutShutdown(t *testing.T) {
 	if err != nil || code != 0 {
 		t.Fatalf("expected success, got code=%d err=%v", code, err)
 	}
+}
+
+func exitError(code int) error {
+	cmd := exec.Command("sh", "-c", "exit "+strconv.Itoa(code))
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/c", "exit "+strconv.Itoa(code))
+	}
+	err := cmd.Run()
+	if err == nil {
+		return errors.New("expected exit error")
+	}
+	return err
 }
 
 func TestRunShutdownError(t *testing.T) {
@@ -684,6 +925,25 @@ func TestIsCharDeviceBehaviors(t *testing.T) {
 	}
 	if isCharDevice(file) {
 		t.Fatalf("expected false for closed file")
+	}
+}
+
+func TestRunMountCommandOutput(t *testing.T) {
+	var name string
+	var args []string
+	if runtime.GOOS == "windows" {
+		name = "cmd"
+		args = []string{"/c", "echo", "ok"}
+	} else {
+		name = "sh"
+		args = []string{"-c", "echo ok"}
+	}
+	out, err := runMountCommand(name, args...)
+	if err != nil {
+		t.Fatalf("runMountCommand: %v", err)
+	}
+	if strings.TrimSpace(out) != "ok" {
+		t.Fatalf("expected output ok, got %q", out)
 	}
 }
 

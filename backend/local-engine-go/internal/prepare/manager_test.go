@@ -17,7 +17,6 @@ import (
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare/queue"
 	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store"
 )
 
@@ -265,65 +264,6 @@ func (b *cancelRuntime) WaitForReady(ctx context.Context, id string, timeout tim
 	return nil
 }
 
-type fakeSnapshot struct {
-	cloneCalls    []string
-	snapshotCalls []string
-	destroyCalls  []string
-	cloneErr      error
-	snapshotErr   error
-	destroyErr    error
-	mountDir      string
-}
-
-func (f *fakeSnapshot) Kind() string {
-	return "fake"
-}
-
-func (f *fakeSnapshot) Capabilities() snapshot.Capabilities {
-	return snapshot.Capabilities{
-		RequiresDBStop:       true,
-		SupportsWritableClone: true,
-		SupportsSendReceive:   false,
-	}
-}
-
-func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
-	f.cloneCalls = append(f.cloneCalls, srcDir)
-	if f.cloneErr != nil {
-		return snapshot.CloneResult{}, f.cloneErr
-	}
-	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return snapshot.CloneResult{}, err
-	}
-	mountDir := destDir
-	if f.mountDir != "" {
-		mountDir = f.mountDir
-	}
-	return snapshot.CloneResult{
-		MountDir: mountDir,
-		Cleanup: func() error {
-			f.destroyCalls = append(f.destroyCalls, destDir)
-			return nil
-		},
-	}, nil
-}
-
-func (f *fakeSnapshot) Snapshot(ctx context.Context, srcDir string, destDir string) error {
-	f.snapshotCalls = append(f.snapshotCalls, srcDir)
-	if f.snapshotErr != nil {
-		return f.snapshotErr
-	}
-	return os.MkdirAll(destDir, 0o700)
-}
-
-func (f *fakeSnapshot) Destroy(ctx context.Context, dir string) error {
-	f.destroyCalls = append(f.destroyCalls, dir)
-	if f.destroyErr != nil {
-		return f.destroyErr
-	}
-	return nil
-}
-
 type fakeDBMS struct {
 	prepareCalls int
 	resumeCalls  int
@@ -498,7 +438,7 @@ func TestNewManagerRequiresRuntime(t *testing.T) {
 	if _, err := NewManager(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: stateRoot,
 	}); err == nil {
@@ -506,7 +446,7 @@ func TestNewManagerRequiresRuntime(t *testing.T) {
 	}
 }
 
-func TestNewManagerRequiresSnapshot(t *testing.T) {
+func TestNewManagerRequiresStateFS(t *testing.T) {
 	queueStore := newQueueStore(t)
 	stateRoot := filepath.Join(t.TempDir(), "state-store")
 	if _, err := NewManager(Options{
@@ -516,7 +456,7 @@ func TestNewManagerRequiresSnapshot(t *testing.T) {
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: stateRoot,
 	}); err == nil {
-		t.Fatalf("expected error when snapshot manager is nil")
+		t.Fatalf("expected error when statefs is nil")
 	}
 }
 
@@ -527,7 +467,7 @@ func TestNewManagerRequiresDBMS(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		StateStoreRoot: stateRoot,
 	}); err == nil {
 		t.Fatalf("expected error when dbms connector is nil")
@@ -537,11 +477,11 @@ func TestNewManagerRequiresDBMS(t *testing.T) {
 func TestNewManagerRequiresStateStoreRoot(t *testing.T) {
 	queueStore := newQueueStore(t)
 	if _, err := NewManager(Options{
-		Store:    &fakeStore{},
-		Queue:    queueStore,
-		Runtime:  &fakeRuntime{},
-		Snapshot: &fakeSnapshot{},
-		DBMS:     &fakeDBMS{},
+		Store:   &fakeStore{},
+		Queue:   queueStore,
+		Runtime: &fakeRuntime{},
+		StateFS: &fakeStateFS{},
+		DBMS:    &fakeDBMS{},
 	}); err == nil {
 		t.Fatalf("expected error when state store root is empty")
 	}
@@ -570,7 +510,7 @@ func TestSubmitIDGenFails(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: filepath.Join(t.TempDir(), "state-store"),
 		Version:        "v1",
@@ -660,6 +600,36 @@ func TestSubmitStoresStateAndInstance(t *testing.T) {
 	}
 	if !foundTask {
 		t.Fatalf("expected task events, got %+v", events)
+	}
+}
+
+func TestSubmitFailsWhenStoreNotReady(t *testing.T) {
+	queueStore := newQueueStore(t)
+	deps := &testDeps{
+		validate: func(root string) error {
+			return errors.New("missing mount")
+		},
+	}
+	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, deps)
+
+	accepted, err := mgr.Submit(context.Background(), Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+
+	status, ok := mgr.Get(accepted.JobID)
+	if !ok {
+		t.Fatalf("expected job to exist")
+	}
+	if status.Status != StatusFailed {
+		t.Fatalf("expected failed status, got %s", status.Status)
+	}
+	if status.Error == nil || status.Error.Message != "state store not ready" {
+		t.Fatalf("expected store not ready error, got %+v", status.Error)
 	}
 }
 
@@ -1878,8 +1848,8 @@ func TestExecuteStateTaskPsqlError(t *testing.T) {
 
 func TestExecuteStateTaskSnapshotError(t *testing.T) {
 	store := &fakeStore{}
-	snap := &fakeSnapshot{snapshotErr: errors.New("boom")}
-	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{snapshot: snap})
+	snap := &fakeStateFS{snapshotErr: errors.New("boom")}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{statefs: snap})
 
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -2136,9 +2106,9 @@ func TestStartRuntimeGetStateError(t *testing.T) {
 
 func TestStartRuntimeFromImageSuccess(t *testing.T) {
 	runtime := &fakeRuntime{}
-	snap := &fakeSnapshot{}
+	snap := &fakeStateFS{}
 	store := &fakeStore{}
-	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime, snapshot: snap})
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{runtime: runtime, statefs: snap})
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
 		ImageID:     "image-1",
@@ -2488,7 +2458,7 @@ func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: t.TempDir(),
 		Config:         &fakeConfigStore{value: 2},
@@ -2548,7 +2518,7 @@ func TestHeartbeatRepeatsLogEvent(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: t.TempDir(),
 		Config:         &fakeConfigStore{value: 2},
@@ -2604,7 +2574,7 @@ func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: t.TempDir(),
 		Config:         &fakeConfigStore{value: 2},
@@ -2744,7 +2714,7 @@ func TestHeartbeatStopsOnStatusEvent(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: t.TempDir(),
 		Config:         &fakeConfigStore{value: 2},
@@ -2810,7 +2780,7 @@ func TestStartHeartbeatNoEvent(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: t.TempDir(),
 		Config:         &fakeConfigStore{value: 2},
@@ -2996,7 +2966,7 @@ func TestNewManagerDefaultIDGen(t *testing.T) {
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: filepath.Join(t.TempDir(), "state-store"),
 		Psql:           &fakePsqlRunner{},
@@ -3676,11 +3646,12 @@ func TestFailJobUpdateJobError(t *testing.T) {
 
 type testDeps struct {
 	runtime   *fakeRuntime
-	snapshot  *fakeSnapshot
+	statefs   *fakeStateFS
 	dbms      *fakeDBMS
 	psql      psqlRunner
 	stateRoot string
 	config    config.Store
+	validate  func(root string) error
 }
 
 type fakeConfigStore struct {
@@ -3746,8 +3717,8 @@ func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store,
 	if deps.runtime == nil {
 		deps.runtime = &fakeRuntime{}
 	}
-	if deps.snapshot == nil {
-		deps.snapshot = &fakeSnapshot{}
+	if deps.statefs == nil {
+		deps.statefs = &fakeStateFS{}
 	}
 	if deps.dbms == nil {
 		deps.dbms = &fakeDBMS{}
@@ -3766,7 +3737,8 @@ func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store,
 		Store:          store,
 		Queue:          queueStore,
 		Runtime:        deps.runtime,
-		Snapshot:       deps.snapshot,
+		StateFS:        deps.statefs,
+		ValidateStore:  deps.validate,
 		DBMS:           deps.dbms,
 		StateStoreRoot: stateRoot,
 		Config:         deps.config,
@@ -3875,6 +3847,28 @@ func TestRemoveJobDirNoopAndDelete(t *testing.T) {
 	}
 	if err := mgr.removeJobDir("job-1"); err != nil {
 		t.Fatalf("removeJobDir: %v", err)
+	}
+	if _, err := os.Stat(jobDir); !os.IsNotExist(err) {
+		t.Fatalf("expected job dir removed")
+	}
+}
+
+func TestRemoveJobDirBtrfsRuntimeSubvolume(t *testing.T) {
+	snap := &fakeStateFS{kind: "btrfs"}
+	mgr := &Manager{
+		stateStoreRoot: t.TempDir(),
+		statefs:        snap,
+	}
+	jobDir := filepath.Join(mgr.stateStoreRoot, "jobs", "job-1")
+	runtimeDir := filepath.Join(jobDir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	if err := mgr.removeJobDir("job-1"); err != nil {
+		t.Fatalf("removeJobDir: %v", err)
+	}
+	if len(snap.removeCalls) != 1 || snap.removeCalls[0] != runtimeDir {
+		t.Fatalf("expected remove on runtime dir, got %+v", snap.removeCalls)
 	}
 	if _, err := os.Stat(jobDir); !os.IsNotExist(err) {
 		t.Fatalf("expected job dir removed")

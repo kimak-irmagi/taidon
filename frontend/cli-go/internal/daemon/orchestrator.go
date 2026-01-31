@@ -8,22 +8,31 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
+	"strings"
 
 	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/util"
 )
 
 type ConnectOptions struct {
-	Endpoint       string
-	Autostart      bool
-	DaemonPath     string
-	RunDir         string
-	StateDir       string
-	StartupTimeout time.Duration
-	ClientTimeout  time.Duration
-	Verbose        bool
+	Endpoint        string
+	Autostart       bool
+	DaemonPath      string
+	RunDir          string
+	StateDir        string
+	EngineRunDir    string
+	EngineStatePath string
+	WSLDistro       string
+	EngineStoreDir  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
+	WSLMountFSType  string
+	StartupTimeout  time.Duration
+	ClientTimeout   time.Duration
+	Verbose         bool
 }
 
 type ConnectResult struct {
@@ -36,6 +45,10 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	endpoint := opts.Endpoint
 	if endpoint != "" && endpoint != "auto" {
 		return ConnectResult{Endpoint: endpoint}, nil
+	}
+
+	if err := ensureWSLStoreMount(ctx, opts); err != nil {
+		return ConnectResult{}, err
 	}
 
 	enginePath := filepath.Join(opts.StateDir, "engine.json")
@@ -80,13 +93,25 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	}
 
 	logPath := filepath.Join(logsDir, "engine.log")
+	isWSL := opts.WSLDistro != ""
+	if isWSL {
+		logPath = filepath.Join(logsDir, "engine-wsl.log")
+	}
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return ConnectResult{}, err
 	}
 	defer logFile.Close()
 
-	cmd, err := buildDaemonCommand(opts.DaemonPath, opts.RunDir, enginePath)
+	daemonRunDir := opts.EngineRunDir
+	if daemonRunDir == "" {
+		daemonRunDir = opts.RunDir
+	}
+	daemonStatePath := opts.EngineStatePath
+	if daemonStatePath == "" {
+		daemonStatePath = enginePath
+	}
+	cmd, err := buildDaemonCommand(opts.DaemonPath, daemonRunDir, daemonStatePath, opts.WSLDistro, opts.EngineStoreDir, opts.WSLMountUnit, opts.WSLMountFSType, logPath)
 	if err != nil {
 		return ConnectResult{}, err
 	}
@@ -113,6 +138,8 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 
 	logVerbose(opts.Verbose, "waiting for engine to become healthy")
 	deadline := time.Now().Add(opts.StartupTimeout)
+	lastReason := ""
+	lastReasonAt := time.Time{}
 	for {
 		select {
 		case err := <-exitCh:
@@ -122,12 +149,19 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 			return ConnectResult{}, formatEngineExit(err)
 		default:
 		}
-		if state, ok := loadHealthyState(ctx, enginePath, opts.ClientTimeout); ok {
+		if state, ok, reason := loadHealthyStateWithReason(ctx, enginePath, opts.ClientTimeout); ok {
 			if tailer != nil {
 				tailer.Stop()
 			}
 			logVerbose(opts.Verbose, "engine healthy at %s", state.Endpoint)
 			return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
+		} else if opts.Verbose && reason != "" {
+			now := time.Now()
+			if reason != lastReason || now.Sub(lastReasonAt) > time.Second {
+				logVerbose(opts.Verbose, "engine not healthy yet: %s", reason)
+				lastReason = reason
+				lastReasonAt = now
+			}
 		}
 		if time.Now().After(deadline) {
 			if tailer != nil {
@@ -147,21 +181,38 @@ func logVerbose(enabled bool, format string, args ...any) {
 }
 
 func loadHealthyState(ctx context.Context, enginePath string, timeout time.Duration) (EngineState, bool) {
-	state, err := ReadEngineState(enginePath)
-	if err != nil {
-		return EngineState{}, false
-	}
-	health, healthErr := checkHealth(ctx, state.Endpoint, timeout)
-	pidRunning := processExists(state.PID)
-	if IsEngineStateStale(state, health, healthErr, pidRunning) {
-		return EngineState{}, false
-	}
-	return state, true
+	state, ok, _ := loadHealthyStateWithReason(ctx, enginePath, timeout)
+	return state, ok
 }
 
 func checkHealth(ctx context.Context, endpoint string, timeout time.Duration) (client.HealthResponse, error) {
 	client := client.New(endpoint, client.Options{Timeout: timeout})
 	return client.Health(ctx)
+}
+
+func loadHealthyStateWithReason(ctx context.Context, enginePath string, timeout time.Duration) (EngineState, bool, string) {
+	state, err := ReadEngineState(enginePath)
+	if err != nil {
+		return EngineState{}, false, fmt.Sprintf("engine.json read failed: %v", err)
+	}
+	health, healthErr := checkHealth(ctx, state.Endpoint, timeout)
+	if healthErr != nil {
+		return EngineState{}, false, fmt.Sprintf("health check failed: %v", healthErr)
+	}
+	pidRunning := processExists(state.PID)
+	if runtime.GOOS == "windows" {
+		pidRunning = true
+	}
+	if state.InstanceID != "" && health.InstanceID != "" && state.InstanceID != health.InstanceID {
+		return EngineState{}, false, fmt.Sprintf("instanceId mismatch (state=%s health=%s)", state.InstanceID, health.InstanceID)
+	}
+	if state.PID > 0 && !pidRunning {
+		return EngineState{}, false, fmt.Sprintf("engine pid not running (pid=%d)", state.PID)
+	}
+	if IsEngineStateStale(state, health, healthErr, pidRunning) {
+		return EngineState{}, false, "engine state is stale"
+	}
+	return state, true, ""
 }
 
 func formatEngineExit(err error) error {
@@ -173,6 +224,161 @@ func formatEngineExit(err error) error {
 		return fmt.Errorf("engine exited before becoming healthy (exit code %d)", exitErr.ExitCode())
 	}
 	return fmt.Errorf("engine exited before becoming healthy: %v", err)
+}
+
+var runWSLCommandFn = runWSLCommand
+var runHostCommandFn = runHostCommand
+
+func ensureWSLStoreMount(ctx context.Context, opts ConnectOptions) error {
+	if strings.TrimSpace(opts.WSLDistro) == "" {
+		return nil
+	}
+	unit := strings.TrimSpace(opts.WSLMountUnit)
+	fstype := strings.TrimSpace(opts.WSLMountFSType)
+	storeDir := strings.TrimSpace(opts.EngineStoreDir)
+	if unit == "" || storeDir == "" {
+		return nil
+	}
+	if fstype == "" {
+		fstype = "btrfs"
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	logVerbose(opts.Verbose, "ensuring WSL store mount (%s) via %s", fstype, unit)
+
+	if err := ensureWSLMountUnitActive(ctx, opts.WSLDistro, unit); err != nil {
+		if runtime.GOOS == "windows" && strings.TrimSpace(opts.WSLVHDXPath) != "" {
+			if attachErr := attachVHDXToWSL(ctx, opts.WSLVHDXPath, opts.Verbose); attachErr != nil {
+				return appendWSLMountLogs(ctx, opts.WSLDistro, unit, attachErr)
+			}
+			if err := ensureWSLMountUnitActive(ctx, opts.WSLDistro, unit); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	out, err := runWSLCommandInInitNamespace(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
+	if err != nil {
+		return err
+	}
+	fs := strings.TrimSpace(out)
+	if fs == "" {
+		return fmt.Errorf("WSL store mount is not available (empty fstype)")
+	}
+	if fs != fstype {
+		if runtime.GOOS == "windows" && strings.TrimSpace(opts.WSLVHDXPath) != "" {
+			logVerbose(opts.Verbose, "WSL store mount is %s, retrying attach/start", fs)
+			if attachErr := attachVHDXToWSL(ctx, opts.WSLVHDXPath, opts.Verbose); attachErr != nil {
+				return appendWSLMountLogs(ctx, opts.WSLDistro, unit, attachErr)
+			}
+			if err := ensureWSLMountUnitActive(ctx, opts.WSLDistro, unit); err != nil {
+				return err
+			}
+			out, err = runWSLCommandInInitNamespace(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
+			if err != nil {
+				return err
+			}
+			fs = strings.TrimSpace(out)
+			if fs == "" {
+				return fmt.Errorf("WSL store mount is not available (empty fstype)")
+			}
+			if fs != fstype {
+				return appendWSLMountLogs(ctx, opts.WSLDistro, unit, fmt.Errorf("WSL store mount is %s, expected %s", fs, fstype))
+			}
+			return nil
+		}
+		return appendWSLMountLogs(ctx, opts.WSLDistro, unit, fmt.Errorf("WSL store mount is %s, expected %s", fs, fstype))
+	}
+	return nil
+}
+
+func runWSLCommand(ctx context.Context, distro string, args ...string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmdArgs := []string{"-d", distro, "-u", "root", "--"}
+	cmdArgs = append(cmdArgs, args...)
+	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+func runHostCommand(ctx context.Context, args ...string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+func runWSLCommandInInitNamespace(ctx context.Context, distro string, args ...string) (string, error) {
+	cmdArgs := append([]string{"nsenter", "-t", "1", "-m", "--"}, args...)
+	out, err := runWSLCommandFn(ctx, distro, cmdArgs...)
+	if err == nil {
+		return out, nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "command not found") {
+		return runWSLCommandFn(ctx, distro, args...)
+	}
+	return out, err
+}
+
+func ensureWSLMountUnitActive(ctx context.Context, distro, unit string) error {
+	out, err := runWSLCommandFn(ctx, distro, "systemctl", "is-active", unit)
+	if err == nil && strings.TrimSpace(out) == "active" {
+		return nil
+	}
+	_, startErr := runWSLCommandFn(ctx, distro, "systemctl", "start", "--no-block", unit)
+	if startErr != nil {
+		return appendWSLMountLogs(ctx, distro, unit, startErr)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		out, err = runWSLCommandFn(ctx, distro, "systemctl", "is-active", unit)
+		if err == nil && strings.TrimSpace(out) == "active" {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return appendWSLMountLogs(ctx, distro, unit, fmt.Errorf("WSL mount unit is not active"))
+}
+
+func appendWSLMountLogs(ctx context.Context, distro, unit string, err error) error {
+	tail, tailErr := runWSLCommandFn(ctx, distro, "journalctl", "-u", unit, "-n", "20", "--no-pager")
+	if tailErr == nil && strings.TrimSpace(tail) != "" {
+		return fmt.Errorf("%v\n%s", err, strings.TrimSpace(tail))
+	}
+	return err
+}
+
+func attachVHDXToWSL(ctx context.Context, vhdxPath string, verbose bool) error {
+	if strings.TrimSpace(vhdxPath) == "" {
+		return fmt.Errorf("VHDX path is empty")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	logVerbose(verbose, "attaching VHDX: %s", vhdxPath)
+	out, err := runHostCommandFn(ctx, "wsl.exe", "--mount", vhdxPath, "--vhd", "--bare")
+	if err != nil {
+		if strings.TrimSpace(out) != "" {
+			return fmt.Errorf("attach VHDX failed: %v (%s)", err, strings.TrimSpace(out))
+		}
+		return fmt.Errorf("attach VHDX failed: %v", err)
+	}
+	return nil
+}
+
+func isExitStatus(err error, code int) bool {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode() == code
+	}
+	return false
 }
 
 type logTail struct {

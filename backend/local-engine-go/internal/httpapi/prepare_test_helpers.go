@@ -10,7 +10,7 @@ import (
 	"sqlrs/engine/internal/prepare"
 	"sqlrs/engine/internal/prepare/queue"
 	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/snapshot"
+	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store"
 )
 
@@ -43,25 +43,55 @@ func (f *fakeRuntime) WaitForReady(ctx context.Context, id string, timeout time.
 	return nil
 }
 
-type fakeSnapshot struct{}
+type fakeStateFS struct{}
 
-func (f *fakeSnapshot) Kind() string {
+var httpapiTestLayoutFS = statefs.NewManager(statefs.Options{Backend: "copy"})
+
+func (f *fakeStateFS) Kind() string {
 	return "fake"
 }
 
-func (f *fakeSnapshot) Capabilities() snapshot.Capabilities {
-	return snapshot.Capabilities{
-		RequiresDBStop:       true,
+func (f *fakeStateFS) Capabilities() statefs.Capabilities {
+	return statefs.Capabilities{
+		RequiresDBStop:        true,
 		SupportsWritableClone: true,
 		SupportsSendReceive:   false,
 	}
 }
 
-func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
+func (f *fakeStateFS) Validate(root string) error {
+	return nil
+}
+
+func (f *fakeStateFS) BaseDir(root, imageID string) (string, error) {
+	return httpapiTestLayoutFS.BaseDir(root, imageID)
+}
+
+func (f *fakeStateFS) StatesDir(root, imageID string) (string, error) {
+	return httpapiTestLayoutFS.StatesDir(root, imageID)
+}
+
+func (f *fakeStateFS) StateDir(root, imageID, stateID string) (string, error) {
+	return httpapiTestLayoutFS.StateDir(root, imageID, stateID)
+}
+
+func (f *fakeStateFS) JobRuntimeDir(root, jobID string) (string, error) {
+	return httpapiTestLayoutFS.JobRuntimeDir(root, jobID)
+}
+
+func (f *fakeStateFS) EnsureBaseDir(ctx context.Context, baseDir string) error {
+	return os.MkdirAll(baseDir, 0o700)
+}
+
+func (f *fakeStateFS) EnsureStateDir(ctx context.Context, stateDir string) error {
+	return os.MkdirAll(stateDir, 0o700)
+}
+
+func (f *fakeStateFS) Clone(ctx context.Context, srcDir string, destDir string) (statefs.CloneResult, error) {
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return snapshot.CloneResult{}, err
+		return statefs.CloneResult{}, err
 	}
-	return snapshot.CloneResult{
+	return statefs.CloneResult{
 		MountDir: destDir,
 		Cleanup: func() error {
 			return os.RemoveAll(destDir)
@@ -69,11 +99,11 @@ func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string)
 	}, nil
 }
 
-func (f *fakeSnapshot) Snapshot(ctx context.Context, srcDir string, destDir string) error {
+func (f *fakeStateFS) Snapshot(ctx context.Context, srcDir string, destDir string) error {
 	return os.MkdirAll(destDir, 0o700)
 }
 
-func (f *fakeSnapshot) Destroy(ctx context.Context, dir string) error {
+func (f *fakeStateFS) RemovePath(ctx context.Context, dir string) error {
 	return os.RemoveAll(dir)
 }
 
@@ -100,7 +130,7 @@ func newPrepareManager(t *testing.T, store store.Store, queueStore queue.Store, 
 		Store:          store,
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
-		Snapshot:       &fakeSnapshot{},
+		StateFS:        &fakeStateFS{},
 		DBMS:           &fakeDBMS{},
 		StateStoreRoot: stateRoot,
 		Psql:           &fakePsqlRunner{},

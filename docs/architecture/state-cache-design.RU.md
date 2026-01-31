@@ -355,8 +355,8 @@ Taidon может работать в двух режимах, когда Liquib
 
 ### 12.3 Платформенные особенности
 
-- **Linux/macOS (local engine)**: `<StateDir>/state-store`, нативная ФС; OverlayFS или btrfs при наличии, иначе fallback на копирование.
-- **Windows (local engine)**: engine запускается внутри WSL2; btrfs на томе state-store дает CoW при наличии, иначе fallback на копирование.
+- **Linux/macOS (local engine)**: `SQLRS_STATE_STORE` на нативной ФС; StateFS выбирается по FS (btrfs/zfs → CoW, иначе copy/reflink).
+- **Windows (local engine)**: engine запускается внутри WSL2; state store — host VHDX, смонтированный в WSL и отформатированный в btrfs при наличии; systemd mount unit (устанавливается `sqlrs init --wsl`) делает маунт видимым для Docker; иначе fallback copy/reflink.
 
 ### 12.4 Доступ и блокировки
 

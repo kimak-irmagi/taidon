@@ -13,6 +13,7 @@
 - `cmd/sqlrs-engine`
   - Парсинг флагов и сборка зависимостей.
   - Старт HTTP сервера.
+  - Разрешает `SQLRS_STATE_STORE` и проверяет systemd-маунт WSL (если настроен).
 - `internal/httpapi`
   - Роутинг и handlers.
   - JSON/NDJSON кодирование.
@@ -35,7 +36,7 @@
   - Удаляет `state-store/jobs/<job_id>` при удалении job.
 - `internal/executor`
   - Последовательно исполняет задачи job и эмитит события.
-  - Вызывает менеджер снапшотов и DBMS-коннектор вокруг снапшотов.
+  - Вызывает StateFS и DBMS-коннектор вокруг снапшотов.
 - `internal/runtime`
   - Адаптер Docker runtime (CLI в MVP).
   - Старт/стоп контейнеров; задает `PGDATA` и trust auth для Postgres.
@@ -46,9 +47,10 @@
   - Выполняет команды внутри контейнера и стримит вывод.
   - Пересоздает отсутствующие контейнеры из `runtime_dir` и обновляет
     `runtime_id` перед выполнением run-команд.
-- `internal/snapshot`
-  - Интерфейс менеджера снапшотов и выбор backend.
+- `internal/statefs`
+  - Интерфейс StateFS, выбор backend и валидация стора.
   - OverlayFS или btrfs в MVP, fallback на копирование.
+  - Владеет структурой путей и FS-specific cleanup.
 - `internal/dbms`
   - DBMS-специфичные хуки для подготовки и возобновления.
   - Postgres использует `pg_ctl` для fast shutdown/restart без остановки контейнера.
@@ -107,7 +109,7 @@
 - Персистентные данные (names/instances/states) живут в SQLite под `<StateDir>`.
 - Jobs, tasks и события jobs живут в SQLite под `<StateDir>`.
 - In-memory структуры - только кэши или request-scoped данные.
-- Данные state store живут в `<StateDir>/state-store`.
+- Данные state store живут в `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
 - Server config хранится в `<StateDir>/state-store/config.json` и дублируется в памяти.
 
 ## 5. Диаграмма зависимостей
@@ -120,7 +122,7 @@ flowchart TD
   QUEUE["internal/prepare/queue"]
   EXEC["internal/executor"]
   RT["internal/runtime"]
-  SNAP["internal/snapshot"]
+  SNAP["internal/statefs"]
   DBMS["internal/dbms"]
   DEL["internal/deletion"]
   CONN["internal/conntrack"]

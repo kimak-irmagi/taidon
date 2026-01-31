@@ -12,7 +12,7 @@ flowchart LR
   PLAN["Prepare Planner"]
   EXEC["Prepare Executor"]
   CACHE[state-cache client]
-  SNAP["Snapshot Manager"]
+  SNAP["StateFS Manager"]
   QSTORE["Job/Task Queue (SQLite)"]
   RUNTIME["Instance Runtime (Docker)"]
   DBMS["DBMS Connector"]
@@ -98,11 +98,14 @@ flowchart LR
 - Talks to local state-cache index (SQLite) to lookup/store `key -> state_id`.
 - Knows current state store root; never exposes raw filesystem paths to callers.
 
-### 1.7 Snapshot Manager
+### 1.7 StateFS Manager
 
-- Prefers OverlayFS or btrfs on Linux; falls back to copy-based snapshots.
-- Windows uses the same Linux snapshotters by running the engine inside WSL2.
-- Exposes `Clone`, `Snapshot`, `Destroy` for states and instances.
+- Selects StateFS backend by filesystem of `SQLRS_STATE_STORE`:
+  - btrfs → btrfs backend
+  - zfs dataset mount point (future) → zfs backend
+  - otherwise → fallback copy/reflink
+- Windows uses the same StateFS by running the engine inside WSL2.
+- Exposes `Validate`, `Clone`, `Snapshot`, `RemovePath` for states and instances.
 - Uses path resolver from State Store to locate `PGDATA` roots and state directories.
 
 ### 1.8 DBMS Connector
@@ -117,7 +120,7 @@ flowchart LR
 
 - Manages DB containers via Docker (single-container per instance).
 - Uses Docker CLI in the MVP; replaceable with a Docker Engine SDK adapter.
-- Applies mounts from Snapshot Manager, sets resource limits, statement timeout defaults.
+- Applies mounts from StateFS, sets resource limits, statement timeout defaults.
 - Sets `PGDATA=/var/lib/postgresql/data` and `POSTGRES_HOST_AUTH_METHOD=trust`.
 - Provides connection info to the controller.
 
@@ -158,7 +161,8 @@ flowchart LR
 
 ### 1.14 State Store (Paths + Metadata)
 
-- Resolves storage root under `<StateDir>/state-store`.
+- Resolves storage root under `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
+- On WSL, validates that the systemd mount for `SQLRS_STATE_STORE` is active before touching the store.
 - Owns metadata DB handle (SQLite WAL) and path layout (`engines/<engine>/<version>/base|states/<uuid>`).
 - Writes `engine.json` in the CLI state directory (endpoint + PID + auth token + lock) for discovery.
 - Stores `parent_state_id` to support state ancestry and recursive deletion.
@@ -180,7 +184,7 @@ sequenceDiagram
   participant CTRL as Prepare Controller
   participant CACHE as Cache
   participant DBMS as "DBMS Connector"
-  participant SNAP as "Snapshot Manager"
+  participant SNAP as "StateFS Manager"
   participant RT as Runtime (Docker)
   participant ADAPTER as Script Adapter
   participant INST as Instance Manager
@@ -260,7 +264,7 @@ sequenceDiagram
   participant STORE as "Metadata Store"
   participant INST as "Instance Manager"
   participant CONN as "Connection Tracker"
-  participant SNAP as Snapshotter
+  participant SNAP as StateFS
 
   CLI->>API: DELETE /v1/states/{id}?recurse&force&dry_run
   API->>DEL: build deletion tree

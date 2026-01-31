@@ -18,6 +18,8 @@ type StartRequest struct {
 	DataDir string
 	Name    string
 	Mounts  []Mount
+	// AllowInitdb controls whether Start may initialize an empty data directory.
+	AllowInitdb bool
 }
 
 type ExecRequest struct {

@@ -124,7 +124,7 @@ func TestFormatImageSourceEmpty(t *testing.T) {
 func TestNormalizePsqlArgs(t *testing.T) {
 	cwd := t.TempDir()
 	args := []string{"-f", "file.sql", "--file=other.sql", "-fmore.sql", "-c", "select 1"}
-	normalized, stdin, err := normalizePsqlArgs(args, cwd, cwd, strings.NewReader("stdin"))
+	normalized, stdin, err := normalizePsqlArgs(args, cwd, cwd, strings.NewReader("stdin"), nil)
 	if err != nil {
 		t.Fatalf("normalizePsqlArgs: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestNormalizePsqlArgs(t *testing.T) {
 		t.Fatalf("expected normalized args")
 	}
 
-	normalized, stdin, err = normalizePsqlArgs([]string{"-f", "-"}, cwd, cwd, strings.NewReader("data"))
+	normalized, stdin, err = normalizePsqlArgs([]string{"-f", "-"}, cwd, cwd, strings.NewReader("data"), nil)
 	if err != nil {
 		t.Fatalf("normalizePsqlArgs stdin: %v", err)
 	}
@@ -147,15 +147,33 @@ func TestNormalizePsqlArgs(t *testing.T) {
 	}
 }
 
+func TestNormalizePsqlArgsConvertsPaths(t *testing.T) {
+	cwd := t.TempDir()
+	path := filepath.Join(cwd, "query.sql")
+	if err := os.WriteFile(path, []byte("select 1;"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	args := []string{"-f", "query.sql"}
+	normalized, _, err := normalizePsqlArgs(args, cwd, cwd, strings.NewReader(""), func(value string) (string, error) {
+		return "/mnt/converted" + filepath.ToSlash(value), nil
+	})
+	if err != nil {
+		t.Fatalf("normalizePsqlArgs: %v", err)
+	}
+	if len(normalized) != 2 || !strings.HasPrefix(normalized[1], "/mnt/converted") {
+		t.Fatalf("unexpected args: %+v", normalized)
+	}
+}
+
 func TestNormalizePsqlArgsStdinReadError(t *testing.T) {
-	_, _, err := normalizePsqlArgs([]string{"-f", "-"}, t.TempDir(), t.TempDir(), errorReader{})
+	_, _, err := normalizePsqlArgs([]string{"-f", "-"}, t.TempDir(), t.TempDir(), errorReader{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected read error, got %v", err)
 	}
 }
 
 func TestNormalizePsqlArgsMissingValue(t *testing.T) {
-	_, _, err := normalizePsqlArgs([]string{"-f"}, t.TempDir(), t.TempDir(), strings.NewReader(""))
+	_, _, err := normalizePsqlArgs([]string{"-f"}, t.TempDir(), t.TempDir(), strings.NewReader(""), nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -163,23 +181,23 @@ func TestNormalizePsqlArgsMissingValue(t *testing.T) {
 
 func TestNormalizeFilePath(t *testing.T) {
 	cwd := t.TempDir()
-	path, useStdin, err := normalizeFilePath("-", cwd, cwd)
+	path, useStdin, err := normalizeFilePath("-", cwd, cwd, nil)
 	if err != nil || !useStdin || path != "-" {
 		t.Fatalf("expected stdin path, got %q useStdin=%v err=%v", path, useStdin, err)
 	}
 
-	rel, useStdin, err := normalizeFilePath("file.sql", cwd, cwd)
+	rel, useStdin, err := normalizeFilePath("file.sql", cwd, cwd, nil)
 	if err != nil || useStdin || !strings.HasPrefix(rel, cwd) {
 		t.Fatalf("unexpected relative path: %q useStdin=%v err=%v", rel, useStdin, err)
 	}
 
 	abs := filepath.Join(cwd, "abs.sql")
-	out, useStdin, err := normalizeFilePath(abs, cwd, cwd)
+	out, useStdin, err := normalizeFilePath(abs, cwd, cwd, nil)
 	if err != nil || useStdin || out != abs {
 		t.Fatalf("unexpected abs path: %q useStdin=%v err=%v", out, useStdin, err)
 	}
 
-	if _, _, err := normalizeFilePath(" ", cwd, cwd); err == nil {
+	if _, _, err := normalizeFilePath(" ", cwd, cwd, nil); err == nil {
 		t.Fatalf("expected empty path error")
 	}
 }
@@ -188,7 +206,7 @@ func TestNormalizeFilePathRejectsOutsideWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	outer := filepath.Dir(workspace)
 	outside := filepath.Join(outer, "outside.sql")
-	if _, _, err := normalizeFilePath(outside, workspace, workspace); err == nil {
+	if _, _, err := normalizeFilePath(outside, workspace, workspace, nil); err == nil {
 		t.Fatalf("expected workspace boundary error")
 	}
 }

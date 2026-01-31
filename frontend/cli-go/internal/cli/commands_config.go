@@ -14,16 +14,23 @@ import (
 var connectOrStart = daemon.ConnectOrStart
 
 type ConfigOptions struct {
-	ProfileName    string
-	Mode           string
-	Endpoint       string
-	Autostart      bool
-	DaemonPath     string
-	RunDir         string
-	StateDir       string
-	Timeout        time.Duration
-	StartupTimeout time.Duration
-	Verbose        bool
+	ProfileName     string
+	Mode            string
+	Endpoint        string
+	Autostart       bool
+	DaemonPath      string
+	RunDir          string
+	StateDir        string
+	EngineRunDir    string
+	EngineStatePath string
+	EngineStoreDir  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
+	WSLMountFSType  string
+	WSLDistro       string
+	Timeout         time.Duration
+	StartupTimeout  time.Duration
+	Verbose         bool
 
 	Path      string
 	Value     any
@@ -79,14 +86,21 @@ func configClient(ctx context.Context, opts ConfigOptions) (*client.Client, erro
 				fmt.Fprintln(os.Stderr, "checking local engine state")
 			}
 			resolved, err := connectOrStart(ctx, daemon.ConnectOptions{
-				Endpoint:       endpoint,
-				Autostart:      opts.Autostart,
-				DaemonPath:     opts.DaemonPath,
-				RunDir:         opts.RunDir,
-				StateDir:       opts.StateDir,
-				StartupTimeout: opts.StartupTimeout,
-				ClientTimeout:  opts.Timeout,
-				Verbose:        opts.Verbose,
+				Endpoint:        endpoint,
+				Autostart:       opts.Autostart,
+				DaemonPath:      opts.DaemonPath,
+				RunDir:          opts.RunDir,
+				StateDir:        opts.StateDir,
+				EngineRunDir:    opts.EngineRunDir,
+				EngineStatePath: opts.EngineStatePath,
+				EngineStoreDir:  opts.EngineStoreDir,
+				WSLVHDXPath:     opts.WSLVHDXPath,
+				WSLMountUnit:  opts.WSLMountUnit,
+				WSLMountFSType:  opts.WSLMountFSType,
+				WSLDistro:       opts.WSLDistro,
+				StartupTimeout:  opts.StartupTimeout,
+				ClientTimeout:   opts.Timeout,
+				Verbose:         opts.Verbose,
 			})
 			if err != nil {
 				return nil, err

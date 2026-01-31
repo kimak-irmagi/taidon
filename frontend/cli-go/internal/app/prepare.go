@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"sqlrs/cli/internal/cli"
@@ -93,7 +94,7 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		fmt.Fprint(w.stderr, formatImageSource(imageID, source))
 	}
 
-	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin)
+	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin, buildPathConverter(runOpts))
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
@@ -139,7 +140,7 @@ func formatImageSource(imageID, source string) string {
 	return fmt.Sprintf("dbms.image=%s (source: %s)\n", imageID, source)
 }
 
-func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io.Reader) ([]string, *string, error) {
+func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io.Reader, convert func(string) (string, error)) ([]string, *string, error) {
 	normalized := make([]string, 0, len(args))
 	usesStdin := false
 
@@ -150,7 +151,7 @@ func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io
 			if i+1 >= len(args) {
 				return nil, nil, ExitErrorf(2, "Missing value for %s", arg)
 			}
-			path, useStdin, err := normalizeFilePath(args[i+1], workspaceRoot, cwd)
+			path, useStdin, err := normalizeFilePath(args[i+1], workspaceRoot, cwd, convert)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -159,7 +160,7 @@ func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io
 			i++
 		case strings.HasPrefix(arg, "--file="):
 			value := strings.TrimPrefix(arg, "--file=")
-			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd)
+			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd, convert)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -167,7 +168,7 @@ func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io
 			normalized = append(normalized, "--file="+path)
 		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
 			value := arg[2:]
-			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd)
+			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd, convert)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -189,7 +190,7 @@ func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io
 	return normalized, &text, nil
 }
 
-func normalizeFilePath(path string, workspaceRoot string, cwd string) (string, bool, error) {
+func normalizeFilePath(path string, workspaceRoot string, cwd string, convert func(string) (string, error)) (string, bool, error) {
 	if path == "-" {
 		return path, true, nil
 	}
@@ -215,5 +216,22 @@ func normalizeFilePath(path string, workspaceRoot string, cwd string) (string, b
 	if root != "" && !isWithin(root, absPath) {
 		return "", false, ExitErrorf(2, "File path must be within workspace root: %s", absPath)
 	}
+	if convert != nil {
+		converted, err := convert(absPath)
+		if err != nil {
+			return "", false, err
+		}
+		return converted, false, nil
+	}
 	return absPath, false, nil
+}
+
+func buildPathConverter(opts cli.PrepareOptions) func(string) (string, error) {
+	if opts.WSLDistro == "" {
+		return nil
+	}
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	return windowsToWSLPath
 }

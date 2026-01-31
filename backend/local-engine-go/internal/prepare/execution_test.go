@@ -4,38 +4,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"sqlrs/engine/internal/statefs"
 )
-
-func TestParseImageID(t *testing.T) {
-	engine, version := parseImageID("postgres:17")
-	if engine != "postgres" || version != "17" {
-		t.Fatalf("unexpected parse result: %s %s", engine, version)
-	}
-
-	engine, version = parseImageID("ghcr.io/sqlrs/postgres:15")
-	if engine != "postgres" || version != "15" {
-		t.Fatalf("unexpected parse result: %s %s", engine, version)
-	}
-
-	engine, version = parseImageID("postgres")
-	if engine != "postgres" || version != "latest" {
-		t.Fatalf("unexpected parse result: %s %s", engine, version)
-	}
-
-	engine, version = parseImageID("pg@sha256:deadbeef")
-	if engine != "pg" || version != "sha256_deadbeef" {
-		t.Fatalf("unexpected digest parse result: %s %s", engine, version)
-	}
-
-	engine, version = parseImageID("")
-	if engine != "unknown" || version != "latest" {
-		t.Fatalf("unexpected empty parse result: %s %s", engine, version)
-	}
-}
 
 func TestResolveStatePaths(t *testing.T) {
 	root := filepath.Join("tmp", "state-store")
-	paths, err := resolveStatePaths(root, "postgres:17", "state-1")
+	fs := statefs.NewManager(statefs.Options{Backend: "copy", StateStoreRoot: root})
+	paths, err := resolveStatePaths(root, "postgres:17", "state-1", fs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -51,7 +27,8 @@ func TestResolveStatePaths(t *testing.T) {
 }
 
 func TestResolveStatePathsEmptyRoot(t *testing.T) {
-	if _, err := resolveStatePaths("", "postgres:17", "state-1"); err == nil {
+	fs := statefs.NewManager(statefs.Options{Backend: "copy"})
+	if _, err := resolveStatePaths("", "postgres:17", "state-1", fs); err == nil {
 		t.Fatalf("expected error for empty root")
 	}
 }

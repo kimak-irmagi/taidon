@@ -15,7 +15,7 @@ func TestInitCreatesWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	var out bytes.Buffer
 
-	if err := runInit(&out, workspace, "", nil); err != nil {
+	if err := runInit(&out, workspace, "", nil, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -51,7 +51,7 @@ func TestInitRejectsNestedWorkspace(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runInit(&out, child, "", nil)
+	err := runInit(&out, child, "", nil, false)
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("expected ExitError, got %v", err)
@@ -65,7 +65,7 @@ func TestInitDryRunDoesNotCreate(t *testing.T) {
 	workspace := t.TempDir()
 	var out bytes.Buffer
 
-	if err := runInit(&out, workspace, "", []string{"--dry-run"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--dry-run"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestInitRejectsCorruptConfig(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := runInit(&out, workspace, "", nil)
+	err := runInit(&out, workspace, "", nil, false)
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) {
 		t.Fatalf("expected ExitError, got %v", err)
@@ -105,7 +105,7 @@ func TestInitWritesOverrides(t *testing.T) {
 	err := runInit(&out, workspace, "", []string{
 		"--engine", absEngine,
 		"--shared-cache",
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestInitRelativeEnginePathWithinWorkspace(t *testing.T) {
 	var out bytes.Buffer
 
 	relEngine := filepath.Join("bin", "sqlrs-engine")
-	err := runInit(&out, workspace, "", []string{"--engine", relEngine})
+	err := runInit(&out, workspace, "", []string{"--engine", relEngine}, false)
 	if err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestInitRelativeEnginePathOutsideWorkspace(t *testing.T) {
 	err := runInit(&out, outside, "", []string{
 		"--workspace", workspace,
 		"--engine", relEngine,
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
@@ -232,6 +232,24 @@ func TestParseInitFlagsInvalidArgs(t *testing.T) {
 	}
 }
 
+func TestParseInitFlagsStoreSizeRequiresWSL(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"--store-size", "100GB"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestParseInitFlagsStoreSizeParses(t *testing.T) {
+	opts, _, err := parseInitFlags([]string{"--wsl", "--store-size", "140GB"}, "")
+	if err != nil {
+		t.Fatalf("parseInitFlags: %v", err)
+	}
+	if opts.StoreSizeGB != 140 {
+		t.Fatalf("expected store size 140, got %d", opts.StoreSizeGB)
+	}
+}
+
 func TestResolveWorkspacePathRejectsFile(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "file.txt")
@@ -250,7 +268,7 @@ func TestRunInitExistingWorkspaceWithoutConfig(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", nil); err != nil {
+	if err := runInit(&out, workspace, "", nil, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !strings.Contains(out.String(), "Workspace already initialized") {
@@ -261,7 +279,7 @@ func TestRunInitExistingWorkspaceWithoutConfig(t *testing.T) {
 func TestRunInitRejectsMissingWorkspace(t *testing.T) {
 	var out bytes.Buffer
 	missing := filepath.Join(t.TempDir(), "missing")
-	err := runInit(&out, missing, "", nil)
+	err := runInit(&out, missing, "", nil, false)
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 4 {
 		t.Fatalf("expected ExitError code 4, got %v", err)
@@ -291,7 +309,7 @@ func TestResolveExistingPathAbsolute(t *testing.T) {
 
 func TestRunInitHelp(t *testing.T) {
 	var out bytes.Buffer
-	if err := runInit(&out, t.TempDir(), "", []string{"--help"}); err != nil {
+	if err := runInit(&out, t.TempDir(), "", []string{"--help"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !strings.Contains(out.String(), "Usage:") {
@@ -311,7 +329,7 @@ func TestRunInitExistingWorkspaceWithValidConfigDryRun(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--dry-run"}); err != nil {
+	if err := runInit(&out, workspace, "", []string{"--dry-run"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !strings.Contains(out.String(), "Workspace already initialized") || !strings.Contains(out.String(), "dry-run") {
@@ -330,7 +348,7 @@ func TestRunInitForceNestedWorkspace(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, child, "", []string{"--force"}); err != nil {
+	if err := runInit(&out, child, "", []string{"--force"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !dirExists(filepath.Join(child, ".sqlrs")) {
@@ -395,6 +413,34 @@ func TestFindParentWorkspaceNoParent(t *testing.T) {
 	}
 	if findParentWorkspace(child) {
 		t.Fatalf("expected no parent workspace")
+	}
+}
+
+func TestParseStoreSizeGBValid(t *testing.T) {
+	size, err := parseStoreSizeGB("100GB")
+	if err != nil {
+		t.Fatalf("parseStoreSizeGB: %v", err)
+	}
+	if size != 100 {
+		t.Fatalf("expected 100, got %d", size)
+	}
+}
+
+func TestParseStoreSizeGBInvalidSuffix(t *testing.T) {
+	if _, err := parseStoreSizeGB("100"); err == nil {
+		t.Fatalf("expected error for missing suffix")
+	}
+}
+
+func TestParseStoreSizeGBInvalidValue(t *testing.T) {
+	if _, err := parseStoreSizeGB("abcGB"); err == nil {
+		t.Fatalf("expected error for invalid value")
+	}
+}
+
+func TestParseStoreSizeGBZero(t *testing.T) {
+	if _, err := parseStoreSizeGB("0GB"); err == nil {
+		t.Fatalf("expected error for zero size")
 	}
 }
 

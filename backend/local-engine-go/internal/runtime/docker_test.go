@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -71,6 +73,7 @@ func TestDockerRuntimeStart(t *testing.T) {
 			{output: ""},
 			{output: "container-1\n"},
 			{output: ""},
+			{output: ""},
 			{output: "accepting connections\n"},
 			{output: "0.0.0.0:54321\n"},
 		},
@@ -80,6 +83,7 @@ func TestDockerRuntimeStart(t *testing.T) {
 		ImageID: "postgres:17",
 		DataDir: "/data",
 		Name:    "sqlrs-test",
+		AllowInitdb: false,
 	})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -90,7 +94,7 @@ func TestDockerRuntimeStart(t *testing.T) {
 	if len(runner.calls) == 0 {
 		t.Fatalf("expected docker run to be called")
 	}
-	if len(runner.calls) < 4 {
+	if len(runner.calls) < 7 {
 		t.Fatalf("expected docker run calls, got %+v", runner.calls)
 	}
 	if !containsArg(runner.calls[3].args, "--name", "sqlrs-test") {
@@ -106,12 +110,12 @@ func TestDockerRuntimeStart(t *testing.T) {
 		if containsArg(call.args, "chown", "-R") {
 			foundChown = true
 		}
-		if containsArg(call.args, "chmod", "0700") {
+		if containsFlag(call.args, "chmod") && containsFlag(call.args, "0700") {
 			foundChmod = true
 		}
 	}
 	if !foundMkdir || !foundChown || !foundChmod {
-		t.Fatalf("expected mkdir/chown/chmod calls, got %+v", runner.calls[:3])
+		t.Fatalf("expected mkdir/chown/chmod calls, got %+v", runner.calls[:5])
 	}
 }
 
@@ -126,12 +130,17 @@ func TestDockerRuntimeInitBaseRejectsEmpty(t *testing.T) {
 }
 
 func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
-	runner := &fakeRunner{responses: []runResponse{{output: ""}, {output: ""}, {output: ""}, {output: ""}}}
+	runner := &fakeRunner{responses: []runResponse{
+		{output: ""}, {output: ""}, {output: ""},
+		{output: "missing\n", err: errors.New("exit 1")},
+		{output: ""},
+		{output: ""},
+	}}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	if err := rt.InitBase(context.Background(), "image", "/data"); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) < 4 || runner.calls[0].args[0] != "run" || runner.calls[1].args[0] != "run" || runner.calls[2].args[0] != "run" || runner.calls[3].args[0] != "run" {
+	if len(runner.calls) < 6 || runner.calls[0].args[0] != "run" || runner.calls[1].args[0] != "run" || runner.calls[2].args[0] != "run" || runner.calls[3].args[0] != "run" || runner.calls[4].args[0] != "run" || runner.calls[5].args[0] != "run" {
 		t.Fatalf("expected docker run calls, got %+v", runner.calls)
 	}
 	if !containsArg(runner.calls[0].args, "mkdir", "-p") {
@@ -149,20 +158,59 @@ func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
 	if !containsArg(runner.calls[1].args, "chown", "-R") {
 		t.Fatalf("expected chown call, got %+v", runner.calls[1].args)
 	}
-	if !containsArg(runner.calls[2].args, "chmod", "0700") {
+	if !(containsFlag(runner.calls[2].args, "chmod") && containsFlag(runner.calls[2].args, "0700")) {
 		t.Fatalf("expected chmod call, got %+v", runner.calls[2].args)
 	}
-	if !containsArg(runner.calls[3].args, "initdb", "--username=sqlrs") {
+	if !containsArg(runner.calls[4].args, "initdb", "--username=sqlrs") {
 		found := false
-		for _, arg := range runner.calls[3].args {
+		for _, arg := range runner.calls[4].args {
 			if arg == "initdb" {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Fatalf("expected initdb call, got %+v", runner.calls[3].args)
+			t.Fatalf("expected initdb call, got %+v", runner.calls[4].args)
 		}
+	}
+}
+
+func TestDockerRuntimeInitBaseSkipsWhenPGVersionExists(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pgdata, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write pg_version: %v", err)
+	}
+	runner := &fakeRunner{responses: []runResponse{{output: ""}, {output: ""}, {output: ""}, {output: ""}, {output: ""}}}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
+		t.Fatalf("InitBase: %v", err)
+	}
+	if len(runner.calls) != 3 {
+		t.Fatalf("expected only permission calls, got %+v", runner.calls)
+	}
+	for _, call := range runner.calls {
+		if containsArg(call.args, "initdb", "--username=sqlrs") {
+			t.Fatalf("expected initdb to be skipped, got %+v", call.args)
+		}
+	}
+}
+
+func TestDockerRuntimeInitBaseSkipsWhenPGVersionExistsInContainer(t *testing.T) {
+	dir := t.TempDir()
+	runner := &fakeRunner{responses: []runResponse{{output: ""}, {output: ""}, {output: ""}, {output: ""}}}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
+		t.Fatalf("InitBase: %v", err)
+	}
+	if len(runner.calls) != 4 {
+		t.Fatalf("expected permission calls + pgversion check, got %+v", runner.calls)
+	}
+	if containsArg(runner.calls[len(runner.calls)-1].args, "initdb", "--username=sqlrs") {
+		t.Fatalf("expected initdb to be skipped")
 	}
 }
 
@@ -188,10 +236,10 @@ func TestDockerRuntimeInitBasePermissionError(t *testing.T) {
 
 func TestDockerRuntimeStartRejectsEmptyInputs(t *testing.T) {
 	rt := NewDocker(Options{Runner: &fakeRunner{}})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "", DataDir: "/data"}); err == nil {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "", DataDir: "/data", AllowInitdb: false}); err == nil {
 		t.Fatalf("expected error for empty image id")
 	}
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: ""}); err == nil {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "", AllowInitdb: false}); err == nil {
 		t.Fatalf("expected error for empty data dir")
 	}
 }
@@ -206,7 +254,7 @@ func TestDockerRuntimeStartRunError(t *testing.T) {
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -216,7 +264,7 @@ func TestDockerRuntimeStartDockerUnavailable(t *testing.T) {
 		responses: []runResponse{{output: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?", err: errors.New("fail")}},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil || !strings.Contains(err.Error(), "docker is not running") {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil || !strings.Contains(err.Error(), "docker is not running") {
 		t.Fatalf("expected docker unavailable error, got %v", err)
 	}
 }
@@ -231,7 +279,7 @@ func TestDockerRuntimeStartEmptyContainerID(t *testing.T) {
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -243,12 +291,57 @@ func TestDockerRuntimeStartExecError(t *testing.T) {
 			{output: ""},
 			{output: ""},
 			{output: "container-1\n"},
+			{output: ""},
 			{output: "boom\n", err: errors.New("fail")},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestDockerRuntimeStartRunsInitdbWhenMissing(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: ""}, {output: ""}, {output: ""},
+			{output: "container-1\n"},
+			{output: "missing\n", err: errors.New("exit 1")},
+			{output: ""},
+			{output: ""},
+			{output: ""},
+			{output: "accepting connections\n"},
+			{output: "0.0.0.0:54321\n"},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: true}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	found := false
+	for _, call := range runner.calls {
+		if containsArg(call.args, "initdb", "--username=sqlrs") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected initdb exec call, got %+v", runner.calls)
+	}
+}
+
+func TestDockerRuntimeStartInitdbPermissionError(t *testing.T) {
+	runner := &fakeRunner{
+		responses: []runResponse{
+			{output: ""}, {output: ""}, {output: ""},
+			{output: "container-1\n"},
+			{output: "missing\n", err: errors.New("exit 1")},
+			{output: "initdb: error: could not change permissions of directory", err: errors.New("fail")},
+		},
+	}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: true}); err == nil || !strings.Contains(err.Error(), "permissions are not supported") {
+		t.Fatalf("expected permission error, got %v", err)
 	}
 }
 
@@ -260,12 +353,13 @@ func TestDockerRuntimeStartPortParseError(t *testing.T) {
 			{output: ""},
 			{output: "container-1\n"},
 			{output: ""},
+			{output: ""},
 			{output: "accepting connections\n"},
 			{output: "invalid\n"},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -584,7 +678,29 @@ func TestDockerRuntimeRunStreamingErrorWrapsUnavailable(t *testing.T) {
 	}
 }
 
+func TestDockerRuntimeRunMountError(t *testing.T) {
+	prev := ensureMountFn
+	ensureMountFn = func() error {
+		return errors.New("mount fail")
+	}
+	t.Cleanup(func() { ensureMountFn = prev })
+
+	runner := &fakeRunner{}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.Exec(context.Background(), "container-1", ExecRequest{Args: []string{"echo", "ok"}}); err == nil || !strings.Contains(err.Error(), "mount fail") {
+		t.Fatalf("expected mount error, got %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("expected no docker calls, got %+v", runner.calls)
+	}
+}
+
 func TestNewDockerDefaults(t *testing.T) {
+	prevLookPath := execLookPath
+	t.Cleanup(func() { execLookPath = prevLookPath })
+	execLookPath = func(string) (string, error) {
+		return "/usr/bin/docker", nil
+	}
 	rt := NewDocker(Options{})
 	if rt.binary != defaultDockerBinary {
 		t.Fatalf("expected default binary, got %s", rt.binary)
@@ -598,6 +714,32 @@ func TestDockerRuntimeResolveImageRejectsEmpty(t *testing.T) {
 	rt := NewDocker(Options{Runner: &fakeRunner{}})
 	if _, err := rt.ResolveImage(context.Background(), " "); err == nil {
 		t.Fatalf("expected error for empty image id")
+	}
+}
+
+func TestNewDockerPrefersLinuxDockerOverWindowsInterop(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only behavior")
+	}
+	prevLookPath := execLookPath
+	prevStat := osStat
+	t.Cleanup(func() {
+		execLookPath = prevLookPath
+		osStat = prevStat
+	})
+	execLookPath = func(string) (string, error) {
+		return "C:\\Program Files\\Docker\\docker.exe", nil
+	}
+	osStat = func(name string) (os.FileInfo, error) {
+		if name == "/usr/bin/docker" {
+			return fakeFileInfo{name: name}, nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	rt := NewDocker(Options{})
+	if rt.binary != "/usr/bin/docker" {
+		t.Fatalf("expected /usr/bin/docker, got %s", rt.binary)
 	}
 }
 
@@ -671,7 +813,10 @@ func TestDockerRuntimeInitBaseEnsureDataDirOwnerError(t *testing.T) {
 func TestDockerRuntimeInitBaseInitdbError(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
-			{output: ""}, {output: ""}, {output: ""}, {output: "initdb boom\n", err: errors.New("fail")},
+			{output: ""}, {output: ""}, {output: ""},
+			{output: "missing\n", err: errors.New("exit 1")},
+			{output: "initdb boom\n", err: errors.New("fail")},
+			{output: "missing\n", err: errors.New("exit 1")},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
@@ -684,7 +829,9 @@ func TestDockerRuntimeInitBaseInitdbDockerUnavailable(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
 			{output: ""}, {output: ""}, {output: ""},
+			{output: "missing\n", err: errors.New("exit 1")},
 			{output: "Cannot connect to the Docker daemon", err: errors.New("fail")},
+			{output: "missing\n", err: errors.New("exit 1")},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
@@ -697,7 +844,9 @@ func TestDockerRuntimeInitBaseInitdbPermissionOutput(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
 			{output: ""}, {output: ""}, {output: ""},
+			{output: "missing\n", err: errors.New("exit 1")},
 			{output: "initdb: error: could not change permissions of directory", err: errors.New("fail")},
+			{output: "missing\n", err: errors.New("exit 1")},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
@@ -712,12 +861,13 @@ func TestDockerRuntimeStartPortCommandError(t *testing.T) {
 			{output: ""}, {output: ""}, {output: ""},
 			{output: "container-1\n"},
 			{output: ""},
+			{output: ""},
 			{output: "accepting connections\n"},
 			{output: "port error\n", err: errors.New("fail")},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil || !strings.Contains(err.Error(), "docker port failed") {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil || !strings.Contains(err.Error(), "docker port failed") {
 		t.Fatalf("expected docker port error, got %v", err)
 	}
 }
@@ -730,7 +880,7 @@ func TestDockerRuntimeStartDockerRunUnavailable(t *testing.T) {
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
-	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data"}); err == nil || !strings.Contains(err.Error(), "docker is not running") {
+	if _, err := rt.Start(context.Background(), StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil || !strings.Contains(err.Error(), "docker is not running") {
 		t.Fatalf("expected docker unavailable error, got %v", err)
 	}
 }
@@ -741,12 +891,13 @@ func TestDockerRuntimeStartWaitForReadyCanceled(t *testing.T) {
 			{output: ""}, {output: ""}, {output: ""},
 			{output: "container-1\n"},
 			{output: ""},
+			{output: ""},
 		},
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := rt.Start(ctx, StartRequest{ImageID: "image", DataDir: "/data"}); err == nil {
+	if _, err := rt.Start(ctx, StartRequest{ImageID: "image", DataDir: "/data", AllowInitdb: false}); err == nil {
 		t.Fatalf("expected context cancellation error")
 	}
 }
@@ -1006,3 +1157,14 @@ func containsFlag(args []string, value string) bool {
 	}
 	return false
 }
+
+type fakeFileInfo struct {
+	name string
+}
+
+func (f fakeFileInfo) Name() string       { return f.name }
+func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Mode() os.FileMode  { return 0 }
+func (f fakeFileInfo) ModTime() time.Time { return time.Now() }
+func (f fakeFileInfo) IsDir() bool        { return false }
+func (f fakeFileInfo) Sys() any           { return nil }

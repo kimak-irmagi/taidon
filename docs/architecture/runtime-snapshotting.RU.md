@@ -38,12 +38,12 @@
 
 ### 3.2 Стратегия host-хранилища (по платформам)
 
-- **Linux (primary):** host-managed state store на OverlayFS или btrfs.
-- **Windows:** engine запускается внутри WSL2; используем btrfs на томе state-store
-  для блочного CoW, при отсутствии btrfs — fallback на полное копирование.
+- **Linux (primary):** снапшоттер выбирается по FS `SQLRS_STATE_STORE` (btrfs/zfs → CoW, иначе copy/reflink).
+- **Windows:** engine запускается внутри WSL2; state store — host VHDX, смонтированный в WSL и отформатированный в btrfs при наличии, иначе fallback на полное копирование.
 
 Runtime код не раскрывает конкретные пути: engine/adapter сам разрешает data dirs и передает mounts в runtime.
-Для локального engine корень state store - `<StateDir>/state-store`.
+Для локального engine корень state store по умолчанию `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
+В WSL `sqlrs init --wsl` устанавливает systemd mount unit; движок проверяет активность маунта перед работой со store.
 
 ---
 
@@ -110,12 +110,13 @@ Base states хранятся как **CoW-способные файловые н
 
 - Любой хост без CoW-бэкенда: рекурсивное копирование (MVP).
 
-### 6.3 Плагинный интерфейс snapshotter
+### 6.3 Плагинный интерфейс StateFS
 
 ```text
+Validate(state_store_root)
 Clone(base_state) -> sandbox_state
 Snapshot(sandbox_state) -> new_state
-Destroy(state_or_sandbox)
+RemovePath(state_or_sandbox)
 Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_receive }
 ```
 
@@ -128,15 +129,15 @@ Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_rec
 
 ### 6.4 Политика выбора бэкенда
 
-- Runtime выбирает snapshotter по возможностям хоста и опциональному конфиг-override
+- Runtime выбирает StateFS по возможностям хоста и опциональному конфиг-override
   (например, `snapshot.backend`).
 - Если предпочтительный backend недоступен, происходит **fallback** на `CopySnapshotter`.
 - Выбранный backend фиксируется в метаданных состояния для совместимости GC/restore.
 
-### 6.5 Инварианты snapshotter
+### 6.5 Инварианты StateFS
 
 - **Неизменяемость:** состояние неизменно после `Snapshot`.
-- **Идемпотентный destroy:** `Destroy` безопасно вызывать повторно.
+- **Идемпотентное удаление:** `RemovePath` безопасно вызывать повторно (включая удаление subvolume).
 - **Writable clone:** `Clone` всегда создаёт writable sandbox, независимый от базы.
 - **Non-destructive snapshot:** `Snapshot` не должен изменять sandbox.
 
@@ -183,8 +184,8 @@ Capabilities() -> { requires_db_stop, supports_writable_clone, supports_send_rec
 
 ### 8.3 Граница ответственности за консистентность
 
-Режим консистентности выбирается **оркестрацией** (политика prepare/run), а не snapshotter-ом.
-Snapshotter лишь сообщает, нужна ли остановка БД, через `Capabilities().requires_db_stop`.
+Режим консистентности выбирается **оркестрацией** (политика prepare/run), а не StateFS.
+StateFS лишь сообщает, нужна ли остановка БД, через `Capabilities().requires_db_stop`.
 Если backend требует остановки, оркестрация **обязана** приостановить СУБД перед `Snapshot`.
 
 ---
@@ -262,6 +263,6 @@ Snapshotter лишь сообщает, нужна ли остановка БД, 
 
 ## 12. Открытые вопросы
 
-- Минимальная жизнеспособная абстракция для volume handles между snapshotter-ами?
+- Минимальная жизнеспособная абстракция для volume handles между реализациями StateFS?
 - Насколько агрессивно делать snapshot для крупных seed-шагов?
 - Политика cooldown по умолчанию для экземпляров?

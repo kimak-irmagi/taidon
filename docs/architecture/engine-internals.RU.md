@@ -12,7 +12,7 @@ flowchart LR
   PLAN["Планировщик prepare"]
   EXEC["Исполнитель prepare"]
   CACHE[Клиент кэша состояний]
-  SNAP["Менеджер снапшотов"]
+  SNAP["Менеджер StateFS"]
   QSTORE["Очередь jobs/tasks (SQLite)"]
   RUNTIME["Рантайм экземпляров (Docker)"]
   DBMS["DBMS-коннектор"]
@@ -98,11 +98,14 @@ flowchart LR
 - Общается с локальным state-cache индексом (SQLite) для lookup/store `key -> state_id`.
 - Знает текущий корень state store; никогда не отдает наружу raw filesystem paths.
 
-### 1.7 Менеджер снапшотов
+### 1.7 Менеджер StateFS
 
-- Предпочитает OverlayFS или btrfs на Linux; fallback — копирование.
-- Windows использует те же Linux-снапшоттеры при запуске engine внутри WSL2.
-- Экспортирует `Clone`, `Snapshot`, `Destroy` для states и instances.
+- Выбирает backend StateFS по файловой системе `SQLRS_STATE_STORE`:
+  - btrfs → btrfs backend
+  - zfs dataset mount point (в будущем) → zfs backend
+  - иначе → fallback copy/reflink
+- Windows использует тот же StateFS при запуске engine внутри WSL2.
+- Экспортирует `Validate`, `Clone`, `Snapshot`, `RemovePath` для states и instances.
 - Использует path resolver из State Store, чтобы найти корни `PGDATA` и каталоги states.
 
 ### 1.8 DBMS-коннектор
@@ -115,7 +118,7 @@ flowchart LR
 ### 1.9 Instance Runtime
 
 - Управляет DB-контейнерами через Docker (один контейнер на instance).
-- Применяет монтирования от менеджера снапшотов, задает лимиты ресурсов, default statement timeout.
+- Применяет монтирования от StateFS, задает лимиты ресурсов, default statement timeout.
 - В MVP использует Docker CLI; позже можно заменить на SDK.
 - Устанавливает `PGDATA=/var/lib/postgresql/data` и `POSTGRES_HOST_AUTH_METHOD=trust`.
 - Возвращает connection info контроллеру.
@@ -157,7 +160,8 @@ flowchart LR
 
 ### 1.14 State Store (Paths + Metadata)
 
-- Разрешает корень хранилища в `<StateDir>/state-store`.
+- Разрешает корень хранилища в `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
+- В WSL проверяет активность systemd-маунта `SQLRS_STATE_STORE` перед работой со store.
 - Владеет metadata DB (SQLite WAL) и layout путей (`engines/<engine>/<version>/base|states/<uuid>`).
 - Пишет `engine.json` в state directory (endpoint + PID + auth token + lock) для discovery со стороны CLI.
 - Хранит `parent_state_id` для поддержки иерархии состояний и рекурсивного удаления.
@@ -179,7 +183,7 @@ sequenceDiagram
   participant CTRL as Prepare Controller
   participant CACHE as Cache
   participant DBMS as "DBMS-коннектор"
-  participant SNAP as "Менеджер снапшотов"
+  participant SNAP as "Менеджер StateFS"
   participant RT as Runtime (Docker)
   participant ADAPTER as Script Adapter
   participant INST as Instance Manager
@@ -259,7 +263,7 @@ sequenceDiagram
   participant STORE as "Metadata Store"
   participant INST as "Менеджер экземпляров"
   participant CONN as "Трекинг подключений"
-  participant SNAP as Snapshotter
+  participant SNAP as StateFS
 
   CLI->>API: DELETE /v1/states/{id}?recurse&force&dry_run
   API->>DEL: build deletion tree

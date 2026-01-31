@@ -17,5 +17,17 @@ const binaryName = isWindows() ? "sqlrs-engine.exe" : "sqlrs-engine";
 const output = path.join(distBin, binaryName);
 
 await run({ cmd: ["go", "build", "-o", output, "./cmd/sqlrs-engine"], cwd: engineRoot });
-
 console.log(`Built sqlrs-engine into: ${output}`);
+
+if (isWindows()) {
+  const linuxBinary = "sqlrs-engine-linux-amd64";
+  const linuxOutput = path.join(distBin, linuxBinary);
+  const env = {
+    ...process.env,
+    GOOS: "linux",
+    GOARCH: "amd64",
+    CGO_ENABLED: "0"
+  };
+  await run({ cmd: ["go", "build", "-o", linuxOutput, "./cmd/sqlrs-engine"], cwd: engineRoot, env });
+  console.log(`Built sqlrs-engine (linux/amd64) into: ${linuxOutput}`);
+}

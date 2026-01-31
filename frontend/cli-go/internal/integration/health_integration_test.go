@@ -16,6 +16,9 @@ func TestCLIStatusWithLocalEngine(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
+	if os.Getenv("SQLRS_RUN_DOCKER_TESTS") != "1" {
+		t.Skip("docker tests disabled (set SQLRS_RUN_DOCKER_TESTS=1 to enable)")
+	}
 
 	engineRoot := findEngineModuleRoot(t)
 	tempDir := t.TempDir()
