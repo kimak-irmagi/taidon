@@ -638,18 +638,19 @@ func ensureBtrfsOnPartition(ctx context.Context, distro, part string, allowForma
 		return err
 	}
 	if mounted {
-		if strings.TrimSpace(mountedFs) == "btrfs" {
+		mountedFS := normalizeFSType(mountedFs)
+		if mountedFS == "btrfs" {
 			return nil
 		}
-		if strings.TrimSpace(mountedFs) != "" {
-			return fmt.Errorf("filesystem is %s, expected btrfs (rerun with --reinit)", strings.TrimSpace(mountedFs))
+		if mountedFS != "" {
+			return fmt.Errorf("filesystem is %s, expected btrfs (rerun with --reinit)", mountedFS)
 		}
 		return fmt.Errorf("filesystem is not btrfs (rerun with --reinit)")
 	}
 
 	out, err := runWSLCommandFn(ctx, distro, verbose, "detect filesystem", "blkid", "-o", "value", "-s", "TYPE", part)
 	if err == nil {
-		fsType := strings.TrimSpace(out)
+		fsType := normalizeFSType(out)
 		if fsType == "btrfs" {
 			return nil
 		}
@@ -675,6 +676,14 @@ func ensureBtrfsOnPartition(ctx context.Context, distro, part string, allowForma
 		return err
 	}
 	return nil
+}
+
+func normalizeFSType(value string) string {
+	fields := strings.Fields(value)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
 }
 
 func installSystemdMountUnit(ctx context.Context, distro, unitName, stateDir, mountSource, fstype string, verbose bool) error {
