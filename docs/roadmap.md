@@ -33,8 +33,8 @@ gantt
     Core API + Engine skeleton                 :done, a1, 2026-01-01, 30d
     Local runtime + instance lifecycle         :done, a2, after a1, 45d
     Filesystem snapshot backend (overlayfs)    :done, a2fs, after a2, 20d
-    Filesystem snapshot backend (ZFS)          :a2z, after a2fs, 30d
-    Filesystem snapshot backend (Btrfs)        :a2b, after a2z, 30d
+    Filesystem snapshot backend (Btrfs)        :done, a2b, after a2fs, 30d
+    Filesystem snapshot backend (ZFS)          :a2z, after a2b, 30d
     Liquibase adapter (apply migrations)       :a3, after a2b, 30d
 
     section Product MVP (Local)
@@ -69,11 +69,11 @@ gantt
 
 ---
 
-## Status (as of 2026-01-27)
+## Status (as of 2026-01-31)
 
-- **Done**: local engine API surface (health, config, names, instances, runs, states, prepare jobs, tasks), local runtime and lifecycle, local prepare/plan/run pipeline, job/task persistence and events, state cache foundations and retention rules, CLI basics (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`).
-- **Done (filesystem)**: overlayfs-based copy stub for state snapshots.
-- **In progress**: CLI UX hardening and deterministic execution end-to-end (still missing Liquibase adapter and `apply/status/logs/destroy` equivalents).
+- **Done**: local engine API surface (health, config, names, instances, runs, states, prepare jobs, tasks), local runtime and lifecycle, end-to-end init/prepare/run pipeline, job/task persistence and events, StateFS abstraction, state cache foundations and retention rules, CLI basics (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`), WSL init flow (incl. nsenter install), instance-delete logging.
+- **Done (filesystem)**: overlayfs-based copy stub and Btrfs snapshot backend.
+- **In progress**: CLI UX hardening and deterministic execution (still missing Liquibase adapter and `apply/status/logs/destroy` equivalents).
 - **Planned**: drop-in connection, git-aware CLI, team on-prem orchestration, cloud sharing, education.
 
 ---
@@ -115,7 +115,7 @@ gantt
 - Local runtime (containers) with instance lifecycle — **Done**
 - CLI surface (local): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm` — **Done**
 - Cache v1 (prepare jobs + state reuse + retention) — **Done (core)**
-- Filesystem snapshot backends — **Done** (overlayfs copy stub), **Planned** (ZFS, Btrfs)
+- Filesystem snapshot backends — **Done** (overlayfs copy stub, Btrfs), **Planned** (ZFS)
 - Liquibase adapter (apply changelog) — **Planned**
 - CLI parity with original MVP list (`apply/status/logs/destroy`) — **Planned**
 
