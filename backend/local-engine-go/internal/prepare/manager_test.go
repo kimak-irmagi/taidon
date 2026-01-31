@@ -324,6 +324,36 @@ func (f *fakeSnapshot) Destroy(ctx context.Context, dir string) error {
 	return nil
 }
 
+type fakeBtrfsSnapshot struct {
+	destroyCalls []string
+	isSubvolume  bool
+}
+
+func (f *fakeBtrfsSnapshot) Kind() string {
+	return "btrfs"
+}
+
+func (f *fakeBtrfsSnapshot) Capabilities() snapshot.Capabilities {
+	return snapshot.Capabilities{}
+}
+
+func (f *fakeBtrfsSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
+	return snapshot.CloneResult{}, nil
+}
+
+func (f *fakeBtrfsSnapshot) Snapshot(ctx context.Context, srcDir string, destDir string) error {
+	return nil
+}
+
+func (f *fakeBtrfsSnapshot) Destroy(ctx context.Context, dir string) error {
+	f.destroyCalls = append(f.destroyCalls, dir)
+	return nil
+}
+
+func (f *fakeBtrfsSnapshot) IsSubvolume(ctx context.Context, path string) (bool, error) {
+	return f.isSubvolume, nil
+}
+
 type fakeDBMS struct {
 	prepareCalls int
 	resumeCalls  int
@@ -3907,6 +3937,28 @@ func TestRemoveJobDirNoopAndDelete(t *testing.T) {
 	}
 	if err := mgr.removeJobDir("job-1"); err != nil {
 		t.Fatalf("removeJobDir: %v", err)
+	}
+	if _, err := os.Stat(jobDir); !os.IsNotExist(err) {
+		t.Fatalf("expected job dir removed")
+	}
+}
+
+func TestRemoveJobDirBtrfsRuntimeSubvolume(t *testing.T) {
+	snap := &fakeBtrfsSnapshot{isSubvolume: true}
+	mgr := &Manager{
+		stateStoreRoot: t.TempDir(),
+		snapshot:       snap,
+	}
+	jobDir := filepath.Join(mgr.stateStoreRoot, "jobs", "job-1")
+	runtimeDir := filepath.Join(jobDir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	if err := mgr.removeJobDir("job-1"); err != nil {
+		t.Fatalf("removeJobDir: %v", err)
+	}
+	if len(snap.destroyCalls) != 1 || snap.destroyCalls[0] != runtimeDir {
+		t.Fatalf("expected destroy on runtime dir, got %+v", snap.destroyCalls)
 	}
 	if _, err := os.Stat(jobDir); !os.IsNotExist(err) {
 		t.Fatalf("expected job dir removed")

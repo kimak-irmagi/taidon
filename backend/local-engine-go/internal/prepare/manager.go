@@ -1392,6 +1392,14 @@ func (m *Manager) removeJobDir(jobID string) error {
 		return nil
 	}
 	path := filepath.Join(m.stateStoreRoot, "jobs", jobID)
+	if m.snapshot != nil && m.snapshot.Kind() == "btrfs" {
+		runtimeDir := filepath.Join(path, "runtime")
+		if checker, ok := m.snapshot.(subvolumeChecker); ok {
+			if isSub, err := checker.IsSubvolume(context.Background(), runtimeDir); err == nil && isSub {
+				_ = m.snapshot.Destroy(context.Background(), runtimeDir)
+			}
+		}
+	}
 	return os.RemoveAll(path)
 }
 

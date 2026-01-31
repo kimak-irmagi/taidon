@@ -44,7 +44,7 @@ func IsEngineStateStale(state EngineState, health client.HealthResponse, healthE
 	if state.InstanceID != "" && health.InstanceID != "" && state.InstanceID != health.InstanceID {
 		return true
 	}
-	if state.PID > 0 && !pidRunning && healthErr != nil {
+	if state.PID > 0 && !pidRunning /*&& healthErr != nil*/ {
 		return true
 	}
 	return false

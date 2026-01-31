@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -453,7 +454,8 @@ func NewHandler(opts Options) http.Handler {
 				DryRun: dryRun,
 			})
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
+				log.Printf("delete instance failed id=%s error=%v", idOrName, err)
+				writeErrorResponse(w, "internal_error", "delete instance failed", err.Error(), http.StatusInternalServerError)
 				return
 			}
 			if !found {
@@ -553,7 +555,8 @@ func NewHandler(opts Options) http.Handler {
 				DryRun:  dryRun,
 			})
 			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
+				log.Printf("delete state failed id=%s error=%v", stateID, err)
+				writeErrorResponse(w, "internal_error", "delete state failed", err.Error(), http.StatusInternalServerError)
 				return
 			}
 			if !found {

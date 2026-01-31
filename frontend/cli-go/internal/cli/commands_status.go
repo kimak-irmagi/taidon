@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,7 +27,8 @@ type StatusOptions struct {
 	EngineRunDir    string
 	EngineStatePath string
 	EngineStoreDir  string
-	WSLMountDevice  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -51,7 +53,11 @@ type StatusResult struct {
 }
 
 type LocalDepsOptions struct {
-	Verbose bool
+	Verbose       bool
+	WSLDistro     string
+	WSLStateDir   string
+	WSLMountUnit  string
+	WSLMountFSType string
 }
 
 type LocalDepsStatus struct {
@@ -84,7 +90,8 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 				EngineRunDir:    opts.EngineRunDir,
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
-				WSLMountDevice:  opts.WSLMountDevice,
+				WSLVHDXPath:     opts.WSLVHDXPath,
+				WSLMountUnit:  opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,
@@ -119,7 +126,13 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 
 	var deps LocalDepsStatus
 	if mode == "local" {
-		deps, err = probeLocalDepsFn(ctx, LocalDepsOptions{Verbose: opts.Verbose})
+		deps, err = probeLocalDepsFn(ctx, LocalDepsOptions{
+			Verbose:        opts.Verbose,
+			WSLDistro:      opts.WSLDistro,
+			WSLStateDir:    opts.EngineStoreDir,
+			WSLMountUnit:   opts.WSLMountUnit,
+			WSLMountFSType: opts.WSLMountFSType,
+		})
 		if err != nil {
 			return StatusResult{Endpoint: endpoint, Profile: opts.ProfileName, Mode: mode}, err
 		}
@@ -210,7 +223,7 @@ func probeLocalDeps(ctx context.Context, opts LocalDepsOptions) (LocalDepsStatus
 			warnings = append(warnings, wslWarning)
 		}
 		if wslReady {
-			btrfsReady, btrfsWarning := checkWSLBtrfs(ctx, opts.Verbose)
+			btrfsReady, btrfsWarning := checkWSLBtrfs(ctx, opts)
 			status.BtrfsReady = btrfsReady
 			if btrfsWarning != "" {
 				warnings = append(warnings, btrfsWarning)
@@ -262,30 +275,47 @@ func checkWSL(ctx context.Context, verbose bool) (bool, string) {
 	return true, ""
 }
 
-func checkWSLBtrfs(ctx context.Context, verbose bool) (bool, string) {
-	distros, err := listWSLDistros(ctx)
-	if err != nil {
-		if verbose {
-			return false, fmt.Sprintf("btrfs not ready: %v", err)
+func checkWSLBtrfs(ctx context.Context, opts LocalDepsOptions) (bool, string) {
+	distro := strings.TrimSpace(opts.WSLDistro)
+	if distro == "" {
+		distros, err := listWSLDistros(ctx)
+		if err != nil {
+			if opts.Verbose {
+				return false, fmt.Sprintf("btrfs not ready: %v", err)
+			}
+			return false, "btrfs not ready"
 		}
-		return false, "btrfs not ready"
-	}
-	distro, err := wsl.SelectDistro(distros, "")
-	if err != nil {
-		if verbose {
-			return false, fmt.Sprintf("btrfs not ready: %v", err)
+		distro, err = wsl.SelectDistro(distros, "")
+		if err != nil {
+			if opts.Verbose {
+				return false, fmt.Sprintf("btrfs not ready: %v", err)
+			}
+			return false, "btrfs not ready"
 		}
-		return false, "btrfs not ready"
 	}
-	fsType, err := statWSLFSType(ctx, distro, defaultWSLStateDir)
+	stateDir := strings.TrimSpace(opts.WSLStateDir)
+	if stateDir == "" {
+		stateDir = defaultWSLStateDir
+	}
+	unit := strings.TrimSpace(opts.WSLMountUnit)
+	if unit != "" {
+		active, err := isWSLMountUnitActive(ctx, distro, unit)
+		if err != nil || !active {
+			if opts.Verbose && err != nil {
+				return false, fmt.Sprintf("btrfs not ready: %v", err)
+			}
+			return false, "btrfs not ready"
+		}
+	}
+	fsType, err := statWSLFSType(ctx, distro, stateDir)
 	if err != nil {
-		if verbose {
+		if opts.Verbose {
 			return false, fmt.Sprintf("btrfs not ready: %v", err)
 		}
 		return false, "btrfs not ready"
 	}
 	if strings.TrimSpace(fsType) != "btrfs" {
-		if verbose {
+		if opts.Verbose {
 			return false, fmt.Sprintf("btrfs not ready: fs=%s", strings.TrimSpace(fsType))
 		}
 		return false, "btrfs not ready"
@@ -304,17 +334,47 @@ func listWSLDistros(ctx context.Context) ([]wsl.Distro, error) {
 	return wsl.ParseDistroList(string(out))
 }
 
+func isWSLMountUnitActive(ctx context.Context, distro, unit string) (bool, error) {
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "systemctl", "is-active", unit)
+	out, err := cmd.Output()
+	if err != nil {
+		if isExitStatus(err, 3) || isExitStatus(err, 4) {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == "active", nil
+}
+
 func statWSLFSType(ctx context.Context, distro, stateDir string) (string, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "--", "mkdir", "-p", stateDir)
+	cmd := exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "mkdir", "-p", stateDir)
 	if err := cmd.Run(); err != nil {
 		return "", err
 	}
-	cmd = exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "--", "stat", "-f", "-c", "%T", stateDir)
+	cmd = exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "nsenter", "-t", "1", "-m", "--", "stat", "-f", "-c", "%T", stateDir)
 	out, err := cmd.Output()
-	if err != nil {
-		return "", err
+	if err == nil {
+		return string(out), nil
 	}
-	return string(out), nil
+	if strings.Contains(strings.ToLower(err.Error()), "command not found") {
+		cmd = exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "stat", "-f", "-c", "%T", stateDir)
+		out, err = cmd.Output()
+		if err != nil {
+			return "", err
+		}
+		return string(out), nil
+	}
+	return "", err
+}
+
+func isExitStatus(err error, code int) bool {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode() == code
+	}
+	return false
 }

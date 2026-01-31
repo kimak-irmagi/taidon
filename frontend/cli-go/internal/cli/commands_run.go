@@ -26,7 +26,8 @@ type RunOptions struct {
 	EngineRunDir    string
 	EngineStatePath string
 	EngineStoreDir  string
-	WSLMountDevice  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -106,12 +107,19 @@ func DeleteInstance(ctx context.Context, opts RunOptions, instanceID string) err
 	if strings.TrimSpace(instanceID) == "" {
 		return nil
 	}
+	_, _, err := DeleteInstanceDetailed(ctx, opts, instanceID)
+	return err
+}
+
+func DeleteInstanceDetailed(ctx context.Context, opts RunOptions, instanceID string) (client.DeleteResult, int, error) {
+	if strings.TrimSpace(instanceID) == "" {
+		return client.DeleteResult{}, 0, nil
+	}
 	cliClient, err := runClient(ctx, opts)
 	if err != nil {
-		return err
+		return client.DeleteResult{}, 0, err
 	}
-	_, _, err = cliClient.DeleteInstance(ctx, instanceID, client.DeleteOptions{})
-	return err
+	return cliClient.DeleteInstance(ctx, instanceID, client.DeleteOptions{})
 }
 
 func runClient(ctx context.Context, opts RunOptions) (*client.Client, error) {
@@ -136,7 +144,8 @@ func runClient(ctx context.Context, opts RunOptions) (*client.Client, error) {
 				EngineRunDir:    opts.EngineRunDir,
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
-				WSLMountDevice:  opts.WSLMountDevice,
+				WSLVHDXPath:     opts.WSLVHDXPath,
+				WSLMountUnit:  opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,

@@ -11,14 +11,16 @@ engine:
         distro: Ubuntu
         mode: auto
         mount:
-            device: /dev/sdh2
+            device: /dev/sdg2
+            deviceUUID: e5ce4e96-2dcc-4d16-8a60-4d580af9d46b
             fstype: btrfs
+            unit: home-sinclair-.local-state-sqlrs-store.mount
         stateDir: /home/sinclair/.local/state/sqlrs/store
 orchestrator:
     daemonPath: ../../dist/bin/sqlrs-engine-linux-amd64
     idleTimeout: 120s
     runDir: ${StateDir}/run
-    startupTimeout: 5s
+    startupTimeout: 20s
 profiles:
     local:
         auth:

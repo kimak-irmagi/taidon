@@ -51,13 +51,13 @@ func TestEnsureWSLStoreMountAlreadyMounted(t *testing.T) {
 		calls++
 		switch calls {
 		case 1:
-			if args[0] != "mountpoint" {
-				t.Fatalf("expected mountpoint, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
 			}
-			return "", nil
+			return "active\n", nil
 		case 2:
-			if args[0] != "findmnt" {
-				t.Fatalf("expected findmnt, got %+v", args)
+			if args[0] != "nsenter" {
+				t.Fatalf("expected nsenter, got %+v", args)
 			}
 			return "btrfs\n", nil
 		default:
@@ -69,7 +69,7 @@ func TestEnsureWSLStoreMountAlreadyMounted(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountDevice: "/dev/sda2",
+		WSLMountUnit: "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err != nil {
@@ -84,13 +84,13 @@ func TestEnsureWSLStoreMountWrongFSType(t *testing.T) {
 		calls++
 		switch calls {
 		case 1:
-			if args[0] != "mountpoint" {
-				t.Fatalf("expected mountpoint, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
 			}
-			return "", nil
+			return "active\n", nil
 		case 2:
-			if args[0] != "findmnt" {
-				t.Fatalf("expected findmnt, got %+v", args)
+			if args[0] != "nsenter" {
+				t.Fatalf("expected nsenter, got %+v", args)
 			}
 			return "ext4\n", nil
 		default:
@@ -102,7 +102,7 @@ func TestEnsureWSLStoreMountWrongFSType(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountDevice: "/dev/sda2",
+		WSLMountUnit: "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err == nil || !strings.Contains(err.Error(), "expected btrfs") {
@@ -110,30 +110,30 @@ func TestEnsureWSLStoreMountWrongFSType(t *testing.T) {
 	}
 }
 
-func TestEnsureWSLStoreMountMountsWhenMissing(t *testing.T) {
+func TestEnsureWSLStoreMountStartsWhenInactive(t *testing.T) {
 	prev := runWSLCommandFn
 	calls := 0
 	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
 		calls++
 		switch calls {
 		case 1:
-			if args[0] != "mountpoint" {
-				t.Fatalf("expected mountpoint, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
 			}
-			return "", exitError(1)
+			return "inactive\n", exitError(3)
 		case 2:
-			if args[0] != "mkdir" {
-				t.Fatalf("expected mkdir, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "start" || args[2] != "--no-block" {
+				t.Fatalf("expected systemctl start --no-block, got %+v", args)
 			}
 			return "", nil
 		case 3:
-			if args[0] != "mount" {
-				t.Fatalf("expected mount, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
 			}
-			return "", nil
+			return "active\n", nil
 		case 4:
-			if args[0] != "findmnt" {
-				t.Fatalf("expected findmnt, got %+v", args)
+			if args[0] != "nsenter" {
+				t.Fatalf("expected nsenter, got %+v", args)
 			}
 			return "btrfs\n", nil
 		default:
@@ -145,7 +145,7 @@ func TestEnsureWSLStoreMountMountsWhenMissing(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountDevice: "/dev/sda2",
+		WSLMountUnit: "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err != nil {
@@ -153,32 +153,27 @@ func TestEnsureWSLStoreMountMountsWhenMissing(t *testing.T) {
 	}
 }
 
-func TestEnsureWSLStoreMountMountsWhenMissingExit32(t *testing.T) {
+func TestEnsureWSLStoreMountInactiveVerificationFails(t *testing.T) {
 	prev := runWSLCommandFn
 	calls := 0
 	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
 		calls++
 		switch calls {
 		case 1:
-			if args[0] != "mountpoint" {
-				t.Fatalf("expected mountpoint, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
 			}
-			return "", exitError(32)
+			return "inactive\n", exitError(3)
 		case 2:
-			if args[0] != "mkdir" {
-				t.Fatalf("expected mkdir, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "start" || args[2] != "--no-block" {
+				t.Fatalf("expected systemctl start --no-block, got %+v", args)
 			}
 			return "", nil
 		case 3:
-			if args[0] != "mount" {
-				t.Fatalf("expected mount, got %+v", args)
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
 			}
-			return "", nil
-		case 4:
-			if args[0] != "findmnt" {
-				t.Fatalf("expected findmnt, got %+v", args)
-			}
-			return "btrfs\n", nil
+			return "inactive\n", nil
 		default:
 			return "", nil
 		}
@@ -188,11 +183,11 @@ func TestEnsureWSLStoreMountMountsWhenMissingExit32(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountDevice: "/dev/sda2",
+		WSLMountUnit: "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
-	if err != nil {
-		t.Fatalf("ensureWSLStoreMount: %v", err)
+	if err == nil {
+		t.Fatalf("expected mount unit error")
 	}
 }
 
@@ -203,8 +198,14 @@ func TestEnsureWSLStoreMountFindmntError(t *testing.T) {
 		calls++
 		switch calls {
 		case 1:
-			return "", nil
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
+			}
+			return "active\n", nil
 		default:
+			if args[0] != "nsenter" {
+				t.Fatalf("expected nsenter, got %+v", args)
+			}
 			return "", errors.New("boom")
 		}
 	}
@@ -213,7 +214,7 @@ func TestEnsureWSLStoreMountFindmntError(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountDevice: "/dev/sda2",
+		WSLMountUnit: "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err == nil {
@@ -361,6 +362,30 @@ func TestLoadHealthyState(t *testing.T) {
 	got, ok := loadHealthyState(context.Background(), statePath, 2*time.Second)
 	if !ok || got.Endpoint != server.URL {
 		t.Fatalf("expected healthy state, got %+v (ok=%v)", got, ok)
+	}
+}
+
+func TestLoadHealthyStateWithReasonHealthError(t *testing.T) {
+	temp := t.TempDir()
+	statePath := filepath.Join(temp, "engine.json")
+	state := EngineState{
+		Endpoint:   "http://127.0.0.1:1",
+		InstanceID: "inst",
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if err := os.WriteFile(statePath, data, 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
+
+	_, ok, reason := loadHealthyStateWithReason(context.Background(), statePath, 10*time.Millisecond)
+	if ok {
+		t.Fatalf("expected not ok")
+	}
+	if !strings.Contains(reason, "health check failed") {
+		t.Fatalf("unexpected reason: %q", reason)
 	}
 }
 

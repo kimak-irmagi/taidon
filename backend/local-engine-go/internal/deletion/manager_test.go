@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"sqlrs/engine/internal/runtime"
+	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store"
 )
 
@@ -87,6 +88,36 @@ func (f *fakeRuntime) WaitForReady(ctx context.Context, id string, timeout time.
 		return f.stopErr
 	}
 	return nil
+}
+
+type fakeSnapshot struct {
+	isSubvolume  bool
+	destroyCalls []string
+}
+
+func (f *fakeSnapshot) Kind() string {
+	return "btrfs"
+}
+
+func (f *fakeSnapshot) Capabilities() snapshot.Capabilities {
+	return snapshot.Capabilities{}
+}
+
+func (f *fakeSnapshot) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
+	return snapshot.CloneResult{}, nil
+}
+
+func (f *fakeSnapshot) Snapshot(ctx context.Context, srcDir string, destDir string) error {
+	return nil
+}
+
+func (f *fakeSnapshot) Destroy(ctx context.Context, dir string) error {
+	f.destroyCalls = append(f.destroyCalls, dir)
+	return nil
+}
+
+func (f *fakeSnapshot) IsSubvolume(ctx context.Context, path string) (bool, error) {
+	return f.isSubvolume, nil
 }
 
 func newFakeStore() *fakeStore {
@@ -307,6 +338,41 @@ func TestDeleteInstanceStopsRuntime(t *testing.T) {
 	}
 	if _, ok := st.instances["inst-1"]; ok {
 		t.Fatalf("expected instance to be deleted")
+	}
+}
+
+func TestDeleteInstanceBtrfsRuntimeSubvolume(t *testing.T) {
+	st := newFakeStore()
+	dir := filepath.Join(t.TempDir(), "runtime-dir")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	st.instances["inst-1"] = store.InstanceEntry{
+		InstanceID: "inst-1",
+		StateID:    "state-1",
+		RuntimeDir: strPtr(dir),
+	}
+	snap := &fakeSnapshot{isSubvolume: true}
+	mgr, err := NewManager(Options{
+		Store:    st,
+		Snapshot: snap,
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	_, found, err := mgr.DeleteInstance(context.Background(), "inst-1", DeleteOptions{Force: true})
+	if err != nil {
+		t.Fatalf("DeleteInstance: %v", err)
+	}
+	if !found {
+		t.Fatalf("expected instance to be found")
+	}
+	if len(snap.destroyCalls) != 1 || snap.destroyCalls[0] != dir {
+		t.Fatalf("expected destroy to be called for runtime dir, got %+v", snap.destroyCalls)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime dir to be removed")
 	}
 }
 

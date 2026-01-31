@@ -42,8 +42,10 @@ type EngineWSLConfig struct {
 }
 
 type EngineWSLMountConfig struct {
-	Device string `yaml:"device"`
-	FSType string `yaml:"fstype"`
+	Device     string `yaml:"device"`
+	FSType     string `yaml:"fstype"`
+	DeviceUUID string `yaml:"deviceUUID"`
+	Unit       string `yaml:"unit"`
 }
 
 type ProfileConfig struct {

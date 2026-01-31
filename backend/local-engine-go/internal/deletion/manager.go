@@ -9,6 +9,7 @@ import (
 
 	"sqlrs/engine/internal/conntrack"
 	"sqlrs/engine/internal/runtime"
+	"sqlrs/engine/internal/snapshot"
 	"sqlrs/engine/internal/store"
 )
 
@@ -27,6 +28,7 @@ type Options struct {
 	Store          store.Store
 	Conn           conntrack.Tracker
 	Runtime        runtime.Runtime
+	Snapshot       snapshot.Manager
 	StateStoreRoot string
 }
 
@@ -34,6 +36,7 @@ type Manager struct {
 	store          store.Store
 	conn           conntrack.Tracker
 	runtime        runtime.Runtime
+	snapshot       snapshot.Manager
 	stateStoreRoot string
 }
 
@@ -72,6 +75,7 @@ func NewManager(opts Options) (*Manager, error) {
 		store:          opts.Store,
 		conn:           tracker,
 		runtime:        opts.Runtime,
+		snapshot:       opts.Snapshot,
 		stateStoreRoot: strings.TrimSpace(opts.StateStoreRoot),
 	}, nil
 }
@@ -113,7 +117,7 @@ func (m *Manager) DeleteInstance(ctx context.Context, instanceID string, opts De
 	if err := m.stopRuntime(ctx, entry.RuntimeID); err != nil {
 		return DeleteResult{}, true, err
 	}
-	if err := removeRuntimeDir(entry.RuntimeDir); err != nil {
+	if err := m.removeRuntimeDir(entry.RuntimeDir); err != nil {
 		return DeleteResult{}, true, err
 	}
 	if err := m.store.DeleteInstance(ctx, instanceID); err != nil {
@@ -270,7 +274,7 @@ func (m *Manager) deleteTree(ctx context.Context, node DeleteNode) error {
 		if err := m.stopRuntime(ctx, node.RuntimeID); err != nil {
 			return err
 		}
-		if err := removeRuntimeDir(node.RuntimeDir); err != nil {
+		if err := m.removeRuntimeDir(node.RuntimeDir); err != nil {
 			return err
 		}
 		return m.store.DeleteInstance(ctx, node.ID)
@@ -312,13 +316,24 @@ func (m *Manager) stopRuntime(ctx context.Context, runtimeID *string) error {
 	return nil
 }
 
-func removeRuntimeDir(runtimeDir *string) error {
+type subvolumeChecker interface {
+	IsSubvolume(ctx context.Context, path string) (bool, error)
+}
+
+func (m *Manager) removeRuntimeDir(runtimeDir *string) error {
 	if runtimeDir == nil {
 		return nil
 	}
 	dir := strings.TrimSpace(*runtimeDir)
 	if dir == "" {
 		return nil
+	}
+	if m != nil && m.snapshot != nil && m.snapshot.Kind() == "btrfs" {
+		if checker, ok := m.snapshot.(subvolumeChecker); ok {
+			if isSub, err := checker.IsSubvolume(context.Background(), dir); err == nil && isSub {
+				_ = m.snapshot.Destroy(context.Background(), dir)
+			}
+		}
 	}
 	return os.RemoveAll(dir)
 }

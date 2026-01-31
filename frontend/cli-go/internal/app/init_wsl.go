@@ -31,19 +31,23 @@ type wslInitOptions struct {
 }
 
 type wslInitResult struct {
-	UseWSL      bool
-	Distro      string
-	StateDir    string
-	EnginePath  string
-	StorePath   string
-	MountDevice string
-	MountFSType string
-	Warning     string
+	UseWSL          bool
+	Distro          string
+	StateDir        string
+	EnginePath      string
+	StorePath       string
+	MountDevice     string
+	MountFSType     string
+	MountUnit       string
+	MountDeviceUUID string
+	Warning         string
 }
 
 var initWSLFn = initWSL
 var listWSLDistrosFn = listWSLDistros
 var runWSLCommandFn = runWSLCommand
+var runWSLCommandAllowFailureFn = runWSLCommandAllowFailure
+var runWSLCommandWithInputFn = runWSLCommandWithInput
 var runHostCommandFn = runHostCommand
 var isElevatedFn = isElevated
 
@@ -84,6 +88,9 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 		return wslUnavailable(opts, err.Error())
 	}
 	if err := ensureBtrfsProgs(distro, opts.Verbose); err != nil {
+		return wslUnavailable(opts, err.Error())
+	}
+	if err := ensureSystemdAvailable(distro, opts.Verbose); err != nil {
 		return wslUnavailable(opts, err.Error())
 	}
 
@@ -127,9 +134,14 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 		return wslUnavailable(opts, fmt.Sprintf("WSL state dir resolution failed: %v", err))
 	}
 	logWSLInit(opts.Verbose, "btrfs state dir: %s", stateDir)
+	mountUnit, err := resolveSystemdMountUnit(ctx, distro, stateDir, opts.Verbose)
+	if err != nil {
+		return wslUnavailable(opts, fmt.Sprintf("WSL mount unit resolution failed: %v", err))
+	}
+	logWSLInit(opts.Verbose, "systemd mount unit: %s", mountUnit)
 
 	if opts.Reinit {
-		if err := reinitWSLStore(ctx, distro, stateDir, storePath, opts.Verbose); err != nil {
+		if err := reinitWSLStore(ctx, distro, stateDir, storePath, mountUnit, opts.Verbose); err != nil {
 			return wslUnavailable(opts, fmt.Sprintf("WSL reinit failed: %v", err))
 		}
 	}
@@ -171,7 +183,26 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 	if err := ensureBtrfsOnPartition(ctx, distro, part, allowFormat, opts.Verbose); err != nil {
 		return wslUnavailable(opts, fmt.Sprintf("btrfs format failed: %v", err))
 	}
-	if err := mountBtrfsPartition(ctx, distro, part, stateDir, opts.Verbose); err != nil {
+	deviceUUID, err := resolveWSLPartitionUUID(ctx, distro, part, opts.Verbose)
+	if err != nil {
+		return wslUnavailable(opts, fmt.Sprintf("btrfs device UUID failed: %v", err))
+	}
+	mountSource := part
+	if deviceUUID != "" {
+		mountSource = "/dev/disk/by-uuid/" + deviceUUID
+		if exists, err := wslPathExists(ctx, distro, mountSource, opts.Verbose); err != nil {
+			return wslUnavailable(opts, fmt.Sprintf("btrfs device path check failed: %v", err))
+		} else if !exists {
+			warnings = append(warnings, fmt.Sprintf("WSL mount: %s not found, using %s", mountSource, part))
+			mountSource = part
+		}
+	} else {
+		warnings = append(warnings, fmt.Sprintf("WSL mount: partition UUID unavailable, using %s", part))
+	}
+	if err := installSystemdMountUnit(ctx, distro, mountUnit, stateDir, mountSource, "btrfs", opts.Verbose); err != nil {
+		return wslUnavailable(opts, fmt.Sprintf("btrfs mount unit failed: %v", err))
+	}
+	if err := ensureSystemdMountUnitActive(ctx, distro, mountUnit, stateDir, "btrfs", opts.Verbose); err != nil {
 		return wslUnavailable(opts, fmt.Sprintf("btrfs mount failed: %v", err))
 	}
 	if err := ensureBtrfsSubvolumes(ctx, distro, stateDir, opts.Verbose); err != nil {
@@ -180,15 +211,18 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 	if err := ensureBtrfsOwnership(ctx, distro, stateDir, opts.Verbose); err != nil {
 		return wslUnavailable(opts, fmt.Sprintf("btrfs ownership failed: %v", err))
 	}
+	warnings = append(warnings, "WSL restart required: wsl.exe --shutdown")
 
 	return wslInitResult{
-		UseWSL:      true,
-		Distro:      distro,
-		StateDir:    stateDir,
-		StorePath:   storePath,
-		MountDevice: part,
-		MountFSType: "btrfs",
-		Warning:     strings.Join(warnings, "\n"),
+		UseWSL:          true,
+		Distro:          distro,
+		StateDir:        stateDir,
+		StorePath:       storePath,
+		MountDevice:     part,
+		MountFSType:     "btrfs",
+		MountUnit:       mountUnit,
+		MountDeviceUUID: deviceUUID,
+		Warning:         strings.Join(warnings, "\n"),
 	}, nil
 }
 
@@ -209,7 +243,14 @@ func ensureBtrfsKernel(distro string, verbose bool) error {
 		return fmt.Errorf("btrfs kernel check failed: %v", err)
 	}
 	if !strings.Contains(out, "btrfs") {
-		return fmt.Errorf("btrfs kernel support missing")
+		_, _ = runWSLCommandFn(context.Background(), distro, verbose, "load btrfs module (root)", "modprobe", "btrfs")
+		out, err = runWSLCommandFn(context.Background(), distro, verbose, "check btrfs kernel", "cat", "/proc/filesystems")
+		if err != nil {
+			return fmt.Errorf("btrfs kernel check failed: %v", err)
+		}
+		if !strings.Contains(out, "btrfs") {
+			return fmt.Errorf("btrfs kernel support missing")
+		}
 	}
 	return nil
 }
@@ -231,6 +272,28 @@ func ensureBtrfsProgs(distro string, verbose bool) error {
 		return fmt.Errorf("btrfs-progs install failed: %v", err)
 	}
 	return nil
+}
+
+func ensureSystemdAvailable(distro string, verbose bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := runWSLCommandAllowFailureFn(ctx, distro, verbose, "check systemd (root)", "systemctl", "is-system-running")
+	state := strings.TrimSpace(out)
+	switch state {
+	case "running", "degraded":
+		return nil
+	default:
+		if err != nil && state == "degraded" {
+			return nil
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("systemd is not running in WSL distro %s (enable systemd and restart WSL)", distro)
+	}
+	if state == "" {
+		state = "unknown"
+	}
+	return fmt.Errorf("systemd is not running in WSL distro %s (state=%s). Enable systemd and restart WSL", distro, state)
 }
 
 func checkDockerDesktopRunning(verbose bool) (bool, string, error) {
@@ -377,6 +440,54 @@ func resolveWSLStateStore(distro string, verbose bool) (string, error) {
 		stateHome = path.Join(home, ".local", "state")
 	}
 	return path.Join(stateHome, "sqlrs", "store"), nil
+}
+
+func resolveSystemdMountUnit(ctx context.Context, distro, stateDir string, verbose bool) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	out, err := runWSLCommandFn(ctx, distro, verbose, "resolve mount unit (root)", "systemd-escape", "--path", "--suffix=mount", stateDir)
+	if err != nil {
+		return "", err
+	}
+	unit := sanitizeWSLOutput([]byte(out))
+	if unit == "" {
+		return "", fmt.Errorf("systemd mount unit is empty")
+	}
+	return unit, nil
+}
+
+func resolveWSLPartitionUUID(ctx context.Context, distro, part string, verbose bool) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	if ctxDeadline, ok := ctx.Deadline(); ok {
+		deadline = ctxDeadline
+	}
+	var lastErr error
+	for {
+		out, err := runWSLCommandFn(ctx, distro, verbose, "resolve partition UUID (root)", "blkid", "-o", "value", "-s", "UUID", part)
+		if err != nil {
+			lastErr = err
+			msg := strings.ToLower(err.Error())
+			if strings.Contains(msg, "command not found") {
+				return "", err
+			}
+		} else {
+			uuid := strings.TrimSpace(out)
+			if uuid != "" {
+				return uuid, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return "", fmt.Errorf("partition UUID unavailable: %w", lastErr)
+			}
+			return "", nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 type lsblkEntry struct {
@@ -530,50 +641,229 @@ func ensureBtrfsOnPartition(ctx context.Context, distro, part string, allowForma
 	if !allowFormat {
 		return fmt.Errorf("filesystem is not btrfs (rerun with --reinit)")
 	}
+	if _, err := runWSLCommandFn(ctx, distro, verbose, "wipefs (root)", "wipefs", "-a", part); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "command not found") {
+			return err
+		}
+	}
 	if _, err := runWSLCommandFn(ctx, distro, verbose, "format btrfs (root)", "mkfs.btrfs", "-f", part); err != nil {
+		return err
+	}
+	if err := waitForPartitionFSType(ctx, distro, part, "btrfs", verbose); err != nil {
 		return err
 	}
 	return nil
 }
 
-func mountBtrfsPartition(ctx context.Context, distro, part, stateDir string, verbose bool) error {
+func installSystemdMountUnit(ctx context.Context, distro, unitName, stateDir, mountSource, fstype string, verbose bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if unitName == "" {
+		return fmt.Errorf("mount unit name is empty")
+	}
+	if stateDir == "" {
+		return fmt.Errorf("mount state dir is empty")
+	}
+	if mountSource == "" {
+		return fmt.Errorf("mount source is empty")
+	}
+	if fstype == "" {
+		fstype = "btrfs"
+	}
 	if _, err := runWSLCommandFn(ctx, distro, verbose, "create state dir", "mkdir", "-p", stateDir); err != nil {
 		return err
 	}
-	mounted, err := wslMountpoint(ctx, distro, stateDir, verbose)
+	unitPath := path.Join("/etc/systemd/system", unitName)
+	content := strings.Join([]string{
+		"[Unit]",
+		"Description=SQLRS state store",
+		"After=local-fs.target",
+		"",
+		"[Mount]",
+		"What=" + mountSource,
+		"Where=" + stateDir,
+		"Type=" + fstype,
+		"Options=defaults",
+		"",
+		"[Install]",
+		"WantedBy=multi-user.target",
+		"",
+	}, "\n")
+	if _, err := runWSLCommandWithInputFn(ctx, distro, verbose, "write mount unit (root)", content, "tee", unitPath); err != nil {
+		return err
+	}
+	if _, err := runWSLCommandFn(ctx, distro, verbose, "reload systemd (root)", "systemctl", "daemon-reload"); err != nil {
+		return err
+	}
+	if _, err := runWSLCommandFn(ctx, distro, verbose, "enable mount unit (root)", "systemctl", "enable", unitName); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureSystemdMountUnitActive(ctx context.Context, distro, unitName, stateDir, fstype string, verbose bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if unitName == "" {
+		return fmt.Errorf("mount unit name is empty")
+	}
+	if stateDir == "" {
+		return fmt.Errorf("mount state dir is empty")
+	}
+	if fstype == "" {
+		fstype = "btrfs"
+	}
+	active := false
+	out, err := runWSLCommandFn(ctx, distro, verbose, "check mount unit (root)", "systemctl", "is-active", unitName)
+	if err == nil && strings.TrimSpace(out) == "active" {
+		active = true
+	}
+	if !active {
+		if _, err := runWSLCommandFn(ctx, distro, verbose, "start mount unit (root)", "systemctl", "start", unitName); err != nil {
+			if verbose {
+				if tail, tailErr := runWSLCommandFn(ctx, distro, verbose, "mount unit logs (root)", "journalctl", "-u", unitName, "-n", "20", "--no-pager"); tailErr == nil {
+					return fmt.Errorf("%v\n%s", err, strings.TrimSpace(tail))
+				}
+			}
+			return err
+		}
+		out, err = runWSLCommandFn(ctx, distro, verbose, "check mount unit (root)", "systemctl", "is-active", unitName)
+		if err != nil || strings.TrimSpace(out) != "active" {
+			return fmt.Errorf("mount unit is not active")
+		}
+	}
+	if err := waitForMountFSType(ctx, distro, stateDir, fstype, verbose); err != nil {
+		return err
+	}
+	return nil
+}
+
+func waitForPartitionFSType(ctx context.Context, distro, part, fstype string, verbose bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	attempts := 5
+	var lastFS string
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		out, err := runWSLCommandFn(ctx, distro, verbose, "verify filesystem (root)", "blkid", "-c", "/dev/null", "-p", "-o", "value", "-s", "TYPE", part)
+		if err != nil {
+			lastErr = err
+		} else {
+			lastFS = strings.TrimSpace(out)
+			if lastFS == fstype {
+				return nil
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if lastFS == "" {
+		if err := probeBtrfsMount(ctx, distro, part, verbose); err == nil {
+			return nil
+		} else if lastErr == nil {
+			lastErr = err
+		}
+	}
+	if lastErr != nil {
+		return fmt.Errorf("filesystem verification failed: %w", lastErr)
+	}
+	if lastFS == "" {
+		return fmt.Errorf("filesystem verification failed: empty type")
+	}
+	return fmt.Errorf("filesystem verification failed: %s", lastFS)
+}
+
+func probeBtrfsMount(ctx context.Context, distro, part string, verbose bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	mountDir, err := runWSLCommandFn(ctx, distro, verbose, "probe mount dir (root)", "mktemp", "-d", "/tmp/sqlrs-mount-XXXXXX")
 	if err != nil {
 		return err
 	}
-	if !mounted {
-		if _, err := runWSLCommandFn(ctx, distro, verbose, "mount btrfs (root)", "mount", "-t", "btrfs", part, stateDir); err != nil {
-			return err
-		}
-		fsType, mounted, err := wslFindmntFSType(ctx, distro, stateDir, verbose)
-		if err != nil {
-			return err
-		}
-		if !mounted {
-			return fmt.Errorf("mount verification failed for %s", stateDir)
-		}
-		if strings.TrimSpace(fsType) != "btrfs" {
-			return fmt.Errorf("mounted filesystem is %s, expected btrfs", strings.TrimSpace(fsType))
-		}
+	mountDir = strings.TrimSpace(mountDir)
+	if mountDir == "" {
+		return fmt.Errorf("probe mount dir is empty")
 	}
-	return nil
+	_, mountErr := runWSLCommandInInitNamespace(ctx, distro, verbose, "probe mount (root)", "mount", "-t", "btrfs", part, mountDir)
+	if mountErr != nil {
+		_, _ = runWSLCommandFn(ctx, distro, verbose, "cleanup probe dir (root)", "rmdir", mountDir)
+		return mountErr
+	}
+	_, umountErr := runWSLCommandInInitNamespace(ctx, distro, verbose, "probe umount (root)", "umount", mountDir)
+	_, _ = runWSLCommandFn(ctx, distro, verbose, "cleanup probe dir (root)", "rmdir", mountDir)
+	return umountErr
+}
+
+func waitForMountFSType(ctx context.Context, distro, stateDir, fstype string, verbose bool) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	attempts := 5
+	var lastFS string
+	var mounted bool
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		fsType, isMounted, err := wslFindmntFSType(ctx, distro, stateDir, verbose)
+		if err != nil {
+			lastErr = err
+		} else {
+			mounted = isMounted
+			lastFS = strings.TrimSpace(fsType)
+			if mounted && lastFS == fstype {
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	if !mounted {
+		return fmt.Errorf("mount verification failed for %s", stateDir)
+	}
+	return fmt.Errorf("mounted filesystem is %s, expected %s", lastFS, fstype)
+}
+
+func removeSystemdMountUnit(ctx context.Context, distro, unitName string, verbose bool) {
+	if unitName == "" {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, err := runWSLCommandFn(ctx, distro, verbose, "stop mount unit (root)", "systemctl", "stop", unitName); err != nil {
+		logWSLInit(verbose, "systemd stop failed (ignored): %v", err)
+	}
+	if _, err := runWSLCommandFn(ctx, distro, verbose, "disable mount unit (root)", "systemctl", "disable", unitName); err != nil {
+		logWSLInit(verbose, "systemd disable failed (ignored): %v", err)
+	}
+	unitPath := path.Join("/etc/systemd/system", unitName)
+	if _, err := runWSLCommandFn(ctx, distro, verbose, "remove mount unit (root)", "rm", "-f", unitPath); err != nil {
+		logWSLInit(verbose, "systemd unit removal failed (ignored): %v", err)
+	}
+	if _, err := runWSLCommandFn(ctx, distro, verbose, "reload systemd (root)", "systemctl", "daemon-reload"); err != nil {
+		logWSLInit(verbose, "systemd reload failed (ignored): %v", err)
+	}
 }
 
 func ensureBtrfsSubvolumes(ctx context.Context, distro, stateDir string, verbose bool) error {
 	subvols := []string{"@instances", "@states"}
 	for _, sub := range subvols {
 		target := path.Join(stateDir, sub)
-		exists, err := wslPathExists(ctx, distro, target, verbose)
+		_, err := runWSLCommandInInitNamespace(ctx, distro, verbose, "check path", "stat", target)
 		if err != nil {
-			return err
-		}
-		if exists {
+			if strings.Contains(err.Error(), "No such file") || strings.Contains(err.Error(), "cannot stat") || strings.Contains(err.Error(), "exit status 1") {
+				// continue to create
+			} else {
+				return err
+			}
+		} else {
 			continue
 		}
-		if _, err := runWSLCommandFn(ctx, distro, verbose, "create subvolume (root)", "btrfs", "subvolume", "create", target); err != nil {
+		if _, err := runWSLCommandInInitNamespace(ctx, distro, verbose, "create subvolume (root)", "btrfs", "subvolume", "create", target); err != nil {
 			return err
 		}
 	}
@@ -589,7 +879,7 @@ func ensureBtrfsOwnership(ctx context.Context, distro, stateDir string, verbose 
 	if group != "" {
 		owner = user + ":" + group
 	}
-	if _, err := runWSLCommandFn(ctx, distro, verbose, "chown btrfs (root)", "chown", "-R", owner, stateDir); err != nil {
+	if _, err := runWSLCommandInInitNamespace(ctx, distro, verbose, "chown btrfs (root)", "chown", "-R", owner, stateDir); err != nil {
 		return err
 	}
 	return nil
@@ -614,14 +904,21 @@ func resolveWSLUser(distro string, verbose bool) (string, string, error) {
 	return user, group, nil
 }
 
-func reinitWSLStore(ctx context.Context, distro, stateDir, vhdxPath string, verbose bool) error {
-	mounted, err := wslMountpoint(ctx, distro, stateDir, verbose)
+func reinitWSLStore(ctx context.Context, distro, stateDir, vhdxPath, mountUnit string, verbose bool) error {
+	removeSystemdMountUnit(ctx, distro, mountUnit, verbose)
+
+	fsType, mounted, err := wslFindmntFSType(ctx, distro, stateDir, verbose)
 	if err != nil {
 		return err
 	}
 	if mounted {
-		if _, err := runWSLCommandFn(ctx, distro, verbose, "unmount btrfs (root)", "umount", stateDir); err != nil {
-			return err
+		if strings.TrimSpace(fsType) != "" {
+			logWSLInit(verbose, "unmounting previous WSL store (%s)", strings.TrimSpace(fsType))
+		}
+		if _, err := runWSLCommandInInitNamespace(ctx, distro, verbose, "unmount btrfs (root)", "umount", stateDir); err != nil {
+			if !isWSLNotMountedError(err) {
+				return err
+			}
 		}
 	}
 
@@ -676,11 +973,11 @@ func wslFindmntFSType(ctx context.Context, distro, target string, verbose bool) 
 	} else {
 		args = append(args, "-T", target)
 	}
-	out, err := runWSLCommandFn(ctx, distro, verbose, "findmnt (root)", "findmnt", args...)
+	out, err := wslFindmntRun(ctx, distro, verbose, args)
 	if err == nil {
 		fsType := strings.TrimSpace(out)
 		if fsType == "" {
-			return "", true, nil
+			return "", false, nil
 		}
 		return fsType, true, nil
 	}
@@ -688,6 +985,37 @@ func wslFindmntFSType(ctx context.Context, distro, target string, verbose bool) 
 		return "", false, nil
 	}
 	return "", false, err
+}
+
+func wslFindmntRun(ctx context.Context, distro string, verbose bool, args []string) (string, error) {
+	out, err := runWSLCommandInInitNamespace(ctx, distro, verbose, "findmnt (root)", "findmnt", args...)
+	if err == nil {
+		return out, nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "command not found") {
+		return runWSLCommandFn(ctx, distro, verbose, "findmnt (root)", "findmnt", args...)
+	}
+	return out, err
+}
+
+func runWSLCommandInInitNamespace(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+	cmdArgs := append([]string{"-t", "1", "-m", "--", command}, args...)
+	out, err := runWSLCommandFn(ctx, distro, verbose, desc, "nsenter", cmdArgs...)
+	if err == nil {
+		return out, nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "command not found") {
+		return runWSLCommandFn(ctx, distro, verbose, desc, command, args...)
+	}
+	return out, err
+}
+
+func isWSLNotMountedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not mounted") || strings.Contains(msg, "exit status 32")
 }
 
 func wslUnavailable(opts wslInitOptions, warning string) (wslInitResult, error) {
@@ -749,6 +1077,77 @@ func runWSLCommand(ctx context.Context, distro string, verbose bool, desc string
 	defer stop()
 
 	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		errText := strings.TrimSpace(stderr.String())
+		if errText != "" {
+			return "", fmt.Errorf("%s: %v (%s)", desc, err, errText)
+		}
+		return "", fmt.Errorf("%s: %v", desc, err)
+	}
+	return string(out), nil
+}
+
+func runWSLCommandAllowFailure(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	rootMode := strings.HasSuffix(desc, " (root)")
+	if rootMode && len(desc) > len(" (root)") {
+		desc = strings.TrimSuffix(desc, " (root)")
+	}
+	cmdArgs := []string{"-d", distro}
+	if rootMode {
+		cmdArgs = append(cmdArgs, "-u", "root")
+	}
+	cmdArgs = append(cmdArgs, "--", command)
+	cmdArgs = append(cmdArgs, args...)
+	if verbose {
+		logWSLInit(true, "%s: wsl.exe %s", desc, strings.Join(cmdArgs, " "))
+	}
+
+	stop := startSpinner(desc, verbose)
+	defer stop()
+
+	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		errText := strings.TrimSpace(stderr.String())
+		if errText != "" {
+			return string(out), fmt.Errorf("%s: %v (%s)", desc, err, errText)
+		}
+		return string(out), fmt.Errorf("%s: %v", desc, err)
+	}
+	return string(out), nil
+}
+
+func runWSLCommandWithInput(ctx context.Context, distro string, verbose bool, desc string, input string, command string, args ...string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	rootMode := strings.HasSuffix(desc, " (root)")
+	if rootMode && len(desc) > len(" (root)") {
+		desc = strings.TrimSuffix(desc, " (root)")
+	}
+	cmdArgs := []string{"-d", distro}
+	if rootMode {
+		cmdArgs = append(cmdArgs, "-u", "root")
+	}
+	cmdArgs = append(cmdArgs, "--", command)
+	cmdArgs = append(cmdArgs, args...)
+	if verbose {
+		logWSLInit(true, "%s: wsl.exe %s", desc, strings.Join(cmdArgs, " "))
+	}
+
+	stop := startSpinner(desc, verbose)
+	defer stop()
+
+	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
+	cmd.Stdin = strings.NewReader(input)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

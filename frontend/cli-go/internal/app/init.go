@@ -298,6 +298,12 @@ func buildWorkspaceConfig(opts initOptions, wslResult *wslInitResult, base map[s
 			if wslResult.MountFSType != "" {
 				setNested(cfg, []string{"engine", "wsl", "mount", "fstype"}, wslResult.MountFSType)
 			}
+			if wslResult.MountDeviceUUID != "" {
+				setNested(cfg, []string{"engine", "wsl", "mount", "deviceUUID"}, wslResult.MountDeviceUUID)
+			}
+			if wslResult.MountUnit != "" {
+				setNested(cfg, []string{"engine", "wsl", "mount", "unit"}, wslResult.MountUnit)
+			}
 			if wslResult.StorePath != "" {
 				setNested(cfg, []string{"engine", "storePath"}, wslResult.StorePath)
 			}

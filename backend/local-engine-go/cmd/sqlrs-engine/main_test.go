@@ -623,7 +623,7 @@ func TestEnsureWSLMountSkippedWithoutEnv(t *testing.T) {
 	}
 	t.Cleanup(func() { runMountCommandFn = prevRun })
 
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "")
 	if err := ensureWSLMount("/tmp/sqlrs"); err != nil {
 		t.Fatalf("ensureWSLMount: %v", err)
@@ -631,7 +631,7 @@ func TestEnsureWSLMountSkippedWithoutEnv(t *testing.T) {
 }
 
 func TestEnsureWSLMountRequiresStateStore(t *testing.T) {
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "/dev/sda1")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
 	if err := ensureWSLMount(""); err == nil {
 		t.Fatalf("expected error for empty state store")
@@ -643,34 +643,48 @@ func TestEnsureWSLMountAlreadyMountedBtrfs(t *testing.T) {
 	calls := 0
 	runMountCommandFn = func(name string, args ...string) (string, error) {
 		calls++
-		if name != "findmnt" {
-			t.Fatalf("unexpected command: %s", name)
+		switch calls {
+		case 1:
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl, got %s", name)
+			}
+			return "active\n", nil
+		case 2:
+			if name != "findmnt" {
+				t.Fatalf("expected findmnt, got %s", name)
+			}
+			return "btrfs\n", nil
+		default:
+			return "", nil
 		}
-		return "btrfs\n", nil
 	}
 	t.Cleanup(func() { runMountCommandFn = prevRun })
 
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "/dev/sda1")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
 	if err := ensureWSLMount(t.TempDir()); err != nil {
 		t.Fatalf("ensureWSLMount: %v", err)
 	}
-	if calls != 1 {
-		t.Fatalf("expected single findmnt call, got %d", calls)
+	if calls != 2 {
+		t.Fatalf("expected systemctl and findmnt calls, got %d", calls)
 	}
 }
 
 func TestEnsureWSLMountAlreadyMountedWrongFS(t *testing.T) {
 	prevRun := runMountCommandFn
 	runMountCommandFn = func(name string, args ...string) (string, error) {
-		if name != "findmnt" {
-			t.Fatalf("unexpected command: %s", name)
+		switch name {
+		case "systemctl":
+			return "active\n", nil
+		case "findmnt":
+			return "ext4\n", nil
+		default:
+			return "", nil
 		}
-		return "ext4\n", nil
 	}
 	t.Cleanup(func() { runMountCommandFn = prevRun })
 
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "/dev/sda1")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
 	if err := ensureWSLMount(t.TempDir()); err == nil {
 		t.Fatalf("expected error for wrong fs")
@@ -684,13 +698,21 @@ func TestEnsureWSLMountMountsAndVerifies(t *testing.T) {
 		calls = append(calls, name)
 		switch len(calls) {
 		case 1:
-			return "", exitError(1)
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl, got %s", name)
+			}
+			return "inactive\n", exitError(3)
 		case 2:
-			if name != "mount" {
-				t.Fatalf("expected mount, got %s", name)
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl start, got %s", name)
 			}
 			return "", nil
 		case 3:
+			if name != "systemctl" {
+				t.Fatalf("expected systemctl is-active, got %s", name)
+			}
+			return "active\n", nil
+		case 4:
 			if name != "findmnt" {
 				t.Fatalf("expected findmnt, got %s", name)
 			}
@@ -701,7 +723,7 @@ func TestEnsureWSLMountMountsAndVerifies(t *testing.T) {
 	}
 	t.Cleanup(func() { runMountCommandFn = prevRun })
 
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "/dev/sda1")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
 	if err := ensureWSLMount(t.TempDir()); err != nil {
 		t.Fatalf("ensureWSLMount: %v", err)
@@ -711,17 +733,17 @@ func TestEnsureWSLMountMountsAndVerifies(t *testing.T) {
 func TestEnsureWSLMountMountFails(t *testing.T) {
 	prevRun := runMountCommandFn
 	runMountCommandFn = func(name string, args ...string) (string, error) {
-		if name == "findmnt" {
-			return "", exitError(1)
+		if name == "systemctl" && len(args) > 0 && args[0] == "is-active" {
+			return "inactive\n", exitError(3)
 		}
-		if name == "mount" {
+		if name == "systemctl" && len(args) > 0 && args[0] == "start" {
 			return "boom\n", errors.New("fail")
 		}
 		return "", nil
 	}
 	t.Cleanup(func() { runMountCommandFn = prevRun })
 
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "/dev/sda1")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
 	if err := ensureWSLMount(t.TempDir()); err == nil {
 		t.Fatalf("expected mount error")
@@ -730,24 +752,22 @@ func TestEnsureWSLMountMountFails(t *testing.T) {
 
 func TestEnsureWSLMountVerifyFails(t *testing.T) {
 	prevRun := runMountCommandFn
-	findmntCalls := 0
 	runMountCommandFn = func(name string, args ...string) (string, error) {
 		switch name {
-		case "findmnt":
-			findmntCalls++
-			if findmntCalls == 1 {
-				return "", exitError(1)
+		case "systemctl":
+			if len(args) > 0 && args[0] == "is-active" {
+				return "active\n", nil
 			}
-			return "ext4\n", nil
-		case "mount":
 			return "", nil
+		case "findmnt":
+			return "ext4\n", nil
 		default:
 			return "", nil
 		}
 	}
 	t.Cleanup(func() { runMountCommandFn = prevRun })
 
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "/dev/sda1")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
 	if err := ensureWSLMount(t.TempDir()); err == nil {
 		t.Fatalf("expected verification error")
@@ -757,14 +777,19 @@ func TestEnsureWSLMountVerifyFails(t *testing.T) {
 func TestEnsureWSLMountFindmntUnexpectedError(t *testing.T) {
 	prevRun := runMountCommandFn
 	runMountCommandFn = func(name string, args ...string) (string, error) {
-		if name != "findmnt" {
+		switch name {
+		case "systemctl":
+			return "active\n", nil
+		case "findmnt":
+			return "", errors.New("boom")
+		default:
 			t.Fatalf("unexpected command: %s", name)
 		}
-		return "", errors.New("boom")
+		return "", nil
 	}
 	t.Cleanup(func() { runMountCommandFn = prevRun })
 
-	t.Setenv("SQLRS_WSL_MOUNT_DEVICE", "/dev/sda1")
+	t.Setenv("SQLRS_WSL_MOUNT_UNIT", "sqlrs-state-store.mount")
 	t.Setenv("SQLRS_WSL_MOUNT_FSTYPE", "btrfs")
 	if err := ensureWSLMount(t.TempDir()); err == nil {
 		t.Fatalf("expected error")

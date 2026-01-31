@@ -94,7 +94,7 @@ func TestDockerRuntimeStart(t *testing.T) {
 	if len(runner.calls) == 0 {
 		t.Fatalf("expected docker run to be called")
 	}
-	if len(runner.calls) < 5 {
+	if len(runner.calls) < 7 {
 		t.Fatalf("expected docker run calls, got %+v", runner.calls)
 	}
 	if !containsArg(runner.calls[3].args, "--name", "sqlrs-test") {
@@ -110,12 +110,12 @@ func TestDockerRuntimeStart(t *testing.T) {
 		if containsArg(call.args, "chown", "-R") {
 			foundChown = true
 		}
-		if containsArg(call.args, "chmod", "0700") {
+		if containsFlag(call.args, "chmod") && containsFlag(call.args, "0700") {
 			foundChmod = true
 		}
 	}
 	if !foundMkdir || !foundChown || !foundChmod {
-		t.Fatalf("expected mkdir/chown/chmod calls, got %+v", runner.calls[:3])
+		t.Fatalf("expected mkdir/chown/chmod calls, got %+v", runner.calls[:5])
 	}
 }
 
@@ -158,7 +158,7 @@ func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
 	if !containsArg(runner.calls[1].args, "chown", "-R") {
 		t.Fatalf("expected chown call, got %+v", runner.calls[1].args)
 	}
-	if !containsArg(runner.calls[2].args, "chmod", "0700") {
+	if !(containsFlag(runner.calls[2].args, "chmod") && containsFlag(runner.calls[2].args, "0700")) {
 		t.Fatalf("expected chmod call, got %+v", runner.calls[2].args)
 	}
 	if !containsArg(runner.calls[4].args, "initdb", "--username=sqlrs") {
@@ -170,7 +170,7 @@ func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Fatalf("expected initdb call, got %+v", runner.calls[3].args)
+			t.Fatalf("expected initdb call, got %+v", runner.calls[4].args)
 		}
 	}
 }
@@ -184,7 +184,7 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExists(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pgdata, "PG_VERSION"), []byte("17"), 0o600); err != nil {
 		t.Fatalf("write pg_version: %v", err)
 	}
-	runner := &fakeRunner{responses: []runResponse{{output: ""}, {output: ""}, {output: ""}}}
+	runner := &fakeRunner{responses: []runResponse{{output: ""}, {output: ""}, {output: ""}, {output: ""}, {output: ""}}}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
 		t.Fatalf("InitBase: %v", err)

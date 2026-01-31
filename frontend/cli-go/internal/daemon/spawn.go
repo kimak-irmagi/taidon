@@ -7,20 +7,20 @@ import (
 	"strings"
 )
 
-func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountDevice, mountFSType, logPath string) (*exec.Cmd, error) {
+func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountUnit, mountFSType, logPath string) (*exec.Cmd, error) {
 	args := []string{
 		"--run-dir", runDir,
 		"--listen", "127.0.0.1:0",
 		"--write-engine-json", statePath,
 	}
 	if wslDistro != "" {
-		wslCmd := []string{"-d", wslDistro, "--"}
+		wslCmd := []string{"-d", wslDistro, "-u", "root", "--"}
 		envVars := []string{}
 		if storeDir != "" {
 			envVars = append(envVars, "SQLRS_STATE_STORE="+storeDir)
 		}
-		if mountDevice != "" {
-			envVars = append(envVars, "SQLRS_WSL_MOUNT_DEVICE="+mountDevice)
+		if mountUnit != "" {
+			envVars = append(envVars, "SQLRS_WSL_MOUNT_UNIT="+mountUnit)
 		}
 		if mountFSType != "" {
 			envVars = append(envVars, "SQLRS_WSL_MOUNT_FSTYPE="+mountFSType)
@@ -29,7 +29,7 @@ func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountDevic
 			wslCmd = append(wslCmd, "env")
 			wslCmd = append(wslCmd, envVars...)
 		}
-		wslCmd = append(wslCmd, path)
+		wslCmd = append(wslCmd, "nsenter", "-t", "1", "-m", "--", path)
 		wslCmd = append(wslCmd, args...)
 		if runtime.GOOS == "windows" {
 			cmdline := buildCmdLine("wsl.exe", wslCmd, "")
@@ -50,8 +50,8 @@ func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountDevic
 	if storeDir != "" {
 		envVars = append(envVars, "SQLRS_STATE_STORE="+storeDir)
 	}
-	if mountDevice != "" {
-		envVars = append(envVars, "SQLRS_WSL_MOUNT_DEVICE="+mountDevice)
+	if mountUnit != "" {
+		envVars = append(envVars, "SQLRS_WSL_MOUNT_UNIT="+mountUnit)
 	}
 	if mountFSType != "" {
 		envVars = append(envVars, "SQLRS_WSL_MOUNT_FSTYPE="+mountFSType)

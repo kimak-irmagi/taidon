@@ -50,12 +50,14 @@ func TestInitUpdateExistingWorkspaceWSL(t *testing.T) {
 
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
 		return wslInitResult{
-			UseWSL:      true,
-			Distro:      "Ubuntu",
-			StateDir:    "/var/lib/sqlrs",
-			StorePath:   "C:\\sqlrs\\store\\btrfs.vhdx",
-			MountDevice: "/dev/sda2",
-			MountFSType: "btrfs",
+			UseWSL:          true,
+			Distro:          "Ubuntu",
+			StateDir:        "/var/lib/sqlrs",
+			StorePath:       "C:\\sqlrs\\store\\btrfs.vhdx",
+			MountDevice:     "/dev/sda2",
+			MountFSType:     "btrfs",
+			MountUnit:       "sqlrs-state-store.mount",
+			MountDeviceUUID: "uuid-456",
 		}, nil
 	})
 
@@ -82,6 +84,12 @@ func TestInitUpdateExistingWorkspaceWSL(t *testing.T) {
 	}
 	if got := nestedString(raw, "engine", "wsl", "mount", "fstype"); got != "btrfs" {
 		t.Fatalf("expected mount fstype, got %q", got)
+	}
+	if got := nestedString(raw, "engine", "wsl", "mount", "unit"); got != "sqlrs-state-store.mount" {
+		t.Fatalf("expected mount unit, got %q", got)
+	}
+	if got := nestedString(raw, "engine", "wsl", "mount", "deviceUUID"); got != "uuid-456" {
+		t.Fatalf("expected mount UUID, got %q", got)
 	}
 }
 

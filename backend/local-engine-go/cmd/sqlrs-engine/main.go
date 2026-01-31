@@ -270,6 +270,7 @@ func run(args []string) (int, error) {
 		Store:          store,
 		Conn:           conntrack.Noop{},
 		Runtime:        rt,
+		Snapshot:       snap,
 		StateStoreRoot: stateStoreRoot,
 	})
 	if err != nil {
@@ -434,41 +435,44 @@ func isCharDevice(file *os.File) bool {
 }
 
 func ensureWSLMount(stateStoreRoot string) error {
-	device := strings.TrimSpace(os.Getenv("SQLRS_WSL_MOUNT_DEVICE"))
+	unit := strings.TrimSpace(os.Getenv("SQLRS_WSL_MOUNT_UNIT"))
 	fstype := strings.TrimSpace(os.Getenv("SQLRS_WSL_MOUNT_FSTYPE"))
-	if device == "" && fstype == "" {
+	if unit == "" && fstype == "" {
 		return nil
 	}
-	if device == "" || fstype == "" {
-		return fmt.Errorf("SQLRS_WSL_MOUNT_DEVICE and SQLRS_WSL_MOUNT_FSTYPE must be set")
+	if unit == "" {
+		return fmt.Errorf("SQLRS_WSL_MOUNT_UNIT must be set")
 	}
 	if strings.TrimSpace(stateStoreRoot) == "" {
 		return fmt.Errorf("SQLRS_STATE_STORE is required to mount WSL device")
 	}
+	if fstype == "" {
+		fstype = "btrfs"
+	}
 	if err := os.MkdirAll(stateStoreRoot, 0o700); err != nil {
 		return err
+	}
+	active, err := isSystemdUnitActive(unit)
+	if err != nil {
+		return fmt.Errorf("mount unit check failed: %w", err)
+	}
+	if !active {
+		if _, err := runMountCommandFn("systemctl", "start", unit); err != nil {
+			return fmt.Errorf("mount unit start failed: %w", err)
+		}
+		active, err = isSystemdUnitActive(unit)
+		if err != nil {
+			return fmt.Errorf("mount unit check failed: %w", err)
+		}
+		if !active {
+			return fmt.Errorf("mount unit is not active")
+		}
 	}
 	fsType, mounted, err := findmntFSType(stateStoreRoot)
 	if err != nil {
 		return err
 	}
-	if mounted {
-		if fsType == "" {
-			return fmt.Errorf("mount verification failed for %s", stateStoreRoot)
-		}
-		if fsType != fstype {
-			return fmt.Errorf("mounted filesystem is %s, expected %s", fsType, fstype)
-		}
-		return nil
-	}
-	if _, err := runMountCommandFn("mount", "-t", fstype, device, stateStoreRoot); err != nil {
-		return fmt.Errorf("mount failed: %w", err)
-	}
-	fsType, mounted, err = findmntFSType(stateStoreRoot)
-	if err != nil {
-		return err
-	}
-	if !mounted {
+	if !mounted || fsType == "" {
 		return fmt.Errorf("mount verification failed for %s", stateStoreRoot)
 	}
 	if fsType != fstype {
@@ -494,6 +498,17 @@ func isExitStatus(err error, code int) bool {
 		return exitErr.ExitCode() == code
 	}
 	return false
+}
+
+func isSystemdUnitActive(unit string) (bool, error) {
+	out, err := runMountCommandFn("systemctl", "is-active", unit)
+	if err != nil {
+		if isExitStatus(err, 3) || isExitStatus(err, 4) {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.TrimSpace(out) == "active", nil
 }
 
 func runMountCommand(name string, args ...string) (string, error) {

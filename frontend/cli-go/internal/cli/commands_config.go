@@ -24,7 +24,8 @@ type ConfigOptions struct {
 	EngineRunDir    string
 	EngineStatePath string
 	EngineStoreDir  string
-	WSLMountDevice  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -93,7 +94,8 @@ func configClient(ctx context.Context, opts ConfigOptions) (*client.Client, erro
 				EngineRunDir:    opts.EngineRunDir,
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
-				WSLMountDevice:  opts.WSLMountDevice,
+				WSLVHDXPath:     opts.WSLVHDXPath,
+				WSLMountUnit:  opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,

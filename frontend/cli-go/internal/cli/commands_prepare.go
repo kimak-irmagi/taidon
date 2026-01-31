@@ -35,7 +35,8 @@ type PrepareOptions struct {
 	EngineRunDir    string
 	EngineStatePath string
 	EngineStoreDir  string
-	WSLMountDevice  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -188,7 +189,8 @@ func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, er
 				EngineRunDir:    opts.EngineRunDir,
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
-				WSLMountDevice:  opts.WSLMountDevice,
+				WSLVHDXPath:     opts.WSLVHDXPath,
+				WSLMountUnit:  opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,

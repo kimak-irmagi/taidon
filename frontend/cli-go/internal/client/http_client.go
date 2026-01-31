@@ -446,6 +446,13 @@ func parseErrorResponse(resp *http.Response) error {
 			}
 			return fmt.Errorf("%s", errResp.Message)
 		}
+		body := strings.TrimSpace(string(data))
+		if body != "" {
+			if len(body) > 200 {
+				body = body[:200] + "..."
+			}
+			return fmt.Errorf("unexpected status: %s: %s", resp.Status, body)
+		}
 	}
 	return &HTTPStatusError{StatusCode: resp.StatusCode, Status: resp.Status}
 }

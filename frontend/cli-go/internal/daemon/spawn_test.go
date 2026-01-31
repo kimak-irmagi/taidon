@@ -25,7 +25,7 @@ func TestBuildDaemonCommand(t *testing.T) {
 func TestBuildDaemonCommandWSL(t *testing.T) {
 	runDir := "/var/lib/sqlrs/run"
 	statePath := "/mnt/c/sqlrs/engine.json"
-	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "/var/lib/sqlrs/store", "/dev/sda2", "btrfs", filepath.Join("C:\\", "sqlrs", "logs", "engine.log"))
+	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "/var/lib/sqlrs/store", "sqlrs-state-store.mount", "btrfs", filepath.Join("C:\\", "sqlrs", "logs", "engine.log"))
 	if err != nil {
 		t.Fatalf("buildDaemonCommand: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestBuildDaemonCommandWSL(t *testing.T) {
 		if len(cmd.Args) < 5 || cmd.Args[0] != "wsl.exe" {
 			t.Fatalf("unexpected args: %+v", cmd.Args)
 		}
-		if cmd.Args[1] != "-d" || cmd.Args[2] != "Ubuntu" {
+		if cmd.Args[1] != "-d" || cmd.Args[2] != "Ubuntu" || cmd.Args[3] != "-u" || cmd.Args[4] != "root" {
 			t.Fatalf("expected WSL distro args, got %+v", cmd.Args)
 		}
 	}
@@ -48,18 +48,21 @@ func TestBuildDaemonCommandWSL(t *testing.T) {
 		if !containsArg(cmd.Args, "SQLRS_STATE_STORE=/var/lib/sqlrs/store") {
 			t.Fatalf("expected SQLRS_STATE_STORE to be passed via args")
 		}
-		if !containsArg(cmd.Args, "SQLRS_WSL_MOUNT_DEVICE=/dev/sda2") {
-			t.Fatalf("expected SQLRS_WSL_MOUNT_DEVICE to be passed via args")
+		if !containsArg(cmd.Args, "SQLRS_WSL_MOUNT_UNIT=sqlrs-state-store.mount") {
+			t.Fatalf("expected SQLRS_WSL_MOUNT_UNIT to be passed via args")
 		}
 		if !containsArg(cmd.Args, "SQLRS_WSL_MOUNT_FSTYPE=btrfs") {
 			t.Fatalf("expected SQLRS_WSL_MOUNT_FSTYPE to be passed via args")
+		}
+		if !containsArg(cmd.Args, "nsenter") {
+			t.Fatalf("expected nsenter to be used in WSL command")
 		}
 	} else {
 		if cmd.Env == nil || !containsEnv(cmd.Env, "SQLRS_STATE_STORE=/var/lib/sqlrs/store") {
 			t.Fatalf("expected SQLRS_STATE_STORE env")
 		}
-		if !containsEnv(cmd.Env, "SQLRS_WSL_MOUNT_DEVICE=/dev/sda2") {
-			t.Fatalf("expected SQLRS_WSL_MOUNT_DEVICE env")
+		if !containsEnv(cmd.Env, "SQLRS_WSL_MOUNT_UNIT=sqlrs-state-store.mount") {
+			t.Fatalf("expected SQLRS_WSL_MOUNT_UNIT env")
 		}
 		if !containsEnv(cmd.Env, "SQLRS_WSL_MOUNT_FSTYPE=btrfs") {
 			t.Fatalf("expected SQLRS_WSL_MOUNT_FSTYPE env")

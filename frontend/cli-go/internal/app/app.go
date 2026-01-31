@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -128,11 +129,12 @@ func Run(args []string) error {
 	engineRunDir := ""
 	engineStatePath := ""
 	engineStoreDir := strings.TrimSpace(cfg.Engine.StorePath)
-	engineWSLMountDevice := ""
+	engineHostStorePath := engineStoreDir
+	engineWSLMountUnit := ""
 	engineWSLMountFSType := ""
 	wslDistro := ""
 	if runtime.GOOS == "windows" {
-		daemonPath, engineRunDir, engineStatePath, engineStoreDir, wslDistro, engineWSLMountDevice, engineWSLMountFSType, err = resolveWSLSettings(cfg, dirs, daemonPath)
+		daemonPath, engineRunDir, engineStatePath, engineStoreDir, wslDistro, engineWSLMountUnit, engineWSLMountFSType, err = resolveWSLSettings(cfg, dirs, daemonPath)
 		if err != nil {
 			return err
 		}
@@ -156,7 +158,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -179,7 +182,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -199,7 +203,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -232,7 +237,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -252,7 +258,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -262,7 +269,22 @@ func Run(args []string) error {
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
 				defer func(instanceID string) {
-					_ = cli.DeleteInstance(context.Background(), runOpts, instanceID)
+					result, status, err := cli.DeleteInstanceDetailed(context.Background(), runOpts, instanceID)
+					if err != nil {
+						if opts.Verbose {
+							fmt.Fprintf(os.Stderr, "cleanup failed for instance %s: %v\n", instanceID, err)
+						} else {
+							fmt.Fprintf(os.Stderr, "cleanup failed: %v\n", err)
+						}
+						return
+					}
+					if status == http.StatusConflict || strings.EqualFold(result.Outcome, "blocked") {
+						if opts.Verbose {
+							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s: %s\n", instanceID, formatCleanupResult(result))
+						} else {
+							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s\n", instanceID)
+						}
+					}
 				}(prepared.InstanceID)
 			}
 			if err := runRun(os.Stdout, os.Stderr, runOpts, "psql", cmd.Args, workspaceRoot, cwd); err != nil {
@@ -280,7 +302,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -290,7 +313,22 @@ func Run(args []string) error {
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
 				defer func(instanceID string) {
-					_ = cli.DeleteInstance(context.Background(), runOpts, instanceID)
+					result, status, err := cli.DeleteInstanceDetailed(context.Background(), runOpts, instanceID)
+					if err != nil {
+						if opts.Verbose {
+							fmt.Fprintf(os.Stderr, "cleanup failed for instance %s: %v\n", instanceID, err)
+						} else {
+							fmt.Fprintf(os.Stderr, "cleanup failed: %v\n", err)
+						}
+						return
+					}
+					if status == http.StatusConflict || strings.EqualFold(result.Outcome, "blocked") {
+						if opts.Verbose {
+							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s: %s\n", instanceID, formatCleanupResult(result))
+						} else {
+							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s\n", instanceID)
+						}
+					}
 				}(prepared.InstanceID)
 			}
 			if err := runRun(os.Stdout, os.Stderr, runOpts, "pgbench", cmd.Args, workspaceRoot, cwd); err != nil {
@@ -314,7 +352,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -357,7 +396,8 @@ func Run(args []string) error {
 				EngineRunDir:    engineRunDir,
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
-				WSLMountDevice:  engineWSLMountDevice,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:  engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -408,6 +448,23 @@ func writeJSON(w io.Writer, v any) error {
 	return err
 }
 
+func formatCleanupResult(result client.DeleteResult) string {
+	parts := make([]string, 0, 3)
+	if strings.TrimSpace(result.Outcome) != "" {
+		parts = append(parts, "outcome="+result.Outcome)
+	}
+	if strings.TrimSpace(result.Root.Blocked) != "" {
+		parts = append(parts, "blocked="+result.Root.Blocked)
+	}
+	if result.Root.Connections != nil {
+		parts = append(parts, fmt.Sprintf("connections=%d", *result.Root.Connections))
+	}
+	if len(parts) == 0 {
+		return "blocked"
+	}
+	return strings.Join(parts, ", ")
+}
+
 func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (string, string, string, string, string, string, string, error) {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Engine.WSL.Mode))
 	if mode == "" {
@@ -419,7 +476,7 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 
 	stateDir := strings.TrimSpace(cfg.Engine.WSL.StateDir)
 	distro := strings.TrimSpace(cfg.Engine.WSL.Distro)
-	mountDevice := strings.TrimSpace(cfg.Engine.WSL.Mount.Device)
+	mountUnit := strings.TrimSpace(cfg.Engine.WSL.Mount.Unit)
 	mountFSType := strings.TrimSpace(cfg.Engine.WSL.Mount.FSType)
 	if distro == "" {
 		distros, err := listWSLDistros()
@@ -442,6 +499,12 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 			return "", "", "", "", "", "", "", fmt.Errorf("WSL configuration is missing distro or stateDir")
 		}
 		return daemonPath, "", "", "", "", "", "", nil
+	}
+	if mountUnit == "" && mode == "required" {
+		return "", "", "", "", "", "", "", fmt.Errorf("WSL configuration is missing mount unit (run sqlrs init --wsl)")
+	}
+	if mountFSType == "" && mountUnit != "" {
+		mountFSType = "btrfs"
 	}
 
 	engineBinary := daemonPath
@@ -466,7 +529,7 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 	}
 
 	runDir := path.Join(stateDir, "run")
-	return wslDaemonPath, runDir, wslStatePath, stateDir, distro, mountDevice, mountFSType, nil
+	return wslDaemonPath, runDir, wslStatePath, stateDir, distro, mountUnit, mountFSType, nil
 }
 
 func windowsToWSLPath(value string) (string, error) {

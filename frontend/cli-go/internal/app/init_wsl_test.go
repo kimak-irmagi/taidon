@@ -17,11 +17,13 @@ func TestInitWSLHappyAutoDistro(t *testing.T) {
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
 		captured = opts
 		return wslInitResult{
-			UseWSL:     true,
-			Distro:     "Ubuntu",
-			StateDir:   "/var/lib/sqlrs",
-			EnginePath: "/opt/sqlrs/sqlrs-engine",
-			StorePath:  "C:\\sqlrs\\store\\btrfs.vhdx",
+			UseWSL:          true,
+			Distro:          "Ubuntu",
+			StateDir:        "/var/lib/sqlrs",
+			EnginePath:      "/opt/sqlrs/sqlrs-engine",
+			StorePath:       "C:\\sqlrs\\store\\btrfs.vhdx",
+			MountUnit:       "sqlrs-state-store.mount",
+			MountDeviceUUID: "uuid-123",
 		}, nil
 	})
 
@@ -51,6 +53,12 @@ func TestInitWSLHappyAutoDistro(t *testing.T) {
 	}
 	if got := nestedString(raw, "engine", "storePath"); got != "C:\\sqlrs\\store\\btrfs.vhdx" {
 		t.Fatalf("expected storePath, got %q", got)
+	}
+	if got := nestedString(raw, "engine", "wsl", "mount", "unit"); got != "sqlrs-state-store.mount" {
+		t.Fatalf("expected mount unit, got %q", got)
+	}
+	if got := nestedString(raw, "engine", "wsl", "mount", "deviceUUID"); got != "uuid-123" {
+		t.Fatalf("expected mount UUID, got %q", got)
 	}
 }
 
@@ -156,6 +164,38 @@ func TestInitWSLWarnsAndFallbackWhenWSLMissing(t *testing.T) {
 	raw := loadConfigMap(t, configPath)
 	if got := nestedString(raw, "engine", "wsl", "mode"); got != "auto" {
 		t.Fatalf("expected mode auto, got %q", got)
+	}
+}
+
+func TestInitWSLPrintsRestartWarning(t *testing.T) {
+	workspace := t.TempDir()
+	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
+		return wslInitResult{UseWSL: true, Warning: "WSL restart required: wsl.exe --shutdown"}, nil
+	})
+
+	oldStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	t.Cleanup(func() {
+		_ = r.Close()
+		_ = w.Close()
+		os.Stderr = oldStderr
+	})
+
+	var out bytes.Buffer
+	if err := runInit(&out, workspace, "", []string{"--wsl"}, false); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	_ = w.Close()
+	data, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read stderr: %v", readErr)
+	}
+	if !strings.Contains(string(data), "wsl.exe --shutdown") {
+		t.Fatalf("expected restart warning, got %q", string(data))
 	}
 }
 

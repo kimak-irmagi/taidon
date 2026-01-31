@@ -6,6 +6,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"sqlrs/cli/internal/wsl"
@@ -34,22 +35,41 @@ func TestInitWSLHappyPathWithStubs(t *testing.T) {
 			return "nodev   btrfs\n", nil
 		case "check btrfs-progs":
 			return "/usr/sbin/mkfs.btrfs\n", nil
+		case "check systemd (root)":
+			return "running\n", nil
 		case "check docker in WSL":
 			return "OK", nil
 		case "resolve XDG_STATE_HOME":
 			return "/state", nil
+		case "resolve mount unit (root)":
+			return "sqlrs-state-store.mount\n", nil
 		case "lsblk":
 			return "NAME SIZE TYPE PKNAME\nsda 107374182400 disk\n├─sda1 107373182976 part sda\n", nil
 		case "detect filesystem":
 			return "btrfs\n", nil
 		case "findmnt (root)":
+			if containsArgs(args, "-S", "/dev/sda1") {
+				return "", errExitStatus1
+			}
+			if containsArgs(args, "-T", "/state/sqlrs/store") {
+				return "btrfs\n", nil
+			}
+			return "", errUnexpected(desc)
+		case "resolve partition UUID (root)":
+			return "uuid-123\n", nil
+		case "check path":
+			if len(args) > 0 && args[0] == "/dev/disk/by-uuid/uuid-123" {
+				return "", nil
+			}
 			return "", errExitStatus1
 		case "create state dir":
 			return "", nil
-		case "check mountpoint":
+		case "reload systemd (root)":
 			return "", nil
-		case "check path":
-			return "", errExitStatus1
+		case "enable mount unit (root)":
+			return "", nil
+		case "check mount unit (root)":
+			return "active\n", nil
 		case "create subvolume (root)":
 			return "", nil
 		case "resolve WSL user":
@@ -72,6 +92,15 @@ func TestInitWSLHappyPathWithStubs(t *testing.T) {
 		default:
 			return "", errUnexpected(desc)
 		}
+	})
+	withRunWSLCommandWithInputStub(t, func(ctx context.Context, distro string, verbose bool, desc string, input string, command string, args ...string) (string, error) {
+		if desc != "write mount unit (root)" {
+			return "", errUnexpected(desc)
+		}
+		if !strings.Contains(input, "Where=/state/sqlrs/store") {
+			t.Fatalf("expected mount unit to include state dir, got %q", input)
+		}
+		return "", nil
 	})
 
 	result, err := initWSL(wslInitOptions{
@@ -104,6 +133,12 @@ func TestInitWSLHappyPathWithStubs(t *testing.T) {
 	}
 	if result.MountFSType != "btrfs" {
 		t.Fatalf("expected mount fstype btrfs, got %q", result.MountFSType)
+	}
+	if result.MountUnit != "sqlrs-state-store.mount" {
+		t.Fatalf("expected mount unit sqlrs-state-store.mount, got %q", result.MountUnit)
+	}
+	if result.MountDeviceUUID != "uuid-123" {
+		t.Fatalf("expected mount device UUID uuid-123, got %q", result.MountDeviceUUID)
 	}
 }
 

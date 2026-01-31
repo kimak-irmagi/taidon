@@ -25,7 +25,8 @@ type LsOptions struct {
 	EngineRunDir    string
 	EngineStatePath string
 	EngineStoreDir  string
-	WSLMountDevice  string
+	WSLVHDXPath     string
+	WSLMountUnit  string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -86,7 +87,8 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 				EngineRunDir:    opts.EngineRunDir,
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
-				WSLMountDevice:  opts.WSLMountDevice,
+				WSLVHDXPath:     opts.WSLVHDXPath,
+				WSLMountUnit:  opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,
