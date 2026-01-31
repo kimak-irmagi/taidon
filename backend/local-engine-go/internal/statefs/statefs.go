@@ -47,6 +47,8 @@ type Manager struct {
 	backend snapshot.Manager
 }
 
+var removeAll = os.RemoveAll
+
 func NewManager(opts Options) StateFS {
 	return &Manager{
 		backend: snapshot.NewManager(snapshot.Options{
@@ -148,11 +150,20 @@ func (m *Manager) RemovePath(ctx context.Context, path string) error {
 	if m.backend.Kind() == "btrfs" {
 		if checker, ok := m.backend.(subvolumeChecker); ok {
 			if isSub, err := checker.IsSubvolume(ctx, path); err == nil && isSub {
-				_ = m.backend.Destroy(ctx, path)
+				if err := m.backend.Destroy(ctx, path); err != nil {
+					return err
+				}
+				return removeAll(path)
 			}
 		}
 	}
-	return os.RemoveAll(path)
+	if err := removeAll(path); err != nil {
+		if err := m.backend.Destroy(ctx, path); err != nil {
+			return err
+		}
+		return removeAll(path)
+	}
+	return nil
 }
 
 type subvolumeEnsurer interface {

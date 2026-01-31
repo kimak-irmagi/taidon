@@ -174,6 +174,31 @@ func TestRemovePathBtrfsSubvolume(t *testing.T) {
 	}
 }
 
+func TestRemovePathFallbackToDestroy(t *testing.T) {
+	backend := &fakeBackend{kind: "copy"}
+	mgr := &Manager{backend: backend}
+	calls := 0
+	prevRemove := removeAll
+	removeAll = func(path string) error {
+		calls++
+		if calls == 1 {
+			return os.ErrInvalid
+		}
+		return nil
+	}
+	t.Cleanup(func() { removeAll = prevRemove })
+
+	if err := mgr.RemovePath(context.Background(), "dir"); err != nil {
+		t.Fatalf("RemovePath: %v", err)
+	}
+	if len(backend.destroyCalls) != 1 {
+		t.Fatalf("expected destroy fallback, got %+v", backend.destroyCalls)
+	}
+	if calls < 2 {
+		t.Fatalf("expected retry removeAll, got %d calls", calls)
+	}
+}
+
 func TestRemovePathIgnoresEmpty(t *testing.T) {
 	backend := &fakeBackend{kind: "btrfs", isSubvolume: true}
 	mgr := &Manager{backend: backend}

@@ -159,7 +159,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -183,7 +183,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -204,7 +204,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -238,7 +238,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -259,7 +259,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -269,7 +269,9 @@ func Run(args []string) error {
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
 				defer func(instanceID string) {
+					stopSpinner := startCleanupSpinner(instanceID, opts.Verbose)
 					result, status, err := cli.DeleteInstanceDetailed(context.Background(), runOpts, instanceID)
+					stopSpinner()
 					if err != nil {
 						if opts.Verbose {
 							fmt.Fprintf(os.Stderr, "cleanup failed for instance %s: %v\n", instanceID, err)
@@ -303,7 +305,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -313,7 +315,9 @@ func Run(args []string) error {
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
 				defer func(instanceID string) {
+					stopSpinner := startCleanupSpinner(instanceID, opts.Verbose)
 					result, status, err := cli.DeleteInstanceDetailed(context.Background(), runOpts, instanceID)
+					stopSpinner()
 					if err != nil {
 						if opts.Verbose {
 							fmt.Fprintf(os.Stderr, "cleanup failed for instance %s: %v\n", instanceID, err)
@@ -353,7 +357,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -397,7 +401,7 @@ func Run(args []string) error {
 				EngineStatePath: engineStatePath,
 				EngineStoreDir:  engineStoreDir,
 				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:  engineWSLMountUnit,
+				WSLMountUnit:    engineWSLMountUnit,
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
@@ -463,6 +467,55 @@ func formatCleanupResult(result client.DeleteResult) string {
 		return "blocked"
 	}
 	return strings.Join(parts, ", ")
+}
+
+func startCleanupSpinner(instanceID string, verbose bool) func() {
+	label := fmt.Sprintf("Deleting instance %s", instanceID)
+	out := os.Stdout
+	if verbose || !isTerminalWriter(out) {
+		fmt.Fprintln(out, label)
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	shown := make(chan struct{})
+	go func() {
+		timer := time.NewTimer(500 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			close(shown)
+		case <-done:
+			return
+		}
+		spinner := []string{"-", "\\", "|", "/"}
+		idx := 0
+		ticker := time.NewTicker(150 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				clearLineOut()
+				return
+			case <-ticker.C:
+				clearLineOut()
+				fmt.Fprintf(out, "%s %s", label, spinner[idx])
+				idx = (idx + 1) % len(spinner)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		select {
+		case <-shown:
+			clearLineOut()
+		default:
+		}
+	}
+}
+
+func clearLineOut() {
+	fmt.Fprint(os.Stdout, "\r\033[2K")
 }
 
 func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (string, string, string, string, string, string, string, error) {
