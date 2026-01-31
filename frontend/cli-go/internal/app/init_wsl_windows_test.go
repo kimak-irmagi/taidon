@@ -13,6 +13,9 @@ import (
 )
 
 func TestInitWSLHappyPathWithStubs(t *testing.T) {
+	if os.Getenv("SQLRS_RUN_WSL_TESTS") != "1" {
+		t.Skip("WSL tests disabled (set SQLRS_RUN_WSL_TESTS=1 to enable)")
+	}
 	if _, err := exec.LookPath("wsl.exe"); err != nil {
 		t.Skip("wsl.exe not available")
 	}
@@ -78,6 +81,14 @@ func TestInitWSLHappyPathWithStubs(t *testing.T) {
 			return "group\n", nil
 		case "chown btrfs (root)":
 			return "", nil
+		default:
+			return "", errUnexpected(desc)
+		}
+	})
+	withRunWSLCommandAllowFailureStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		switch desc {
+		case "check systemd (root)":
+			return "running\n", nil
 		default:
 			return "", errUnexpected(desc)
 		}

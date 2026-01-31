@@ -573,9 +573,9 @@ func TestRunDefaultsFromConfig(t *testing.T) {
 	if err := os.Chdir(workspace); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	t.Cleanup(func() {
+	defer func() {
 		_ = os.Chdir(oldWd)
-	})
+	}()
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -586,6 +586,9 @@ func TestRunDefaultsFromConfig(t *testing.T) {
 	defer func() {
 		_ = w.Close()
 		os.Stdout = oldStdout
+	}()
+	defer func() {
+		_ = r.Close()
 	}()
 
 	if err := Run([]string{"status"}); err != nil {
