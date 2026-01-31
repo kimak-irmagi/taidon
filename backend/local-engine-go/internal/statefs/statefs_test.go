@@ -225,3 +225,19 @@ func TestManagerErrorsWithoutBackend(t *testing.T) {
 		t.Fatalf("expected ensure base error")
 	}
 }
+
+func TestNewManagerKindAndJobRuntimeDir(t *testing.T) {
+	root := t.TempDir()
+	mgr := NewManager(Options{Backend: "copy", StateStoreRoot: root})
+	if mgr.Kind() != "copy" {
+		t.Fatalf("expected copy kind, got %s", mgr.Kind())
+	}
+	dir, err := mgr.JobRuntimeDir(root, "job-1")
+	if err != nil {
+		t.Fatalf("JobRuntimeDir: %v", err)
+	}
+	expected := filepath.Join(root, "jobs", "job-1", "runtime")
+	if dir != expected {
+		t.Fatalf("expected job runtime dir %s, got %s", expected, dir)
+	}
+}

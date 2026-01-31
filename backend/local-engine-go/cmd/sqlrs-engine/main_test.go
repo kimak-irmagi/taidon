@@ -928,6 +928,25 @@ func TestIsCharDeviceBehaviors(t *testing.T) {
 	}
 }
 
+func TestRunMountCommandOutput(t *testing.T) {
+	var name string
+	var args []string
+	if runtime.GOOS == "windows" {
+		name = "cmd"
+		args = []string{"/c", "echo", "ok"}
+	} else {
+		name = "sh"
+		args = []string{"-c", "echo ok"}
+	}
+	out, err := runMountCommand(name, args...)
+	if err != nil {
+		t.Fatalf("runMountCommand: %v", err)
+	}
+	if strings.TrimSpace(out) != "ok" {
+		t.Fatalf("expected output ok, got %q", out)
+	}
+}
+
 func TestRunSuccess(t *testing.T) {
 	previousServe := serveHTTP
 	called := false

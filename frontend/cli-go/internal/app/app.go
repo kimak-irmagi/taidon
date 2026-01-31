@@ -477,6 +477,7 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 		return func() {}
 	}
 
+	clearLen := len(label) + 2
 	done := make(chan struct{})
 	shown := make(chan struct{})
 	go func() {
@@ -495,10 +496,10 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 		for {
 			select {
 			case <-done:
-				clearLineOut()
+				clearLineOut(out, clearLen)
 				return
 			case <-ticker.C:
-				clearLineOut()
+				clearLineOut(out, clearLen)
 				fmt.Fprintf(out, "%s %s", label, spinner[idx])
 				idx = (idx + 1) % len(spinner)
 			}
@@ -508,14 +509,22 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 		close(done)
 		select {
 		case <-shown:
-			clearLineOut()
+			clearLineOut(out, clearLen)
 		default:
 		}
 	}
 }
 
-func clearLineOut() {
-	fmt.Fprint(os.Stdout, "\r\033[2K")
+func clearLineOut(out io.Writer, width int) {
+	if out == nil {
+		return
+	}
+	if width <= 0 {
+		width = 1
+	}
+	fmt.Fprint(out, "\r")
+	fmt.Fprint(out, strings.Repeat(" ", width))
+	fmt.Fprint(out, "\r")
 }
 
 func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (string, string, string, string, string, string, string, error) {

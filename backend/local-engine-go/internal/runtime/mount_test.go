@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -210,5 +211,24 @@ func exitError(code int) error {
 		return errors.New("expected exit error")
 	} else {
 		return err
+	}
+}
+
+func TestRunMountCommandOutput(t *testing.T) {
+	var name string
+	var args []string
+	if runtime.GOOS == "windows" {
+		name = "cmd"
+		args = []string{"/c", "echo", "ok"}
+	} else {
+		name = "sh"
+		args = []string{"-c", "echo ok"}
+	}
+	out, err := runMountCommand(name, args...)
+	if err != nil {
+		t.Fatalf("runMountCommand: %v", err)
+	}
+	if strings.TrimSpace(out) != "ok" {
+		t.Fatalf("expected output ok, got %q", out)
 	}
 }
