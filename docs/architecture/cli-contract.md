@@ -132,7 +132,7 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 TODO (future):
 
-- Add `prepare:liquibase` (alias: `prepare:lb`).
+- Add `prepare:lb`.
 - Add named instances and name binding flags (`--name`, `--reuse`, `--fresh`, `--rebind`).
 - Add async mode (`--watch/--no-watch`) with `prepare_id` and status URL output.
 

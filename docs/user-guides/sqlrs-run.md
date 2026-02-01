@@ -119,7 +119,7 @@ found, `run` fails with an ambiguity error.
 ## Ephemeral Pipeline Usage
 
 ```bash
-sqlrs prepare:psql init.sql run:psql -- -c "select 1"
+sqlrs prepare:psql -- -f init.sql run:psql -- -c "select 1"
 ```
 
 - A temporary instance is created by `prepare`
@@ -221,7 +221,7 @@ Hint: run sqlrs prepare:psql ... to create the instance.
 ### Run psql against an ephemeral instance
 
 ```bash
-sqlrs prepare:psql init.sql run:psql -- -c "select count(*) from users"
+sqlrs prepare:psql -- -f init.sql run:psql -- -c "select count(*) from users"
 ```
 
 ---

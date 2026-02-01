@@ -55,3 +55,75 @@ sources:
       dir: examples/flights/
     license:
       note: Distributed under PostgreSQL License; see PostgresPro demo DB page
+  liquibase-jhipster-master:
+    kind: single-file
+    url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/master.xml
+    sha256: 4b7d519fc24fbc8452bf166cd76d77fe45a96617aeb8a591cf69c28b6f8c8fc2
+    out:
+      path: examples/liquibase/jhipster-sample-app/master.xml
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/jhipster/jhipster-sample-app
+  liquibase-jhipster-initial-schema:
+    kind: single-file
+    url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/changelog/00000000000000_initial_schema.xml
+    sha256: 4d18c1419989fb98cfc85fa5b747c65985e439f44fc4f3108bb241b5f468e623
+    out:
+      path: examples/liquibase/jhipster-sample-app/00000000000000_initial_schema.xml
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/jhipster/jhipster-sample-app
+  liquibase-jhipster-bankaccount:
+    kind: single-file
+    url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/changelog/20150805124838_added_entity_BankAccount.xml
+    sha256: 89aaa165dc28541c380a6fdf235a8df7c7e0ca21099c05afd5f33cd3f3cad179
+    out:
+      path: examples/liquibase/jhipster-sample-app/20150805124838_added_entity_BankAccount.xml
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/jhipster/jhipster-sample-app
+  liquibase-jhipster-label:
+    kind: single-file
+    url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/changelog/20150805124936_added_entity_Label.xml
+    sha256: 551f8fe8d078aac97f928655e9f8752db1d961cdf68d072ebcd30c0d91269d87
+    out:
+      path: examples/liquibase/jhipster-sample-app/20150805124936_added_entity_Label.xml
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/jhipster/jhipster-sample-app
+  liquibase-jhipster-operation:
+    kind: single-file
+    url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/changelog/20150805125054_added_entity_Operation.xml
+    sha256: 877e59da4f6bee4fad43d29814d4d37e5ab978bbdf55313d89c82ae0cad6f703
+    out:
+      path: examples/liquibase/jhipster-sample-app/20150805125054_added_entity_Operation.xml
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/jhipster/jhipster-sample-app
+  liquibase-jhipster-constraints-bankaccount:
+    kind: single-file
+    url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/changelog/20150805124838_added_entity_constraints_BankAccount.xml
+    sha256: 1de28fbd667ddc9c1a19fc75e9bcdf3304bcb0f13f8c8e5b99914de12ae33047
+    out:
+      path: examples/liquibase/jhipster-sample-app/20150805124838_added_entity_constraints_BankAccount.xml
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/jhipster/jhipster-sample-app
+  liquibase-jhipster-constraints-operation:
+    kind: single-file
+    url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/changelog/20150805125054_added_entity_constraints_Operation.xml
+    sha256: 63c4b17bc2402af61266543d7c3aa9653627592c90638bdc87b5d0177ceeab77
+    out:
+      path: examples/liquibase/jhipster-sample-app/20150805125054_added_entity_constraints_Operation.xml
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/jhipster/jhipster-sample-app
+  liquibase-github-action-samplechangelog-h2:
+    kind: single-file
+    url: https://raw.githubusercontent.com/liquibase/liquibase-github-action-example/main/example/changelogs/samplechangelog.h2.sql
+    sha256: c8b4b137c0e85cb4f62f222fca9e5c5d2351ea0460051805a9229c3c33dc3311
+    out:
+      path: examples/liquibase/liquibase-github-action-example/samplechangelog.h2.sql
+    license:
+      spdx: Apache-2.0
+      upstream: https://github.com/liquibase/liquibase-github-action-example

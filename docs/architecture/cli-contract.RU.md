@@ -121,7 +121,7 @@ sqlrs status [options]
 
 TODO (будущее):
 
-- Добавить `prepare:liquibase` (alias: `prepare:lb`).
+- Добавить `prepare:lb`.
 - Добавить именованные экземпляры и флаги привязки (`--name`, `--reuse`, `--fresh`, `--rebind`).
 - Добавить async-режим (`--watch/--no-watch`) с выводом `prepare_id` и URL статуса.
 
