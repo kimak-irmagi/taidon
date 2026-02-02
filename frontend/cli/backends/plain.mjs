@@ -78,3 +78,13 @@ export const plainBackend = {
     return { stateId, stateDir };
   }
 };
+
+function copyDir(src, dst) {
+  ensureDir(dst);
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dst, entry.name);
+    if (entry.isDirectory()) copyDir(s, d);
+    else if (entry.isFile()) fs.copyFileSync(s, d);
+  }
+}
