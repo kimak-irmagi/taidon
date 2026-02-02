@@ -16,7 +16,7 @@
     "status:local": "node scripts/dev/local-status.mjs",
     "run:one": "node scripts/run-one.mjs",
     "bench": "node scripts/bench.mjs",
-    "fetch:sql": "node tools/fetch-sql-scripts.mjs"
+    "fetch:sql": "node scripts/fetch-sql-scripts.mjs"
   },
   "devDependencies": {
     "yaml": "^2.8.2"

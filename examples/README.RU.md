@@ -47,13 +47,20 @@ examples/
     demo-small-en-20170815.sql
   liquibase/
     jhipster-sample-app/
-      master.xml
-      00000000000000_initial_schema.xml
-      20150805124838_added_entity_BankAccount.xml
-      20150805124936_added_entity_Label.xml
-      20150805125054_added_entity_Operation.xml
-      20150805124838_added_entity_constraints_BankAccount.xml
-      20150805125054_added_entity_constraints_Operation.xml
+      config/
+        liquibase/
+          master.xml
+          changelog/
+            00000000000000_initial_schema.xml
+            20150805124838_added_entity_BankAccount.xml
+            20150805124936_added_entity_Label.xml
+            20150805125054_added_entity_Operation.xml
+            20150805124838_added_entity_constraints_BankAccount.xml
+            20150805125054_added_entity_constraints_Operation.xml
+          data/
+            authority.csv
+            user.csv
+            user_authority.csv
     liquibase-github-action-example/
       samplechangelog.h2.sql
 

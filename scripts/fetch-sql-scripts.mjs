@@ -9,10 +9,10 @@
  * Cache is stored under scripts/external/cache/ (gitignored).
  *
  * Usage:
- *   node tools/fetch-sql-scripts.mjs
- *   node tools/fetch-sql-scripts.mjs --print-sha
- *   node tools/fetch-sql-scripts.mjs --write-sha
- *   node tools/fetch-sql-scripts.mjs --lock
+ *   node scripts/fetch-sql-scripts.mjs
+ *   node scripts/fetch-sql-scripts.mjs --print-sha
+ *   node scripts/fetch-sql-scripts.mjs --write-sha
+ *   node scripts/fetch-sql-scripts.mjs --lock
  *
  * Flags:
  *   --print-sha   Print computed sha256 for each downloaded artifact.

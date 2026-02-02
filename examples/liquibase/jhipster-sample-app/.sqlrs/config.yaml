@@ -17,7 +17,7 @@ engine:
             unit: home-sinclair-.local-state-sqlrs-store.mount
         stateDir: /home/sinclair/.local/state/sqlrs/store
 orchestrator:
-    daemonPath: ../../dist/bin/sqlrs-engine-linux-amd64
+    daemonPath: ../../../../dist/bin/sqlrs-engine-linux-amd64
     idleTimeout: 120s
     runDir: ${StateDir}/run
     startupTimeout: 20s
