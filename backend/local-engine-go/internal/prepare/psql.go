@@ -1,9 +1,6 @@
 package prepare
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,22 +9,20 @@ import (
 type psqlPrepared struct {
 	normalizedArgs []string
 	argsNormalized string
-	inputHashes    []inputHash
+	inputs         []psqlInput
 	filePaths      []string
-}
-
-type inputHash struct {
-	Kind  string
-	Value string
+	workDir        string
 }
 
 func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 	normalized := append([]string{}, args...)
-	var inputHashes []inputHash
+	var inputs []psqlInput
 	var filePaths []string
 	hasNoPsqlrc := false
 	hasOnErrorStop := false
 	usesStdin := false
+	workDir := ""
+	cwd, _ := os.Getwd()
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -57,13 +52,13 @@ func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 			continue
 		}
 
-		if handled, err := handleFileFlag(args, &i, stdin, &usesStdin, &inputHashes, &filePaths); err != nil {
+		if handled, err := handleFileFlag(args, &i, stdin, &usesStdin, &inputs, &filePaths, &workDir); err != nil {
 			return psqlPrepared{}, err
 		} else if handled {
 			continue
 		}
 
-		if handled, err := handleCommandFlag(args, &i, &inputHashes); err != nil {
+		if handled, err := handleCommandFlag(args, &i, &inputs); err != nil {
 			return psqlPrepared{}, err
 		} else if handled {
 			continue
@@ -81,6 +76,9 @@ func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 	if !usesStdin && stdin != nil {
 		return psqlPrepared{}, ValidationError{Code: "invalid_argument", Message: "stdin is only valid with -f -"}
 	}
+	if workDir == "" && strings.TrimSpace(cwd) != "" {
+		workDir = cwd
+	}
 
 	if !hasNoPsqlrc {
 		normalized = append(normalized, "-X")
@@ -92,8 +90,9 @@ func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 	return psqlPrepared{
 		normalizedArgs: normalized,
 		argsNormalized: strings.Join(normalized, " "),
-		inputHashes:    inputHashes,
+		inputs:         inputs,
 		filePaths:      filePaths,
+		workDir:        workDir,
 	}, nil
 }
 
@@ -161,7 +160,7 @@ func handleVarFlag(args []string, index *int, hasOnErrorStop *bool) (bool, error
 	}
 }
 
-func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, inputHashes *[]inputHash, filePaths *[]string) (bool, error) {
+func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, inputs *[]psqlInput, filePaths *[]string, workDir *string) (bool, error) {
 	arg := args[*index]
 	switch {
 	case arg == "-f" || arg == "--file":
@@ -169,7 +168,7 @@ func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, i
 			return true, ValidationError{Code: "invalid_argument", Message: "missing value for file flag", Details: arg}
 		}
 		path := args[*index+1]
-		if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil {
+		if err := addFileInput(path, stdin, usesStdin, inputs, filePaths, workDir); err != nil {
 			return true, err
 		}
 		*index++
@@ -179,13 +178,13 @@ func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, i
 		if path == "" {
 			return true, ValidationError{Code: "invalid_argument", Message: "missing value for file flag", Details: arg}
 		}
-		if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil {
+		if err := addFileInput(path, stdin, usesStdin, inputs, filePaths, workDir); err != nil {
 			return true, err
 		}
 		return true, nil
 	case strings.HasPrefix(arg, "-f") && len(arg) > 2:
 		path := arg[2:]
-		if err := addFileHash(path, stdin, usesStdin, inputHashes, filePaths); err != nil {
+		if err := addFileInput(path, stdin, usesStdin, inputs, filePaths, workDir); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -194,7 +193,7 @@ func handleFileFlag(args []string, index *int, stdin *string, usesStdin *bool, i
 	}
 }
 
-func handleCommandFlag(args []string, index *int, inputHashes *[]inputHash) (bool, error) {
+func handleCommandFlag(args []string, index *int, inputs *[]psqlInput) (bool, error) {
 	arg := args[*index]
 	switch {
 	case arg == "-c" || arg == "--command":
@@ -202,41 +201,29 @@ func handleCommandFlag(args []string, index *int, inputHashes *[]inputHash) (boo
 			return true, ValidationError{Code: "invalid_argument", Message: "missing value for command flag", Details: arg}
 		}
 		cmd := args[*index+1]
-		*inputHashes = append(*inputHashes, inputHash{
-			Kind:  "command",
-			Value: hashContent(cmd),
-		})
+		*inputs = append(*inputs, psqlInput{kind: "command", value: cmd})
 		*index++
 		return true, nil
 	case strings.HasPrefix(arg, "--command="):
 		cmd := strings.TrimPrefix(arg, "--command=")
-		*inputHashes = append(*inputHashes, inputHash{
-			Kind:  "command",
-			Value: hashContent(cmd),
-		})
+		*inputs = append(*inputs, psqlInput{kind: "command", value: cmd})
 		return true, nil
 	case strings.HasPrefix(arg, "-c") && len(arg) > 2:
 		cmd := arg[2:]
-		*inputHashes = append(*inputHashes, inputHash{
-			Kind:  "command",
-			Value: hashContent(cmd),
-		})
+		*inputs = append(*inputs, psqlInput{kind: "command", value: cmd})
 		return true, nil
 	default:
 		return false, nil
 	}
 }
 
-func addFileHash(path string, stdin *string, usesStdin *bool, inputHashes *[]inputHash, filePaths *[]string) error {
+func addFileInput(path string, stdin *string, usesStdin *bool, inputs *[]psqlInput, filePaths *[]string, workDir *string) error {
 	if path == "-" {
 		*usesStdin = true
 		if stdin == nil {
 			return ValidationError{Code: "invalid_argument", Message: "stdin is required when using -f -"}
 		}
-		*inputHashes = append(*inputHashes, inputHash{
-			Kind:  "stdin",
-			Value: hashContent(*stdin),
-		})
+		*inputs = append(*inputs, psqlInput{kind: "stdin", value: *stdin})
 		return nil
 	}
 	if path == "" {
@@ -245,16 +232,15 @@ func addFileHash(path string, stdin *string, usesStdin *bool, inputHashes *[]inp
 	if !filepath.IsAbs(path) {
 		return ValidationError{Code: "invalid_argument", Message: "file path must be absolute", Details: path}
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ValidationError{Code: "invalid_argument", Message: "cannot read file", Details: fmt.Sprintf("%s: %v", path, err)}
+	if _, err := os.Stat(path); err != nil {
+		return ValidationError{Code: "invalid_argument", Message: "cannot read file", Details: path}
 	}
-	*inputHashes = append(*inputHashes, inputHash{
-		Kind:  "file",
-		Value: hashContentBytes(data),
-	})
+	*inputs = append(*inputs, psqlInput{kind: "file", value: path})
 	if filePaths != nil {
 		*filePaths = append(*filePaths, path)
+	}
+	if workDir != nil && *workDir == "" {
+		*workDir = filepath.Dir(path)
 	}
 	return nil
 }
@@ -282,13 +268,4 @@ func splitAssignment(value string) (string, string, bool) {
 		return "", "", false
 	}
 	return parts[0], parts[1], true
-}
-
-func hashContent(value string) string {
-	return hashContentBytes([]byte(value))
-}
-
-func hashContentBytes(value []byte) string {
-	sum := sha256.Sum256(value)
-	return hex.EncodeToString(sum[:])
 }

@@ -19,7 +19,7 @@ type Manager interface {
 }
 
 type Capabilities struct {
-	RequiresDBStop       bool
+	RequiresDBStop        bool
 	SupportsWritableClone bool
 	SupportsSendReceive   bool
 }
@@ -53,11 +53,11 @@ func NewManager(opts Options) Manager {
 	case "copy":
 		return CopyManager{}
 	case "auto":
-		if overlaySupportedFn() {
-			return newOverlayManagerFn()
-		}
 		if btrfsSupportedFn(opts.StateStoreRoot) {
 			return newBtrfsManagerFn()
+		}
+		if overlaySupportedFn() {
+			return newOverlayManagerFn()
 		}
 		return CopyManager{}
 	default:

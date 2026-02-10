@@ -11,11 +11,14 @@ engine:
         distro: Ubuntu
         mode: auto
         mount:
-            device: /dev/sdg2
-            deviceUUID: e5ce4e96-2dcc-4d16-8a60-4d580af9d46b
+            device: /dev/sdh2
+            deviceUUID: 04ace695-b190-4bcb-8d1f-fa1f85d4a807
             fstype: btrfs
             unit: home-sinclair-.local-state-sqlrs-store.mount
         stateDir: /home/sinclair/.local/state/sqlrs/store
+liquibase:
+    exec: C:\Program Files\liquibase\liquibase.bat
+    exec_mode: windows-bat
 orchestrator:
     daemonPath: ../../../../dist/bin/sqlrs-engine-linux-amd64
     idleTimeout: 120s
@@ -28,6 +31,3 @@ profiles:
         autostart: true
         endpoint: auto
         mode: local
-liquibase:
-  exec: C:\Program Files\liquibase\liquibase.bat
-  exec_mode: windows-bat

@@ -28,7 +28,7 @@ func TestNewManagerPreferOverlayUsesOverlayWhenAvailable(t *testing.T) {
 	}
 }
 
-func TestNewManagerAutoPrefersOverlayThenBtrfsThenCopy(t *testing.T) {
+func TestNewManagerAutoPrefersBtrfsThenOverlayThenCopy(t *testing.T) {
 	prevSupported := overlaySupportedFn
 	prevNew := newOverlayManagerFn
 	prevBtrfsSupported := btrfsSupportedFn
@@ -47,20 +47,22 @@ func TestNewManagerAutoPrefersOverlayThenBtrfsThenCopy(t *testing.T) {
 	newBtrfsManagerFn = func() Manager { return fakeManager{kind: "btrfs"} }
 
 	mgr := NewManager(Options{Backend: "auto"})
+	if mgr.Kind() != "btrfs" {
+		t.Fatalf("expected btrfs manager, got %s", mgr.Kind())
+	}
+	if btrfsPath != "" {
+		t.Fatalf("expected empty btrfs probe path, got %s", btrfsPath)
+	}
+
+	overlaySupportedFn = func() bool { return true }
+	btrfsSupportedFn = func(path string) bool { btrfsPath = path; return false }
+	mgr = NewManager(Options{Backend: "auto", StateStoreRoot: "root"})
 	if mgr.Kind() != "overlay" {
 		t.Fatalf("expected overlay manager, got %s", mgr.Kind())
 	}
 
-	overlaySupportedFn = func() bool { return false }
-	mgr = NewManager(Options{Backend: "auto", StateStoreRoot: "root"})
-	if mgr.Kind() != "btrfs" {
-		t.Fatalf("expected btrfs manager, got %s", mgr.Kind())
-	}
-	if btrfsPath != "root" {
-		t.Fatalf("expected btrfs probe path root, got %s", btrfsPath)
-	}
-
 	btrfsSupportedFn = func(string) bool { return false }
+	overlaySupportedFn = func() bool { return false }
 	mgr = NewManager(Options{Backend: "auto", StateStoreRoot: "root"})
 	if mgr.Kind() != "copy" {
 		t.Fatalf("expected copy manager, got %s", mgr.Kind())

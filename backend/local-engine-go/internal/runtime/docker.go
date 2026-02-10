@@ -159,7 +159,7 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	if ok, err := r.pgVersionReady(ctx, imageID, dataDir); err != nil {
 		return err
 	} else if ok {
-		return nil
+		return ensureHostAuth(dataDir)
 	}
 	args := []string{
 		"run", "--rm",
@@ -187,7 +187,7 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 		return fmt.Errorf("initdb failed: %w", err)
 	}
 	if ok, checkErr := r.pgVersionReady(ctx, imageID, dataDir); checkErr == nil && ok {
-		return nil
+		return ensureHostAuth(dataDir)
 	} else if checkErr != nil {
 		return checkErr
 	}
@@ -235,6 +235,59 @@ func hasPGVersion(dataDir string) bool {
 		return true
 	}
 	return false
+}
+
+func ensureHostAuth(dataDir string) error {
+	pgdataDir := pgDataHostDir(dataDir)
+	if strings.TrimSpace(pgdataDir) == "" {
+		return fmt.Errorf("data dir is required")
+	}
+	path := filepath.Join(pgdataDir, "pg_hba.conf")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	existing := string(content)
+	needsIPv4 := !strings.Contains(existing, "0.0.0.0/0")
+	needsIPv6 := !strings.Contains(existing, "::/0")
+	if !needsIPv4 && !needsIPv6 {
+		return nil
+	}
+	var b strings.Builder
+	if len(existing) > 0 && !strings.HasSuffix(existing, "\n") {
+		b.WriteString("\n")
+	}
+	if needsIPv4 {
+		b.WriteString("host all all 0.0.0.0/0 trust\n")
+	}
+	if needsIPv6 {
+		b.WriteString("host all all ::/0 trust\n")
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(b.String()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func pgDataHostDir(dataDir string) string {
+	dataDir = strings.TrimSpace(dataDir)
+	if dataDir == "" {
+		return ""
+	}
+	rel := strings.TrimPrefix(PostgresDataDir, PostgresDataDirRoot)
+	rel = strings.TrimPrefix(rel, "/")
+	if rel == "" {
+		return dataDir
+	}
+	return filepath.Join(dataDir, filepath.FromSlash(rel))
 }
 
 func (r *DockerRuntime) ResolveImage(ctx context.Context, imageID string) (string, error) {
@@ -382,6 +435,10 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 			_ = r.Stop(ctx, containerID)
 			return Instance{}, err
 		}
+	}
+	if err := ensureHostAuth(req.DataDir); err != nil {
+		_ = r.Stop(ctx, containerID)
+		return Instance{}, err
 	}
 
 	if _, err := r.Exec(ctx, containerID, ExecRequest{
@@ -554,6 +611,55 @@ func (r *DockerRuntime) run(ctx context.Context, args []string, stdin *string) (
 	}
 	if err != nil {
 		return output, wrapDockerError(err, output)
+	}
+	return output, nil
+}
+
+func (r *DockerRuntime) RunContainer(ctx context.Context, req RunRequest) (string, error) {
+	imageID := strings.TrimSpace(req.ImageID)
+	if imageID == "" {
+		return "", fmt.Errorf("image id is required")
+	}
+	args := []string{"run", "--rm"}
+	if strings.TrimSpace(req.Name) != "" {
+		args = append(args, "--name", strings.TrimSpace(req.Name))
+	}
+	if strings.TrimSpace(req.User) != "" {
+		args = append(args, "-u", strings.TrimSpace(req.User))
+	}
+	if strings.TrimSpace(req.Dir) != "" {
+		args = append(args, "-w", strings.TrimSpace(req.Dir))
+	}
+	if strings.TrimSpace(req.Network) != "" {
+		args = append(args, "--network", strings.TrimSpace(req.Network))
+	}
+	for key, value := range req.Env {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		args = append(args, "-e", key+"="+value)
+	}
+	for _, mount := range req.Mounts {
+		if strings.TrimSpace(mount.HostPath) == "" || strings.TrimSpace(mount.ContainerPath) == "" {
+			continue
+		}
+		spec := fmt.Sprintf("%s:%s", mount.HostPath, mount.ContainerPath)
+		if mount.ReadOnly {
+			spec += ":ro"
+		}
+		args = append(args, "-v", spec)
+	}
+	args = append(args, imageID)
+	if len(req.Args) > 0 {
+		args = append(args, req.Args...)
+	}
+	output, err := r.run(ctx, args, nil)
+	if err != nil {
+		if isDockerUnavailable(err) {
+			return output, fmt.Errorf("docker is not running: %w", err)
+		}
+		return output, fmt.Errorf("docker run failed: %w", err)
 	}
 	return output, nil
 }

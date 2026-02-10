@@ -30,6 +30,17 @@ type ExecRequest struct {
 	Stdin *string
 }
 
+type RunRequest struct {
+	ImageID string
+	Args    []string
+	Env     map[string]string
+	Dir     string
+	User    string
+	Name    string
+	Network string
+	Mounts  []Mount
+}
+
 type Mount struct {
 	HostPath      string
 	ContainerPath string

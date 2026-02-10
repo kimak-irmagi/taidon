@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -116,5 +117,49 @@ func TestRunPlanResolveImageError(t *testing.T) {
 	err := runPlan(&bytes.Buffer{}, io.Discard, runOpts, cfg, workspaceRoot, temp, []string{"--", "-c", "select 1"}, "json")
 	if err == nil {
 		t.Fatalf("expected resolve image error")
+	}
+}
+
+func TestRunPlanLiquibaseSendsArgs(t *testing.T) {
+	var gotRequest map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &gotRequest)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"succeeded"}`+"\n")
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":true,"prepare_kind":"lb","image_id":"image","prepare_args_normalized":"update","tasks":[{"task_id":"plan","type":"plan","planner_kind":"lb"},{"task_id":"execute-0","type":"state_execute","input":{"kind":"image","id":"image"},"task_hash":"hash","output_state_id":"state-1","cached":false},{"task_id":"prepare-instance","type":"prepare_instance","input":{"kind":"state","id":"state-1"},"instance_mode":"ephemeral"}]}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	runOpts := cli.PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+	}
+	cwd := t.TempDir()
+	if err := runPlanKind(&bytes.Buffer{}, io.Discard, runOpts, config.LoadedConfig{}, cwd, cwd, []string{"--image", "image", "--", "update"}, "json", "lb"); err != nil {
+		t.Fatalf("runPlanKind: %v", err)
+	}
+	if gotRequest == nil {
+		t.Fatalf("expected request payload")
+	}
+	if gotRequest["prepare_kind"] != "lb" {
+		t.Fatalf("expected prepare_kind lb, got %+v", gotRequest["prepare_kind"])
+	}
+	if planOnly, ok := gotRequest["plan_only"].(bool); !ok || !planOnly {
+		t.Fatalf("expected plan_only true, got %+v", gotRequest["plan_only"])
+	}
+	if args, ok := gotRequest["liquibase_args"].([]any); !ok || len(args) == 0 || args[0] != "update" {
+		t.Fatalf("expected liquibase args, got %+v", gotRequest["liquibase_args"])
 	}
 }

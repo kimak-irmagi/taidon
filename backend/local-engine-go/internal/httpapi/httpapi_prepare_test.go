@@ -62,7 +62,7 @@ func TestPrepareJobsRejectsInvalidKind(t *testing.T) {
 	server, cleanup := newTestServer(t)
 	defer cleanup()
 
-	payload := `{"prepare_kind":"liquibase","image_id":"img","psql_args":[]}`
+	payload := `{"prepare_kind":"liquibase","image_id":"img","liquibase_args":["update"]}`
 	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/prepare-jobs", strings.NewReader(payload))
 	if err != nil {
 		t.Fatalf("new request: %v", err)

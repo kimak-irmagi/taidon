@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"sqlrs/engine/internal/prepare/queue"
 	engineRuntime "sqlrs/engine/internal/runtime"
 	"sqlrs/engine/internal/statefs"
 	"sqlrs/engine/internal/store"
@@ -23,12 +24,35 @@ type PsqlRunRequest struct {
 	WorkDir string
 }
 
+type LiquibaseRunRequest struct {
+	ExecPath string
+	ExecMode string
+	ImageID  string
+	Args     []string
+	Env      map[string]string
+	WorkDir  string
+	Mounts   []engineRuntime.Mount
+	Network  string
+}
+
 type psqlRunner interface {
 	Run(ctx context.Context, instance engineRuntime.Instance, req PsqlRunRequest) (string, error)
 }
 
+type liquibaseRunner interface {
+	Run(ctx context.Context, req LiquibaseRunRequest) (string, error)
+}
+
 type containerPsqlRunner struct {
 	runtime engineRuntime.Runtime
+}
+
+type containerLiquibaseRunner struct {
+	runtime engineRuntime.Runtime
+}
+
+type containerRunner interface {
+	RunContainer(ctx context.Context, req engineRuntime.RunRequest) (string, error)
 }
 
 func (r containerPsqlRunner) Run(ctx context.Context, instance engineRuntime.Instance, req PsqlRunRequest) (string, error) {
@@ -41,6 +65,24 @@ func (r containerPsqlRunner) Run(ctx context.Context, instance engineRuntime.Ins
 		Env:   req.Env,
 		Dir:   req.WorkDir,
 		Stdin: req.Stdin,
+	})
+}
+
+func (r containerLiquibaseRunner) Run(ctx context.Context, req LiquibaseRunRequest) (string, error) {
+	if r.runtime == nil {
+		return "", fmt.Errorf("runtime is required")
+	}
+	runner, ok := r.runtime.(containerRunner)
+	if !ok {
+		return "", fmt.Errorf("runtime does not support container runs")
+	}
+	return runner.RunContainer(ctx, engineRuntime.RunRequest{
+		ImageID: req.ImageID,
+		Args:    req.Args,
+		Env:     req.Env,
+		Dir:     req.WorkDir,
+		Mounts:  req.Mounts,
+		Network: req.Network,
 	})
 }
 
@@ -116,56 +158,182 @@ func normalizeEnvKey(key string) string {
 	return key
 }
 
-func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) *ErrorResponse {
+func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) (string, *ErrorResponse) {
 	if ctx.Err() != nil {
-		return errorResponse("cancelled", "task cancelled", "")
+		return "", errorResponse("cancelled", "task cancelled", "")
 	}
-	if strings.TrimSpace(task.OutputStateID) == "" {
-		return errorResponse("internal_error", "missing output state id", "")
+	if task.Input == nil {
+		return "", errorResponse("internal_error", "task input is required", "")
 	}
-	cached, err := m.isStateCached(task.OutputStateID)
+	outputStateID := task.OutputStateID
+	taskHash := task.TaskHash
+
+	runner, ephemeral := m.runnerForJob(jobID)
+	if runner == nil {
+		return "", errorResponse("internal_error", "job runner missing", "")
+	}
+	if ephemeral {
+		defer m.cleanupRuntime(context.Background(), runner)
+	}
+
+	var contentLocker *contentLock
+	var rt *jobRuntime
+
+	if prepared.request.PrepareKind == "psql" {
+		lock := &contentLock{files: map[string]*os.File{}}
+		digest, err := computePsqlContentDigestWithLock(prepared.psqlInputs, prepared.psqlWorkDir, lock)
+		if err != nil {
+			_ = lock.Close()
+			return "", errorResponse("invalid_argument", "cannot compute psql content hash", err.Error())
+		}
+		taskHash = psqlTaskHash(prepared.request.PrepareKind, digest.hash, m.version)
+		contentLocker = lock
+	}
+
+	if prepared.request.PrepareKind == "lb" {
+		planned, errResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+		if errResp != nil {
+			return "", errResp
+		}
+		rt = planned
+		lock, errResp := ensureLiquibaseContentLock(prepared, task.ChangesetPath)
+		if errResp != nil {
+			return "", errResp
+		}
+		contentLocker = lock
+		changesets, errResp := m.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
+		if errResp != nil {
+			_ = lock.Close()
+			return "", errResp
+		}
+		if len(changesets) == 0 {
+			_ = lock.Close()
+			return "", errorResponse("internal_error", "liquibase returned no pending changesets", "")
+		}
+		parentFingerprintID := ""
+		if task.Input != nil {
+			parentFingerprintID = task.Input.ID
+		}
+		taskHash = liquibaseFingerprint(strings.TrimSpace(parentFingerprintID), []LiquibaseChangeset{changesets[0]})
+	}
+
+	if contentLocker != nil {
+		defer contentLocker.Close()
+	}
+
+	if taskHash != "" {
+		if output, errResp := m.computeOutputStateID(task.Input.Kind, task.Input.ID, taskHash); errResp == nil {
+			outputStateID = output
+		}
+	}
+
+	cached, err := m.isStateCached(outputStateID)
 	if err != nil {
-		return errorResponse("internal_error", "cannot check state cache", err.Error())
+		return "", errorResponse("internal_error", "cannot check state cache", err.Error())
+	}
+	m.logInfoJob(jobID, "state cache decision task=%s input_kind=%s input_id=%s task_hash=%s output_state=%s cached=%t",
+		task.TaskID,
+		task.Input.Kind,
+		task.Input.ID,
+		taskHash,
+		outputStateID,
+		cached,
+	)
+	if cached {
+		invalidated, errResp := m.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
+		if errResp != nil {
+			return "", errResp
+		}
+		if invalidated {
+			cached = false
+		}
+	}
+	cachedFlag := cached
+	if outputStateID != task.OutputStateID || task.TaskHash != taskHash || (task.Cached == nil || *task.Cached != cachedFlag) {
+		update := queue.TaskUpdate{
+			TaskHash:      nullableString(taskHash),
+			OutputStateID: nullableString(outputStateID),
+			Cached:        &cachedFlag,
+		}
+		_ = m.queue.UpdateTask(ctx, jobID, task.TaskID, update)
+		task.OutputStateID = outputStateID
+		task.TaskHash = taskHash
+		task.Cached = &cachedFlag
 	}
 	if cached {
-		m.logTask(jobID, task.TaskID, "cached output_state=%s", task.OutputStateID)
-		return nil
+		m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
+		if prepared.request.PrepareKind == "psql" || prepared.request.PrepareKind == "lb" {
+			if runner.getRuntime() != nil {
+				m.cleanupRuntime(context.Background(), runner)
+				m.logInfoJob(jobID, "cached runtime released state=%s", outputStateID)
+			}
+			planned, errResp := m.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: outputStateID})
+			if errResp == nil {
+				runner.setRuntime(planned)
+				m.logInfoJob(jobID, "cached runtime started state=%s", outputStateID)
+				return outputStateID, nil
+			}
+			if strings.Contains(errResp.Details, "postmaster.pid") ||
+				strings.Contains(errResp.Message, "dirty") ||
+				strings.Contains(errResp.Details, "PG_VERSION") ||
+				strings.Contains(errResp.Message, "PG_VERSION") ||
+				strings.Contains(errResp.Details, "not initialized") ||
+				strings.Contains(errResp.Message, "not initialized") {
+				invalidated, invalidateResp := m.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
+				if invalidateResp != nil {
+					return "", invalidateResp
+				}
+				if !invalidated {
+					m.logInfoJob(jobID, "cached runtime start failed; rebuilding state=%s", outputStateID)
+				}
+				cached = false
+				cachedFlag = false
+				if outputStateID != task.OutputStateID || task.TaskHash != taskHash || (task.Cached == nil || *task.Cached != cachedFlag) {
+					update := queue.TaskUpdate{
+						TaskHash:      nullableString(taskHash),
+						OutputStateID: nullableString(outputStateID),
+						Cached:        &cachedFlag,
+					}
+					_ = m.queue.UpdateTask(ctx, jobID, task.TaskID, update)
+					task.OutputStateID = outputStateID
+					task.TaskHash = taskHash
+					task.Cached = &cachedFlag
+				}
+			} else {
+				return "", errResp
+			}
+		}
+		if cached {
+			return outputStateID, nil
+		}
 	}
 
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
-		return errorResponse("internal_error", "resolved image id is required", "")
+		return "", errorResponse("internal_error", "resolved image id is required", "")
 	}
-	paths, err := resolveStatePaths(m.stateStoreRoot, imageID, task.OutputStateID, m.statefs)
+	paths, err := resolveStatePaths(m.stateStoreRoot, imageID, outputStateID, m.statefs)
 	if err != nil {
-		return errorResponse("internal_error", "cannot resolve state paths", err.Error())
+		return "", errorResponse("internal_error", "cannot resolve state paths", err.Error())
 	}
 	if err := os.MkdirAll(paths.statesDir, 0o700); err != nil {
-		return errorResponse("internal_error", "cannot create state dir", err.Error())
+		return "", errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
 	if err := m.statefs.EnsureStateDir(ctx, paths.stateDir); err != nil {
-		return errorResponse("internal_error", "cannot create state dir", err.Error())
-	}
-
-	runner, ephemeral := m.runnerForJob(jobID)
-	if runner == nil {
-		return errorResponse("internal_error", "job runner missing", "")
-	}
-	if ephemeral {
-		defer m.cleanupRuntime(context.Background(), runner)
+		return "", errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
 
 	var errResp *ErrorResponse
 	kind := snapshotKind(m.statefs)
 	lockPath := stateBuildLockPath(paths.stateDir, kind)
 	lockErr := withStateBuildLock(ctx, paths.stateDir, lockPath, kind, func() error {
-		cached, err := m.isStateCached(task.OutputStateID)
+		cached, err := m.isStateCached(outputStateID)
 		if err != nil {
 			errResp = errorResponse("internal_error", "cannot check state cache", err.Error())
 			return errStateBuildFailed
 		}
 		if cached {
-			m.logTask(jobID, task.TaskID, "cached output_state=%s", task.OutputStateID)
+			m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
 			return nil
 		}
 		if kind == "btrfs" || stateBuildMarkerExists(paths.stateDir, kind) {
@@ -175,46 +343,16 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			}
 		}
 
-		rt, innerResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
-		if innerResp != nil {
-			errResp = innerResp
-			return errStateBuildFailed
-		}
-
-		psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
-		if err != nil {
-			errResp = errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
-			return errStateBuildFailed
-		}
-		m.appendLog(jobID, "psql: start")
-		var sinkCalled atomic.Bool
-		psqlCtx := engineRuntime.WithLogSink(ctx, func(line string) {
-			sinkCalled.Store(true)
-			m.appendLog(jobID, "psql: "+line)
-		})
-		output, err := m.psql.Run(psqlCtx, rt.instance, PsqlRunRequest{
-			Args:    psqlArgs,
-			Env:     map[string]string{},
-			Stdin:   prepared.request.Stdin,
-			WorkDir: workdir,
-		})
-		if !sinkCalled.Load() && strings.TrimSpace(output) != "" {
-			m.appendLogLines(jobID, "psql", output)
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				errResp = errorResponse("cancelled", "task cancelled", "")
+		if rt == nil {
+			planned, innerResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+			if innerResp != nil {
+				errResp = innerResp
 				return errStateBuildFailed
 			}
-			details := strings.TrimSpace(output)
-			if details == "" {
-				details = err.Error()
-			}
-			errResp = errorResponse("internal_error", "psql execution failed", details)
-			return errStateBuildFailed
+			rt = planned
 		}
-		if ctx.Err() != nil {
-			errResp = errorResponse("cancelled", "task cancelled", "")
+		if execErr := m.executePrepareStep(ctx, jobID, prepared, rt, task); execErr != nil {
+			errResp = execErr
 			return errStateBuildFailed
 		}
 
@@ -235,11 +373,13 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		}()
 
 		m.appendLog(jobID, "snapshot: start")
+		m.logInfoJob(jobID, "snapshot start dir=%s", paths.stateDir)
 		if err := m.statefs.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil {
 			errResp = errorResponse("internal_error", "snapshot failed", err.Error())
 			return errStateBuildFailed
 		}
 		m.appendLog(jobID, "snapshot: complete")
+		m.logInfoJob(jobID, "snapshot complete dir=%s", paths.stateDir)
 		m.appendLog(jobID, "pg_ctl: start after snapshot")
 		pgResumeCtx := engineRuntime.WithLogSink(ctx, func(line string) {
 			m.appendLog(jobID, "pg_ctl: "+line)
@@ -253,9 +393,9 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		parentID := parentStateID(task.Input)
 		createdAt := m.now().UTC().Format(time.RFC3339Nano)
 		entry := store.StateCreate{
-			StateID:               task.OutputStateID,
+			StateID:               outputStateID,
 			ParentStateID:         parentID,
-			StateFingerprint:      task.OutputStateID,
+			StateFingerprint:      outputStateID,
 			ImageID:               imageID,
 			PrepareKind:           prepared.request.PrepareKind,
 			PrepareArgsNormalized: prepared.argsNormalized,
@@ -277,15 +417,227 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		return nil
 	})
 	if errResp != nil {
-		return errResp
+		return "", errResp
 	}
 	if lockErr != nil {
 		if ctx.Err() != nil {
+			return "", errorResponse("cancelled", "task cancelled", "")
+		}
+		return "", errorResponse("internal_error", "cannot acquire state build lock", lockErr.Error())
+	}
+	return outputStateID, nil
+}
+
+func (m *Manager) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+	switch prepared.request.PrepareKind {
+	case "psql":
+		return m.executePsqlStep(ctx, jobID, prepared, rt)
+	case "lb":
+		return m.executeLiquibaseStep(ctx, jobID, prepared, rt, task)
+	default:
+		return errorResponse("internal_error", "unsupported prepare kind", prepared.request.PrepareKind)
+	}
+}
+
+func (m *Manager) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
+	psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
+	if err != nil {
+		return errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
+	}
+	if m.psql == nil {
+		return errorResponse("internal_error", "psql runner is required", "")
+	}
+	m.appendLog(jobID, "psql: start")
+	var sinkCalled atomic.Bool
+	psqlCtx := engineRuntime.WithLogSink(ctx, func(line string) {
+		sinkCalled.Store(true)
+		m.appendLog(jobID, "psql: "+line)
+	})
+	output, err := m.psql.Run(psqlCtx, rt.instance, PsqlRunRequest{
+		Args:    psqlArgs,
+		Env:     map[string]string{},
+		Stdin:   prepared.request.Stdin,
+		WorkDir: workdir,
+	})
+	if !sinkCalled.Load() && strings.TrimSpace(output) != "" {
+		m.appendLogLines(jobID, "psql", output)
+	}
+	if err != nil {
+		if ctx.Err() != nil {
 			return errorResponse("cancelled", "task cancelled", "")
 		}
-		return errorResponse("internal_error", "cannot acquire state build lock", lockErr.Error())
+		details := strings.TrimSpace(output)
+		if details == "" {
+			details = err.Error()
+		}
+		return errorResponse("internal_error", "psql execution failed", details)
+	}
+	if ctx.Err() != nil {
+		return errorResponse("cancelled", "task cancelled", "")
 	}
 	return nil
+}
+
+func (m *Manager) executeLiquibaseStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+	if m.liquibase == nil {
+		return errorResponse("internal_error", "liquibase runner is required", "")
+	}
+	if strings.TrimSpace(rt.instance.Host) == "" || rt.instance.Port == 0 {
+		return errorResponse("internal_error", "runtime instance is missing connection info", "")
+	}
+	execMode := normalizeExecMode(prepared.request.LiquibaseExecMode)
+	rawExecPath := strings.TrimSpace(prepared.request.LiquibaseExec)
+	windowsMode := shouldUseWindowsBat(rawExecPath, execMode)
+	execPath, err := normalizeLiquibaseExecPath(rawExecPath, windowsMode)
+	if err != nil {
+		return errorResponse("internal_error", "cannot resolve liquibase executable", err.Error())
+	}
+	var mapper PathMapper
+	if windowsMode && isWSL() {
+		mapper = wslPathMapper{}
+	}
+	args, err := mapLiquibaseArgs(prepared.normalizedArgs, mapper)
+	if err != nil {
+		return errorResponse("internal_error", "cannot map liquibase arguments", err.Error())
+	}
+	workDir := strings.TrimSpace(prepared.request.WorkDir)
+	if windowsMode && workDir == "" {
+		workDir = deriveLiquibaseWorkDir(args)
+	}
+	if workDir != "" && mapper != nil {
+		mappedDir, mapErr := mapper.MapPath(workDir)
+		if mapErr != nil {
+			return errorResponse("internal_error", "cannot map liquibase workdir", mapErr.Error())
+		}
+		workDir = mappedDir
+	}
+	args = applyLiquibaseTaskArgs(args, task)
+	args = prependLiquibaseConnectionArgs(args, rt.instance)
+	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
+	if err != nil {
+		return errorResponse("internal_error", "cannot map liquibase env", err.Error())
+	}
+
+	execLine := formatExecLine(execPath, args)
+	m.appendLog(jobID, fmt.Sprintf("liquibase: exec %s", execLine))
+	m.logJob(jobID, "liquibase exec %s", execLine)
+	m.appendLog(jobID, "liquibase: start")
+	var sinkCalled atomic.Bool
+	lbCtx := engineRuntime.WithLogSink(ctx, func(line string) {
+		sinkCalled.Store(true)
+		m.appendLog(jobID, "liquibase: "+line)
+	})
+	output, err := m.liquibase.Run(lbCtx, LiquibaseRunRequest{
+		ExecPath: execPath,
+		ExecMode: execMode,
+		Args:     args,
+		Env:      env,
+		WorkDir:  workDir,
+		Mounts:   prepared.liquibaseMounts,
+		Network:  "",
+	})
+	if !sinkCalled.Load() && strings.TrimSpace(output) != "" {
+		m.appendLogLines(jobID, "liquibase", output)
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return errorResponse("cancelled", "task cancelled", "")
+		}
+		details := strings.TrimSpace(output)
+		if details == "" {
+			details = err.Error()
+		}
+		return errorResponse("internal_error", "liquibase execution failed", details)
+	}
+	if ctx.Err() != nil {
+		return errorResponse("cancelled", "task cancelled", "")
+	}
+	return nil
+}
+
+func prependLiquibaseConnectionArgs(args []string, instance engineRuntime.Instance) []string {
+	host := instance.Host
+	if strings.TrimSpace(host) == "" {
+		host = "localhost"
+	}
+	port := instance.Port
+	if port == 0 {
+		port = 5432
+	}
+	conn := []string{
+		fmt.Sprintf("--url=jdbc:postgresql://%s:%d/postgres", host, port),
+		"--username=sqlrs",
+	}
+	if len(args) == 0 {
+		return conn
+	}
+	out := make([]string, 0, len(conn)+len(args))
+	out = append(out, conn...)
+	out = append(out, args...)
+	return out
+}
+
+func formatExecLine(execPath string, args []string) string {
+	execPath = strings.TrimSpace(execPath)
+	if execPath == "" {
+		execPath = "liquibase"
+	}
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, formatExecArg(execPath))
+	for _, arg := range args {
+		parts = append(parts, formatExecArg(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatExecArg(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return `""`
+	}
+	if strings.ContainsAny(value, " \t\"") {
+		return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+	}
+	return value
+}
+
+func deriveLiquibaseWorkDir(args []string) string {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--changelog-file" || arg == "--defaults-file":
+			if i+1 < len(args) {
+				if dir := windowsPathDir(args[i+1]); dir != "" {
+					return dir
+				}
+			}
+		case strings.HasPrefix(arg, "--changelog-file="):
+			if dir := windowsPathDir(strings.TrimPrefix(arg, "--changelog-file=")); dir != "" {
+				return dir
+			}
+		case strings.HasPrefix(arg, "--defaults-file="):
+			if dir := windowsPathDir(strings.TrimPrefix(arg, "--defaults-file=")); dir != "" {
+				return dir
+			}
+		}
+	}
+	return ""
+}
+
+func windowsPathDir(path string) string {
+	path = strings.TrimSpace(path)
+	if !looksLikeWindowsPath(path) {
+		return ""
+	}
+	lastSlash := strings.LastIndex(path, `\`)
+	lastFwd := strings.LastIndex(path, "/")
+	sep := lastSlash
+	if lastFwd > sep {
+		sep = lastFwd
+	}
+	if sep <= 2 {
+		return ""
+	}
+	return path[:sep]
 }
 
 func (m *Manager) createInstance(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (*Result, *ErrorResponse) {
@@ -388,10 +740,13 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	if strings.TrimSpace(imageID) == "" {
 		return nil, errorResponse("internal_error", "resolved image id is required", "")
 	}
+	m.logInfoJob(jobID, "runtime start input_kind=%s input_id=%s image=%s", input.Kind, input.ID, imageID)
+	m.logInfoJob(jobID, "runtime start state_store_root=%s", m.stateStoreRoot)
 	ctx = engineRuntime.WithLogSink(ctx, func(line string) {
 		m.appendLog(jobID, "docker: "+line)
 	})
 	var srcDir string
+	var stateDir string
 	switch input.Kind {
 	case "image":
 		m.appendLog(jobID, fmt.Sprintf("docker: init base %s", imageID))
@@ -424,12 +779,31 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		if err != nil {
 			return nil, errorResponse("internal_error", "cannot resolve state paths", err.Error())
 		}
+		stateDir = paths.stateDir
+		if dirtyPath := postmasterPIDPath(paths.stateDir); dirtyPath != "" {
+			m.logInfoJob(jobID, "postmaster.pid present in state dir path=%s", dirtyPath)
+			return nil, errorResponse("internal_error", "state snapshot is dirty (postmaster.pid present)", dirtyPath)
+		}
+		ok, err = hasPGVersion(paths.stateDir)
+		if err != nil {
+			return nil, errorResponse("internal_error", "cannot inspect state PG_VERSION", err.Error())
+		}
+		if !ok {
+			return nil, errorResponse("internal_error", "state snapshot missing PG_VERSION", paths.stateDir)
+		}
+		m.logInfoJob(jobID, "postmaster.pid not found in state dir=%s", paths.stateDir)
 		srcDir = paths.stateDir
 	default:
 		return nil, errorResponse("internal_error", "unsupported task input", input.Kind)
 	}
 
 	runtimeDir := filepath.Join(m.stateStoreRoot, "jobs", jobID, "runtime")
+	m.logInfoJob(jobID, "runtime start runtime_dir=%s", runtimeDir)
+	if stateDir != "" {
+		if rel, err := filepath.Rel(stateDir, runtimeDir); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			return nil, errorResponse("internal_error", "runtime dir is nested inside state dir", fmt.Sprintf("runtime=%s state=%s", runtimeDir, stateDir))
+		}
+	}
 	_ = os.RemoveAll(runtimeDir)
 	if err := os.MkdirAll(filepath.Dir(runtimeDir), 0o700); err != nil {
 		return nil, errorResponse("internal_error", "cannot create runtime dir", err.Error())
@@ -438,6 +812,20 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	if err != nil {
 		return nil, errorResponse("internal_error", "cannot clone state", err.Error())
 	}
+	if dirtyPath := postmasterPIDPath(clone.MountDir); dirtyPath != "" {
+		m.logInfoJob(jobID, "postmaster.pid present in runtime dir path=%s", dirtyPath)
+		return nil, errorResponse("internal_error", "runtime data dir is dirty (postmaster.pid present)", dirtyPath)
+	}
+	if input.Kind == "state" {
+		ok, err := hasPGVersion(clone.MountDir)
+		if err != nil {
+			return nil, errorResponse("internal_error", "cannot inspect runtime PG_VERSION", err.Error())
+		}
+		if !ok {
+			return nil, errorResponse("internal_error", "runtime data dir missing PG_VERSION", clone.MountDir)
+		}
+	}
+	m.logInfoJob(jobID, "postmaster.pid not found in runtime dir=%s", clone.MountDir)
 
 	rtScriptMount, err := scriptMountForFiles(prepared.filePaths)
 	if err != nil {
@@ -450,15 +838,20 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		m.appendLog(jobID, "docker: "+line)
 	})
 	allowInitdb := strings.TrimSpace(input.Kind) == "image"
+	containerName := "sqlrs-prepare-" + jobID
+	if suffix, err := randomHex(4); err == nil {
+		containerName = containerName + "-" + suffix
+	}
 	instance, err := m.runtime.Start(ctx, engineRuntime.StartRequest{
-		ImageID:      imageID,
-		DataDir:      clone.MountDir,
-		Name:         "sqlrs-prepare-" + jobID,
-		Mounts:       runtimeMountsFrom(rtScriptMount),
-		AllowInitdb:  allowInitdb,
+		ImageID:     imageID,
+		DataDir:     clone.MountDir,
+		Name:        containerName,
+		Mounts:      runtimeMountsFrom(rtScriptMount),
+		AllowInitdb: allowInitdb,
 	})
 	if err != nil {
 		_ = clone.Cleanup()
+		m.logInfoJob(jobID, "runtime start failed image=%s input=%s err=%v", imageID, input.Kind, err)
 		if ctx.Err() != nil {
 			return nil, errorResponse("cancelled", "job cancelled", "")
 		}
@@ -528,7 +921,7 @@ func hasPGVersion(baseDir string) (bool, error) {
 	for _, path := range pgVersionPaths(baseDir) {
 		if _, err := os.Stat(path); err == nil {
 			return true, nil
-		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			if os.IsPermission(err) {
 				return false, err
 			}
@@ -558,6 +951,71 @@ func pgDataHostDir(baseDir string) string {
 		return baseDir
 	}
 	return filepath.Join(baseDir, filepath.FromSlash(rel))
+}
+
+func postmasterPIDPath(stateDir string) string {
+	stateDir = strings.TrimSpace(stateDir)
+	if stateDir == "" {
+		return ""
+	}
+	candidates := []string{
+		filepath.Join(stateDir, "postmaster.pid"),
+	}
+	if pgDataDir := pgDataHostDir(stateDir); pgDataDir != "" && pgDataDir != stateDir {
+		candidates = append(candidates, filepath.Join(pgDataDir, "postmaster.pid"))
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+func (m *Manager) invalidateDirtyCachedState(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (bool, *ErrorResponse) {
+	if strings.TrimSpace(stateID) == "" {
+		return false, nil
+	}
+	entry, ok, err := m.store.GetState(ctx, stateID)
+	if err != nil {
+		return false, errorResponse("internal_error", "cannot load cached state", err.Error())
+	}
+	imageID := prepared.effectiveImageID()
+	if ok && strings.TrimSpace(entry.ImageID) != "" {
+		imageID = entry.ImageID
+	}
+	if strings.TrimSpace(imageID) == "" {
+		return false, errorResponse("internal_error", "resolved image id is required", "")
+	}
+	paths, err := resolveStatePaths(m.stateStoreRoot, imageID, stateID, m.statefs)
+	if err != nil {
+		return false, errorResponse("internal_error", "cannot resolve cached state paths", err.Error())
+	}
+	if dirtyPath := postmasterPIDPath(paths.stateDir); dirtyPath != "" {
+		m.logInfoJob(jobID, "cached state dirty state=%s path=%s", stateID, dirtyPath)
+		if err := m.statefs.RemovePath(context.Background(), paths.stateDir); err != nil {
+			return false, errorResponse("internal_error", "cannot remove dirty cached state dir", err.Error())
+		}
+		if err := m.store.DeleteState(ctx, stateID); err != nil {
+			return false, errorResponse("internal_error", "cannot delete dirty cached state", err.Error())
+		}
+		return true, nil
+	}
+	ok, err = hasPGVersion(paths.stateDir)
+	if err != nil {
+		return false, errorResponse("internal_error", "cannot inspect cached state PG_VERSION", err.Error())
+	}
+	if !ok {
+		m.logInfoJob(jobID, "cached state missing PG_VERSION state=%s dir=%s", stateID, paths.stateDir)
+		if err := m.statefs.RemovePath(context.Background(), paths.stateDir); err != nil {
+			return false, errorResponse("internal_error", "cannot remove cached state dir missing PG_VERSION", err.Error())
+		}
+		if err := m.store.DeleteState(ctx, stateID); err != nil {
+			return false, errorResponse("internal_error", "cannot delete cached state missing PG_VERSION", err.Error())
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func resetBaseDirContents(baseDir string) error {

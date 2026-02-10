@@ -19,7 +19,7 @@ Date: 2026-02-01
   - Forward Liquibase arguments after `--` and filter unsafe options (connection args, non-update commands).
   - Plan via `liquibase updateSQL`, parse its output to build an ordered list of changesets and per-changeset SQL hashes.
   - Identify states by `prev_state_id` + ordered changesets (id/author/path + sql_hash).
-  - Execute changesets one by one via `updateOne`, snapshotting after each.
+  - Execute changesets one by one via `update-count --count=1`, snapshotting after each.
   - When running Liquibase in a container, mount only the local paths referenced by Liquibase args (including `--searchPath`) and rewrite them to `/sqlrs/mnt/pathN`.
 - Rationale:
   - Preserves a single command shape while allowing multiple preparation backends.

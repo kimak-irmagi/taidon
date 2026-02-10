@@ -48,11 +48,16 @@ type StateEntry struct {
 }
 
 type PrepareJobRequest struct {
-	PrepareKind string   `json:"prepare_kind"`
-	ImageID     string   `json:"image_id"`
-	PsqlArgs    []string `json:"psql_args"`
-	Stdin       *string  `json:"stdin,omitempty"`
-	PlanOnly    bool     `json:"plan_only,omitempty"`
+	PrepareKind       string            `json:"prepare_kind"`
+	ImageID           string            `json:"image_id"`
+	PsqlArgs          []string          `json:"psql_args"`
+	LiquibaseArgs     []string          `json:"liquibase_args,omitempty"`
+	LiquibaseExec     string            `json:"liquibase_exec,omitempty"`
+	LiquibaseExecMode string            `json:"liquibase_exec_mode,omitempty"`
+	LiquibaseEnv      map[string]string `json:"liquibase_env,omitempty"`
+	WorkDir           string            `json:"work_dir,omitempty"`
+	Stdin             *string           `json:"stdin,omitempty"`
+	PlanOnly          bool              `json:"plan_only,omitempty"`
 }
 
 type ConfigValue struct {

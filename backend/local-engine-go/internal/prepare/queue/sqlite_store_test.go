@@ -65,6 +65,9 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 			ImageID:         stringPtr("image-1"),
 			ResolvedImageID: stringPtr("image-1@sha256:resolved"),
 			Cached:          boolPtrFromValue(true),
+			ChangesetID:     stringPtr("1"),
+			ChangesetAuthor: stringPtr("dev"),
+			ChangesetPath:   stringPtr("changelog.xml"),
 		},
 	}
 	if err := store.ReplaceTasks(context.Background(), "job-1", tasks); err != nil {
@@ -87,6 +90,9 @@ func TestSQLiteStoreJobTaskEventRoundTrip(t *testing.T) {
 	}
 	if taskRows[1].ImageID == nil || taskRows[1].ResolvedImageID == nil {
 		t.Fatalf("expected image fields to roundtrip: %+v", taskRows[1])
+	}
+	if taskRows[1].ChangesetID == nil || taskRows[1].ChangesetAuthor == nil || taskRows[1].ChangesetPath == nil {
+		t.Fatalf("expected changeset fields to roundtrip: %+v", taskRows[1])
 	}
 
 	if _, err := store.AppendEvent(context.Background(), EventRecord{
@@ -525,6 +531,67 @@ func TestEnsureTaskImageColumnsSecondExecError(t *testing.T) {
 		errors.New("boom"),
 	})
 	if err := ensureTaskImageColumns(db); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestEnsureTaskChangesetColumnsNoTable(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	if err := ensureTaskChangesetColumns(db); err != nil {
+		t.Fatalf("ensureTaskChangesetColumns: %v", err)
+	}
+}
+
+func TestEnsureTaskChangesetColumnsDuplicate(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE prepare_tasks (changeset_id TEXT, changeset_author TEXT, changeset_path TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := ensureTaskChangesetColumns(db); err != nil {
+		t.Fatalf("ensureTaskChangesetColumns: %v", err)
+	}
+}
+
+func TestEnsureTaskChangesetColumnsAddsMissingColumns(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`CREATE TABLE prepare_tasks (task_id TEXT)`)
+	if err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if err := ensureTaskChangesetColumns(db); err != nil {
+		t.Fatalf("ensureTaskChangesetColumns: %v", err)
+	}
+}
+
+func TestEnsureTaskChangesetColumnsReturnsExecError(t *testing.T) {
+	db := openErrorDB(t, []error{errors.New("boom")})
+	if err := ensureTaskChangesetColumns(db); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestEnsureTaskChangesetColumnsSecondExecError(t *testing.T) {
+	db := openErrorDB(t, []error{
+		errors.New("duplicate column name: changeset_id"),
+		errors.New("boom"),
+	})
+	if err := ensureTaskChangesetColumns(db); err == nil {
 		t.Fatalf("expected error")
 	}
 }

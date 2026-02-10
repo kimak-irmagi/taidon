@@ -132,8 +132,11 @@ func TestEnsureDirsUsesSubvolumeEnsurer(t *testing.T) {
 	if err := mgr.EnsureStateDir(context.Background(), state); err != nil {
 		t.Fatalf("EnsureStateDir: %v", err)
 	}
-	if len(backend.ensureCalls) != 2 {
+	if len(backend.ensureCalls) != 1 {
 		t.Fatalf("expected ensure calls, got %+v", backend.ensureCalls)
+	}
+	if _, err := os.Stat(filepath.Dir(state)); err != nil {
+		t.Fatalf("expected state parent dir created: %v", err)
 	}
 }
 

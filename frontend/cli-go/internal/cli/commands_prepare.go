@@ -36,18 +36,23 @@ type PrepareOptions struct {
 	EngineStatePath string
 	EngineStoreDir  string
 	WSLVHDXPath     string
-	WSLMountUnit  string
+	WSLMountUnit    string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
 	StartupTimeout  time.Duration
 	Verbose         bool
 
-	ImageID     string
-	PsqlArgs    []string
-	Stdin       *string
-	PrepareKind string
-	PlanOnly    bool
+	ImageID           string
+	PsqlArgs          []string
+	LiquibaseArgs     []string
+	LiquibaseExec     string
+	LiquibaseExecMode string
+	LiquibaseEnv      map[string]string
+	WorkDir           string
+	Stdin             *string
+	PrepareKind       string
+	PlanOnly          bool
 }
 
 func RunPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobResult, error) {
@@ -68,11 +73,16 @@ func RunPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobResu
 		fmt.Fprintln(os.Stderr, "submitting prepare job")
 	}
 	accepted, err := cliClient.CreatePrepareJob(ctx, client.PrepareJobRequest{
-		PrepareKind: prepareKind,
-		ImageID:     opts.ImageID,
-		PsqlArgs:    opts.PsqlArgs,
-		Stdin:       opts.Stdin,
-		PlanOnly:    false,
+		PrepareKind:       prepareKind,
+		ImageID:           opts.ImageID,
+		PsqlArgs:          opts.PsqlArgs,
+		LiquibaseArgs:     opts.LiquibaseArgs,
+		LiquibaseExec:     opts.LiquibaseExec,
+		LiquibaseExecMode: opts.LiquibaseExecMode,
+		LiquibaseEnv:      opts.LiquibaseEnv,
+		WorkDir:           opts.WorkDir,
+		Stdin:             opts.Stdin,
+		PlanOnly:          false,
 	})
 	if err != nil {
 		return client.PrepareJobResult{}, err
@@ -125,11 +135,16 @@ func RunPlan(ctx context.Context, opts PrepareOptions) (PlanResult, error) {
 		fmt.Fprintln(os.Stderr, "submitting prepare job (plan-only)")
 	}
 	accepted, err := cliClient.CreatePrepareJob(ctx, client.PrepareJobRequest{
-		PrepareKind: prepareKind,
-		ImageID:     opts.ImageID,
-		PsqlArgs:    opts.PsqlArgs,
-		Stdin:       opts.Stdin,
-		PlanOnly:    true,
+		PrepareKind:       prepareKind,
+		ImageID:           opts.ImageID,
+		PsqlArgs:          opts.PsqlArgs,
+		LiquibaseArgs:     opts.LiquibaseArgs,
+		LiquibaseExec:     opts.LiquibaseExec,
+		LiquibaseExecMode: opts.LiquibaseExecMode,
+		LiquibaseEnv:      opts.LiquibaseEnv,
+		WorkDir:           opts.WorkDir,
+		Stdin:             opts.Stdin,
+		PlanOnly:          true,
 	})
 	if err != nil {
 		return PlanResult{}, err
@@ -190,7 +205,7 @@ func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, er
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
 				WSLVHDXPath:     opts.WSLVHDXPath,
-				WSLMountUnit:  opts.WSLMountUnit,
+				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,

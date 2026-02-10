@@ -79,12 +79,12 @@ For local profiles, the engine performs real execution:
 
 ## State Identification
 
-A **state** is identified by a fingerprint computed from:
+A **state** is identified by a fingerprint computed from **content**, not by
+argument strings or include paths:
 
 - `prepare kind`
 - resolved `base image id` (digest)
-- normalized `prepare arguments`
-- hashes of all input sources (files, inline SQL, stdin)
+- **normalized SQL content** (expanded includes)
 - sqlrs engine version
 
 Formally:
@@ -93,19 +93,43 @@ Formally:
 state_id = hash(
   prepare_kind +
   base_image_id_resolved +
-  normalized_prepare_args +
-  normalized_input_hashes +
+  normalized_sql_content +
   engine_version
 )
 ```
 
-### Normalization Rules
+### Content normalization (MVP)
 
-- File paths are resolved to absolute paths.
-- Argument ordering is preserved.
-- `psql` arguments are included verbatim, with enforced defaults applied.
+sqlrs expands all supported `psql` include directives and fingerprints the
+resulting content. The **form** and **paths** of include commands do not
+affect the fingerprint.
 
-If any participating input changes, a **new state** is produced.
+Supported include directives:
+
+- `\i`
+- `\ir`
+- `\include`
+- `\include_relative`
+
+Normalization rules (initial):
+
+- include directives are replaced by the **contents** of the referenced files.
+- traversal order is deterministic (depth-first, in include order).
+- the final content stream is hashed; include paths and command spelling are ignored.
+
+If two scripts differ **only** by include form or file paths, but resolve to the
+same included content, they produce the **same** state id.
+
+### Content locking (atomicity)
+
+To avoid plan drift, sqlrs locks SQL inputs for the **duration of each task**
+that computes or applies content:
+
+- planning: all files in the include graph are opened with a read-lock while the
+  normalized content hash is computed.
+- execution: the same set is re-locked while the task runs.
+
+If any lock cannot be acquired (file is being modified), `prepare:psql` fails.
 
 ---
 

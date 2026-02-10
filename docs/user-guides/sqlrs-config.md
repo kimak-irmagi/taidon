@@ -49,6 +49,10 @@ sqlrs config set auth.enabled true
 sqlrs config set limits.tags ["ci","local"]
 sqlrs config set limits.rules {"max":2,"ttl":"1h"}
 sqlrs config set featureFlag null
+sqlrs config set log.level info
+sqlrs config set ui.title "\"Hello world\""
+sqlrs config set ui.title="\"Hello world\""
+sqlrs config set ui.title '"Hello world"'
 ```
 
 `null` is a valid value. To remove a key, use `rm`.

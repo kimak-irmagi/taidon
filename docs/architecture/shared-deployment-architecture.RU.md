@@ -131,4 +131,3 @@ flowchart TD
 
 - Control DB - источник истины для jobs/tasks в shared деплойменте.
 - Orchestrator держит in-memory состояние очереди, синхронизированное с Control DB.
-

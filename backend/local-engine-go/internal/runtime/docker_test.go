@@ -80,9 +80,9 @@ func TestDockerRuntimeStart(t *testing.T) {
 	}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	instance, err := rt.Start(context.Background(), StartRequest{
-		ImageID: "postgres:17",
-		DataDir: "/data",
-		Name:    "sqlrs-test",
+		ImageID:     "postgres:17",
+		DataDir:     "/data",
+		Name:        "sqlrs-test",
 		AllowInitdb: false,
 	})
 	if err != nil {
@@ -196,6 +196,67 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExists(t *testing.T) {
 		if containsArg(call.args, "initdb", "--username=sqlrs") {
 			t.Fatalf("expected initdb to be skipped, got %+v", call.args)
 		}
+	}
+}
+
+func TestEnsureHostAuthAddsEntries(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.WriteFile(path, []byte("local all all trust\n"), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("ensureHostAuth: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pg_hba: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "0.0.0.0/0") || !strings.Contains(text, "::/0") {
+		t.Fatalf("expected host entries, got %q", text)
+	}
+}
+
+func TestEnsureHostAuthSkipsWhenMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("expected missing pg_hba to be ignored, got %v", err)
+	}
+}
+
+func TestEnsureHostAuthIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	initial := "host all all 0.0.0.0/0 trust\nhost all all ::/0 trust\n"
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("ensureHostAuth: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pg_hba: %v", err)
+	}
+	if string(content) != initial {
+		t.Fatalf("expected pg_hba to be unchanged, got %q", string(content))
+	}
+}
+
+func TestPgDataHostDir(t *testing.T) {
+	dir := t.TempDir()
+	expected := filepath.Join(dir, "pgdata")
+	if got := pgDataHostDir(dir); got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
 	}
 }
 
@@ -378,6 +439,77 @@ func TestDockerRuntimeExecReportsRunnerError(t *testing.T) {
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
 	if _, err := rt.Exec(context.Background(), "container-1", ExecRequest{Args: []string{"pg_isready"}}); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected error with output, got %v", err)
+	}
+}
+
+func TestDockerRuntimeRunContainerRejectsEmptyImage(t *testing.T) {
+	rt := NewDocker(Options{Runner: &fakeRunner{}})
+	if _, err := rt.RunContainer(context.Background(), RunRequest{}); err == nil {
+		t.Fatalf("expected error for empty image id")
+	}
+}
+
+func TestDockerRuntimeRunContainerBuildsArgs(t *testing.T) {
+	runner := &fakeRunner{responses: []runResponse{{output: "ok\n"}}}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	_, err := rt.RunContainer(context.Background(), RunRequest{
+		ImageID: "liquibase:latest",
+		Args:    []string{"update"},
+		Env:     map[string]string{"FOO": "bar"},
+		Dir:     "/work",
+		User:    "liquibase",
+		Name:    "sqlrs-liquibase",
+		Network: "container:pg-1",
+		Mounts: []Mount{
+			{HostPath: "/host", ContainerPath: "/mnt", ReadOnly: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunContainer: %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected single run call, got %+v", runner.calls)
+	}
+	args := runner.calls[0].args
+	if args[0] != "run" || args[1] != "--rm" {
+		t.Fatalf("expected docker run args, got %+v", args[:2])
+	}
+	if !containsArg(args, "--name", "sqlrs-liquibase") {
+		t.Fatalf("expected name flag, got %+v", args)
+	}
+	if !containsArg(args, "-u", "liquibase") {
+		t.Fatalf("expected user flag, got %+v", args)
+	}
+	if !containsArg(args, "-w", "/work") {
+		t.Fatalf("expected workdir flag, got %+v", args)
+	}
+	if !containsArg(args, "--network", "container:pg-1") {
+		t.Fatalf("expected network flag, got %+v", args)
+	}
+	if !containsArg(args, "-e", "FOO=bar") {
+		t.Fatalf("expected env flag, got %+v", args)
+	}
+	if !containsArg(args, "-v", "/host:/mnt:ro") {
+		t.Fatalf("expected mount flag, got %+v", args)
+	}
+	if !containsFlag(args, "liquibase:latest") || !containsFlag(args, "update") {
+		t.Fatalf("expected image and args, got %+v", args)
+	}
+}
+
+func TestDockerRuntimeRunContainerDockerUnavailable(t *testing.T) {
+	runner := &fakeRunner{responses: []runResponse{{err: DockerUnavailableError{Message: "daemon unavailable"}}}}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.RunContainer(context.Background(), RunRequest{ImageID: "image"}); err == nil || !strings.Contains(err.Error(), "docker is not running") {
+		t.Fatalf("expected docker unavailable error, got %v", err)
+	}
+}
+
+func TestDockerRuntimeRunContainerRunError(t *testing.T) {
+	runner := &fakeRunner{responses: []runResponse{{output: "boom\n", err: errors.New("fail")}}}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	if _, err := rt.RunContainer(context.Background(), RunRequest{ImageID: "image"}); err == nil || !strings.Contains(err.Error(), "docker run failed") {
+		t.Fatalf("expected run error, got %v", err)
 	}
 }
 

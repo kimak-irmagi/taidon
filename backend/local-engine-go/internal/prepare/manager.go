@@ -39,6 +39,7 @@ type Options struct {
 	StateStoreRoot string
 	Config         config.Store
 	Psql           psqlRunner
+	Liquibase      liquibaseRunner
 	Version        string
 	Now            func() time.Time
 	IDGen          func() (string, error)
@@ -55,6 +56,7 @@ type Manager struct {
 	stateStoreRoot string
 	config         config.Store
 	psql           psqlRunner
+	liquibase      liquibaseRunner
 	version        string
 	validateStore  func(root string) error
 	now            func() time.Time
@@ -87,9 +89,14 @@ type preparedRequest struct {
 	request         Request
 	normalizedArgs  []string
 	argsNormalized  string
-	inputHashes     []inputHash
 	filePaths       []string
+	liquibaseMounts []runtime.Mount
 	resolvedImageID string
+	psqlInputs      []psqlInput
+	psqlWorkDir     string
+	liquibaseLockPaths   []string
+	liquibaseSearchPaths []string
+	liquibaseWorkDir     string
 }
 
 func NewManager(opts Options) (*Manager, error) {
@@ -125,6 +132,10 @@ func NewManager(opts Options) (*Manager, error) {
 	if psql == nil {
 		psql = containerPsqlRunner{runtime: opts.Runtime}
 	}
+	liquibase := opts.Liquibase
+	if liquibase == nil {
+		liquibase = hostLiquibaseRunner{}
+	}
 	validateStore := opts.ValidateStore
 	if validateStore == nil {
 		validateStore = func(root string) error {
@@ -140,6 +151,7 @@ func NewManager(opts Options) (*Manager, error) {
 		stateStoreRoot: opts.StateStoreRoot,
 		config:         opts.Config,
 		psql:           psql,
+		liquibase:      liquibase,
 		version:        opts.Version,
 		validateStore:  validateStore,
 		now:            now,
@@ -495,12 +507,13 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 				return
 			}
 		case "state_execute":
-			if err := m.executeStateTask(ctx, jobID, prepared, task); err != nil {
-				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), err)
-				_ = m.failJob(jobID, err)
+			outputID, errResp := m.executeStateTask(ctx, jobID, prepared, task)
+			if errResp != nil {
+				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
+				_ = m.failJob(jobID, errResp)
 				return
 			}
-			stateID = task.OutputStateID
+			stateID = outputID
 		case "prepare_instance":
 			result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
 			if errResp != nil {
@@ -546,12 +559,19 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 		return nil, "", errResp
 	}
 	if len(taskRecords) == 0 {
-		if errResp := m.updateJobSignature(ctx, jobID, prepared); errResp != nil {
-			return nil, "", errResp
+		if prepared.request.PrepareKind != "lb" {
+			if errResp := m.updateJobSignature(ctx, jobID, prepared); errResp != nil {
+				return nil, "", errResp
+			}
 		}
-		tasks, stateID, errResp := m.buildPlan(prepared)
+		tasks, stateID, errResp := m.buildPlan(ctx, jobID, prepared)
 		if errResp != nil {
 			return nil, "", errResp
+		}
+		if prepared.request.PrepareKind == "lb" {
+			if errResp := m.updateJobSignatureFromPlan(ctx, jobID, prepared, tasks); errResp != nil {
+				return nil, "", errResp
+			}
 		}
 		m.logJob(jobID, "planned tasks count=%d state_id=%s", len(tasks), stateID)
 		records := taskRecordsFromPlan(jobID, tasks)
@@ -594,6 +614,17 @@ func (m *Manager) updateJobSignature(ctx context.Context, jobID string, prepared
 	return nil
 }
 
+func (m *Manager) updateJobSignatureFromPlan(ctx context.Context, jobID string, prepared preparedRequest, tasks []PlanTask) *ErrorResponse {
+	signature, errResp := m.computeJobSignatureFromPlan(prepared, tasks)
+	if errResp != nil {
+		return errResp
+	}
+	if err := m.queue.UpdateJob(ctx, jobID, queue.JobUpdate{Signature: &signature}); err != nil {
+		return errorResponse("internal_error", "cannot update job signature", err.Error())
+	}
+	return nil
+}
+
 func (m *Manager) computeJobSignature(prepared preparedRequest) (string, *ErrorResponse) {
 	taskHash, errResp := m.computeTaskHash(prepared)
 	if errResp != nil {
@@ -607,6 +638,41 @@ func (m *Manager) computeJobSignature(prepared preparedRequest) (string, *ErrorR
 	hasher.write("task_hash", taskHash)
 	hasher.write("image_id", imageID)
 	hasher.write("plan_only", fmt.Sprintf("%t", prepared.request.PlanOnly))
+	signature := hasher.sum()
+	if signature == "" {
+		return "", errorResponse("internal_error", "cannot compute job signature", "")
+	}
+	return signature, nil
+}
+
+func (m *Manager) computeJobSignatureFromPlan(prepared preparedRequest, tasks []PlanTask) (string, *ErrorResponse) {
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return "", errorResponse("internal_error", "resolved image id is required", "")
+	}
+	hasher := newStateHasher()
+	hasher.write("image_id", imageID)
+	hasher.write("plan_only", fmt.Sprintf("%t", prepared.request.PlanOnly))
+	for _, task := range tasks {
+		hasher.write("task_id", task.TaskID)
+		hasher.write("task_type", task.Type)
+		if task.Input != nil {
+			hasher.write("input_kind", task.Input.Kind)
+			hasher.write("input_id", task.Input.ID)
+		}
+		if task.TaskHash != "" {
+			hasher.write("task_hash", task.TaskHash)
+		}
+		if task.ChangesetID != "" {
+			hasher.write("changeset_id", task.ChangesetID)
+		}
+		if task.ChangesetAuthor != "" {
+			hasher.write("changeset_author", task.ChangesetAuthor)
+		}
+		if task.ChangesetPath != "" {
+			hasher.write("changeset_path", task.ChangesetPath)
+		}
+	}
 	signature := hasher.sum()
 	if signature == "" {
 		return "", errorResponse("internal_error", "cannot compute job signature", "")
@@ -680,7 +746,9 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 	if kind == "" {
 		return preparedRequest{}, ValidationError{Code: "invalid_argument", Message: "prepare_kind is required"}
 	}
-	if kind != "psql" {
+	switch kind {
+	case "psql", "lb":
+	default:
 		return preparedRequest{}, ValidationError{Code: "invalid_argument", Message: "unsupported prepare_kind", Details: kind}
 	}
 	imageID := strings.TrimSpace(req.ImageID)
@@ -689,25 +757,60 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 	}
 	req.PrepareKind = kind
 	req.ImageID = imageID
-	prepared, err := preparePsqlArgs(req.PsqlArgs, req.Stdin)
-	if err != nil {
-		return preparedRequest{}, err
+	var prepared preparedRequest
+	switch kind {
+	case "psql":
+		psqlPrepared, err := preparePsqlArgs(req.PsqlArgs, req.Stdin)
+		if err != nil {
+			return preparedRequest{}, err
+		}
+		prepared = preparedRequest{
+			request:        req,
+			normalizedArgs: psqlPrepared.normalizedArgs,
+			argsNormalized: psqlPrepared.argsNormalized,
+			filePaths:      psqlPrepared.filePaths,
+			psqlInputs:     psqlPrepared.inputs,
+			psqlWorkDir:    psqlPrepared.workDir,
+		}
+	case "lb":
+		cwd, _ := os.Getwd()
+		execMode := normalizeExecMode(req.LiquibaseExecMode)
+		execPath := strings.TrimSpace(req.LiquibaseExec)
+		windowsMode := shouldUseWindowsBat(execPath, execMode)
+		lbPrepared, err := prepareLiquibaseArgs(req.LiquibaseArgs, cwd, windowsMode)
+		if err != nil {
+			return preparedRequest{}, err
+		}
+		prepared = preparedRequest{
+			request:         req,
+			normalizedArgs:  lbPrepared.normalizedArgs,
+			argsNormalized:  lbPrepared.argsNormalized,
+			liquibaseMounts: lbPrepared.mounts,
+			liquibaseLockPaths:   lbPrepared.lockPaths,
+			liquibaseSearchPaths: lbPrepared.searchPaths,
+			liquibaseWorkDir:     lbPrepared.workDir,
+		}
 	}
 	resolvedImageID := ""
 	if hasImageDigest(imageID) {
 		resolvedImageID = imageID
 	}
-	return preparedRequest{
-		request:         req,
-		normalizedArgs:  prepared.normalizedArgs,
-		argsNormalized:  prepared.argsNormalized,
-		inputHashes:     prepared.inputHashes,
-		filePaths:       prepared.filePaths,
-		resolvedImageID: resolvedImageID,
-	}, nil
+	prepared.resolvedImageID = resolvedImageID
+	return prepared, nil
 }
 
-func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (m *Manager) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+	switch prepared.request.PrepareKind {
+	case "psql":
+		return m.buildPlanPsql(prepared)
+	case "lb":
+		return m.buildPlanLiquibase(ctx, jobID, prepared)
+	default:
+		return nil, "", errorResponse("internal_error", "unsupported prepare kind", prepared.request.PrepareKind)
+	}
+}
+
+func (m *Manager) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	taskHash, errResp := m.computeTaskHash(prepared)
 	if errResp != nil {
 		return nil, "", errResp
@@ -765,14 +868,235 @@ func (m *Manager) buildPlan(prepared preparedRequest) ([]PlanTask, string, *Erro
 	return tasks, stateID, nil
 }
 
+func (m *Manager) buildPlanLiquibase(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return nil, "", errorResponse("internal_error", "resolved image id is required", "")
+	}
+	changesets, errResp := m.planLiquibaseChangesets(ctx, jobID, prepared)
+	if errResp != nil {
+		return nil, "", errResp
+	}
+
+	tasks := make([]PlanTask, 0, 3+len(changesets))
+	tasks = append(tasks, PlanTask{
+		TaskID:      "plan",
+		Type:        "plan",
+		PlannerKind: prepared.request.PrepareKind,
+	})
+	if needsImageResolve(prepared.request.ImageID) {
+		tasks = append(tasks, PlanTask{
+			TaskID:          "resolve-image",
+			Type:            "resolve_image",
+			ImageID:         prepared.request.ImageID,
+			ResolvedImageID: imageID,
+		})
+	}
+
+	inputKind := "image"
+	inputID := imageID
+	prevFingerprintID := inputID
+	stateID := ""
+
+	if len(changesets) == 0 {
+		taskHash := liquibaseFingerprint(prevFingerprintID, nil)
+		outputStateID, errResp := m.computeOutputStateID(inputKind, inputID, taskHash)
+		if errResp != nil {
+			return nil, "", errResp
+		}
+		cached, err := m.isStateCached(outputStateID)
+		if err != nil {
+			return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
+		}
+		cachedFlag := cached
+		tasks = append(tasks, PlanTask{
+			TaskID: "execute-0",
+			Type:   "state_execute",
+			Input: &TaskInput{
+				Kind: inputKind,
+				ID:   inputID,
+			},
+			TaskHash:      taskHash,
+			OutputStateID: outputStateID,
+			Cached:        &cachedFlag,
+		})
+		stateID = outputStateID
+	} else {
+		for i, changeset := range changesets {
+			taskHash := liquibaseFingerprint(prevFingerprintID, []LiquibaseChangeset{changeset})
+			outputStateID, errResp := m.computeOutputStateID(inputKind, inputID, taskHash)
+			if errResp != nil {
+				return nil, "", errResp
+			}
+			cached, err := m.isStateCached(outputStateID)
+			if err != nil {
+				return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
+			}
+			cachedFlag := cached
+			tasks = append(tasks, PlanTask{
+				TaskID: fmt.Sprintf("execute-%d", i),
+				Type:   "state_execute",
+				Input: &TaskInput{
+					Kind: inputKind,
+					ID:   inputID,
+				},
+				TaskHash:        taskHash,
+				OutputStateID:   outputStateID,
+				Cached:          &cachedFlag,
+				ChangesetID:     changeset.ID,
+				ChangesetAuthor: changeset.Author,
+				ChangesetPath:   changeset.Path,
+			})
+			inputKind = "state"
+			inputID = outputStateID
+			prevFingerprintID = outputStateID
+			stateID = outputStateID
+		}
+	}
+
+	if strings.TrimSpace(stateID) == "" {
+		return nil, "", errorResponse("internal_error", "missing output state", "")
+	}
+	tasks = append(tasks, PlanTask{
+		TaskID: "prepare-instance",
+		Type:   "prepare_instance",
+		Input: &TaskInput{
+			Kind: "state",
+			ID:   stateID,
+		},
+		InstanceMode: "ephemeral",
+	})
+	return tasks, stateID, nil
+}
+
+func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, prepared preparedRequest) ([]LiquibaseChangeset, *ErrorResponse) {
+	if m.liquibase == nil {
+		return nil, errorResponse("internal_error", "liquibase runner is required", "")
+	}
+	imageID := prepared.effectiveImageID()
+	if strings.TrimSpace(imageID) == "" {
+		return nil, errorResponse("internal_error", "resolved image id is required", "")
+	}
+
+	var rt *jobRuntime
+	runner := m.getRunner(jobID)
+	if !prepared.request.PlanOnly && runner != nil {
+		planned, errResp := m.ensureRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID}, runner)
+		if errResp != nil {
+			return nil, errResp
+		}
+		rt = planned
+	} else {
+		temp := &jobRunner{}
+		planned, errResp := m.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID})
+		if errResp != nil {
+			return nil, errResp
+		}
+		temp.setRuntime(planned)
+		defer m.cleanupRuntime(context.Background(), temp)
+		rt = planned
+	}
+	lock, errResp := ensureLiquibaseContentLock(prepared, "")
+	if errResp != nil {
+		return nil, errResp
+	}
+	defer lock.Close()
+	return m.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
+}
+
+func (m *Manager) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse) {
+	if m.liquibase == nil {
+		return nil, errorResponse("internal_error", "liquibase runner is required", "")
+	}
+	if rt == nil {
+		return nil, errorResponse("internal_error", "runtime instance is required", "")
+	}
+	if strings.TrimSpace(rt.instance.Host) == "" || rt.instance.Port == 0 {
+		return nil, errorResponse("internal_error", "runtime instance is missing connection info", "")
+	}
+
+	execMode := normalizeExecMode(prepared.request.LiquibaseExecMode)
+	rawExecPath := strings.TrimSpace(prepared.request.LiquibaseExec)
+	windowsMode := shouldUseWindowsBat(rawExecPath, execMode)
+	execPath, err := normalizeLiquibaseExecPath(rawExecPath, windowsMode)
+	if err != nil {
+		return nil, errorResponse("internal_error", "cannot resolve liquibase executable", err.Error())
+	}
+	var mapper PathMapper
+	if windowsMode && isWSL() {
+		mapper = wslPathMapper{}
+	}
+	args, err := mapLiquibaseArgs(prepared.normalizedArgs, mapper)
+	if err != nil {
+		return nil, errorResponse("internal_error", "cannot map liquibase arguments", err.Error())
+	}
+	workDir := strings.TrimSpace(prepared.request.WorkDir)
+	if windowsMode && workDir == "" {
+		workDir = deriveLiquibaseWorkDir(args)
+	}
+	if workDir != "" && mapper != nil {
+		mappedDir, mapErr := mapper.MapPath(workDir)
+		if mapErr != nil {
+			return nil, errorResponse("internal_error", "cannot map liquibase workdir", mapErr.Error())
+		}
+		workDir = mappedDir
+	}
+	args = replaceLiquibaseCommand(args, "updateSQL")
+	args = prependLiquibaseConnectionArgs(args, rt.instance)
+	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
+	if err != nil {
+		return nil, errorResponse("internal_error", "cannot map liquibase env", err.Error())
+	}
+
+	execLine := formatExecLine(execPath, args)
+	m.appendLog(jobID, fmt.Sprintf("liquibase: exec %s", execLine))
+	m.logJob(jobID, "liquibase exec %s", execLine)
+	m.appendLog(jobID, "liquibase: start")
+	lbCtx := runtime.WithLogSink(ctx, func(line string) {
+		m.appendLog(jobID, "liquibase: "+line)
+	})
+	output, err := m.liquibase.Run(lbCtx, LiquibaseRunRequest{
+		ExecPath: execPath,
+		ExecMode: execMode,
+		Args:     args,
+		Env:      env,
+		WorkDir:  workDir,
+		Mounts:   prepared.liquibaseMounts,
+		Network:  "",
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, errorResponse("cancelled", "task cancelled", "")
+		}
+		details := strings.TrimSpace(output)
+		if details == "" {
+			details = err.Error()
+		}
+		return nil, errorResponse("internal_error", "liquibase execution failed", details)
+	}
+	changesets, err := parseLiquibaseUpdateSQL(output)
+	if err != nil {
+		return nil, errorResponse("invalid_argument", "cannot parse liquibase changesets", err.Error())
+	}
+	return changesets, nil
+}
+
 func (m *Manager) computeTaskHash(prepared preparedRequest) (string, *ErrorResponse) {
+	if prepared.request.PrepareKind == "psql" {
+		digest, err := computePsqlContentDigest(prepared.psqlInputs, prepared.psqlWorkDir)
+		if err != nil {
+			return "", errorResponse("invalid_argument", "cannot compute psql content hash", err.Error())
+		}
+		taskHash := psqlTaskHash(prepared.request.PrepareKind, digest.hash, m.version)
+		if taskHash == "" {
+			return "", errorResponse("internal_error", "cannot compute task hash", "")
+		}
+		return taskHash, nil
+	}
 	hasher := newStateHasher()
 	hasher.write("prepare_kind", prepared.request.PrepareKind)
 	for i, arg := range prepared.normalizedArgs {
 		hasher.write(fmt.Sprintf("arg:%d", i), arg)
-	}
-	for i, input := range prepared.inputHashes {
-		hasher.write(fmt.Sprintf("input:%d:%s", i, input.Kind), input.Value)
 	}
 	hasher.write("engine_version", m.version)
 	taskHash := hasher.sum()
@@ -780,6 +1104,14 @@ func (m *Manager) computeTaskHash(prepared preparedRequest) (string, *ErrorRespo
 		return "", errorResponse("internal_error", "cannot compute task hash", "")
 	}
 	return taskHash, nil
+}
+
+func psqlTaskHash(kind string, contentHash string, engineVersion string) string {
+	hasher := newStateHasher()
+	hasher.write("prepare_kind", kind)
+	hasher.write("content_hash", contentHash)
+	hasher.write("engine_version", engineVersion)
+	return hasher.sum()
 }
 
 func (m *Manager) computeOutputStateID(inputKind, inputID, taskHash string) (string, *ErrorResponse) {
@@ -993,6 +1325,13 @@ func (m *Manager) logTask(jobID string, taskID string, format string, args ...an
 	log.Printf("prepare job=%s task=%s "+format, args...)
 }
 
+func (m *Manager) logInfoJob(jobID string, format string, args ...any) {
+	if !logLevelAllowsInfo(logLevelFromConfig(m.config)) {
+		return
+	}
+	m.logJob(jobID, format, args...)
+}
+
 func (m *Manager) appendLog(jobID string, message string) {
 	if strings.TrimSpace(jobID) == "" || strings.TrimSpace(message) == "" {
 		return
@@ -1182,6 +1521,9 @@ func taskRecordsFromPlan(jobID string, tasks []PlanTask) []queue.TaskRecord {
 			OutputStateID:   nullableString(task.OutputStateID),
 			Cached:          task.Cached,
 			InstanceMode:    nullableString(task.InstanceMode),
+			ChangesetID:     nullableString(task.ChangesetID),
+			ChangesetAuthor: nullableString(task.ChangesetAuthor),
+			ChangesetPath:   nullableString(task.ChangesetPath),
 		})
 	}
 	return records
@@ -1214,6 +1556,9 @@ func planTaskFromRecord(task queue.TaskRecord) PlanTask {
 		OutputStateID:   valueOrEmpty(task.OutputStateID),
 		Cached:          task.Cached,
 		InstanceMode:    valueOrEmpty(task.InstanceMode),
+		ChangesetID:     valueOrEmpty(task.ChangesetID),
+		ChangesetAuthor: valueOrEmpty(task.ChangesetAuthor),
+		ChangesetPath:   valueOrEmpty(task.ChangesetPath),
 	}
 }
 
@@ -1238,6 +1583,9 @@ func taskEntryFromRecord(task queue.TaskRecord) TaskEntry {
 		OutputStateID:   valueOrEmpty(task.OutputStateID),
 		Cached:          task.Cached,
 		InstanceMode:    valueOrEmpty(task.InstanceMode),
+		ChangesetID:     valueOrEmpty(task.ChangesetID),
+		ChangesetAuthor: valueOrEmpty(task.ChangesetAuthor),
+		ChangesetPath:   valueOrEmpty(task.ChangesetPath),
 	}
 }
 
@@ -1380,6 +1728,47 @@ func configValueToInt(value any) (int, bool) {
 		return int(parsed), true
 	default:
 		return 0, false
+	}
+}
+
+func configValueToString(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case fmt.Stringer:
+		return v.String(), true
+	case []byte:
+		return string(v), true
+	default:
+		return "", false
+	}
+}
+
+func logLevelFromConfig(cfg config.Store) string {
+	if cfg == nil {
+		return "debug"
+	}
+	value, err := cfg.Get("log.level", true)
+	if err != nil || value == nil {
+		return "debug"
+	}
+	level, ok := configValueToString(value)
+	if !ok {
+		return "debug"
+	}
+	level = strings.TrimSpace(strings.ToLower(level))
+	if level == "" {
+		return "debug"
+	}
+	return level
+}
+
+func logLevelAllowsInfo(level string) bool {
+	switch strings.TrimSpace(strings.ToLower(level)) {
+	case "", "debug", "info":
+		return true
+	default:
+		return false
 	}
 }
 

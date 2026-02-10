@@ -14,8 +14,8 @@ This document describes how `sqlrs prepare:lb` should work in the **local** depl
 ## Non-goals (initially)
 
 - Remote engine profiles (team/cloud).
-- Supporting non-container Liquibase installations.
 - Custom Java extensions / classpath injection beyond standard Liquibase image contents.
+- Container-based Liquibase execution (planned, not implemented yet).
 
 ---
 
@@ -23,23 +23,22 @@ This document describes how `sqlrs prepare:lb` should work in the **local** depl
 
 ```text
 sqlrs prepare:lb [--image <db-image-id>]
-                             [--liquibase-image <image-id>]
                              -- <liquibase-args...>
 ```
 
 ### Flags
 
 - `--image <db-image-id>` (optional): overrides the DB base image (same as `prepare:psql`).
-- `--liquibase-image <image-id>` (optional): overrides Liquibase CLI image.
 - `liquibase-args...` (required): passed to Liquibase CLI after `--`.
 
 ### Config fallback
 
-`--liquibase-image` overrides config. Otherwise:
+Liquibase executable path is resolved from config. Otherwise, `liquibase` is
+resolved via PATH.
 
 ```yaml
 liquibase:
-  image: liquibase/liquibase:latest
+  exec: C:\Program Files\Liquibase\liquibase.exe
 ```
 
 ---
@@ -47,11 +46,11 @@ liquibase:
 ## Local Execution Model
 
 1. Engine creates (or reuses) a base state for the DB image (same as `prepare:psql`).
-2. Engine starts a **Liquibase container** that connects to the prepared DB instance.
+2. Engine launches **host Liquibase** (Windows executable) from WSL via interop.
 3. User provides **Liquibase command line** after `--` (for example `update`).
 4. Engine executes **plan** via `updateSQL`, inspects the resulting changesets and
    builds a fine-grained plan.
-5. Engine executes the plan as a sequence of `updateOne` steps, snapshotting after
+5. Engine executes the plan as a sequence of `update-count --count=1` steps, snapshotting after
    each changeset.
 6. The prepared state is cached and a new instance is created.
 
@@ -59,13 +58,30 @@ liquibase:
 
 - **Plan task**: run `liquibase updateSQL` and **parse its output** to compute the
   ordered list of changesets and the SQL for each changeset (no DB changes).
-- **Prepare tasks**: execute changesets **one by one** with `liquibase updateOne`,
+- **Prepare tasks**: execute changesets **one by one** with `liquibase update-count --count=1`,
   emitting events per task (stdout lines -> events, exit -> status event).
 
 ### Connection parameters
 
 Connection arguments are **always** supplied by the engine and override defaults file values.
 User-provided `--url`, `--username`, `--password`, `--classpath`, etc. are rejected.
+
+---
+
+## Path mapping (host Liquibase)
+
+The CLI passes **WSL paths** to the engine. When Liquibase runs on the host, the
+engine translates relevant arguments to **Windows paths**:
+
+- `--changelog-file`
+- `--defaults-file`
+- `--searchPath`
+
+This mapping is applied before Liquibase is executed, so it can resolve files on
+the host filesystem.
+
+The path mapper is **abstracted** to support future container execution (WSL paths
+will be mapped to container mount paths instead of Windows paths).
 
 ---
 
@@ -78,38 +94,44 @@ overrides the default search locations. By default, Liquibase looks for a
 
 **Proposed behavior in sqlrs**:
 
-- The Liquibase container **working directory** is the CLI working directory.
+- The Liquibase **working directory** is the CLI working directory.
 - sqlrs does **not** attempt to resolve includes itself. Liquibase handles it.
 
-This keeps mounts minimal while delegating include resolution to Liquibase.
-
----
-
-## Mounting strategy (local)
-
-When running Liquibase in a container, sqlrs mounts local paths referenced by
-Liquibase arguments into the container. Each path is mounted read-only and rewritten
-to `/sqlrs/mnt/pathN`.
-
-If no local paths are found, sqlrs mounts the **current working directory** as a
-single mount root.
+This delegates include resolution to Liquibase.
 
 ---
 
 ## Deterministic fingerprint (state id)
 
 State identification is based on the **ordered list of Liquibase changesets**
-returned by planning, plus the previous state:
+returned by planning, plus the **parent state id**. The parent id is the task
+input: for the first step it is the base **image id**, and for subsequent steps
+it is the previous **state id**. The fingerprint is **content-based** rather
+than path-based:
 
 - `prepare kind` = `lb`
-- `prev_state_id`
+- `prev_state_id` (from the task input)
 - ordered list of changesets as reported by Liquibase:
-  - `id`, `author`, `path`
-  - `sql_hash` (hash of SQL emitted for that changeset by `updateSQL`, parsed
-    from the `updateSQL` output)
+  - `changeset_hash` (preferred: Liquibase checksum when available; fallback:
+    hash of SQL emitted for that changeset by `updateSQL`)
+  - `id/author/path` are recorded for diagnostics but **do not** affect the fingerprint
 
 If two different argument sets produce the same ordered changesets (including
-the per-changeset SQL hashes), sqlrs reuses the cached state for that chain.
+per-changeset content hashes), sqlrs reuses the cached state for that chain.
+
+---
+
+## Content locking (atomicity)
+
+To avoid plan drift, sqlrs locks all Liquibase inputs during each task that
+computes or applies content:
+
+- planning (`updateSQL`): changelog + referenced files are opened with read-locks
+  while the plan is computed.
+- execution (`update-count --count=1`): the same set is re-locked while the step
+  runs.
+
+If any lock cannot be acquired (file is being modified), `prepare:lb` fails.
 
 ---
 

@@ -12,7 +12,7 @@ When working on this project, follow these rules:
    - Design the component interaction flow. Store it within an appropriate document in /docs/architecture. Create a new document if no good fit exists.
      Get an approval from the user before proceeding.
    - Design internal component structure for each deployment unit (CLI, engine, services): define packages/modules, responsibilities, key types/interfaces, and data ownership (in-memory vs persistent). Store it in an appropriate document in /docs/architecture (create a new one if needed). Get an approval from the user before proceeding.
-   Once approval is granted, review all the other documents in /docs/architecture, and README.md files across the project to locate any inconsistencies with the new design, and fix those inconsistencies.
+     Once approval is granted, review all the other documents in /docs/architecture, and README.md files across the project to locate any inconsistencies with the new design, and fix those inconsistencies.
    - Design the DB schema changes, if any are involved. Get an approval from the user before proceeding.
    - At any stage, whenever there are multiple ways to design a particular item, store the information on the decision taken in an appropriate document at the docs/adr folder. Create a new document if no good fit exits. This covers both decisions proposed by user as well as the decisions suggested by you and approved by the user.
      If docs/adr does not exist yet, create it before adding the ADR.

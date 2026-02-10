@@ -603,7 +603,7 @@ func newTestServer(t *testing.T) (*httptest.Server, func()) {
 func seedHTTPData(db *sql.DB) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	if _, err := db.Exec(`INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "state-1", "state-1", "image-1", "liquibase", "a=1", now, int64(10), nil); err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "state-1", "state-1", "image-1", "lb", "a=1", now, int64(10), nil); err != nil {
 		return err
 	}
 	if _, err := db.Exec(`INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)

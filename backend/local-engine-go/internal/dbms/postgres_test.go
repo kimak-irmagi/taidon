@@ -2,6 +2,7 @@ package dbms
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 type fakeRuntime struct {
 	execCalls []runtime.ExecRequest
 	execErr   error
+	execFunc  func(ctx context.Context, id string, req runtime.ExecRequest) (string, error)
 }
 
 func (f *fakeRuntime) InitBase(ctx context.Context, imageID string, dataDir string) error {
@@ -31,6 +33,9 @@ func (f *fakeRuntime) Stop(ctx context.Context, id string) error {
 
 func (f *fakeRuntime) Exec(ctx context.Context, id string, req runtime.ExecRequest) (string, error) {
 	f.execCalls = append(f.execCalls, req)
+	if f.execFunc != nil {
+		return f.execFunc(ctx, id, req)
+	}
 	return "", f.execErr
 }
 
@@ -44,8 +49,8 @@ func TestPostgresConnectorPrepareSnapshot(t *testing.T) {
 	if err := connector.PrepareSnapshot(context.Background(), runtime.Instance{ID: "c1"}); err != nil {
 		t.Fatalf("PrepareSnapshot: %v", err)
 	}
-	if len(rt.execCalls) != 1 {
-		t.Fatalf("expected exec call, got %d", len(rt.execCalls))
+	if len(rt.execCalls) != 2 {
+		t.Fatalf("expected 2 exec calls, got %d", len(rt.execCalls))
 	}
 	args := rt.execCalls[0].Args
 	if len(args) == 0 || args[0] != "pg_ctl" {
@@ -53,6 +58,10 @@ func TestPostgresConnectorPrepareSnapshot(t *testing.T) {
 	}
 	if !hasArgs(args, "-D", runtime.PostgresDataDir) {
 		t.Fatalf("expected pgdata path %q in args: %v", runtime.PostgresDataDir, args)
+	}
+	verifyArgs := rt.execCalls[1].Args
+	if len(verifyArgs) == 0 || verifyArgs[0] != "bash" {
+		t.Fatalf("unexpected verify args: %v", verifyArgs)
 	}
 }
 
@@ -81,6 +90,27 @@ func TestPostgresConnectorRequiresRuntime(t *testing.T) {
 	}
 	if err := connector.ResumeSnapshot(context.Background(), runtime.Instance{}); err == nil {
 		t.Fatalf("expected error without runtime")
+	}
+}
+
+func TestPostgresConnectorPrepareSnapshotVerifyFails(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.execFunc = func(ctx context.Context, id string, req runtime.ExecRequest) (string, error) {
+		if len(req.Args) > 0 && req.Args[0] == "bash" {
+			return "", errors.New("pid present")
+		}
+		return "", nil
+	}
+	connector := NewPostgres(rt)
+	if err := connector.PrepareSnapshot(context.Background(), runtime.Instance{ID: "c1"}); err == nil {
+		t.Fatalf("expected error")
+	}
+	if len(rt.execCalls) != 2 {
+		t.Fatalf("expected 2 exec calls, got %d", len(rt.execCalls))
+	}
+	verifyArgs := rt.execCalls[1].Args
+	if len(verifyArgs) == 0 || verifyArgs[0] != "bash" {
+		t.Fatalf("unexpected verify args: %v", verifyArgs)
 	}
 }
 

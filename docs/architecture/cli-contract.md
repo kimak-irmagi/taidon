@@ -132,7 +132,6 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 TODO (future):
 
-- Add `prepare:lb`.
 - Add named instances and name binding flags (`--name`, `--reuse`, `--fresh`, `--rebind`).
 - Add async mode (`--watch/--no-watch`) with `prepare_id` and status URL output.
 
@@ -143,6 +142,10 @@ TODO (future):
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-plan.md`](../user-guides/sqlrs-plan.md)
+- [`docs/user-guides/sqlrs-plan-psql.md`](../user-guides/sqlrs-plan-psql.md)
+- [`docs/user-guides/sqlrs-plan-liquibase.md`](../user-guides/sqlrs-plan-liquibase.md)
+
+The CLI must expose `plan:<kind>` for every supported `prepare:<kind>`.
 
 ---
 

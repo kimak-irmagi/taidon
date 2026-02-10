@@ -27,6 +27,7 @@ type fakeStore struct {
 	statesByID        map[string]store.StateEntry
 	states            []store.StateCreate
 	instances         []store.InstanceCreate
+	deletedStates     []string
 }
 
 func (f *fakeStore) ListNames(ctx context.Context, filters store.NameFilters) ([]store.NameEntry, error) {
@@ -94,6 +95,10 @@ func (f *fakeStore) DeleteInstance(ctx context.Context, instanceID string) error
 }
 
 func (f *fakeStore) DeleteState(ctx context.Context, stateID string) error {
+	f.deletedStates = append(f.deletedStates, stateID)
+	if f.statesByID != nil {
+		delete(f.statesByID, stateID)
+	}
 	return nil
 }
 
@@ -312,6 +317,35 @@ func (s *streamingPsqlRunner) Run(ctx context.Context, instance engineRuntime.In
 	return s.output, nil
 }
 
+type fakeLiquibaseRunner struct {
+	runs   []LiquibaseRunRequest
+	output string
+	err    error
+}
+
+func (f *fakeLiquibaseRunner) Run(ctx context.Context, req LiquibaseRunRequest) (string, error) {
+	f.runs = append(f.runs, req)
+	if f.err != nil {
+		return f.output, f.err
+	}
+	return f.output, nil
+}
+
+type streamingLiquibaseRunner struct {
+	output string
+	err    error
+}
+
+func (s *streamingLiquibaseRunner) Run(ctx context.Context, req LiquibaseRunRequest) (string, error) {
+	if sink := engineRuntime.LogSinkFromContext(ctx); sink != nil {
+		sink("liquibase streamed")
+	}
+	if s.err != nil {
+		return s.output, s.err
+	}
+	return s.output, nil
+}
+
 type faultQueueStore struct {
 	queue.Store
 
@@ -493,7 +527,12 @@ func TestSubmitRejectsInvalidKind(t *testing.T) {
 	_, err := mgr.Submit(context.Background(), Request{PrepareKind: "", ImageID: "img"})
 	expectValidationError(t, err, "prepare_kind is required")
 
-	_, err = mgr.Submit(context.Background(), Request{PrepareKind: "liquibase", ImageID: "img"})
+	_, err = mgr.Submit(context.Background(), Request{PrepareKind: "lb", ImageID: "img", LiquibaseArgs: []string{"update"}})
+	if err != nil {
+		t.Fatalf("expected lb to be accepted, got %v", err)
+	}
+
+	_, err = mgr.Submit(context.Background(), Request{PrepareKind: "unknown", ImageID: "img"})
 	expectValidationError(t, err, "unsupported prepare_kind")
 }
 
@@ -743,6 +782,39 @@ func TestSubmitPlanOnlyBuildsTasks(t *testing.T) {
 		if task.Status != StatusSucceeded {
 			t.Fatalf("expected succeeded tasks, got %+v", tasks)
 		}
+	}
+}
+
+func TestSubmitPlanOnlyRunsLiquibasePlanner(t *testing.T) {
+	store := &fakeStore{}
+	queueStore := newQueueStore(t)
+	liquibase := &fakeLiquibaseRunner{}
+	mgr := newManagerWithDeps(t, store, queueStore, &testDeps{liquibase: liquibase})
+
+	accepted, err := mgr.Submit(context.Background(), Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1",
+		LiquibaseArgs: []string{"update"},
+		PlanOnly:      true,
+	})
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if accepted.JobID == "" {
+		t.Fatalf("expected job id")
+	}
+	if len(liquibase.runs) != 1 {
+		t.Fatalf("expected liquibase runner to be used for planning, got %+v", liquibase.runs)
+	}
+	if !containsArg(liquibase.runs[0].Args, "updateSQL") {
+		t.Fatalf("expected updateSQL for planning, got %+v", liquibase.runs[0].Args)
+	}
+	status, ok := mgr.Get(accepted.JobID)
+	if !ok || status.Status != StatusSucceeded || !status.PlanOnly {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if len(status.Tasks) == 0 {
+		t.Fatalf("expected tasks for plan-only")
 	}
 }
 
@@ -1662,25 +1734,27 @@ func TestLoadOrPlanTasksPromotesRunningTasks(t *testing.T) {
 		t.Fatalf("CreateJob: %v", err)
 	}
 
-	store := &fakeStore{statesByID: map[string]store.StateEntry{"state-1": {StateID: "state-1"}}}
-	mgr := newManagerWithQueue(t, store, queueStore)
+	stateStore := &fakeStore{statesByID: map[string]store.StateEntry{}}
+	mgr := newManagerWithQueue(t, stateStore, queueStore)
 	tasks := []queue.TaskRecord{
 		{
-			JobID:         "job-1",
-			TaskID:        "execute-0",
-			Position:      0,
-			Type:          "state_execute",
-			Status:        StatusRunning,
-			OutputStateID: strPtr("state-1"),
+			JobID:    "job-1",
+			TaskID:   "execute-0",
+			Position: 0,
+			Type:     "state_execute",
+			Status:   StatusRunning,
 		},
-	}
-	if err := queueStore.ReplaceTasks(context.Background(), "job-1", tasks); err != nil {
-		t.Fatalf("ReplaceTasks: %v", err)
 	}
 
 	prepared, err := mgr.prepareRequest(req)
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
+	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	stateStore.statesByID[outputID] = store.StateEntry{StateID: outputID}
+	tasks[0].OutputStateID = strPtr(outputID)
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", tasks); err != nil {
+		t.Fatalf("ReplaceTasks: %v", err)
 	}
 	states, _, errResp := mgr.loadOrPlanTasks(context.Background(), "job-1", prepared)
 	if errResp != nil {
@@ -1738,8 +1812,8 @@ func TestLoadOrPlanTasksReplaceError(t *testing.T) {
 }
 
 func TestExecuteStateTaskCachedSkipsCreate(t *testing.T) {
-	store := &fakeStore{statesByID: map[string]store.StateEntry{"state-1": {StateID: "state-1"}}}
-	mgr := newManager(t, store)
+	stateStore := &fakeStore{statesByID: map[string]store.StateEntry{}}
+	mgr := newManager(t, stateStore)
 
 	prepared, err := mgr.prepareRequest(Request{
 		PrepareKind: "psql",
@@ -1749,18 +1823,30 @@ func TestExecuteStateTaskCachedSkipsCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	stateStore.statesByID[outputID] = store.StateEntry{StateID: outputID}
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", outputID, mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
+	}
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
-	if len(store.states) != 0 {
+	if len(stateStore.states) != 0 {
 		t.Fatalf("expected no state creation")
 	}
 }
@@ -1777,15 +1863,16 @@ func TestExecuteStateTaskCreateStateError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
@@ -1803,17 +1890,18 @@ func TestExecuteStateTaskCancelled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "state", ID: "parent-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "state", ID: "parent-1"},
 		},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	errResp := mgr.executeStateTask(ctx, "job-1", prepared, task)
+	_, errResp := mgr.executeStateTask(ctx, "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "cancelled" {
 		t.Fatalf("expected cancelled error, got %+v", errResp)
 	}
@@ -1832,15 +1920,16 @@ func TestExecuteStateTaskPsqlError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
@@ -1859,15 +1948,16 @@ func TestExecuteStateTaskSnapshotError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
@@ -1891,9 +1981,15 @@ func TestExecuteStateTaskMissingOutputState(t *testing.T) {
 			Input:  &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
-	if errResp == nil || errResp.Code != "internal_error" {
-		t.Fatalf("expected internal error, got %+v", errResp)
+	outputID, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if strings.TrimSpace(outputID) == "" {
+		t.Fatalf("expected output state id")
+	}
+	if len(store.states) != 1 {
+		t.Fatalf("expected state to be stored, got %+v", store.states)
 	}
 }
 
@@ -1915,7 +2011,7 @@ func TestExecuteStateTaskMissingInput(t *testing.T) {
 			OutputStateID: "state-1",
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
@@ -1934,15 +2030,16 @@ func TestExecuteStateTaskPrepareSnapshotError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
@@ -1961,15 +2058,16 @@ func TestExecuteStateTaskResumeSnapshotError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
 	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
 	if errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
 	}
@@ -2004,6 +2102,216 @@ func TestCreateInstanceMissingStateID(t *testing.T) {
 	}
 	if _, errResp := mgr.createInstance(context.Background(), "job-1", prepared, ""); errResp == nil || errResp.Code != "internal_error" {
 		t.Fatalf("expected internal error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeFailsWhenStateDirty(t *testing.T) {
+	store := &fakeStore{statesByID: map[string]store.StateEntry{
+		"state-1": {StateID: "state-1", ImageID: "image-1"},
+	}}
+	mgr := newManagerWithStateFS(t, store, &fakeStateFS{})
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "postmaster.pid"), []byte("123"), 0o600); err != nil {
+		t.Fatalf("write postmaster.pid: %v", err)
+	}
+	_, errResp := mgr.startRuntime(context.Background(), "job-1", preparedRequest{
+		request: Request{
+			PrepareKind: "psql",
+			ImageID:     "image-1",
+		},
+	}, &TaskInput{Kind: "state", ID: "state-1"})
+	if errResp == nil {
+		t.Fatalf("expected error")
+	}
+	if errResp.Code != "internal_error" {
+		t.Fatalf("expected internal_error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeFailsWhenStateMissingPGVersion(t *testing.T) {
+	store := &fakeStore{statesByID: map[string]store.StateEntry{
+		"state-1": {StateID: "state-1", ImageID: "image-1"},
+	}}
+	mgr := newManagerWithStateFS(t, store, &fakeStateFS{})
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	_, errResp := mgr.startRuntime(context.Background(), "job-1", preparedRequest{
+		request: Request{
+			PrepareKind: "psql",
+			ImageID:     "image-1",
+		},
+	}, &TaskInput{Kind: "state", ID: "state-1"})
+	if errResp == nil {
+		t.Fatalf("expected error")
+	}
+	if errResp.Code != "internal_error" {
+		t.Fatalf("expected internal_error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeFailsWhenRuntimeDirDirty(t *testing.T) {
+	store := &fakeStore{statesByID: map[string]store.StateEntry{
+		"state-1": {StateID: "state-1", ImageID: "image-1"},
+	}}
+	mountDir := filepath.Join(t.TempDir(), "mount")
+	if err := os.MkdirAll(mountDir, 0o700); err != nil {
+		t.Fatalf("mkdir mount: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(mountDir, "postmaster.pid"), []byte("123"), 0o600); err != nil {
+		t.Fatalf("write postmaster.pid: %v", err)
+	}
+	mgr := newManagerWithStateFS(t, store, &fakeStateFS{mountDir: mountDir})
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	_, errResp := mgr.startRuntime(context.Background(), "job-1", preparedRequest{
+		request: Request{
+			PrepareKind: "psql",
+			ImageID:     "image-1",
+		},
+	}, &TaskInput{Kind: "state", ID: "state-1"})
+	if errResp == nil {
+		t.Fatalf("expected error")
+	}
+	if errResp.Code != "internal_error" {
+		t.Fatalf("expected internal_error, got %+v", errResp)
+	}
+}
+
+func TestStartRuntimeFailsWhenRuntimeDirMissingPGVersion(t *testing.T) {
+	store := &fakeStore{statesByID: map[string]store.StateEntry{
+		"state-1": {StateID: "state-1", ImageID: "image-1"},
+	}}
+	mountDir := filepath.Join(t.TempDir(), "mount")
+	if err := os.MkdirAll(mountDir, 0o700); err != nil {
+		t.Fatalf("mkdir mount: %v", err)
+	}
+	mgr := newManagerWithStateFS(t, store, &fakeStateFS{mountDir: mountDir})
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
+	}
+	_, errResp := mgr.startRuntime(context.Background(), "job-1", preparedRequest{
+		request: Request{
+			PrepareKind: "psql",
+			ImageID:     "image-1",
+		},
+	}, &TaskInput{Kind: "state", ID: "state-1"})
+	if errResp == nil {
+		t.Fatalf("expected error")
+	}
+	if errResp.Code != "internal_error" {
+		t.Fatalf("expected internal_error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskInvalidatesDirtyCachedState(t *testing.T) {
+	stateStore := &fakeStore{statesByID: map[string]store.StateEntry{}}
+	mgr := newManagerWithStateFS(t, stateStore, &fakeStateFS{})
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	stateStore.statesByID[outputID] = store.StateEntry{StateID: outputID, ImageID: "image-1"}
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", outputID, mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "postmaster.pid"), []byte("123"), 0o600); err != nil {
+		t.Fatalf("write postmaster.pid: %v", err)
+	}
+
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: outputID,
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+
+	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if len(stateStore.deletedStates) == 0 || stateStore.deletedStates[0] != outputID {
+		t.Fatalf("expected cached state deletion, got %+v", stateStore.deletedStates)
+	}
+	if len(stateStore.states) == 0 {
+		t.Fatalf("expected state to be rebuilt")
+	}
+}
+
+func TestExecuteStateTaskInvalidatesCachedStateMissingPGVersion(t *testing.T) {
+	stateStore := &fakeStore{statesByID: map[string]store.StateEntry{}}
+	mgr := newManagerWithStateFS(t, stateStore, &fakeStateFS{})
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	stateStore.statesByID[outputID] = store.StateEntry{StateID: outputID, ImageID: "image-1"}
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", outputID, mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: outputID,
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+
+	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if len(stateStore.deletedStates) == 0 || stateStore.deletedStates[0] != outputID {
+		t.Fatalf("expected cached state deletion, got %+v", stateStore.deletedStates)
+	}
+	if len(stateStore.states) == 0 {
+		t.Fatalf("expected state to be rebuilt")
 	}
 }
 
@@ -2246,6 +2554,16 @@ func TestCreateInstanceStoresRuntimeDir(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
+	}
+	paths, err := resolveStatePaths(stateRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
 	}
 	if _, errResp := mgr.createInstance(context.Background(), "job-1", prepared, "state-1"); errResp != nil {
 		t.Fatalf("createInstance: %+v", errResp)
@@ -3207,8 +3525,70 @@ func TestBuildPlanCacheError(t *testing.T) {
 	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
 		t.Fatalf("ensureResolvedImageID: %+v", errResp)
 	}
-	if _, _, errResp := mgr.buildPlan(prepared); errResp == nil {
+	if _, _, errResp := mgr.buildPlan(context.Background(), "job-1", prepared); errResp == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestBuildPlanLiquibaseUsesChangesets(t *testing.T) {
+	temp := t.TempDir()
+	changelog := filepath.Join(temp, "changelog.xml")
+	writeTempFile(t, changelog, "<databaseChangeLog></databaseChangeLog>")
+
+	liquibaseOutput := strings.Join([]string{
+		"-- Changeset changelog.xml::1::dev",
+		"CREATE TABLE test(id INT);",
+		"-- Changeset changelog.xml::2::dev",
+		"ALTER TABLE test ADD COLUMN name TEXT;",
+	}, "\n")
+	liquibase := &fakeLiquibaseRunner{output: liquibaseOutput}
+	runtime := &fakeRuntime{}
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{
+		runtime:   runtime,
+		liquibase: liquibase,
+	})
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1@sha256:resolved",
+		LiquibaseArgs: []string{"update", "--changelog-file", changelog},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	if errResp := mgr.ensureResolvedImageID(context.Background(), "job-1", &prepared, nil); errResp != nil {
+		t.Fatalf("ensureResolvedImageID: %+v", errResp)
+	}
+
+	tasks, stateID, errResp := mgr.buildPlan(context.Background(), "job-1", prepared)
+	if errResp != nil {
+		t.Fatalf("buildPlan: %+v", errResp)
+	}
+	if len(liquibase.runs) != 1 {
+		t.Fatalf("expected liquibase run, got %+v", liquibase.runs)
+	}
+	if !containsArg(liquibase.runs[0].Args, "updateSQL") {
+		t.Fatalf("expected updateSQL command, got %+v", liquibase.runs[0].Args)
+	}
+	if len(tasks) != 4 {
+		t.Fatalf("expected 4 tasks, got %d", len(tasks))
+	}
+	first := tasks[1]
+	second := tasks[2]
+	if first.Type != "state_execute" || second.Type != "state_execute" {
+		t.Fatalf("expected state_execute tasks, got %+v", tasks)
+	}
+	if first.ChangesetID == "" || second.ChangesetID == "" {
+		t.Fatalf("expected changeset metadata, got %+v", tasks)
+	}
+	if first.Input == nil || first.Input.Kind != "image" {
+		t.Fatalf("expected first input to be image, got %+v", first.Input)
+	}
+	if second.Input == nil || second.Input.Kind != "state" || second.Input.ID != first.OutputStateID {
+		t.Fatalf("expected second input to match first output, got %+v", second.Input)
+	}
+	if stateID != second.OutputStateID {
+		t.Fatalf("expected final state id to match last output, got %s", stateID)
 	}
 }
 
@@ -3408,6 +3788,16 @@ func TestRunJobSkipsSucceededTask(t *testing.T) {
 	prepared, err := mgr.prepareRequest(req)
 	if err != nil {
 		t.Fatalf("prepareRequest: %v", err)
+	}
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
 	}
 	mgr.runJob(prepared, "job-1")
 
@@ -3649,6 +4039,7 @@ type testDeps struct {
 	statefs   *fakeStateFS
 	dbms      *fakeDBMS
 	psql      psqlRunner
+	liquibase liquibaseRunner
 	stateRoot string
 	config    config.Store
 	validate  func(root string) error
@@ -3726,6 +4117,9 @@ func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store,
 	if deps.psql == nil {
 		deps.psql = &fakePsqlRunner{}
 	}
+	if deps.liquibase == nil {
+		deps.liquibase = &fakeLiquibaseRunner{}
+	}
 	if deps.config == nil {
 		deps.config = &fakeConfigStore{value: 2}
 	}
@@ -3743,6 +4137,7 @@ func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store,
 		StateStoreRoot: stateRoot,
 		Config:         deps.config,
 		Psql:           deps.psql,
+		Liquibase:      deps.liquibase,
 		Version:        "v1",
 		Now:            func() time.Time { return now },
 		IDGen:          func() (string, error) { return "job-1", nil },

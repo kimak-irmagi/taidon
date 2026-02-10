@@ -3,6 +3,7 @@ package prepare
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"sqlrs/engine/internal/statefs"
@@ -87,6 +88,13 @@ func (f *fakeStateFS) Clone(ctx context.Context, srcDir, destDir string) (statef
 		}
 	}
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return statefs.CloneResult{}, err
+	}
+	if data, err := os.ReadFile(filepath.Join(srcDir, "PG_VERSION")); err == nil {
+		if writeErr := os.WriteFile(filepath.Join(destDir, "PG_VERSION"), data, 0o600); writeErr != nil {
+			return statefs.CloneResult{}, writeErr
+		}
+	} else if !os.IsNotExist(err) {
 		return statefs.CloneResult{}, err
 	}
 	mountDir := destDir

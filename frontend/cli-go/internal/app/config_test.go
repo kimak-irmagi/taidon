@@ -187,6 +187,9 @@ func TestParseConfigArgsErrors(t *testing.T) {
 	if _, _, err := parseConfigArgs([]string{"set", "a"}); err == nil {
 		t.Fatalf("expected error for missing value")
 	}
+	if _, _, err := parseConfigArgs([]string{"set", "a="}); err == nil {
+		t.Fatalf("expected error for missing value")
+	}
 	if _, _, err := parseConfigArgs([]string{"rm"}); err == nil {
 		t.Fatalf("expected error for missing path")
 	}
@@ -217,6 +220,29 @@ func TestParseJSONValueErrors(t *testing.T) {
 	}
 	if _, err := parseJSONValue("true false"); err == nil {
 		t.Fatalf("expected error for trailing data")
+	}
+}
+
+func TestParseConfigArgsSetAssignment(t *testing.T) {
+	cmd, showHelp, err := parseConfigArgs([]string{"set", "log.level=info"})
+	if err != nil || showHelp {
+		t.Fatalf("expected assignment parsing, got err=%v help=%v", err, showHelp)
+	}
+	if cmd.path != "log.level" || cmd.rawValue != "info" {
+		t.Fatalf("unexpected assignment parse: %+v", cmd)
+	}
+}
+
+func TestParseJSONValueAutoQuote(t *testing.T) {
+	value, err := parseJSONValue("info")
+	if err != nil {
+		t.Fatalf("parseJSONValue: %v", err)
+	}
+	if value != "info" {
+		t.Fatalf("expected string value, got %#v", value)
+	}
+	if _, err := parseJSONValue("with space"); err == nil {
+		t.Fatalf("expected error for invalid JSON with spaces")
 	}
 }
 

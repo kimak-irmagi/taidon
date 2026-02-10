@@ -222,6 +222,37 @@ func Run(args []string) error {
 				return nil
 			}
 			prepared = &result
+		case "prepare:lb":
+			runOpts := cli.PrepareOptions{
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:    engineWSLMountUnit,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
+			}
+			if len(commands) == 1 {
+				return runPrepareLiquibase(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			}
+			result, handled, err := prepareResultLiquibase(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			if err != nil {
+				return err
+			}
+			if handled {
+				return nil
+			}
+			prepared = &result
 		case "plan:psql":
 			if len(commands) > 1 {
 				return fmt.Errorf("plan cannot be combined with other commands")
@@ -245,7 +276,31 @@ func Run(args []string) error {
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
-			return runPlan(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output)
+			return runPlanKind(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output, "psql")
+		case "plan:lb":
+			if len(commands) > 1 {
+				return fmt.Errorf("plan cannot be combined with other commands")
+			}
+			runOpts := cli.PrepareOptions{
+				ProfileName:     profileName,
+				Mode:            mode,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:    engineWSLMountUnit,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
+			}
+			return runPlanKind(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output, "lb")
 		case "run:psql":
 			runOpts := cli.RunOptions{
 				ProfileName:     profileName,
