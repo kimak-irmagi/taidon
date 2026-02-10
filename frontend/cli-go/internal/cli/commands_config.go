@@ -16,6 +16,7 @@ var connectOrStart = daemon.ConnectOrStart
 type ConfigOptions struct {
 	ProfileName     string
 	Mode            string
+	AuthToken       string
 	Endpoint        string
 	Autostart       bool
 	DaemonPath      string
@@ -25,7 +26,7 @@ type ConfigOptions struct {
 	EngineStatePath string
 	EngineStoreDir  string
 	WSLVHDXPath     string
-	WSLMountUnit  string
+	WSLMountUnit    string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -75,9 +76,10 @@ func RunConfigSchema(ctx context.Context, opts ConfigOptions) (any, error) {
 func configClient(ctx context.Context, opts ConfigOptions) (*client.Client, error) {
 	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
 	endpoint := strings.TrimSpace(opts.Endpoint)
-	authToken := ""
+	authToken := strings.TrimSpace(opts.AuthToken)
 
 	if mode == "local" {
+		authToken = ""
 		if endpoint == "" {
 			endpoint = "auto"
 		}
@@ -95,7 +97,7 @@ func configClient(ctx context.Context, opts ConfigOptions) (*client.Client, erro
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
 				WSLVHDXPath:     opts.WSLVHDXPath,
-				WSLMountUnit:  opts.WSLMountUnit,
+				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,

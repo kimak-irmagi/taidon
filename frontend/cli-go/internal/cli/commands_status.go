@@ -19,6 +19,7 @@ import (
 type StatusOptions struct {
 	ProfileName     string
 	Mode            string
+	AuthToken       string
 	Endpoint        string
 	Autostart       bool
 	DaemonPath      string
@@ -28,7 +29,7 @@ type StatusOptions struct {
 	EngineStatePath string
 	EngineStoreDir  string
 	WSLVHDXPath     string
-	WSLMountUnit  string
+	WSLMountUnit    string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -53,10 +54,10 @@ type StatusResult struct {
 }
 
 type LocalDepsOptions struct {
-	Verbose       bool
-	WSLDistro     string
-	WSLStateDir   string
-	WSLMountUnit  string
+	Verbose        bool
+	WSLDistro      string
+	WSLStateDir    string
+	WSLMountUnit   string
 	WSLMountFSType string
 }
 
@@ -72,8 +73,10 @@ var probeLocalDepsFn = probeLocalDeps
 func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
 	endpoint := strings.TrimSpace(opts.Endpoint)
+	authToken := strings.TrimSpace(opts.AuthToken)
 
 	if mode == "local" {
+		authToken = ""
 		if endpoint == "" {
 			endpoint = "auto"
 		}
@@ -91,7 +94,7 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
 				WSLVHDXPath:     opts.WSLVHDXPath,
-				WSLMountUnit:  opts.WSLMountUnit,
+				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,
@@ -102,6 +105,7 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 				return StatusResult{Endpoint: endpoint, Profile: opts.ProfileName, Mode: mode}, err
 			}
 			endpoint = resolved.Endpoint
+			authToken = resolved.AuthToken
 			if opts.Verbose {
 				fmt.Fprintf(os.Stderr, "engine ready at %s\n", endpoint)
 			}
@@ -115,7 +119,7 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 		}
 	}
 
-	cliClient := client.New(endpoint, client.Options{Timeout: opts.Timeout})
+	cliClient := client.New(endpoint, client.Options{Timeout: opts.Timeout, AuthToken: authToken})
 	if opts.Verbose {
 		fmt.Fprintln(os.Stderr, "requesting health")
 	}

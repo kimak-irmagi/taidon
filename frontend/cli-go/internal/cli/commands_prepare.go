@@ -27,6 +27,7 @@ var (
 type PrepareOptions struct {
 	ProfileName     string
 	Mode            string
+	AuthToken       string
 	Endpoint        string
 	Autostart       bool
 	DaemonPath      string
@@ -185,9 +186,10 @@ func RunPlan(ctx context.Context, opts PrepareOptions) (PlanResult, error) {
 func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, error) {
 	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
 	endpoint := strings.TrimSpace(opts.Endpoint)
-	authToken := ""
+	authToken := strings.TrimSpace(opts.AuthToken)
 
 	if mode == "local" {
+		authToken = ""
 		if endpoint == "" {
 			endpoint = "auto"
 		}

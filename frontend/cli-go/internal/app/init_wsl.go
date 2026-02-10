@@ -28,6 +28,7 @@ type wslInitOptions struct {
 	Verbose     bool
 	StoreSizeGB int
 	Reinit      bool
+	StorePath   string
 }
 
 type wslInitResult struct {
@@ -115,6 +116,10 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 	storeDir, storePath, err := resolveHostStorePath()
 	if err != nil {
 		return wslUnavailable(opts, fmt.Sprintf("WSL store path resolution failed: %v", err))
+	}
+	if strings.TrimSpace(opts.StorePath) != "" {
+		storePath = strings.TrimSpace(opts.StorePath)
+		storeDir = filepath.Dir(storePath)
 	}
 	logWSLInit(opts.Verbose, "host store dir: %s", storeDir)
 	logWSLInit(opts.Verbose, "host vhdx path: %s", storePath)

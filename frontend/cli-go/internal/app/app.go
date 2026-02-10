@@ -92,6 +92,8 @@ func Run(args []string) error {
 		return fmt.Errorf("invalid mode: %s", mode)
 	}
 
+	authToken := resolveAuthToken(profile.Auth)
+
 	output := strings.ToLower(strings.TrimSpace(cfg.Client.Output))
 	if opts.Output != "" {
 		output = strings.ToLower(strings.TrimSpace(opts.Output))
@@ -150,6 +152,7 @@ func Run(args []string) error {
 			runOpts := cli.LsOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -174,6 +177,7 @@ func Run(args []string) error {
 			runOpts := cli.RmOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -195,6 +199,7 @@ func Run(args []string) error {
 			runOpts := cli.PrepareOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -226,6 +231,7 @@ func Run(args []string) error {
 			runOpts := cli.PrepareOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -260,6 +266,7 @@ func Run(args []string) error {
 			runOpts := cli.PrepareOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -284,6 +291,7 @@ func Run(args []string) error {
 			runOpts := cli.PrepareOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -305,6 +313,7 @@ func Run(args []string) error {
 			runOpts := cli.RunOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -351,6 +360,7 @@ func Run(args []string) error {
 			runOpts := cli.RunOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -403,6 +413,7 @@ func Run(args []string) error {
 			statusOpts := cli.StatusOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -447,6 +458,7 @@ func Run(args []string) error {
 			runOpts := cli.ConfigOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -618,7 +630,7 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 		return daemonPath, "", "", "", "", "", "", nil
 	}
 	if mountUnit == "" && mode == "required" {
-		return "", "", "", "", "", "", "", fmt.Errorf("WSL configuration is missing mount unit (run sqlrs init --wsl)")
+		return "", "", "", "", "", "", "", fmt.Errorf("WSL configuration is missing mount unit (run sqlrs init local --snapshot btrfs)")
 	}
 	if mountFSType == "" && mountUnit != "" {
 		mountFSType = "btrfs"
@@ -647,6 +659,15 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 
 	runDir := path.Join(stateDir, "run")
 	return wslDaemonPath, runDir, wslStatePath, stateDir, distro, mountUnit, mountFSType, nil
+}
+
+func resolveAuthToken(auth config.AuthConfig) string {
+	if env := strings.TrimSpace(auth.TokenEnv); env != "" {
+		if value := strings.TrimSpace(os.Getenv(env)); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(auth.Token)
 }
 
 func windowsToWSLPath(value string) (string, error) {
