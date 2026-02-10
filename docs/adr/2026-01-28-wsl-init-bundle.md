@@ -1,6 +1,6 @@
 # ADR: WSL2 init via bundled engine and btrfs bootstrap
 
-Status: Accepted
+Status: Accepted (CLI naming superseded by [ADR 2026-02-10: sqlrs init redesign](2026-02-10-sqlrs-init-redesign.md))
 Date: 2026-01-28
 
 ## Decision Record 1: WSL2 init automation and bundled engine

@@ -39,11 +39,11 @@ Containers are **stateless executors**.
 ### 3.2 Host Storage Strategy (by platform)
 
 - **Linux (primary):** StateFS backend is selected by filesystem of `SQLRS_STATE_STORE` (btrfs/zfs → CoW, otherwise copy/reflink).
-- **Windows:** engine runs inside WSL2; state store is backed by a host VHDX mounted into WSL and formatted as btrfs when available, otherwise fall back to full copy.
+- **Windows:** when btrfs is selected, the engine runs inside WSL2; the state store is backed by a host VHDX mounted into WSL and formatted as btrfs. Otherwise the engine may run on the Windows host with a copy-based backend.
 
 Runtime code does not expose concrete paths: engine/adapter resolves data dirs internally and hands mounts to the runtime.
 For local engine, the state store root defaults to `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
-On WSL, `sqlrs init --wsl` installs a systemd mount unit; the engine verifies the mount is active before touching the store.
+On WSL, `sqlrs init local --snapshot btrfs` installs a systemd mount unit; the engine verifies the mount is active before touching the store.
 
 ---
 

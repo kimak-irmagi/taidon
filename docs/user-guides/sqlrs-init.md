@@ -2,7 +2,15 @@
 
 ## Overview
 
-`sqlrs init` initializes or validates a **sqlrs workspace**.
+`sqlrs init` initializes or validates a **sqlrs workspace** and optionally
+configures how the CLI connects to an engine.
+
+There are two init modes:
+
+- `local` — configure local engine + snapshot store (default).
+- `remote` — configure a remote engine endpoint + token.
+
+Running `sqlrs init` with no subcommand is equivalent to `sqlrs init local`.
 
 A workspace is identified by the presence of a `.sqlrs/` directory.
 Git repositories are **explicitly ignored**; git integration is the user's responsibility.
@@ -23,7 +31,8 @@ A directory is considered a sqlrs workspace if:
 
 - a `.sqlrs/` directory exists **in that directory**.
 
-Inside `.sqlrs/`, the presence of a config file is validated, but **the directory itself is the primary marker**.
+Inside `.sqlrs/`, the presence of a config file is validated, but **the directory
+itself is the primary marker**.
 
 Expected layout (minimal):
 
@@ -36,12 +45,22 @@ Additional subdirectories MAY exist but are not required at init time.
 
 ### Parent workspace detection
 
-Before initializing a workspace, `sqlrs init` scans **upwards** from the target directory:
+Before initializing a workspace, `sqlrs init` scans **upwards** from the target
+directory:
 
 - if a `.sqlrs/` directory is found in any parent,
 - and the target directory itself does NOT contain `.sqlrs/`,
 
 then a **parent workspace conflict** is detected.
+
+---
+
+## Command Syntax
+
+```text
+sqlrs init [local] [flags]
+sqlrs init remote --url <url> --token <token> [flags]
+```
 
 ---
 
@@ -54,22 +73,21 @@ sqlrs init
 Equivalent to:
 
 ```bash
-sqlrs init --workspace <current working directory>
+sqlrs init local --workspace <current working directory>
 ```
 
 Behavior:
 
 1. If `<workspace>/.sqlrs/` exists:
-
    - validate structure
    - validate config (if present)
    - exit successfully (idempotent)
-
 2. If `<workspace>/.sqlrs/` does NOT exist:
    - if a parent workspace exists → **error**
    - otherwise:
      - create `<workspace>/.sqlrs/`
      - create `<workspace>/.sqlrs/config.yaml` with defaults
+     - apply local or remote configuration (if requested)
      - exit successfully
 
 ---
@@ -78,7 +96,7 @@ Behavior:
 
 - Local workspace config format: **YAML**
 - Default file name: `.sqlrs/config.yaml`
-- `sqlrs init` may write workspace config when flags require it (e.g., `--engine`, `--shared-cache`, `--wsl`)
+- `sqlrs init` may write workspace config when flags require it
 - If config exists but cannot be parsed → treated as corruption
 
 Global config is NOT created or modified by default.
@@ -86,6 +104,8 @@ Global config is NOT created or modified by default.
 ---
 
 ## Flags
+
+### Global flags (local and remote)
 
 ### `--workspace <path>`
 
@@ -98,23 +118,6 @@ All detection and initialization logic applies relative to this path.
 Allow creation of a **nested workspace** even if a parent workspace exists.
 
 This flag MUST be explicit.
-
-### `--engine <path>`
-
-Set the sqlrs engine reference in the local workspace config.
-
-- Overrides built-in defaults
-- Overrides global config (if any)
-- Stored in `.sqlrs/config.yaml`
-- If a **relative path** is provided **and** the current working directory is inside the workspace, the path is stored **relative to `.sqlrs/config.yaml`**.
-- Otherwise (absolute path, or `sqlrs init` run outside the workspace via `--workspace`), the path is stored as an **absolute path**.
-
-### `--shared-cache`
-
-Enable usage of the global state cache for this workspace.
-
-This flag only writes local configuration.
-Global cache initialization is deferred.
 
 ### `--dry-run`
 
@@ -129,53 +132,143 @@ Allow updating an existing workspace configuration.
 - Without `--update`, an existing workspace remains unchanged.
 - If `.sqlrs/` does not exist, `--update` behaves like a normal init (creates workspace).
 - If `config.yaml` is missing or corrupted, `--update` recreates it.
-- If `--update` is used with `--wsl` and WSL init fails, the workspace config is left unchanged.
+- If `--update` is used and local/remote init fails, the workspace config is left unchanged.
 
-### `--wsl`
+---
 
-Enable WSL2 setup flow on Windows:
+### Local flags (`sqlrs init local`)
 
-- validates WSL availability,
-- resolves the target distro (default or `--distro`),
-- ensures the WSL state dir is backed by btrfs (host VHDX + GPT + btrfs mount),
-- installs a systemd mount unit inside the WSL distro so the btrfs mount is visible
-  to Docker and all child processes,
-- writes `engine.wsl.*` settings into `.sqlrs/config.yaml` (including mount metadata).
+### `--snapshot <auto|btrfs|overlay|copy>`
 
-WSL+btrfs requires **systemd** inside the selected distro. If systemd is not enabled:
+Select the snapshot backend for the local engine.
 
-- with `--require`: init fails,
-- without `--require`: init warns and falls back to non-WSL configuration.
+- `auto` (default): choose the best available backend.
+- `btrfs`: require btrfs snapshots.
+- `overlay`: require OverlayFS (Linux only).
+- `copy`: force full copy snapshots (works everywhere).
 
-After a successful WSL init, WSL must be restarted (`wsl.exe --shutdown`) so the
-systemd unit is activated.
+### `--store <dir|device|image> [path]`
 
-If `--require` is **not** set, WSL failures produce a warning and fallback to non-WSL configuration.
+Configure how the local **state store** is provisioned.
+
+- `dir` — use a directory as the store root.
+- `device` — use a block device (format + mount as btrfs unless it is already
+  btrfs and `--reinit` is not set).
+- `image` — use a disk image (create + format + mount as btrfs).
+
+If `[path]` is omitted, `sqlrs init` selects a default path per platform.
 
 ### `--store-size <N>GB`
 
-Set the size of the **host VHDX** used for the WSL btrfs state store.
+Size for `--store image` when creating a new image.
 
 - Required suffix: `GB`
 - Default: `100GB`
 
 ### `--reinit`
 
-Recreate the WSL btrfs store from scratch (destructive).
+Recreate the store from scratch (destructive).
 
-Also disables and removes the WSL systemd mount unit before recreating the volume.
+Valid only when the resolved backend is btrfs (for example, `--snapshot btrfs`
+or `--snapshot auto` with `--store image|device`).
 
-### `--distro <name>`
+### `--engine <path>`
 
-Use a specific WSL distro name. If omitted, the default distro is used (or a single available distro).
+Set the local engine binary path in workspace config.
 
-### `--require`
+- Overrides built-in defaults
+- Stored in `.sqlrs/config.yaml`
+- If a **relative path** is provided **and** the current working directory is inside the workspace, the path is stored **relative to `.sqlrs/config.yaml`**.
+- Otherwise (absolute path, or `sqlrs init` run outside the workspace via `--workspace`), the path is stored as an **absolute path**.
 
-Require WSL+btrfs. If unavailable, `sqlrs init` fails (no fallback).
+### `--shared-cache`
+
+Enable usage of the global state cache for this workspace.
+
+This flag only writes local configuration.
+Global cache initialization is deferred.
 
 ### `--no-start`
 
-Do not start the WSL distro during init.
+Do not start the local engine after init.
+
+### `--distro <name>`
+
+Windows only. Select the WSL distro to use when btrfs requires WSL2.
+
+---
+
+### Remote flags (`sqlrs init remote`)
+
+### `--url <url>`
+
+Remote engine endpoint (base URL).
+
+### `--token <token>`
+
+Bearer token used by the CLI to authenticate with the remote engine.
+
+---
+
+## Snapshot and Store Selection
+
+This section defines how `sqlrs init local` resolves snapshot backend and store
+placement when `--snapshot` and `--store` are not fully specified.
+
+### Compatibility rules
+
+- `--store device|image` is valid only when the resolved backend is btrfs
+  (for example, `--snapshot btrfs` or `--snapshot auto` with `--store image|device`).
+- `--snapshot overlay` is valid only on Linux and requires OverlayFS support.
+- OverlayFS uses a `dir` store on the host filesystem (e.g., ext4/xfs) and does
+  not require a dedicated device or image.
+- `--snapshot btrfs` is valid on Linux and Windows (via WSL2). It is unsupported on macOS.
+
+### Store type resolution (when `--store` is omitted)
+
+The store type is selected from `dir|image` based on platform and snapshot backend:
+
+| Platform | `--snapshot auto`                              | `--snapshot btrfs`                                    | `--snapshot overlay` | `--snapshot copy` |
+| -------- | ---------------------------------------------- | ----------------------------------------------------- | -------------------- | ----------------- |
+| Windows  | `image` if WSL2+btrfs is available, else `dir` | `image`                                               | error                | `dir`             |
+| Linux    | `dir`                                          | `dir` if default store path is on btrfs, else `image` | `dir`                | `dir`             |
+| macOS    | `dir`                                          | error                                                 | error                | `dir`             |
+
+### Store path resolution (when `[path]` is omitted)
+
+- `dir`: use the platform default for `SQLRS_STATE_STORE`.
+- `image`:
+  - Windows: `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`
+  - Linux: `${XDG_STATE_HOME:-~/.local/state}/sqlrs/store/btrfs.img`
+- `device`: path is **required** (no default).
+
+### Backend resolution (when `--snapshot auto`)
+
+If `--snapshot auto` is in effect and the store type is `dir`, the backend is
+chosen by filesystem and platform:
+
+1. btrfs (if the store path is on btrfs)
+2. overlay (Linux only, if available)
+3. copy (fallback)
+
+If `--snapshot auto` is in effect and the store type is `image` or `device`,
+the backend resolves to **btrfs**.
+
+---
+
+## Platform Notes
+
+### Windows
+
+When btrfs is required, the local engine runs inside WSL2:
+
+- `sqlrs init local` provisions the btrfs store inside the selected distro,
+  using a host VHDX by default.
+- The CLI records WSL mount metadata in workspace config for validation.
+
+### macOS
+
+btrfs is currently unsupported. Requests for `--snapshot btrfs` fail.
 
 ---
 
@@ -193,58 +286,65 @@ If global resources are missing, a **hint** MAY be printed.
 
 ## Error Conditions and Exit Codes
 
-| Condition                 | Message (summary)                   | Exit Code |
-| ------------------------- | ----------------------------------- | --------- |
-| Parent workspace detected | Refusing to create nested workspace | 2         |
-| Config parse error        | Workspace config is corrupted       | 3         |
-| Filesystem error          | Cannot create .sqlrs directory      | 4         |
-| Invalid flags             | Invalid arguments                   | 64        |
-| Unknown error             | Internal error                      | 1         |
+| Condition                         | Message (summary)                   | Exit Code |
+| --------------------------------- | ----------------------------------- | --------- |
+| Parent workspace detected         | Refusing to create nested workspace | 2         |
+| Config parse error                | Workspace config is corrupted       | 3         |
+| Filesystem error                  | Cannot create .sqlrs directory      | 4         |
+| Invalid flags / unsupported combo | Invalid arguments                   | 64        |
+| Unsupported platform capability   | Snapshot backend unsupported        | 64        |
+| Unknown error                     | Internal error                      | 1         |
 
 ---
 
 ## Examples
 
-### Initialize a new workspace
+### Initialize a new local workspace
 
 ```bash
 sqlrs init
 ```
 
-### Initialize explicitly at path
+### Initialize local workspace explicitly at path
 
 ```bash
-sqlrs init --workspace ./db-env
+sqlrs init local --workspace ./db-env
 ```
 
-### Override engine path
+### Force local snapshot backend (copy)
 
 ```bash
-sqlrs init --engine /opt/sqlrs/engine
+sqlrs init local --snapshot copy
 ```
 
-### Force nested workspace (discouraged)
+### Request btrfs on Linux (auto dir or image)
 
 ```bash
-sqlrs init --force
+sqlrs init local --snapshot btrfs
 ```
 
-### Initialize WSL (Windows)
+### Create a btrfs image store with explicit size
 
 ```bash
-sqlrs init --wsl
+sqlrs init local --snapshot btrfs --store image --store-size 200GB
+```
+
+### Use a specific WSL distro for btrfs (Windows)
+
+```bash
+sqlrs init local --snapshot btrfs --distro Ubuntu-22.04
 ```
 
 ### Update an existing workspace config
 
 ```bash
-sqlrs init --update --wsl
+sqlrs init local --update --snapshot auto
 ```
 
-### Initialize WSL with explicit distro and no autostart
+### Configure remote engine
 
 ```bash
-sqlrs init --wsl --distro Ubuntu-22.04 --no-start
+sqlrs init remote --url https://engine.example.com --token $SQLRS_TOKEN
 ```
 
 ---
@@ -253,14 +353,14 @@ sqlrs init --wsl --distro Ubuntu-22.04 --no-start
 
 - `.sqlrs/` directory is a strong, explicit workspace marker
 - Parent workspace detection prevents accidental environment splits
-- YAML chosen for human readability and ecosystem compatibility
-- `init` is safe and conservative; repair and editing are separate concerns
+- Subcommands make local vs remote intent explicit and keep flags relevant
+- `--snapshot` and `--store` separate backend choice from storage placement
 
 ---
 
 ## State Machine / Decision Table
 
-This section defines the **formal decision logic** for `sqlrs init`.
+This section defines the **formal decision logic** for workspace creation.
 It is intended to be normative for implementation.
 
 ### Definitions
@@ -326,17 +426,6 @@ Check for local marker
 - `sqlrs init` never silently switches target to a parent workspace.
 - Any YAML parse error is treated as configuration corruption.
 - No global state is created or modified in any state.
-
-### Exit Code Mapping
-
-| Result                    | Exit Code |
-| ------------------------- | --------- |
-| Success / idempotent      | 0         |
-| Nested workspace conflict | 2         |
-| Corrupt config            | 3         |
-| Filesystem error          | 4         |
-| Invalid arguments         | 64        |
-| Internal error            | 1         |
 
 ---
 

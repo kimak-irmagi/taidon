@@ -39,11 +39,11 @@
 ### 3.2 Стратегия host-хранилища (по платформам)
 
 - **Linux (primary):** снапшоттер выбирается по FS `SQLRS_STATE_STORE` (btrfs/zfs → CoW, иначе copy/reflink).
-- **Windows:** engine запускается внутри WSL2; state store — host VHDX, смонтированный в WSL и отформатированный в btrfs при наличии, иначе fallback на полное копирование.
+- **Windows:** когда выбран btrfs, engine запускается внутри WSL2; state store — host VHDX, смонтированный в WSL и отформатированный в btrfs. Иначе engine может работать на Windows host с copy-бэкендом.
 
 Runtime код не раскрывает конкретные пути: engine/adapter сам разрешает data dirs и передает mounts в runtime.
 Для локального engine корень state store по умолчанию `<StateDir>/state-store`, если не задан `SQLRS_STATE_STORE`.
-В WSL `sqlrs init --wsl` устанавливает systemd mount unit; движок проверяет активность маунта перед работой со store.
+В WSL `sqlrs init local --snapshot btrfs` устанавливает systemd mount unit; движок проверяет активность маунта перед работой со store.
 
 ---
 

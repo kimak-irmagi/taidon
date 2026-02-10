@@ -31,31 +31,34 @@ This document defines **CLI behavior**, **discovery rules**, and **configuration
 3. On Windows:
    - Prefer **WSL2 engine** when WSL2 + btrfs are available.
    - Otherwise **fallback to host engine** (copy snapshots).
-4. If config **forces WSL2+btrfs** and not available, **fail** (no fallback).
+4. If btrfs is **forced** (for example, `snapshot.backend=btrfs` or `sqlrs init local --snapshot btrfs`) and not available, **fail** (no fallback).
 
 ---
 
 ## Proposed CLI flow (Windows)
 
-### `sqlrs init` (local setup)
+### `sqlrs init local` (local setup)
 
 Purpose: one-time setup of WSL2 + btrfs + config for local engine auto-start.
 
 Proposed syntax:
 
 ```text
-sqlrs init [--wsl] [--distro <name>] [--require] [--no-start] [--store-size <N>GB] [--reinit]
+sqlrs init local --snapshot btrfs [--store image] [--store-size <N>GB] [--distro <name>] [--no-start] [--reinit]
 ```
 
 Behavior:
 
-- `--wsl`:
-  - Enable WSL2 setup flow (default on Windows).
+- `--snapshot btrfs`:
+  - Require WSL2 + btrfs.
+  - If missing, init fails.
+- `--snapshot auto`:
+  - Prefer WSL2 + btrfs when available.
+  - Otherwise fallback to the host engine (copy snapshots).
+- `--store <dir|device|image> [path]`:
+  - Optional. Defaults to `image` on Windows when btrfs is selected.
 - `--distro <name>`:
   - Use specific WSL distro; default = WSL default distro.
-- `--require`:
-  - Set `engine.wsl.mode = "required"` in config.
-  - Fail if WSL+btrfs is unavailable.
 - `--no-start`:
   - Do not start engine after init.
   - Still validates prerequisites and writes config if successful.
@@ -68,10 +71,10 @@ Behavior:
 
 Success criteria:
 
-- WSL is available (if `--wsl`).
+- WSL is available (required for `--snapshot btrfs`).
 - WSL distro resolved (explicit or default).
 - btrfs state-store path is valid (see below).
-- Config written (WSL mode/distro/stateDir/storePath + mount metadata).
+- Config written (snapshot backend, distro/stateDir/storePath + mount metadata).
 - Optional: engine auto-start (unless `--no-start`).
 
 ---
@@ -86,11 +89,11 @@ The Windows local bundle **includes**:
 - Windows engine binary
 - Linux engine binary (same CPU arch)
 
-`sqlrs init` copies the Linux engine binary into the WSL distro on first run.
+`sqlrs init local` copies the Linux engine binary into the WSL distro on first run.
 
 ### B) btrfs volume lifecycle
 
-`sqlrs init` is responsible for:
+`sqlrs init local --snapshot btrfs` is responsible for:
 
 - validation (existing volume),
 - initialization (create host VHDX + GPT + btrfs mount),
@@ -101,7 +104,7 @@ Current implementation details:
 - Host VHDX path: `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`
 - Default image size: `100GB`
 - WSL mount point (state dir): `~/.local/state/sqlrs/store`
-- Mount is managed by a **systemd mount unit** created by `sqlrs init`.
+- Mount is managed by a **systemd mount unit** created by `sqlrs init local --snapshot btrfs`.
 
 Initialization steps:
 
@@ -109,7 +112,7 @@ Initialization steps:
 2. Create a **GPT partition** that consumes the full disk.
 3. Attach the VHDX to the selected WSL distro as **bare**.
 4. Ensure `btrfs-progs` is installed inside the distro.
-5. Format the partition as **btrfs**.
+5. Format the partition as **btrfs** (skip if already btrfs and `--reinit` is not set).
 6. Install and enable a **systemd mount unit** that mounts the partition at
    `engine.wsl.stateDir` (inside WSL) using `Type=btrfs`.
 7. Verify mount via `systemctl is-active` and `findmnt -T <stateDir>`.
@@ -164,9 +167,10 @@ Use WSL engine when all of the following are true:
 
 Otherwise, fallback to host engine.
 
-### Forced WSL mode
+### Required btrfs
 
-If config says `engine.wsl.mode = "required"`:
+When snapshot backend is forced to btrfs (e.g., `snapshot.backend=btrfs` or
+`sqlrs init local --snapshot btrfs`):
 
 - WSL must be available,
 - btrfs must be present.
@@ -177,13 +181,14 @@ If any condition fails: **error** (no fallback).
 
 ## Configuration (proposed)
 
-### 1) WSL mode
+### 1) Snapshot backend
 
-`engine.wsl.mode`
+`snapshot.backend`
 
-- `"auto"` (default): try WSL+btrfs, else fallback to host engine.
-- `"required"`: fail if WSL+btrfs is unavailable.
-- `"off"`: skip WSL, always use host engine.
+- `"auto"` (default): choose the best backend by platform/FS.
+- `"btrfs"`: require btrfs; on Windows this implies WSL2.
+- `"overlay"`: Linux only.
+- `"copy"`: force full copy snapshots (skip WSL).
 
 ### 2) WSL distro selection
 
@@ -223,11 +228,11 @@ and passes it to `wsl.exe` to start the engine.
 `engine.wsl.mount.device`, `engine.wsl.mount.fstype`, `engine.wsl.mount.deviceUUID`,
 and `engine.wsl.mount.unit`
 
-- recorded by `sqlrs init` after attaching/formatting the VHDX and writing the systemd unit,
-- used by `sqlrs init` for idempotency and validation,
+- recorded by `sqlrs init local --snapshot btrfs` after attaching/formatting the VHDX and writing the systemd unit,
+- used by `sqlrs init local --snapshot btrfs` for idempotency and validation,
 - used by `sqlrs status` to verify mount health.
 
-### 6) Snapshot backend (auto by FS)
+### 7) Snapshot backend (auto by FS)
 
 Engine selects snapshotter by **filesystem** of `SQLRS_STATE_STORE`:
 
@@ -258,7 +263,7 @@ If WSL not used:
 
 On startup, the engine validates that the systemd mount unit is active and that
 `SQLRS_STATE_STORE` is mounted as btrfs. It does **not** mount the device itself.
-If the mount is missing, the engine fails with a hint to run `sqlrs init --wsl`
+If the mount is missing, the engine fails with a hint to run `sqlrs init local --snapshot btrfs`
 and restart WSL.
 
 ---
@@ -269,5 +274,5 @@ and restart WSL.
 
 ## Warning behavior
 
-- Missing btrfs (when WSL is preferred) emits a **warning by default** and falls back to host engine.
+- Missing btrfs (when `snapshot.backend=auto`) emits a **warning by default** and falls back to host engine.
 - `--verbose` includes diagnostic details (detected distro, state dir, and probe failures).

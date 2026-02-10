@@ -172,14 +172,14 @@ go build -o dist/bin/sqlrs.exe ./frontend/cli-go/cmd/sqlrs
 Initialize WSL + btrfs (loopback image) and write workspace config:
 
 ```powershell
-.\dist\bin\sqlrs.exe init --wsl
+.\dist\bin\sqlrs.exe init local --snapshot btrfs
 ```
 
 Notes:
 
-- `sqlrs init --wsl` validates WSL, resolves the distro, and ensures the WSL state dir is on **btrfs**.
+- `sqlrs init local --snapshot btrfs` validates WSL, resolves the distro, and ensures the WSL state dir is on **btrfs**.
 - The current implementation creates a host VHDX at `%LOCALAPPDATA%\\sqlrs\\store\\btrfs.vhdx`, formats it as btrfs inside WSL, and mounts it to `~/.local/state/sqlrs/store`.
-- If WSL or btrfs is missing, `sqlrs init --wsl` warns and falls back to the Windows engine. Use `--require` to fail instead of falling back.
+- If WSL or btrfs is missing, `sqlrs init local --snapshot btrfs` fails. Use `sqlrs init local --snapshot auto` to allow fallback to the Windows host engine with copy snapshots.
 - Use `--no-start` to skip auto-starting the WSL distro during init.
 
 Check status:
