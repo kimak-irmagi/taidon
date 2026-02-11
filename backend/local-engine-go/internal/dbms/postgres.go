@@ -82,15 +82,27 @@ func (c *PostgresConnector) verifyStopped(ctx context.Context, instance runtime.
 	output, err := c.Runtime.Exec(ctx, instance.ID, runtime.ExecRequest{
 		User: "postgres",
 		Args: []string{
-			"bash",
-			"-lc",
-			"test ! -f " + runtime.PostgresDataDir + "/postmaster.pid",
+			"pg_ctl",
+			"-D", runtime.PostgresDataDir,
+			"status",
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("postmaster.pid still present: %s", strings.TrimSpace(output))
+	if err == nil {
+		msg := strings.TrimSpace(output)
+		if msg == "" {
+			msg = "pg_ctl status returned running"
+		}
+		return fmt.Errorf("postgres still running: %s", msg)
 	}
-	return nil
+	lower := strings.ToLower(output)
+	if strings.Contains(lower, "no server running") || strings.Contains(lower, "not running") {
+		return nil
+	}
+	msg := strings.TrimSpace(output)
+	if msg == "" {
+		msg = err.Error()
+	}
+	return fmt.Errorf("cannot verify postgres stopped: %s", msg)
 }
 
 func (c *PostgresConnector) logInfoEnabled() bool {
