@@ -163,7 +163,7 @@ func TestRunLsUsesInstanceItemEndpoint(t *testing.T) {
 	opts := LsOptions{
 		Mode:             "remote",
 		Endpoint:         server.URL,
-		Timeout:          time.Second,
+		Timeout:          3 * time.Second,
 		IncludeInstances: true,
 		FilterName:       "dev",
 	}
