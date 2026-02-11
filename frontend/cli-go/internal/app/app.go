@@ -681,12 +681,24 @@ func windowsToWSLPath(value string) (string, error) {
 	if strings.HasPrefix(cleaned, "/") {
 		return cleaned, nil
 	}
-	vol := filepath.VolumeName(cleaned)
-	if vol == "" {
-		return "", fmt.Errorf("path is not absolute: %s", cleaned)
+	drive := ""
+	rest := ""
+	if len(cleaned) >= 2 && cleaned[1] == ':' {
+		letter := cleaned[0]
+		if (letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z') {
+			drive = strings.ToLower(cleaned[:1])
+			rest = cleaned[2:]
+		}
 	}
-	drive := strings.TrimSuffix(strings.ToLower(vol), ":")
-	rest := strings.TrimPrefix(cleaned[len(vol):], string(filepath.Separator))
+	if drive == "" {
+		vol := filepath.VolumeName(cleaned)
+		if vol == "" {
+			return "", fmt.Errorf("path is not absolute: %s", cleaned)
+		}
+		drive = strings.TrimSuffix(strings.ToLower(vol), ":")
+		rest = cleaned[len(vol):]
+	}
+	rest = strings.TrimLeft(rest, `\/`)
 	rest = strings.ReplaceAll(rest, "\\", "/")
 	if rest == "" {
 		return fmt.Sprintf("/mnt/%s", drive), nil

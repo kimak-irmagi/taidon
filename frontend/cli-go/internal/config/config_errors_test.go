@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -113,7 +114,18 @@ func TestLoadProjectConfigReadError(t *testing.T) {
 }
 
 func TestLoadFindProjectConfigError(t *testing.T) {
-	if _, err := Load(LoadOptions{WorkingDir: "\x00", Dirs: &paths.Dirs{ConfigDir: t.TempDir()}}); err == nil {
-		t.Fatalf("expected working dir error")
+	prev := findProjectConfigFn
+	findProjectConfigFn = func(string) (string, error) {
+		return "", errors.New("boom")
+	}
+	t.Cleanup(func() { findProjectConfigFn = prev })
+
+	dirs := &paths.Dirs{
+		ConfigDir: t.TempDir(),
+		StateDir:  t.TempDir(),
+		CacheDir:  t.TempDir(),
+	}
+	if _, err := Load(LoadOptions{WorkingDir: t.TempDir(), Dirs: dirs}); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected working dir error, got %v", err)
 	}
 }

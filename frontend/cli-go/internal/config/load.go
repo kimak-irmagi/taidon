@@ -10,6 +10,8 @@ import (
 	"sqlrs/cli/internal/paths"
 )
 
+var findProjectConfigFn = paths.FindProjectConfig
+
 func Load(opts LoadOptions) (LoadedConfig, error) {
 	var err error
 	result := LoadedConfig{}
@@ -41,7 +43,7 @@ func Load(opts LoadOptions) (LoadedConfig, error) {
 		mergeMap(merged, data)
 	}
 
-	projectPath, err := paths.FindProjectConfig(opts.WorkingDir)
+	projectPath, err := findProjectConfigFn(opts.WorkingDir)
 	if err != nil {
 		return result, err
 	}

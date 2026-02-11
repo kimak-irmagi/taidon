@@ -168,7 +168,13 @@ func TestRunWSLCommandNilContext(t *testing.T) {
 }
 
 func TestRunHostCommandNilContext(t *testing.T) {
-	out, err := runHostCommand(nil, "cmd.exe", "/c", "echo", "ok")
+	var out string
+	var err error
+	if runtime.GOOS == "windows" {
+		out, err = runHostCommand(nil, "cmd.exe", "/c", "echo", "ok")
+	} else {
+		out, err = runHostCommand(nil, "sh", "-c", "echo ok")
+	}
 	if err != nil || !strings.Contains(out, "ok") {
 		t.Fatalf("expected host command output, got %q err=%v", out, err)
 	}
