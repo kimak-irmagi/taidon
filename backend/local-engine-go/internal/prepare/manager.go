@@ -777,7 +777,7 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 		execMode := normalizeExecMode(req.LiquibaseExecMode)
 		execPath := strings.TrimSpace(req.LiquibaseExec)
 		windowsMode := shouldUseWindowsBat(execPath, execMode)
-		lbPrepared, err := prepareLiquibaseArgs(req.LiquibaseArgs, cwd, windowsMode)
+		lbPrepared, err := prepareLiquibaseArgs(req.LiquibaseArgs, cwd, windowsMode, usesContainerLiquibaseRunner(m.liquibase))
 		if err != nil {
 			return preparedRequest{}, err
 		}
@@ -797,6 +797,15 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 	}
 	prepared.resolvedImageID = resolvedImageID
 	return prepared, nil
+}
+
+func usesContainerLiquibaseRunner(r liquibaseRunner) bool {
+	switch r.(type) {
+	case containerLiquibaseRunner, *containerLiquibaseRunner:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Manager) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {

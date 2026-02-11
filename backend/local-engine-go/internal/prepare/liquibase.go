@@ -29,7 +29,7 @@ type liquibasePrepared struct {
 	workDir        string
 }
 
-func prepareLiquibaseArgs(args []string, cwd string, windowsMode bool) (liquibasePrepared, error) {
+func prepareLiquibaseArgs(args []string, cwd string, windowsMode bool, rewritePaths bool) (liquibasePrepared, error) {
 	preArgs := make([]string, 0, len(args))
 	postArgs := make([]string, 0, len(args))
 	mounts := []runtime.Mount{}
@@ -61,7 +61,7 @@ func prepareLiquibaseArgs(args []string, cwd string, windowsMode bool) (liquibas
 			return liquibasePrepared{}, ValidationError{Code: "invalid_argument", Message: "runtime flags are not allowed", Details: arg}
 		}
 
-		if handled, err := handleLiquibasePathFlag(args, &i, cwd, windowsMode, &preArgs, &mounts, &mountIndex, mounted); err != nil {
+		if handled, err := handleLiquibasePathFlag(args, &i, cwd, windowsMode, rewritePaths, &preArgs, &mounts, &mountIndex, mounted); err != nil {
 			return liquibasePrepared{}, err
 		} else if handled {
 			continue
@@ -90,7 +90,7 @@ func prepareLiquibaseArgs(args []string, cwd string, windowsMode bool) (liquibas
 		return liquibasePrepared{}, ValidationError{Code: "invalid_argument", Message: "unsupported lb command", Details: command}
 	}
 
-	if !windowsMode && len(mounts) == 0 && strings.TrimSpace(cwd) != "" {
+	if rewritePaths && !windowsMode && len(mounts) == 0 && strings.TrimSpace(cwd) != "" {
 		mountIndex++
 		mounts = append(mounts, runtime.Mount{
 			HostPath:      cwd,
@@ -133,7 +133,7 @@ func isLiquibaseRuntimeFlag(arg string) bool {
 		strings.HasPrefix(arg, "--driver=")
 }
 
-func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode bool, normalized *[]string, mounts *[]runtime.Mount, mountIndex *int, mounted map[string]string) (bool, error) {
+func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode bool, rewritePaths bool, normalized *[]string, mounts *[]runtime.Mount, mountIndex *int, mounted map[string]string) (bool, error) {
 	arg := args[*index]
 	switch {
 	case arg == "--changelog-file" || arg == "--defaults-file" || arg == "--searchPath" || arg == "--search-path":
@@ -160,7 +160,7 @@ func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode 
 		if flag == "--search-path" {
 			flag = "--searchPath"
 		}
-		rewritten, err := rewriteLiquibasePathValue(flag, value, cwd, mounts, mountIndex, mounted)
+		rewritten, err := normalizeLiquibasePathValue(flag, value, cwd, rewritePaths, mounts, mountIndex, mounted)
 		if err != nil {
 			return true, err
 		}
@@ -173,7 +173,7 @@ func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode 
 			*normalized = append(*normalized, arg)
 			return true, nil
 		}
-		rewritten, err := rewriteLiquibasePathValue("--changelog-file", value, cwd, mounts, mountIndex, mounted)
+		rewritten, err := normalizeLiquibasePathValue("--changelog-file", value, cwd, rewritePaths, mounts, mountIndex, mounted)
 		if err != nil {
 			return true, err
 		}
@@ -185,7 +185,7 @@ func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode 
 			*normalized = append(*normalized, arg)
 			return true, nil
 		}
-		rewritten, err := rewriteLiquibasePathValue("--defaults-file", value, cwd, mounts, mountIndex, mounted)
+		rewritten, err := normalizeLiquibasePathValue("--defaults-file", value, cwd, rewritePaths, mounts, mountIndex, mounted)
 		if err != nil {
 			return true, err
 		}
@@ -197,7 +197,7 @@ func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode 
 			*normalized = append(*normalized, "--searchPath="+value)
 			return true, nil
 		}
-		rewritten, err := rewriteLiquibasePathValue("--searchPath", value, cwd, mounts, mountIndex, mounted)
+		rewritten, err := normalizeLiquibasePathValue("--searchPath", value, cwd, rewritePaths, mounts, mountIndex, mounted)
 		if err != nil {
 			return true, err
 		}
@@ -209,7 +209,7 @@ func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode 
 			*normalized = append(*normalized, "--searchPath="+value)
 			return true, nil
 		}
-		rewritten, err := rewriteLiquibasePathValue("--searchPath", value, cwd, mounts, mountIndex, mounted)
+		rewritten, err := normalizeLiquibasePathValue("--searchPath", value, cwd, rewritePaths, mounts, mountIndex, mounted)
 		if err != nil {
 			return true, err
 		}
@@ -218,6 +218,56 @@ func handleLiquibasePathFlag(args []string, index *int, cwd string, windowsMode 
 	default:
 		return false, nil
 	}
+}
+
+func normalizeLiquibasePathValue(flag string, value string, cwd string, rewritePaths bool, mounts *[]runtime.Mount, mountIndex *int, mounted map[string]string) (string, error) {
+	if rewritePaths {
+		return rewriteLiquibasePathValue(flag, value, cwd, mounts, mountIndex, mounted)
+	}
+	return normalizeLiquibaseHostPathValue(flag, value, cwd)
+}
+
+func normalizeLiquibaseHostPathValue(flag string, value string, cwd string) (string, error) {
+	if flag == "--searchPath" || flag == "--search-path" {
+		if strings.TrimSpace(value) == "" {
+			return "", ValidationError{Code: "invalid_argument", Message: "searchPath is empty"}
+		}
+		parts := strings.Split(value, ",")
+		out := make([]string, 0, len(parts))
+		for _, part := range parts {
+			item := strings.TrimSpace(part)
+			if item == "" {
+				return "", ValidationError{Code: "invalid_argument", Message: "searchPath is empty"}
+			}
+			rewritten, err := normalizeHostPath(item, cwd, "searchPath path does not exist")
+			if err != nil {
+				return "", err
+			}
+			out = append(out, rewritten)
+		}
+		return strings.Join(out, ","), nil
+	}
+	return normalizeHostPath(value, cwd, "path does not exist")
+}
+
+func normalizeHostPath(value string, cwd string, notFoundMessage string) (string, error) {
+	if strings.TrimSpace(value) == "" {
+		return "", ValidationError{Code: "invalid_argument", Message: "path is empty"}
+	}
+	if looksLikeRemoteRef(value) {
+		return value, nil
+	}
+	path := value
+	if !filepath.IsAbs(path) {
+		if strings.TrimSpace(cwd) == "" {
+			return "", ValidationError{Code: "invalid_argument", Message: "relative path requires working directory"}
+		}
+		path = filepath.Join(cwd, path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", ValidationError{Code: "invalid_argument", Message: notFoundMessage, Details: path}
+	}
+	return filepath.Clean(path), nil
 }
 
 func rewriteLiquibasePathValue(flag string, value string, cwd string, mounts *[]runtime.Mount, mountIndex *int, mounted map[string]string) (string, error) {
