@@ -15,7 +15,7 @@ func TestHandleLiquibasePathFlagWindowsMode(t *testing.T) {
 	mountIndex := 0
 	mounted := map[string]string{}
 
-	handled, err := handleLiquibasePathFlag(args, &idx, "C:\\work", true, &normalized, &mounts, &mountIndex, mounted)
+	handled, err := handleLiquibasePathFlag(args, &idx, "C:\\work", true, true, &normalized, &mounts, &mountIndex, mounted)
 	if err != nil {
 		t.Fatalf("handleLiquibasePathFlag: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestHandleLiquibasePathFlagMissingValue(t *testing.T) {
 	mountIndex := 0
 	mounted := map[string]string{}
 
-	handled, err := handleLiquibasePathFlag(args, &idx, "", false, &normalized, &mounts, &mountIndex, mounted)
+	handled, err := handleLiquibasePathFlag(args, &idx, "", false, true, &normalized, &mounts, &mountIndex, mounted)
 	if err == nil || !handled {
 		t.Fatalf("expected missing value error")
 	}

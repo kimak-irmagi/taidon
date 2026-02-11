@@ -86,14 +86,14 @@ type jobRuntime struct {
 }
 
 type preparedRequest struct {
-	request         Request
-	normalizedArgs  []string
-	argsNormalized  string
-	filePaths       []string
-	liquibaseMounts []runtime.Mount
-	resolvedImageID string
-	psqlInputs      []psqlInput
-	psqlWorkDir     string
+	request              Request
+	normalizedArgs       []string
+	argsNormalized       string
+	filePaths            []string
+	liquibaseMounts      []runtime.Mount
+	resolvedImageID      string
+	psqlInputs           []psqlInput
+	psqlWorkDir          string
 	liquibaseLockPaths   []string
 	liquibaseSearchPaths []string
 	liquibaseWorkDir     string
@@ -782,10 +782,10 @@ func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
 			return preparedRequest{}, err
 		}
 		prepared = preparedRequest{
-			request:         req,
-			normalizedArgs:  lbPrepared.normalizedArgs,
-			argsNormalized:  lbPrepared.argsNormalized,
-			liquibaseMounts: lbPrepared.mounts,
+			request:              req,
+			normalizedArgs:       lbPrepared.normalizedArgs,
+			argsNormalized:       lbPrepared.argsNormalized,
+			liquibaseMounts:      lbPrepared.mounts,
 			liquibaseLockPaths:   lbPrepared.lockPaths,
 			liquibaseSearchPaths: lbPrepared.searchPaths,
 			liquibaseWorkDir:     lbPrepared.workDir,

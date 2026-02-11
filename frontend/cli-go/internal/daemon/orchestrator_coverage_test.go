@@ -3,10 +3,10 @@ package daemon
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
