@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -170,7 +171,7 @@ func TestRunWSLCommandNilContext(t *testing.T) {
 func TestRunHostCommandNilContext(t *testing.T) {
 	var out string
 	var err error
-	if runtime.GOOS == "windows" {
+	if _, lookErr := exec.LookPath("cmd.exe"); lookErr == nil {
 		out, err = runHostCommand(nil, "cmd.exe", "/c", "echo", "ok")
 	} else {
 		out, err = runHostCommand(nil, "sh", "-c", "echo ok")

@@ -351,6 +351,9 @@ func TestResolveWSLSettingsWindowsPathError(t *testing.T) {
 }
 
 func TestWindowsToWSLPathCoverage(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path conversion")
+	}
 	if _, err := windowsToWSLPath(" "); err == nil {
 		t.Fatalf("expected empty path error")
 	}

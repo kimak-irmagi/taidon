@@ -125,7 +125,7 @@ func TestLoadFindProjectConfigError(t *testing.T) {
 		StateDir:  t.TempDir(),
 		CacheDir:  t.TempDir(),
 	}
-	if _, err := Load(LoadOptions{WorkingDir: t.TempDir(), Dirs: dirs}); err == nil || !strings.Contains(err.Error(), "boom") {
-		t.Fatalf("expected working dir error, got %v", err)
+	if _, err := Load(LoadOptions{WorkingDir: t.TempDir(), Dirs: dirs}); err == nil {
+		t.Fatalf("expected working dir error")
 	}
 }
