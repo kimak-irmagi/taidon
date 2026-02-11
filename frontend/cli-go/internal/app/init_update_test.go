@@ -98,6 +98,9 @@ func TestInitUpdateExistingWorkspaceWSL(t *testing.T) {
 }
 
 func TestInitUpdatePreservesDBMSConfig(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("btrfs snapshots are not supported on macOS")
+	}
 	workspace := t.TempDir()
 	marker := filepath.Join(workspace, ".sqlrs")
 	if err := os.MkdirAll(marker, 0o700); err != nil {
@@ -125,6 +128,9 @@ func TestInitUpdatePreservesDBMSConfig(t *testing.T) {
 }
 
 func TestInitUpdatePreservesAllOtherSettings(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("btrfs snapshots are not supported on macOS")
+	}
 	workspace := t.TempDir()
 	marker := filepath.Join(workspace, ".sqlrs")
 	if err := os.MkdirAll(marker, 0o700); err != nil {

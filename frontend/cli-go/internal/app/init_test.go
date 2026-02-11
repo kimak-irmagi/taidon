@@ -245,6 +245,9 @@ func TestParseInitFlagsStoreSizeRequiresImage(t *testing.T) {
 }
 
 func TestParseInitFlagsStoreSizeParses(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("btrfs snapshots are not supported on macOS")
+	}
 	opts, _, err := parseInitFlags([]string{"local", "--snapshot", "btrfs", "--store", "image", "--store-size", "140GB"}, "")
 	if err != nil {
 		t.Fatalf("parseInitFlags: %v", err)
@@ -468,6 +471,9 @@ func TestParseInitFlagsOverlayRejectsImageStore(t *testing.T) {
 }
 
 func TestInitWritesSnapshotBackend(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("btrfs snapshots are not supported on macOS")
+	}
 	if runtime.GOOS == "windows" {
 		withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
 			return wslInitResult{UseWSL: true}, nil
