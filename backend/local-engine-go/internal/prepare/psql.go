@@ -220,10 +220,9 @@ func handleCommandFlag(args []string, index *int, inputs *[]psqlInput) (bool, er
 func addFileInput(path string, stdin *string, usesStdin *bool, inputs *[]psqlInput, filePaths *[]string, workDir *string) error {
 	if path == "-" {
 		*usesStdin = true
-		if stdin == nil {
-			return ValidationError{Code: "invalid_argument", Message: "stdin is required when using -f -"}
+		if stdin != nil {
+			*inputs = append(*inputs, psqlInput{kind: "stdin", value: *stdin})
 		}
-		*inputs = append(*inputs, psqlInput{kind: "stdin", value: *stdin})
 		return nil
 	}
 	if path == "" {

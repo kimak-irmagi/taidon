@@ -51,6 +51,7 @@ var runWSLCommandAllowFailureFn = runWSLCommandAllowFailure
 var runWSLCommandWithInputFn = runWSLCommandWithInput
 var runHostCommandFn = runHostCommand
 var isElevatedFn = isElevated
+var isWindows = runtime.GOOS == "windows"
 
 const defaultStoreSizeGB = 100
 const defaultVHDXName = "btrfs.vhdx"
@@ -59,7 +60,7 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 	if !opts.Enable {
 		return wslInitResult{}, nil
 	}
-	if runtime.GOOS != "windows" {
+	if !isWindows {
 		return wslInitResult{}, fmt.Errorf("WSL init is only supported on Windows")
 	}
 

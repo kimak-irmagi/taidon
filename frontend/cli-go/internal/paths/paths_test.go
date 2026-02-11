@@ -1,8 +1,10 @@
 package paths
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,6 +136,121 @@ func TestFindProjectConfigUsesCwd(t *testing.T) {
 	}
 	if actual != expected {
 		t.Fatalf("expected %q, got %q", expected, actual)
+	}
+}
+
+func TestFindProjectConfigNotFound(t *testing.T) {
+	root := t.TempDir()
+	found, err := FindProjectConfig(root)
+	if err != nil {
+		t.Fatalf("FindProjectConfig: %v", err)
+	}
+	if found != "" {
+		t.Fatalf("expected no config, got %q", found)
+	}
+}
+
+func TestFindProjectConfigGetwdError(t *testing.T) {
+	prev := getwdFn
+	getwdFn = func() (string, error) {
+		return "", errors.New("boom")
+	}
+	t.Cleanup(func() { getwdFn = prev })
+
+	if _, err := FindProjectConfig(""); err == nil {
+		t.Fatalf("expected getwd error")
+	}
+}
+
+func TestFindProjectConfigAbsError(t *testing.T) {
+	prev := absFn
+	absFn = func(string) (string, error) {
+		return "", errors.New("abs failed")
+	}
+	t.Cleanup(func() { absFn = prev })
+
+	if _, err := FindProjectConfig("path"); err == nil {
+		t.Fatalf("expected abs error")
+	}
+}
+
+func TestResolveXDGHomedirError(t *testing.T) {
+	prev := userHomeDirFn
+	userHomeDirFn = func() (string, error) {
+		return "", errors.New("home failed")
+	}
+	t.Cleanup(func() { userHomeDirFn = prev })
+
+	if _, err := resolveXDG(); err == nil {
+		t.Fatalf("expected home dir error")
+	}
+}
+
+func TestResolveDarwinHomedirError(t *testing.T) {
+	prev := userHomeDirFn
+	userHomeDirFn = func() (string, error) {
+		return "", errors.New("home failed")
+	}
+	t.Cleanup(func() { userHomeDirFn = prev })
+
+	if _, err := resolveDarwin(); err == nil {
+		t.Fatalf("expected home dir error")
+	}
+}
+
+func TestResolveWindowsHomeDirError(t *testing.T) {
+	t.Setenv("APPDATA", "")
+	t.Setenv("LOCALAPPDATA", "")
+	prev := userHomeDirFn
+	userHomeDirFn = func() (string, error) {
+		return "", errors.New("home failed")
+	}
+	t.Cleanup(func() { userHomeDirFn = prev })
+
+	if _, err := resolveWindows(); err == nil {
+		t.Fatalf("expected home dir error")
+	}
+}
+
+func TestResolveDarwinCaseViaResolve(t *testing.T) {
+	prevGoos := goos
+	prevHome := userHomeDirFn
+	goos = "darwin"
+	userHomeDirFn = func() (string, error) {
+		return t.TempDir(), nil
+	}
+	t.Cleanup(func() {
+		goos = prevGoos
+		userHomeDirFn = prevHome
+	})
+
+	dirs, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !strings.Contains(dirs.ConfigDir, "Application Support") {
+		t.Fatalf("expected darwin base, got %q", dirs.ConfigDir)
+	}
+}
+
+func TestResolveXDGCaseViaResolve(t *testing.T) {
+	prevGoos := goos
+	prevHome := userHomeDirFn
+	goos = "linux"
+	userHomeDirFn = func() (string, error) {
+		return t.TempDir(), nil
+	}
+	t.Cleanup(func() {
+		goos = prevGoos
+		userHomeDirFn = prevHome
+	})
+
+	dirs, err := Resolve()
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !strings.Contains(dirs.ConfigDir, "sqlrs") {
+		t.Fatalf("expected xdg base, got %q", dirs.ConfigDir)
 	}
 }
 

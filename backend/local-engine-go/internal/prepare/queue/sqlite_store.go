@@ -16,6 +16,8 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
+var sqlOpenFn = sql.Open
+
 func Open(path string) (*SQLiteStore, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("sqlite path is empty")
@@ -23,7 +25,7 @@ func Open(path string) (*SQLiteStore, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := sqlOpenFn("sqlite", path)
 	if err != nil {
 		return nil, err
 	}

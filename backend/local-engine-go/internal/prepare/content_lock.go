@@ -13,12 +13,18 @@ type contentLock struct {
 	order []string
 }
 
+var (
+	lockFileSharedFn   = lockFileShared
+	unlockFileSharedFn = unlockFileShared
+	readAllFn          = io.ReadAll
+)
+
 func lockContentFile(path string) (*os.File, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	if err := lockFileShared(f); err != nil {
+	if err := lockFileSharedFn(f); err != nil {
 		_ = f.Close()
 		return nil, err
 	}
@@ -67,7 +73,7 @@ func (c *contentLock) Close() error {
 		if f == nil {
 			continue
 		}
-		if err := unlockFileShared(f); err != nil && outErr == nil {
+		if err := unlockFileSharedFn(f); err != nil && outErr == nil {
 			outErr = err
 		}
 		if err := f.Close(); err != nil && outErr == nil {
@@ -88,7 +94,7 @@ func (c *contentLock) readFile(path string) ([]byte, error) {
 	if _, err := f.Seek(0, 0); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(f)
+	data, err := readAllFn(f)
 	if errors.Is(err, os.ErrClosed) {
 		return os.ReadFile(path)
 	}

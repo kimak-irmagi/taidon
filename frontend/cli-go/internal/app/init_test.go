@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -533,6 +534,91 @@ func TestInitRemoteWritesProfile(t *testing.T) {
 	}
 	if got := nestedString(raw, "profiles", "remote", "auth", "token"); got != "token-123" {
 		t.Fatalf("expected profiles.remote.auth.token, got %q", got)
+	}
+}
+
+func TestPreprocessStoreArgsLongForm(t *testing.T) {
+	args := []string{"--snapshot", "btrfs", "--store", "image", "/tmp/sqlrs-store", "--no-start"}
+	got, err := preprocessStoreArgs(args)
+	if err != nil {
+		t.Fatalf("preprocessStoreArgs: %v", err)
+	}
+	want := []string{"--snapshot", "btrfs", "--store-type", "image", "--store-path", "/tmp/sqlrs-store", "--no-start"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected args: %v", got)
+	}
+}
+
+func TestPreprocessStoreArgsEqualsForm(t *testing.T) {
+	args := []string{"--store=image", "/tmp/sqlrs-store"}
+	got, err := preprocessStoreArgs(args)
+	if err != nil {
+		t.Fatalf("preprocessStoreArgs: %v", err)
+	}
+	want := []string{"--store-type", "image", "--store-path", "/tmp/sqlrs-store"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected args: %v", got)
+	}
+}
+
+func TestPreprocessStoreArgsRejectsMissingType(t *testing.T) {
+	if _, err := preprocessStoreArgs([]string{"--store"}); err == nil {
+		t.Fatalf("expected error for missing store type")
+	}
+	if _, err := preprocessStoreArgs([]string{"--store="}); err == nil {
+		t.Fatalf("expected error for empty store type")
+	}
+}
+
+func TestResolveStorePathUsesEnvRoot(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SQLRS_STATE_STORE", root)
+
+	dirPath, err := resolveStorePath("dir", "")
+	if err != nil {
+		t.Fatalf("resolveStorePath: %v", err)
+	}
+	if dirPath != root {
+		t.Fatalf("expected dir path %q, got %q", root, dirPath)
+	}
+
+	imagePath, err := resolveStorePath("image", "")
+	if err != nil {
+		t.Fatalf("resolveStorePath: %v", err)
+	}
+	name := "btrfs.img"
+	if runtime.GOOS == "windows" {
+		name = "btrfs.vhdx"
+	}
+	expected := filepath.Join(root, name)
+	if imagePath != expected {
+		t.Fatalf("expected image path %q, got %q", expected, imagePath)
+	}
+}
+
+func TestResolveStorePathDeviceEmpty(t *testing.T) {
+	pathValue, err := resolveStorePath("device", "")
+	if err != nil {
+		t.Fatalf("resolveStorePath: %v", err)
+	}
+	if pathValue != "" {
+		t.Fatalf("expected empty path, got %q", pathValue)
+	}
+}
+
+func TestParseInitFlagsStorePathRequiresType(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"local", "--store-path", "/tmp/store"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestParseInitFlagsRemoteRejectsLocalFlags(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"remote", "--url", "https://example.com", "--token", "token", "--snapshot", "btrfs"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
 	}
 }
 

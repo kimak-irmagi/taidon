@@ -8,35 +8,45 @@ import (
 	"path/filepath"
 )
 
+var (
+	ensureDirFn  = EnsureDir
+	createTempFn = os.CreateTemp
+	writeFileFn  = func(f *os.File, data []byte) (int, error) { return f.Write(data) }
+	closeFileFn  = func(f *os.File) error { return f.Close() }
+	chmodFn      = os.Chmod
+	renameFn     = os.Rename
+	removeFn     = os.Remove
+)
+
 func EnsureDir(path string) error {
 	return os.MkdirAll(path, 0o700)
 }
 
 func AtomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := EnsureDir(dir); err != nil {
+	if err := ensureDirFn(dir); err != nil {
 		return err
 	}
 
-	temp, err := os.CreateTemp(dir, ".tmp-*")
+	temp, err := createTempFn(dir, ".tmp-*")
 	if err != nil {
 		return err
 	}
 	tempName := temp.Name()
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		os.Remove(tempName)
+	if _, err := writeFileFn(temp, data); err != nil {
+		_ = closeFileFn(temp)
+		_ = removeFn(tempName)
 		return err
 	}
-	if err := temp.Close(); err != nil {
-		os.Remove(tempName)
+	if err := closeFileFn(temp); err != nil {
+		_ = removeFn(tempName)
 		return err
 	}
-	if err := os.Chmod(tempName, perm); err != nil {
-		os.Remove(tempName)
+	if err := chmodFn(tempName, perm); err != nil {
+		_ = removeFn(tempName)
 		return err
 	}
-	return os.Rename(tempName, path)
+	return renameFn(tempName, path)
 }
 
 type NDJSONReader struct {

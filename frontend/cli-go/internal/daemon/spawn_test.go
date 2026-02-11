@@ -58,6 +58,71 @@ func TestBuildDaemonCommandWSL(t *testing.T) {
 	}
 }
 
+func TestBuildDaemonCommandEnvVars(t *testing.T) {
+	runDir := filepath.Join("C:\\", "sqlrs", "run")
+	statePath := filepath.Join("C:\\", "sqlrs", "engine.json")
+	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "C:\\store", "unit.mount", "btrfs", "")
+	if err != nil {
+		t.Fatalf("buildDaemonCommand: %v", err)
+	}
+	if !containsEnv(cmd.Env, "SQLRS_STATE_STORE=C:\\store") {
+		t.Fatalf("expected SQLRS_STATE_STORE in env")
+	}
+	if !containsEnv(cmd.Env, "SQLRS_WSL_MOUNT_UNIT=unit.mount") {
+		t.Fatalf("expected SQLRS_WSL_MOUNT_UNIT in env")
+	}
+	if !containsEnv(cmd.Env, "SQLRS_WSL_MOUNT_FSTYPE=btrfs") {
+		t.Fatalf("expected SQLRS_WSL_MOUNT_FSTYPE in env")
+	}
+}
+
+func TestBuildDaemonCommandWSLNoEnv(t *testing.T) {
+	runDir := "/var/lib/sqlrs/run"
+	statePath := "/mnt/c/sqlrs/engine.json"
+	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "", "", "", "")
+	if err != nil {
+		t.Fatalf("buildDaemonCommand: %v", err)
+	}
+	if containsArg(cmd.Args, "SQLRS_STATE_STORE=") {
+		t.Fatalf("did not expect SQLRS_STATE_STORE in args")
+	}
+}
+
+func TestQuotePowerShell(t *testing.T) {
+	if got := quotePowerShell("O'Reilly"); got != "'O''Reilly'" {
+		t.Fatalf("unexpected powershell quote: %s", got)
+	}
+}
+
+func TestBuildCmdLineWithLog(t *testing.T) {
+	cmdline := buildCmdLine("wsl.exe", []string{"--arg", "value with space"}, "C:\\logs\\engine.log")
+	if !strings.Contains(cmdline, ">>") || !strings.Contains(cmdline, "engine.log") {
+		t.Fatalf("expected log redirect, got %s", cmdline)
+	}
+}
+
+func TestQuoteCmdVariants(t *testing.T) {
+	if quoteCmd("") != "\"\"" {
+		t.Fatalf("expected empty quote")
+	}
+	if out := quoteCmd("has space"); !strings.HasPrefix(out, "\"") {
+		t.Fatalf("expected quoted, got %s", out)
+	}
+	if out := quoteCmd(`has"quote`); !strings.Contains(out, "\\\"") {
+		t.Fatalf("expected escaped quote, got %s", out)
+	}
+}
+
+func TestAppendLogLineSkipsEmpty(t *testing.T) {
+	appendLogLine("", "line")
+	appendLogLine("path", "")
+}
+
+func TestAppendLogLineOpenError(t *testing.T) {
+	dir := t.TempDir()
+	appendLogLine(dir, "line")
+}
+
 func containsEnv(env []string, value string) bool {
 	for _, item := range env {
 		if item == value {

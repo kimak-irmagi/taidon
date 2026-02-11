@@ -95,6 +95,11 @@ type statePaths struct {
 	stateDir  string
 }
 
+var (
+	postgresDataDirRoot = engineRuntime.PostgresDataDirRoot
+	postgresDataDir     = engineRuntime.PostgresDataDir
+)
+
 func resolveStatePaths(root string, imageID string, stateID string, fs statefs.StateFS) (statePaths, error) {
 	if strings.TrimSpace(root) == "" {
 		return statePaths{}, fmt.Errorf("state store root is required")
@@ -945,7 +950,7 @@ func pgVersionPaths(baseDir string) []string {
 }
 
 func pgDataHostDir(baseDir string) string {
-	rel := strings.TrimPrefix(engineRuntime.PostgresDataDir, engineRuntime.PostgresDataDirRoot)
+	rel := strings.TrimPrefix(postgresDataDir, postgresDataDirRoot)
 	rel = strings.TrimPrefix(rel, "/")
 	if strings.TrimSpace(rel) == "" {
 		return baseDir
@@ -1064,7 +1069,7 @@ func withInitLock(ctx context.Context, baseDir string, fn func() error) error {
 			defer os.Remove(lockPath)
 			return fn()
 		}
-		if errors.Is(err, os.ErrExist) {
+		if errors.Is(err, os.ErrExist) || isLockBusyError(err, lockPath) {
 			if initMarkerExists(baseDir) {
 				_ = os.Remove(lockPath)
 				return nil

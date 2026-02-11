@@ -24,8 +24,11 @@ import (
 const defaultTimeout = 30 * time.Second
 const defaultStartupTimeout = 5 * time.Second
 
+var parseArgsFn = cli.ParseArgs
+var getwdFn = os.Getwd
+
 func Run(args []string) error {
-	opts, commands, err := cli.ParseArgs(args)
+	opts, commands, err := parseArgsFn(args)
 	if err != nil {
 		if errors.Is(err, cli.ErrHelp) {
 			cli.PrintUsage(os.Stdout)
@@ -35,7 +38,7 @@ func Run(args []string) error {
 		return err
 	}
 
-	cwd, err := os.Getwd()
+	cwd, err := getwdFn()
 	if err != nil {
 		return err
 	}
@@ -608,7 +611,7 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 	mountUnit := strings.TrimSpace(cfg.Engine.WSL.Mount.Unit)
 	mountFSType := strings.TrimSpace(cfg.Engine.WSL.Mount.FSType)
 	if distro == "" {
-		distros, err := listWSLDistros()
+		distros, err := listWSLDistrosFn()
 		if err != nil {
 			if mode == "required" {
 				return "", "", "", "", "", "", "", fmt.Errorf("WSL unavailable: %v", err)
