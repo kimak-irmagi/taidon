@@ -173,6 +173,9 @@ custom:
 }
 
 func TestInitUpdateWSLFailureDoesNotModifyConfig(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("WSL init is Windows-specific")
+	}
 	workspace := t.TempDir()
 	marker := filepath.Join(workspace, ".sqlrs")
 	if err := os.MkdirAll(marker, 0o700); err != nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,9 @@ func TestInitWSLNonWindows(t *testing.T) {
 }
 
 func TestInitWSLUnavailable(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("WSL init is Windows-specific")
+	}
 	prev := os.Getenv("PATH")
 	t.Setenv("PATH", "")
 	t.Cleanup(func() { t.Setenv("PATH", prev) })
@@ -48,6 +52,9 @@ func TestInitWSLUnavailable(t *testing.T) {
 }
 
 func TestInitWSLUnavailableRequire(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("WSL init is Windows-specific")
+	}
 	prev := listWSLDistrosFn
 	listWSLDistrosFn = func() ([]wsl.Distro, error) {
 		return nil, errors.New("boom")
@@ -61,6 +68,9 @@ func TestInitWSLUnavailableRequire(t *testing.T) {
 }
 
 func TestInitWSLPartitionMissing(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("WSL init is Windows-specific")
+	}
 	prev := listWSLDistrosFn
 	listWSLDistrosFn = func() ([]wsl.Distro, error) {
 		return []wsl.Distro{{Name: "Ubuntu", Default: true}}, nil
@@ -107,6 +117,9 @@ func TestInitWSLPartitionMissing(t *testing.T) {
 }
 
 func TestInitWSLSuccess(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("WSL init is Windows-specific")
+	}
 	prev := listWSLDistrosFn
 	listWSLDistrosFn = func() ([]wsl.Distro, error) {
 		return []wsl.Distro{{Name: "Ubuntu", Default: true}}, nil
@@ -585,7 +598,16 @@ func TestWaitForMountFSTypeNotMounted(t *testing.T) {
 }
 
 func TestRunHostCommandSuccessCoverage(t *testing.T) {
-	out, err := runHostCommand(nil, true, "check", "cmd.exe", "/c", "echo", "ok")
+	var cmd string
+	var args []string
+	if runtime.GOOS == "windows" {
+		cmd = "cmd"
+		args = []string{"/c", "echo", "ok"}
+	} else {
+		cmd = "sh"
+		args = []string{"-c", "echo ok"}
+	}
+	out, err := runHostCommand(nil, true, "check", cmd, args...)
 	if err != nil || !strings.Contains(out, "ok") {
 		t.Fatalf("expected output, got %q err=%v", out, err)
 	}
