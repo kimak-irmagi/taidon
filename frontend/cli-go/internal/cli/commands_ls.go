@@ -17,6 +17,7 @@ import (
 type LsOptions struct {
 	ProfileName     string
 	Mode            string
+	AuthToken       string
 	Endpoint        string
 	Autostart       bool
 	DaemonPath      string
@@ -26,7 +27,7 @@ type LsOptions struct {
 	EngineStatePath string
 	EngineStoreDir  string
 	WSLVHDXPath     string
-	WSLMountUnit  string
+	WSLMountUnit    string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -68,9 +69,10 @@ type LsPrintOptions struct {
 func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
 	endpoint := strings.TrimSpace(opts.Endpoint)
-	authToken := ""
+	authToken := strings.TrimSpace(opts.AuthToken)
 
 	if mode == "local" {
+		authToken = ""
 		if endpoint == "" {
 			endpoint = "auto"
 		}
@@ -88,7 +90,7 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
 				WSLVHDXPath:     opts.WSLVHDXPath,
-				WSLMountUnit:  opts.WSLMountUnit,
+				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,

@@ -6,6 +6,13 @@ import (
 	"runtime"
 )
 
+var (
+	goos          = runtime.GOOS
+	getwdFn       = os.Getwd
+	absFn         = filepath.Abs
+	userHomeDirFn = os.UserHomeDir
+)
+
 type Dirs struct {
 	ConfigDir string
 	StateDir  string
@@ -13,7 +20,7 @@ type Dirs struct {
 }
 
 func Resolve() (Dirs, error) {
-	switch runtime.GOOS {
+	switch goos {
 	case "windows":
 		return resolveWindows()
 	case "darwin":
@@ -25,14 +32,14 @@ func Resolve() (Dirs, error) {
 
 func FindProjectConfig(startDir string) (string, error) {
 	if startDir == "" {
-		cwd, err := os.Getwd()
+		cwd, err := getwdFn()
 		if err != nil {
 			return "", err
 		}
 		startDir = cwd
 	}
 
-	dir, err := filepath.Abs(startDir)
+	dir, err := absFn(startDir)
 	if err != nil {
 		return "", err
 	}
@@ -53,7 +60,7 @@ func FindProjectConfig(startDir string) (string, error) {
 }
 
 func resolveXDG() (Dirs, error) {
-	home, err := os.UserHomeDir()
+	home, err := userHomeDirFn()
 	if err != nil {
 		return Dirs{}, err
 	}
@@ -70,7 +77,7 @@ func resolveXDG() (Dirs, error) {
 }
 
 func resolveDarwin() (Dirs, error) {
-	home, err := os.UserHomeDir()
+	home, err := userHomeDirFn()
 	if err != nil {
 		return Dirs{}, err
 	}
@@ -88,7 +95,7 @@ func resolveWindows() (Dirs, error) {
 	localAppData := os.Getenv("LOCALAPPDATA")
 
 	if appData == "" || localAppData == "" {
-		home, err := os.UserHomeDir()
+		home, err := userHomeDirFn()
 		if err != nil {
 			return Dirs{}, err
 		}

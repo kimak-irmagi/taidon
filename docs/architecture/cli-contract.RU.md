@@ -121,7 +121,6 @@ sqlrs status [options]
 
 TODO (будущее):
 
-- Добавить `prepare:liquibase` (alias: `prepare:lb`).
 - Добавить именованные экземпляры и флаги привязки (`--name`, `--reuse`, `--fresh`, `--rebind`).
 - Добавить async-режим (`--watch/--no-watch`) с выводом `prepare_id` и URL статуса.
 
@@ -132,6 +131,10 @@ TODO (будущее):
 Актуальная семантика команды описана в user guide:
 
 - [`docs/user-guides/sqlrs-plan.md`](../user-guides/sqlrs-plan.md)
+- [`docs/user-guides/sqlrs-plan-psql.md`](../user-guides/sqlrs-plan-psql.md)
+- [`docs/user-guides/sqlrs-plan-liquibase.md`](../user-guides/sqlrs-plan-liquibase.md)
+
+CLI должен предоставлять `plan:<kind>` для каждого поддерживаемого `prepare:<kind>`.
 
 ---
 

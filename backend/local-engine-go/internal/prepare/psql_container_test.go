@@ -3,6 +3,7 @@ package prepare
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -173,4 +174,94 @@ func writeSQLAt(t *testing.T, dir string, name string, contents string) string {
 		t.Fatalf("write sql: %v", err)
 	}
 	return path
+}
+
+func TestBuildPsqlExecArgsReturnsError(t *testing.T) {
+	root := t.TempDir()
+	mount := &scriptMount{
+		HostRoot:      root,
+		ContainerRoot: containerScriptsRoot,
+	}
+	if _, _, err := buildPsqlExecArgs([]string{"-f"}, mount); err == nil {
+		t.Fatalf("expected buildPsqlExecArgs error")
+	}
+}
+
+func TestRewritePsqlFileArgsErrorVariants(t *testing.T) {
+	root := t.TempDir()
+	mount := &scriptMount{
+		HostRoot:      root,
+		ContainerRoot: containerScriptsRoot,
+	}
+	if _, _, err := rewritePsqlFileArgs([]string{"-f", "rel.sql"}, mount); err == nil {
+		t.Fatalf("expected error for -f rel")
+	}
+	if _, _, err := rewritePsqlFileArgs([]string{"--file=rel.sql"}, mount); err == nil {
+		t.Fatalf("expected error for --file rel")
+	}
+	if _, _, err := rewritePsqlFileArgs([]string{"-frel.sql"}, mount); err == nil {
+		t.Fatalf("expected error for -frel")
+	}
+}
+
+func TestRewritePsqlFileArgsShortSetsWorkdir(t *testing.T) {
+	root := t.TempDir()
+	path := writeSQLAt(t, root, "init.sql", "select 1;")
+	mount := &scriptMount{
+		HostRoot:      root,
+		ContainerRoot: containerScriptsRoot,
+	}
+	rewritten, workdir, err := rewritePsqlFileArgs([]string{"-f" + path}, mount)
+	if err != nil {
+		t.Fatalf("rewritePsqlFileArgs: %v", err)
+	}
+	if len(rewritten) != 1 || rewritten[0] != "-f"+containerScriptsRoot+"/init.sql" {
+		t.Fatalf("unexpected rewrite: %+v", rewritten)
+	}
+	if workdir != containerScriptsRoot {
+		t.Fatalf("unexpected workdir: %s", workdir)
+	}
+}
+
+func TestScriptMountForFilesNoCommonRoot(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path volumes")
+	}
+	_, err := scriptMountForFiles([]string{`C:\one\a.sql`, `D:\two\b.sql`})
+	if err == nil {
+		t.Fatalf("expected error for different volumes")
+	}
+}
+
+func TestMapScriptPathRelError(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path volumes")
+	}
+	orig := isWithinFn
+	isWithinFn = func(string, string) bool { return true }
+	t.Cleanup(func() { isWithinFn = orig })
+
+	mount := &scriptMount{
+		HostRoot:      `C:\root`,
+		ContainerRoot: containerScriptsRoot,
+	}
+	if _, err := mapScriptPath(`D:\other\file.sql`, mount); err == nil {
+		t.Fatalf("expected rel error for different volumes")
+	}
+}
+
+func TestIsWithinRelErrorAndSamePath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		if isWithin(`C:\root`, `D:\other`) {
+			t.Fatalf("expected false for different volumes")
+		}
+	}
+	if !isWithin(`C:\root`, `C:\root`) && runtime.GOOS == "windows" {
+		t.Fatalf("expected true for same path on windows")
+	}
+	if runtime.GOOS != "windows" {
+		if !isWithin("/tmp", "/tmp") {
+			t.Fatalf("expected true for same path")
+		}
+	}
 }

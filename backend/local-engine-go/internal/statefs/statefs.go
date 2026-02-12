@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"sqlrs/engine/internal/snapshot"
@@ -116,6 +117,9 @@ func (m *Manager) EnsureStateDir(ctx context.Context, stateDir string) error {
 		return fmt.Errorf("statefs backend is required")
 	}
 	if ensurer, ok := m.backend.(subvolumeEnsurer); ok {
+		if m.backend.Kind() == "btrfs" {
+			return os.MkdirAll(filepath.Dir(stateDir), 0o700)
+		}
 		return ensurer.EnsureSubvolume(ctx, stateDir)
 	}
 	return os.MkdirAll(stateDir, 0o700)

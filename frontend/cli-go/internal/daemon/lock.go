@@ -12,6 +12,11 @@ type FileLock struct {
 	file *os.File
 }
 
+var (
+	tryLockFn = tryLock
+	unlockFn  = unlock
+)
+
 func AcquireLock(path string, timeout time.Duration) (*FileLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
@@ -20,7 +25,7 @@ func AcquireLock(path string, timeout time.Duration) (*FileLock, error) {
 
 	deadline := time.Now().Add(timeout)
 	for {
-		ok, err := tryLock(file)
+		ok, err := tryLockFn(file)
 		if err != nil {
 			file.Close()
 			return nil, err
@@ -40,7 +45,7 @@ func (l *FileLock) Release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	err := unlock(l.file)
+	err := unlockFn(l.file)
 	closeErr := l.file.Close()
 	if err != nil {
 		return err

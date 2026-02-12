@@ -1,5 +1,7 @@
 # ADR: WSL btrfs mount is managed by systemd (not the engine)
 
+Status: Obsolete (superseded by [ADR 2026-02-10: sqlrs init redesign](2026-02-10-sqlrs-init-redesign.md))
+
 - Conversation timestamp: 2026-01-30 08:30 UTC
 - GitHub user id: @evilguest
 - Agent: Codex (GPT-5)

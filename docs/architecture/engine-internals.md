@@ -84,8 +84,14 @@ flowchart LR
 - Builds an ordered list of prepare steps from `psql` scripts.
 - Each step is hashed (script-system specific) to form cache keys: `engine/version/base/step_hash/params`.
 - The output is a step chain, not head/tail; intermediate states may be materialized for cache reuse.
-- The overall prepare input also produces a stable state fingerprint:
-  `state_id = hash(prepare_kind + base_image_id_resolved + normalized_args + normalized_input_hashes + engine_version)`.
+- The overall prepare input also produces a stable state fingerprint. For content-based
+  planners (psql/lb), this fingerprint is derived from **normalized content** and the
+  **parent state id** (task input). For the first step the parent id is the base
+  image id; for subsequent steps it is the previous state id:
+  `state_id = hash(prepare_kind + parent_state_id + normalized_content + engine_version)`.
+- Content-based planners acquire **read-locks** on all resolved inputs for the
+  duration of each planning/execution task. If locks cannot be acquired, the
+  task fails to avoid plan drift.
 
 ### 1.5 Prepare Executor
 

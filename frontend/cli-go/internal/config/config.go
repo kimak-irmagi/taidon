@@ -34,10 +34,10 @@ type EngineConfig struct {
 }
 
 type EngineWSLConfig struct {
-	Mode       string `yaml:"mode"`
-	Distro     string `yaml:"distro"`
-	StateDir   string `yaml:"stateDir"`
-	EnginePath string `yaml:"enginePath"`
+	Mode       string               `yaml:"mode"`
+	Distro     string               `yaml:"distro"`
+	StateDir   string               `yaml:"stateDir"`
+	EnginePath string               `yaml:"enginePath"`
 	Mount      EngineWSLMountConfig `yaml:"mount"`
 }
 
@@ -58,6 +58,7 @@ type ProfileConfig struct {
 type AuthConfig struct {
 	Mode     string `yaml:"mode"`
 	TokenEnv string `yaml:"tokenEnv"`
+	Token    string `yaml:"token"`
 }
 
 type LoadOptions struct {

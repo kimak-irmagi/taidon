@@ -356,7 +356,7 @@ To keep keys meaningful:
 ### 12.3 Platform specifics
 
 - **Linux/macOS (local engine)**: `SQLRS_STATE_STORE` on native filesystem; StateFS backend is selected by FS (btrfs/zfs → CoW, otherwise copy/reflink).
-- **Windows (local engine)**: engine runs inside WSL2; state store is a host VHDX mounted into WSL and formatted as btrfs when available; a systemd mount unit (installed by `sqlrs init --wsl`) makes the mount visible to Docker; otherwise copy/reflink fallback.
+- **Windows (local engine)**: when btrfs is selected, engine runs inside WSL2; state store is a host VHDX mounted into WSL and formatted as btrfs; a systemd mount unit (installed by `sqlrs init local --snapshot btrfs`) makes the mount visible to Docker. Otherwise the engine may run on the Windows host with copy/reflink fallback.
 
 ### 12.4 Access and locking
 

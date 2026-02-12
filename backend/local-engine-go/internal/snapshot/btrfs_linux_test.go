@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -168,9 +169,35 @@ func TestBtrfsManagerSnapshotCommandError(t *testing.T) {
 }
 
 func TestBtrfsManagerDestroyCommandError(t *testing.T) {
+	prevList := btrfsListSubvolumesFn
+	btrfsListSubvolumesFn = func(context.Context, string) (string, error) {
+		return "", nil
+	}
+	t.Cleanup(func() { btrfsListSubvolumesFn = prevList })
+
 	mgr := btrfsManager{runner: &btrfsFakeRunner{err: errors.New("boom")}}
 	if err := mgr.Destroy(context.Background(), "state"); err == nil {
 		t.Fatalf("expected destroy error")
+	}
+}
+
+func TestBtrfsManagerDestroyIncludesNestedListOnError(t *testing.T) {
+	prevList := btrfsListSubvolumesFn
+	btrfsListSubvolumesFn = func(context.Context, string) (string, error) {
+		return "ID 12 gen 1 path states/root/runtime", nil
+	}
+	t.Cleanup(func() { btrfsListSubvolumesFn = prevList })
+
+	mgr := btrfsManager{runner: &btrfsFakeRunner{err: errors.New("boom")}}
+	err := mgr.Destroy(context.Background(), "state")
+	if err == nil {
+		t.Fatalf("expected destroy error")
+	}
+	if !strings.Contains(err.Error(), "nested subvolumes") {
+		t.Fatalf("expected nested subvolumes in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "states/root/runtime") {
+		t.Fatalf("expected list output in error, got %v", err)
 	}
 }
 

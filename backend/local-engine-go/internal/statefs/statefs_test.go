@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"sqlrs/engine/internal/snapshot"
@@ -14,6 +15,9 @@ type fakeBackend struct {
 	caps           snapshot.Capabilities
 	ensureCalls    []string
 	destroyCalls   []string
+	destroyErr     error
+	cloneResult    snapshot.CloneResult
+	cloneErr       error
 	isSubvolume    bool
 	isSubvolumeErr error
 }
@@ -27,7 +31,7 @@ func (f *fakeBackend) Capabilities() snapshot.Capabilities {
 }
 
 func (f *fakeBackend) Clone(ctx context.Context, srcDir string, destDir string) (snapshot.CloneResult, error) {
-	return snapshot.CloneResult{}, nil
+	return f.cloneResult, f.cloneErr
 }
 
 func (f *fakeBackend) Snapshot(ctx context.Context, srcDir string, destDir string) error {
@@ -36,7 +40,7 @@ func (f *fakeBackend) Snapshot(ctx context.Context, srcDir string, destDir strin
 
 func (f *fakeBackend) Destroy(ctx context.Context, dir string) error {
 	f.destroyCalls = append(f.destroyCalls, dir)
-	return nil
+	return f.destroyErr
 }
 
 func (f *fakeBackend) EnsureSubvolume(ctx context.Context, path string) error {
@@ -132,8 +136,11 @@ func TestEnsureDirsUsesSubvolumeEnsurer(t *testing.T) {
 	if err := mgr.EnsureStateDir(context.Background(), state); err != nil {
 		t.Fatalf("EnsureStateDir: %v", err)
 	}
-	if len(backend.ensureCalls) != 2 {
+	if len(backend.ensureCalls) != 1 {
 		t.Fatalf("expected ensure calls, got %+v", backend.ensureCalls)
+	}
+	if _, err := os.Stat(filepath.Dir(state)); err != nil {
+		t.Fatalf("expected state parent dir created: %v", err)
 	}
 }
 
@@ -239,5 +246,120 @@ func TestNewManagerKindAndJobRuntimeDir(t *testing.T) {
 	expected := filepath.Join(root, "jobs", "job-1", "runtime")
 	if dir != expected {
 		t.Fatalf("expected job runtime dir %s, got %s", expected, dir)
+	}
+}
+
+func TestManagerKindAndCapabilitiesNil(t *testing.T) {
+	var nilMgr *Manager
+	if nilMgr.Kind() != "" {
+		t.Fatalf("expected empty kind for nil manager")
+	}
+	if caps := nilMgr.Capabilities(); caps != (Capabilities{}) {
+		t.Fatalf("expected empty caps for nil manager, got %+v", caps)
+	}
+
+	mgr := &Manager{}
+	if mgr.Kind() != "" {
+		t.Fatalf("expected empty kind for nil backend")
+	}
+	if caps := mgr.Capabilities(); caps != (Capabilities{}) {
+		t.Fatalf("expected empty caps for nil backend, got %+v", caps)
+	}
+}
+
+func TestManagerBaseStatesStateDirs(t *testing.T) {
+	root := t.TempDir()
+	mgr := &Manager{backend: &fakeBackend{kind: "copy"}}
+
+	base, err := mgr.BaseDir(root, "postgres:15")
+	if err != nil {
+		t.Fatalf("BaseDir: %v", err)
+	}
+	if !strings.HasSuffix(base, filepath.Join("engines", "postgres", "15", "base")) {
+		t.Fatalf("unexpected base dir: %s", base)
+	}
+
+	states, err := mgr.StatesDir(root, "postgres:15")
+	if err != nil {
+		t.Fatalf("StatesDir: %v", err)
+	}
+	if !strings.HasSuffix(states, filepath.Join("engines", "postgres", "15", "states")) {
+		t.Fatalf("unexpected states dir: %s", states)
+	}
+
+	state, err := mgr.StateDir(root, "postgres:15", "state-1")
+	if err != nil {
+		t.Fatalf("StateDir: %v", err)
+	}
+	if !strings.HasSuffix(state, filepath.Join("engines", "postgres", "15", "states", "state-1")) {
+		t.Fatalf("unexpected state dir: %s", state)
+	}
+}
+
+func TestEnsureStateDirUsesSubvolumeWhenNonBtrfs(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "state")
+	backend := &fakeBackend{kind: "overlay"}
+	mgr := &Manager{backend: backend}
+
+	if err := mgr.EnsureStateDir(context.Background(), state); err != nil {
+		t.Fatalf("EnsureStateDir: %v", err)
+	}
+	if len(backend.ensureCalls) != 1 || backend.ensureCalls[0] != state {
+		t.Fatalf("expected ensure subvolume call, got %+v", backend.ensureCalls)
+	}
+}
+
+func TestManagerCloneResult(t *testing.T) {
+	backend := &fakeBackend{
+		kind:        "copy",
+		cloneResult: snapshot.CloneResult{MountDir: "/mnt", Cleanup: func() error { return nil }},
+	}
+	mgr := &Manager{backend: backend}
+
+	res, err := mgr.Clone(context.Background(), "src", "dest")
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	if res.MountDir != "/mnt" || res.Cleanup == nil {
+		t.Fatalf("unexpected clone result: %+v", res)
+	}
+}
+
+func TestManagerEnsureStateDirNoBackend(t *testing.T) {
+	mgr := &Manager{}
+	if err := mgr.EnsureStateDir(context.Background(), t.TempDir()); err == nil {
+		t.Fatalf("expected ensure state error")
+	}
+}
+
+func TestManagerRemovePathNoBackend(t *testing.T) {
+	mgr := &Manager{}
+	if err := mgr.RemovePath(context.Background(), "dir"); err == nil {
+		t.Fatalf("expected remove path error")
+	}
+}
+
+func TestRemovePathBtrfsDestroyError(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	backend := &fakeBackend{kind: "btrfs", isSubvolume: true, destroyErr: os.ErrInvalid}
+	mgr := &Manager{backend: backend}
+	if err := mgr.RemovePath(context.Background(), dir); err == nil {
+		t.Fatalf("expected destroy error")
+	}
+}
+
+func TestRemovePathDestroyErrorOnFallback(t *testing.T) {
+	backend := &fakeBackend{kind: "copy", destroyErr: os.ErrInvalid}
+	mgr := &Manager{backend: backend}
+	prevRemove := removeAll
+	removeAll = func(path string) error { return os.ErrInvalid }
+	t.Cleanup(func() { removeAll = prevRemove })
+
+	if err := mgr.RemovePath(context.Background(), "dir"); err == nil {
+		t.Fatalf("expected destroy error")
 	}
 }

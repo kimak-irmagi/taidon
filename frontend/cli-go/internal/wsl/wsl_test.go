@@ -1,6 +1,9 @@
 package wsl
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestParseDistroList(t *testing.T) {
 	input := `  NAME            STATE           VERSION
@@ -41,6 +44,22 @@ func TestParseDistroListNoRows(t *testing.T) {
 	}
 }
 
+func TestParseDistroListSkipsInvalidRows(t *testing.T) {
+	input := `NAME STATE VERSION
+badline
+* Ubuntu Running
+Debian Stopped x
+Ubuntu Running 2
+`
+	distros, err := ParseDistroList(input)
+	if err != nil {
+		t.Fatalf("ParseDistroList: %v", err)
+	}
+	if len(distros) != 1 || distros[0].Name != "Ubuntu" {
+		t.Fatalf("unexpected distros: %+v", distros)
+	}
+}
+
 func TestSelectDistroPreferred(t *testing.T) {
 	distros := []Distro{{Name: "Ubuntu"}, {Name: "Debian"}}
 	got, err := SelectDistro(distros, "Debian")
@@ -49,6 +68,12 @@ func TestSelectDistroPreferred(t *testing.T) {
 	}
 	if got != "Debian" {
 		t.Fatalf("expected Debian, got %q", got)
+	}
+}
+
+func TestSelectDistroEmpty(t *testing.T) {
+	if _, err := SelectDistro(nil, ""); !errors.Is(err, ErrNoDistros) {
+		t.Fatalf("expected ErrNoDistros, got %v", err)
 	}
 }
 

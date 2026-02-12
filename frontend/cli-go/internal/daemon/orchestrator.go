@@ -17,6 +17,8 @@ import (
 	"sqlrs/cli/internal/util"
 )
 
+var isWindows = runtime.GOOS == "windows"
+
 type ConnectOptions struct {
 	Endpoint        string
 	Autostart       bool
@@ -200,7 +202,7 @@ func loadHealthyStateWithReason(ctx context.Context, enginePath string, timeout 
 		return EngineState{}, false, fmt.Sprintf("health check failed: %v", healthErr)
 	}
 	pidRunning := processExists(state.PID)
-	if runtime.GOOS == "windows" {
+	if isWindows {
 		pidRunning = true
 	}
 	if state.InstanceID != "" && health.InstanceID != "" && state.InstanceID != health.InstanceID {

@@ -19,8 +19,8 @@ func TestPreparePsqlArgsAddsDefaults(t *testing.T) {
 	if !containsArg(out.normalizedArgs, "ON_ERROR_STOP=1") {
 		t.Fatalf("expected ON_ERROR_STOP=1 to be added")
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
-		t.Fatalf("expected file hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "file" {
+		t.Fatalf("expected file input, got %+v", out.inputs)
 	}
 	if len(out.filePaths) != 1 || out.filePaths[0] != path {
 		t.Fatalf("expected file path tracking, got %+v", out.filePaths)
@@ -69,8 +69,8 @@ func TestPreparePsqlArgsHandlesStdin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "stdin" {
-		t.Fatalf("expected stdin hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "stdin" {
+		t.Fatalf("expected stdin input, got %+v", out.inputs)
 	}
 
 	_, err = preparePsqlArgs([]string{"-f", "-"}, nil)
@@ -100,8 +100,8 @@ func TestPreparePsqlArgsHandlesCommandFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "command" {
-		t.Fatalf("expected command hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "command" {
+		t.Fatalf("expected command input, got %+v", out.inputs)
 	}
 
 	_, err = preparePsqlArgs([]string{"-c"}, nil)
@@ -111,16 +111,16 @@ func TestPreparePsqlArgsHandlesCommandFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "command" {
-		t.Fatalf("expected inline command hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "command" {
+		t.Fatalf("expected inline command input, got %+v", out.inputs)
 	}
 
 	out, err = preparePsqlArgs([]string{"--command=select 1;"}, nil)
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "command" {
-		t.Fatalf("expected command hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "command" {
+		t.Fatalf("expected command input, got %+v", out.inputs)
 	}
 }
 
@@ -209,8 +209,8 @@ func TestPreparePsqlArgsHandlesInlineFileFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
-		t.Fatalf("expected file hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "file" {
+		t.Fatalf("expected file input, got %+v", out.inputs)
 	}
 }
 
@@ -220,8 +220,8 @@ func TestPreparePsqlArgsHandlesLongFileFlag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
-		t.Fatalf("expected file hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "file" {
+		t.Fatalf("expected file input, got %+v", out.inputs)
 	}
 }
 
@@ -231,8 +231,8 @@ func TestPreparePsqlArgsHandlesFileFlagEquals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preparePsqlArgs: %v", err)
 	}
-	if len(out.inputHashes) != 1 || out.inputHashes[0].Kind != "file" {
-		t.Fatalf("expected file hash, got %+v", out.inputHashes)
+	if len(out.inputs) != 1 || out.inputs[0].kind != "file" {
+		t.Fatalf("expected file input, got %+v", out.inputs)
 	}
 }
 

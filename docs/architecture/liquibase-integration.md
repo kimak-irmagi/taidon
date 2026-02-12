@@ -62,6 +62,25 @@ User runs a `taidon-liquibase` wrapper that forwards most flags to Liquibase.
 
 A DB proxy/driver observes commits and snapshots. Predictive caching is limited unless the client provides explicit block markers.
 
+### 2.4 Execution Environments
+
+Liquibase execution is abstracted so the engine can run it in different environments.
+
+**Current (local Windows + WSL engine):**
+
+- Engine runs Liquibase as a **host Windows executable** via WSL interop.
+- Paths are translated from WSL (`/mnt/c/...`) to Windows (`C:\...`) before launch.
+- `liquibase.exec` config (if set) overrides PATH lookup.
+
+**Future (container execution):**
+
+- Engine runs Liquibase in a **separate container**.
+- Paths are translated from WSL to container mount paths.
+- The execution interface remains the same; only the runner and path mapper change.
+
+Path mapping is implemented behind a **PathMapper interface** with per-environment
+implementations (WSL->Windows, WSL->Container).
+
 ---
 
 ## 3. Observability via Structured Logs
@@ -92,6 +111,16 @@ Taidon must not depend on human-readable log messages.
 
 Taidon obtains a pending changeset plan by invoking Liquibase commands with the same filters and parameters that will be used for execution.
 
+### 4.3 Content locking (atomicity)
+
+To prevent plan drift, Taidon acquires **read-locks** on all Liquibase inputs
+for the duration of each task:
+
+- planning (`updateSQL`): lock changelog + referenced files while building the plan
+- execution (`update-count --count=1`): lock the same set while applying a step
+
+If any lock cannot be acquired (file is being modified), the task fails.
+
 ### 4.1 Inputs that affect the plan
 
 - changelog file path
@@ -115,7 +144,7 @@ A plan is an ordered list of steps:
 
 ### 5.1 Goal
 
-Compute hashes for as many upcoming steps as possible *without executing them*, then rewind through cache to the most recent cached state.
+Compute hashes for as many upcoming steps as possible _without executing them_, then rewind through cache to the most recent cached state.
 
 ### 5.2 Horizon definition
 
@@ -245,7 +274,7 @@ On failure, Taidon may snapshot the failed instance state for investigation.
 
 ### 9.1 Canonical key
 
-```
+```code
 key = H(
   engine_id,
   engine_version,
@@ -265,15 +294,15 @@ key = H(
 - Liquibase version (until proven safe to omit)
 - environment flags influencing execution
 
-### 9.3 Tracking identifiers
+### 9.3 Block hash source
 
-Changeset identity (author/id/path) is recorded for:
+The per-step `block_hash` is **content-based**:
 
-- diagnostics
-- UX display
-- plan drift detection
+- preferred: Liquibase checksum (when available without execution)
+- fallback: hash of the SQL emitted for that changeset (`updateSQL`)
 
-It is not required in the cache key if `block_hash` and `base_state_id` are present.
+Changeset identity (author/id/path) is recorded for diagnostics/UX and plan
+drift detection but **does not** participate in the cache key.
 
 ---
 
@@ -304,4 +333,3 @@ JSON structured logs can become very large for big SQL payloads.
 - What is the most reliable way to obtain per-step checksums pre-execution using only Liquibase invocations?
 - How should Taidon detect volatile steps from structured logs across Liquibase versions?
 - Should Taidon implement a maximum rewind depth or stop early based on replay-cost heuristics?
-

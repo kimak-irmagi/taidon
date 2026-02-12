@@ -28,3 +28,6 @@ profiles:
         autostart: true
         endpoint: auto
         mode: local
+liquibase:
+  exec: C:\Program Files\liquibase\liquibase.bat
+  exec_mode: windows-bat

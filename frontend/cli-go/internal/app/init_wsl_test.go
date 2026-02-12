@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 )
 
 func TestInitWSLHappyAutoDistro(t *testing.T) {
+	skipIfNotWindows(t)
 	workspace := t.TempDir()
 	var captured wslInitOptions
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
@@ -28,7 +30,7 @@ func TestInitWSLHappyAutoDistro(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl"}, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "btrfs"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -39,8 +41,8 @@ func TestInitWSLHappyAutoDistro(t *testing.T) {
 	configPath := filepath.Join(workspace, ".sqlrs", "config.yaml")
 	raw := loadConfigMap(t, configPath)
 
-	if got := nestedString(raw, "engine", "wsl", "mode"); got != "auto" {
-		t.Fatalf("expected mode auto, got %q", got)
+	if got := nestedString(raw, "snapshot", "backend"); got != "btrfs" {
+		t.Fatalf("expected snapshot.backend btrfs, got %q", got)
 	}
 	if got := nestedString(raw, "engine", "wsl", "distro"); got != "Ubuntu" {
 		t.Fatalf("expected distro Ubuntu, got %q", got)
@@ -63,6 +65,7 @@ func TestInitWSLHappyAutoDistro(t *testing.T) {
 }
 
 func TestInitWSLUsesExplicitDistro(t *testing.T) {
+	skipIfNotWindows(t)
 	workspace := t.TempDir()
 	var captured wslInitOptions
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
@@ -71,7 +74,7 @@ func TestInitWSLUsesExplicitDistro(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl", "--distro", "Debian"}, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "btrfs", "--distro", "Debian"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 
@@ -81,6 +84,7 @@ func TestInitWSLUsesExplicitDistro(t *testing.T) {
 }
 
 func TestInitWSLNoStartSkipsWSLStart(t *testing.T) {
+	skipIfNotWindows(t)
 	workspace := t.TempDir()
 	var captured wslInitOptions
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
@@ -89,7 +93,7 @@ func TestInitWSLNoStartSkipsWSLStart(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl", "--no-start"}, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "btrfs", "--no-start"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !captured.NoStart {
@@ -98,6 +102,7 @@ func TestInitWSLNoStartSkipsWSLStart(t *testing.T) {
 }
 
 func TestInitWSLPassesStoreFlags(t *testing.T) {
+	skipIfNotWindows(t)
 	workspace := t.TempDir()
 	var captured wslInitOptions
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
@@ -106,7 +111,7 @@ func TestInitWSLPassesStoreFlags(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl", "--store-size", "120GB", "--reinit"}, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "btrfs", "--store", "image", "--store-size", "120GB", "--reinit"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if captured.StoreSizeGB != 120 {
@@ -118,18 +123,20 @@ func TestInitWSLPassesStoreFlags(t *testing.T) {
 }
 
 func TestInitWSLRequireFailsWhenWSLMissing(t *testing.T) {
+	skipIfNotWindows(t)
 	workspace := t.TempDir()
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
 		return wslInitResult{}, errTestWSL
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl", "--require"}, false); err == nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "btrfs"}, false); err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
 func TestInitWSLWarnsAndFallbackWhenWSLMissing(t *testing.T) {
+	skipIfNotWindows(t)
 	workspace := t.TempDir()
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
 		return wslInitResult{UseWSL: false, Warning: "WSL unavailable"}, nil
@@ -148,7 +155,7 @@ func TestInitWSLWarnsAndFallbackWhenWSLMissing(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl"}, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "auto"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	_ = w.Close()
@@ -162,12 +169,13 @@ func TestInitWSLWarnsAndFallbackWhenWSLMissing(t *testing.T) {
 
 	configPath := filepath.Join(workspace, ".sqlrs", "config.yaml")
 	raw := loadConfigMap(t, configPath)
-	if got := nestedString(raw, "engine", "wsl", "mode"); got != "auto" {
-		t.Fatalf("expected mode auto, got %q", got)
+	if got := nestedString(raw, "snapshot", "backend"); got != "auto" {
+		t.Fatalf("expected snapshot.backend auto, got %q", got)
 	}
 }
 
 func TestInitWSLPrintsRestartWarning(t *testing.T) {
+	skipIfNotWindows(t)
 	workspace := t.TempDir()
 	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
 		return wslInitResult{UseWSL: true, Warning: "WSL restart required: wsl.exe --shutdown"}, nil
@@ -186,7 +194,7 @@ func TestInitWSLPrintsRestartWarning(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--wsl"}, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "btrfs"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	_ = w.Close()
@@ -206,6 +214,13 @@ func withInitWSLStub(t *testing.T, fn func(opts wslInitOptions) (wslInitResult, 
 	t.Cleanup(func() {
 		initWSLFn = prev
 	})
+}
+
+func skipIfNotWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		t.Skip("WSL init is Windows-specific")
+	}
 }
 
 func loadConfigMap(t *testing.T, path string) map[string]any {

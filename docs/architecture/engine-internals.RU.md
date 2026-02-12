@@ -84,8 +84,14 @@ flowchart LR
 - Строит упорядоченный список шагов prepare из `psql` скриптов.
 - Каждый шаг хешируется (специфично для системы скриптов) для cache key: `engine/version/base/step_hash/params`.
 - На выходе цепочка шагов, а не head/tail; промежуточные состояния могут материализоваться для cache reuse.
-- Вход prepare также дает стабильный fingerprint состояния:
-  `state_id = hash(prepare_kind + base_image_id_resolved + normalized_args + normalized_input_hashes + engine_version)`.
+- Вход prepare также дает стабильный fingerprint состояния. Для контентных
+  планнеров (psql/lb) этот fingerprint строится из **нормализованного контента**
+  и **родительского state id** (task input). Для первого шага родителем является
+  id базового образа, для последующих — id предыдущего состояния:
+  `state_id = hash(prepare_kind + parent_state_id + normalized_content + engine_version)`.
+- Контентные планнеры захватывают **read-lock** на всех разрешенных входах
+  на время каждого task планирования/выполнения. Если lock нельзя получить,
+  task завершается ошибкой, чтобы избежать plan drift.
 
 ### 1.5 Исполнитель prepare
 

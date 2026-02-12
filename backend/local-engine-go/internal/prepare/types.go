@@ -1,11 +1,16 @@
 package prepare
 
 type Request struct {
-	PrepareKind      string   `json:"prepare_kind"`
-	ImageID          string   `json:"image_id"`
-	PsqlArgs         []string `json:"psql_args"`
-	Stdin            *string  `json:"stdin,omitempty"`
-	PlanOnly         bool     `json:"plan_only,omitempty"`
+	PrepareKind       string            `json:"prepare_kind"`
+	ImageID           string            `json:"image_id"`
+	PsqlArgs          []string          `json:"psql_args"`
+	LiquibaseArgs     []string          `json:"liquibase_args,omitempty"`
+	LiquibaseExec     string            `json:"liquibase_exec,omitempty"`
+	LiquibaseExecMode string            `json:"liquibase_exec_mode,omitempty"`
+	LiquibaseEnv      map[string]string `json:"liquibase_env,omitempty"`
+	WorkDir           string            `json:"work_dir,omitempty"`
+	Stdin             *string           `json:"stdin,omitempty"`
+	PlanOnly          bool              `json:"plan_only,omitempty"`
 }
 
 type Accepted struct {
@@ -76,6 +81,9 @@ type PlanTask struct {
 	OutputStateID   string     `json:"output_state_id,omitempty"`
 	Cached          *bool      `json:"cached,omitempty"`
 	InstanceMode    string     `json:"instance_mode,omitempty"`
+	ChangesetID     string     `json:"changeset_id,omitempty"`
+	ChangesetAuthor string     `json:"changeset_author,omitempty"`
+	ChangesetPath   string     `json:"changeset_path,omitempty"`
 }
 
 type TaskEntry struct {
@@ -91,6 +99,9 @@ type TaskEntry struct {
 	OutputStateID   string     `json:"output_state_id,omitempty"`
 	Cached          *bool      `json:"cached,omitempty"`
 	InstanceMode    string     `json:"instance_mode,omitempty"`
+	ChangesetID     string     `json:"changeset_id,omitempty"`
+	ChangesetAuthor string     `json:"changeset_author,omitempty"`
+	ChangesetPath   string     `json:"changeset_path,omitempty"`
 }
 
 type ErrorResponse struct {

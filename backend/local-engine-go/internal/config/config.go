@@ -19,13 +19,13 @@ var (
 )
 
 var (
-	osMkdirAll  = os.MkdirAll
+	osMkdirAll   = os.MkdirAll
 	osCreateTemp = os.CreateTemp
-	osRename    = os.Rename
-	osOpen      = os.Open
-	fileWrite   = func(file *os.File, data []byte) (int, error) { return file.Write(data) }
-	fileSync    = func(file *os.File) error { return file.Sync() }
-	fileClose   = func(file *os.File) error { return file.Close() }
+	osRename     = os.Rename
+	osOpen       = os.Open
+	fileWrite    = func(file *os.File, data []byte) (int, error) { return file.Write(data) }
+	fileSync     = func(file *os.File) error { return file.Sync() }
+	fileClose    = func(file *os.File) error { return file.Close() }
 )
 
 type Value struct {
@@ -89,6 +89,9 @@ func NewManager(opts Options) (*Manager, error) {
 
 func DefaultConfig() map[string]any {
 	return map[string]any{
+		"log": map[string]any{
+			"level": "debug",
+		},
 		"snapshot": map[string]any{
 			"backend": "auto",
 		},
@@ -105,6 +108,16 @@ func DefaultSchema() map[string]any {
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
 		"type":    "object",
 		"properties": map[string]any{
+			"log": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"level": map[string]any{
+						"type": []any{"string", "null"},
+						"enum": []any{"debug", "info", "warn", "error", nil},
+					},
+				},
+				"additionalProperties": true,
+			},
 			"snapshot": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -264,6 +277,21 @@ func validateValue(path string, value any) error {
 		}
 		switch str {
 		case "auto", "overlay", "btrfs", "copy":
+			return nil
+		default:
+			return ErrInvalidValue
+		}
+	}
+	if path == "log.level" {
+		if value == nil {
+			return nil
+		}
+		str, ok := value.(string)
+		if !ok {
+			return ErrInvalidValue
+		}
+		switch strings.ToLower(strings.TrimSpace(str)) {
+		case "debug", "info", "warn", "error":
 			return nil
 		default:
 			return ErrInvalidValue

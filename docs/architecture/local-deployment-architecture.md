@@ -154,11 +154,11 @@ Liquibase integration is planned; provider selection details live in
 - All persistent data directories are mounted from host-managed storage
 - Engine validates Docker availability on start; CLI surfaces actionable errors if missing/denied
 
-On Windows:
+On Windows (when btrfs is selected):
 
 - Docker runs inside WSL2
 - State store lives inside the Linux filesystem (btrfs loopback volume)
-- `sqlrs init --wsl` installs a systemd mount unit inside the selected distro
+- `sqlrs init local --snapshot btrfs` installs a systemd mount unit inside the selected distro
   so the btrfs volume is visible to Docker and all child processes
 - Engine verifies the mount is active before touching the store
 
@@ -166,11 +166,12 @@ On Windows:
 
 ## 7. Windows / WSL2 Considerations
 
-- Engine and StateFS run inside WSL2
+- When btrfs is selected, engine and StateFS run inside WSL2
+- When btrfs is not selected, the engine may run on the Windows host (copy backend)
 - CLI may run on Windows host or inside WSL2
-- Communication via localhost forwarding
-- Engine writes `engine.json` to the Windows state directory and receives that path via `/mnt/...`
-- Engine verifies the systemd mount for `SQLRS_STATE_STORE` at startup
+- Communication via localhost forwarding when the engine runs in WSL2
+- Engine writes `engine.json` to the Windows state directory and receives that path via `/mnt/...` (WSL path translation)
+- Engine verifies the systemd mount for `SQLRS_STATE_STORE` at startup (WSL + btrfs only)
 - StateFS backend may fall back to copy-based strategy
 
 ---

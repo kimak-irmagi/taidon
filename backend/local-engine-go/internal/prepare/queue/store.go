@@ -34,6 +34,9 @@ type TaskRecord struct {
 	OutputStateID   *string
 	Cached          *bool
 	InstanceMode    *string
+	ChangesetID     *string
+	ChangesetAuthor *string
+	ChangesetPath   *string
 	StartedAt       *string
 	FinishedAt      *string
 	ErrorJSON       *string
@@ -68,6 +71,9 @@ type TaskUpdate struct {
 	StartedAt  *string
 	FinishedAt *string
 	ErrorJSON  *string
+	TaskHash   *string
+	OutputStateID *string
+	Cached     *bool
 }
 
 type Store interface {

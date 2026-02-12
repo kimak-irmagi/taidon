@@ -16,6 +16,8 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
+var sqlOpenFn = sql.Open
+
 func Open(path string) (*SQLiteStore, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("sqlite path is empty")
@@ -23,7 +25,7 @@ func Open(path string) (*SQLiteStore, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := sqlOpenFn("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
@@ -267,8 +269,8 @@ func (s *SQLiteStore) ReplaceTasks(ctx context.Context, jobID string, tasks []Ta
 		return nil
 	}
 	query := `
-INSERT INTO prepare_tasks (job_id, task_id, position, type, status, planner_kind, input_kind, input_id, image_id, resolved_image_id, task_hash, output_state_id, cached, instance_mode, started_at, finished_at, error_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT INTO prepare_tasks (job_id, task_id, position, type, status, planner_kind, input_kind, input_id, image_id, resolved_image_id, task_hash, output_state_id, cached, instance_mode, changeset_id, changeset_author, changeset_path, started_at, finished_at, error_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	for _, task := range tasks {
 		_, err := s.db.ExecContext(ctx, query,
 			task.JobID,
@@ -285,6 +287,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			nullString(task.OutputStateID),
 			nullBool(task.Cached),
 			nullString(task.InstanceMode),
+			nullString(task.ChangesetID),
+			nullString(task.ChangesetAuthor),
+			nullString(task.ChangesetPath),
 			nullString(task.StartedAt),
 			nullString(task.FinishedAt),
 			nullString(task.ErrorJSON),
@@ -299,7 +304,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 func (s *SQLiteStore) ListTasks(ctx context.Context, jobID string) ([]TaskRecord, error) {
 	query := strings.Builder{}
 	query.WriteString(`
-SELECT job_id, task_id, position, type, status, planner_kind, input_kind, input_id, image_id, resolved_image_id, task_hash, output_state_id, cached, instance_mode, started_at, finished_at, error_json
+SELECT job_id, task_id, position, type, status, planner_kind, input_kind, input_id, image_id, resolved_image_id, task_hash, output_state_id, cached, instance_mode, changeset_id, changeset_author, changeset_path, started_at, finished_at, error_json
 FROM prepare_tasks
 WHERE 1=1`)
 	args := []any{}
@@ -346,6 +351,22 @@ func (s *SQLiteStore) UpdateTask(ctx context.Context, jobID string, taskID strin
 	if update.ErrorJSON != nil {
 		sets = append(sets, "error_json = ?")
 		args = append(args, *update.ErrorJSON)
+	}
+	if update.TaskHash != nil {
+		sets = append(sets, "task_hash = ?")
+		args = append(args, *update.TaskHash)
+	}
+	if update.OutputStateID != nil {
+		sets = append(sets, "output_state_id = ?")
+		args = append(args, *update.OutputStateID)
+	}
+	if update.Cached != nil {
+		sets = append(sets, "cached = ?")
+		if *update.Cached {
+			args = append(args, 1)
+		} else {
+			args = append(args, 0)
+		}
 	}
 	if len(sets) == 0 {
 		return nil
@@ -421,6 +442,9 @@ func initDB(db *sql.DB) error {
 	if err := ensureTaskImageColumns(db); err != nil {
 		return err
 	}
+	if err := ensureTaskChangesetColumns(db); err != nil {
+		return err
+	}
 	if err := ensureJobSignatureColumn(db); err != nil {
 		return err
 	}
@@ -438,6 +462,35 @@ func ensureTaskImageColumns(db *sql.DB) error {
 		}
 	}
 	if _, err := db.Exec("ALTER TABLE prepare_tasks ADD COLUMN resolved_image_id TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureTaskChangesetColumns(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE prepare_tasks ADD COLUMN changeset_id TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	if _, err := db.Exec("ALTER TABLE prepare_tasks ADD COLUMN changeset_author TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	if _, err := db.Exec("ALTER TABLE prepare_tasks ADD COLUMN changeset_path TEXT"); err != nil {
 		if strings.Contains(err.Error(), "duplicate column name") {
 			return nil
 		} else if strings.Contains(err.Error(), "no such table") {
@@ -517,6 +570,9 @@ func scanTask(scanner interface {
 	var outputStateID sql.NullString
 	var cached sql.NullInt64
 	var instanceMode sql.NullString
+	var changesetID sql.NullString
+	var changesetAuthor sql.NullString
+	var changesetPath sql.NullString
 	var startedAt sql.NullString
 	var finishedAt sql.NullString
 	var errorJSON sql.NullString
@@ -535,6 +591,9 @@ func scanTask(scanner interface {
 		&outputStateID,
 		&cached,
 		&instanceMode,
+		&changesetID,
+		&changesetAuthor,
+		&changesetPath,
 		&startedAt,
 		&finishedAt,
 		&errorJSON,
@@ -550,6 +609,9 @@ func scanTask(scanner interface {
 	record.OutputStateID = strPtr(outputStateID)
 	record.Cached = boolPtr(cached)
 	record.InstanceMode = strPtr(instanceMode)
+	record.ChangesetID = strPtr(changesetID)
+	record.ChangesetAuthor = strPtr(changesetAuthor)
+	record.ChangesetPath = strPtr(changesetPath)
 	record.StartedAt = strPtr(startedAt)
 	record.FinishedAt = strPtr(finishedAt)
 	record.ErrorJSON = strPtr(errorJSON)

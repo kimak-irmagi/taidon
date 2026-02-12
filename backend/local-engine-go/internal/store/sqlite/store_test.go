@@ -370,7 +370,7 @@ func seedStore(t *testing.T, st *Store, now time.Time) {
 
 	exec(t, st, `INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		"state-1", "state-1", "image-1", "liquibase", "a=1", created, int64(1024), nil)
+		"state-1", "state-1", "image-1", "lb", "a=1", created, int64(1024), nil)
 	exec(t, st, `INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		"state-2", "state-2", "image-2", "sql", "b=2", created, nil, nil)

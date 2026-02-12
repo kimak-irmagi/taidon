@@ -18,6 +18,7 @@ import (
 type RunOptions struct {
 	ProfileName     string
 	Mode            string
+	AuthToken       string
 	Endpoint        string
 	Autostart       bool
 	DaemonPath      string
@@ -27,7 +28,7 @@ type RunOptions struct {
 	EngineStatePath string
 	EngineStoreDir  string
 	WSLVHDXPath     string
-	WSLMountUnit  string
+	WSLMountUnit    string
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
@@ -125,9 +126,10 @@ func DeleteInstanceDetailed(ctx context.Context, opts RunOptions, instanceID str
 func runClient(ctx context.Context, opts RunOptions) (*client.Client, error) {
 	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
 	endpoint := strings.TrimSpace(opts.Endpoint)
-	authToken := ""
+	authToken := strings.TrimSpace(opts.AuthToken)
 
 	if mode == "local" {
+		authToken = ""
 		if endpoint == "" {
 			endpoint = "auto"
 		}
@@ -145,7 +147,7 @@ func runClient(ctx context.Context, opts RunOptions) (*client.Client, error) {
 				EngineStatePath: opts.EngineStatePath,
 				EngineStoreDir:  opts.EngineStoreDir,
 				WSLVHDXPath:     opts.WSLVHDXPath,
-				WSLMountUnit:  opts.WSLMountUnit,
+				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
 				StartupTimeout:  opts.StartupTimeout,

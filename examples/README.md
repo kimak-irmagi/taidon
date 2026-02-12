@@ -1,7 +1,7 @@
 # SQL Examples
 
-This directory contains **ready-to-run SQL datasets** used as examples and test baselines.
-The SQL files themselves are **fetched from upstream open-source projects on demand**
+This directory contains **ready-to-run SQL datasets** and **Liquibase changelog examples**
+used as examples and test baselines. The files themselves are **fetched from upstream open-source projects on demand**
 and are **not fully vendored** in the repository.
 
 ## What’s included
@@ -16,6 +16,14 @@ Currently supported example datasets:
 
 - **Flights / Airlines (PostgresPro demo DB)**  
   Realistic airline booking dataset from Postgres Professional.
+
+Liquibase examples (open-source projects):
+
+- **JHipster Sample App (Liquibase XML)**  
+  Multi-file changelog set with includes and constraints.
+
+- **Liquibase GitHub Action Example (formatted SQL)**  
+  Single-file changelog in formatted SQL style.
 
 All sources are listed with licenses and upstream links in  
 [`scripts/external/NOTICE.md`](scripts/external/NOTICE.md).
@@ -37,12 +45,30 @@ examples/
     3-postgres-sakila-user.sql
   flights/
     demo-small-en-20170815.sql
+  liquibase/
+    jhipster-sample-app/
+      config/
+        liquibase/
+          master.xml
+          changelog/
+            00000000000000_initial_schema.xml
+            20150805124838_added_entity_BankAccount.xml
+            20150805124936_added_entity_Label.xml
+            20150805125054_added_entity_Operation.xml
+            20150805124838_added_entity_constraints_BankAccount.xml
+            20150805125054_added_entity_constraints_Operation.xml
+          data/
+            authority.csv
+            user.csv
+            user_authority.csv
+    liquibase-github-action-example/
+      samplechangelog.h2.sql
 
 The listed files under examples/ are generated artifacts and may be overwritten by re-fetching.
 
-## Fetching the SQL files
+## Fetching the example files
 
-The actual SQL files are downloaded using the fetch script:
+The SQL and Liquibase files are downloaded using the fetch script:
 
 ```bash
 pnpm install
@@ -51,7 +77,7 @@ pnpm fetch:sql
 
 This will:
 
-1. Download SQL files from upstream sources
+1. Download files from upstream sources
 2. Verify integrity using sha256
 3. Place results directly into `./examples/...`
 
@@ -114,7 +140,7 @@ docker run --rm -it \
 
 ## Running via `sqlrs` (recommended)
 
-hese examples are designed to be used as `--prepare` inputs for `sqlrs`.
+These examples are designed to be used as `--prepare` inputs for `sqlrs`.
 
 Example:
 

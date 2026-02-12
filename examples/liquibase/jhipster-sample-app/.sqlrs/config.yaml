@@ -1,0 +1,33 @@
+client:
+    output: human
+    retries: 1
+    timeout: 30s
+dbms:
+    image: postgres:17
+defaultProfile: local
+engine:
+    storePath: C:\Users\Zlygo\AppData\Local\sqlrs\store\btrfs.vhdx
+    wsl:
+        distro: Ubuntu
+        mode: auto
+        mount:
+            device: /dev/sdh2
+            deviceUUID: 04ace695-b190-4bcb-8d1f-fa1f85d4a807
+            fstype: btrfs
+            unit: home-sinclair-.local-state-sqlrs-store.mount
+        stateDir: /home/sinclair/.local/state/sqlrs/store
+liquibase:
+    exec: C:\Program Files\liquibase\liquibase.bat
+    exec_mode: windows-bat
+orchestrator:
+    daemonPath: ../../../../dist/bin/sqlrs-engine-linux-amd64
+    idleTimeout: 120s
+    runDir: ${StateDir}/run
+    startupTimeout: 20s
+profiles:
+    local:
+        auth:
+            mode: fileToken
+        autostart: true
+        endpoint: auto
+        mode: local

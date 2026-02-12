@@ -165,6 +165,16 @@ func TestRunPrepareUnknownKind(t *testing.T) {
 	}
 }
 
+func TestRunPrepareLiquibaseRequiresCommand(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	err := Run([]string{"prepare:lb"})
+	if err == nil || !strings.Contains(err.Error(), "liquibase command is required") {
+		t.Fatalf("expected liquibase command error, got %v", err)
+	}
+}
+
 func TestRunPlanMissingKind(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
@@ -182,6 +192,16 @@ func TestRunPlanUnknownKind(t *testing.T) {
 	err := Run([]string{"plan:liquibase"})
 	if err == nil || !strings.Contains(err.Error(), "unknown plan kind") {
 		t.Fatalf("expected unknown plan kind error, got %v", err)
+	}
+}
+
+func TestRunPlanLiquibaseRequiresCommand(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	err := Run([]string{"plan:lb"})
+	if err == nil || !strings.Contains(err.Error(), "liquibase command is required") {
+		t.Fatalf("expected liquibase command error, got %v", err)
 	}
 }
 

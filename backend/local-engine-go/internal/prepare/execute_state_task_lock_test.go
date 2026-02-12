@@ -45,18 +45,20 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 		t.Fatalf("prepareRequest: %v", err)
 	}
 
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
 
 	firstDone := make(chan *ErrorResponse, 1)
 	go func() {
-		firstDone <- mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+		_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+		firstDone <- errResp
 	}()
 
 	select {
@@ -67,7 +69,8 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 
 	secondDone := make(chan *ErrorResponse, 1)
 	go func() {
-		secondDone <- mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+		_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+		secondDone <- errResp
 	}()
 
 	select {
@@ -94,7 +97,7 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 		t.Fatalf("expected single state, got %+v", store.states)
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, outputID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -116,18 +119,19 @@ func TestExecuteStateTaskCreatesBuildMarker(t *testing.T) {
 		t.Fatalf("prepareRequest: %v", err)
 	}
 
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, outputID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -151,16 +155,17 @@ func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 		t.Fatalf("prepareRequest: %v", err)
 	}
 
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, outputID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -175,7 +180,7 @@ func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 		t.Fatalf("write marker: %v", err)
 	}
 
-	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
 	if len(snap.snapshotCalls) != 1 {
@@ -228,16 +233,17 @@ func TestExecuteStateTaskCleansNonSubvolumeStateDirForBtrfs(t *testing.T) {
 		t.Fatalf("prepareRequest: %v", err)
 	}
 
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, outputID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -249,7 +255,7 @@ func TestExecuteStateTaskCleansNonSubvolumeStateDirForBtrfs(t *testing.T) {
 		t.Fatalf("write stale: %v", err)
 	}
 
-	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
 	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
@@ -274,16 +280,17 @@ func TestExecuteStateTaskDestroysSubvolumeStateDirForBtrfs(t *testing.T) {
 		t.Fatalf("prepareRequest: %v", err)
 	}
 
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
 	task := taskState{
 		PlanTask: PlanTask{
 			TaskID:        "execute-0",
 			Type:          "state_execute",
-			OutputStateID: "state-1",
+			OutputStateID: outputID,
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, task.OutputStateID, mgr.statefs)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, outputID, mgr.statefs)
 	if err != nil {
 		t.Fatalf("resolveStatePaths: %v", err)
 	}
@@ -291,7 +298,7 @@ func TestExecuteStateTaskDestroysSubvolumeStateDirForBtrfs(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	if errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
+	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
 	if len(snap.removeCalls) == 0 {

@@ -154,11 +154,11 @@ Engine выполняет `psql` внутри DB-контейнера через
 - Все persistent data directories монтируются из host-managed хранилища
 - Engine проверяет доступность Docker на старте; CLI выводит понятные ошибки, если Docker недоступен
 
-На Windows:
+На Windows (когда выбран btrfs):
 
 - Docker работает внутри WSL2
 - State store живет внутри Linux файловой системы (btrfs loopback)
-- `sqlrs init --wsl` устанавливает systemd mount unit внутри выбранного дистрибутива,
+- `sqlrs init local --snapshot btrfs` устанавливает systemd mount unit внутри выбранного дистрибутива,
   чтобы btrfs-том был виден Docker и всем дочерним процессам
 - Engine проверяет активность маунта перед работой со state store
 
@@ -166,11 +166,12 @@ Engine выполняет `psql` внутри DB-контейнера через
 
 ## 7. Особенности Windows / WSL2
 
-- Engine и StateFS работают внутри WSL2
+- Когда выбран btrfs, engine и StateFS работают внутри WSL2
+- Когда btrfs не выбран, engine может работать на Windows host (copy backend)
 - CLI может работать на Windows host или внутри WSL2
-- Коммуникация через localhost forwarding
-- Engine пишет `engine.json` в Windows state dir и получает путь через `/mnt/...`
-- Engine проверяет systemd-маунт `SQLRS_STATE_STORE` при старте
+- Коммуникация через localhost forwarding, когда engine работает в WSL2
+- Engine пишет `engine.json` в Windows state dir и получает путь через `/mnt/...` (WSL path translation)
+- Engine проверяет systemd-маунт `SQLRS_STATE_STORE` при старте (только WSL + btrfs)
 - StateFS backend может откатываться на copy-based стратегию
 
 ---

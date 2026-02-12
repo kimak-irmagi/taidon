@@ -1,7 +1,7 @@
 # SQL-примеры
 
-Этот каталог содержит **готовые к запуску SQL-датасеты**, используемые как примеры и базовые тесты.
-Сами SQL-файлы **подтягиваются из внешних open-source проектов по требованию**
+Этот каталог содержит **готовые к запуску SQL-датасеты** и **примеры Liquibase changelog-ов**,
+используемые как примеры и базовые тесты. Сами файлы **подтягиваются из внешних open-source проектов по требованию**
 и **не полностью вендорятся** в репозиторий.
 
 ## Что включено
@@ -16,6 +16,14 @@
 
 - **Flights / Airlines (PostgresPro demo DB)**  
   Реалистичный датасет бронирований авиабилетов от Postgres Professional.
+
+Примеры Liquibase (open-source проекты):
+
+- **JHipster Sample App (Liquibase XML)**  
+  Набор changelog-ов с include и constraints.
+
+- **Liquibase GitHub Action Example (formatted SQL)**  
+  Однофайловый changelog в формате formatted SQL.
 
 Все источники с лицензиями и ссылками перечислены в  
 [`scripts/external/NOTICE.RU.md`](scripts/external/NOTICE.RU.md).
@@ -37,12 +45,30 @@ examples/
     3-postgres-sakila-user.sql
   flights/
     demo-small-en-20170815.sql
+  liquibase/
+    jhipster-sample-app/
+      config/
+        liquibase/
+          master.xml
+          changelog/
+            00000000000000_initial_schema.xml
+            20150805124838_added_entity_BankAccount.xml
+            20150805124936_added_entity_Label.xml
+            20150805125054_added_entity_Operation.xml
+            20150805124838_added_entity_constraints_BankAccount.xml
+            20150805125054_added_entity_constraints_Operation.xml
+          data/
+            authority.csv
+            user.csv
+            user_authority.csv
+    liquibase-github-action-example/
+      samplechangelog.h2.sql
 
 Перечисленные файлы в examples/ являются сгенерированными артефактами и могут быть перезаписаны при повторной загрузке.
 
-## Загрузка SQL-файлов
+## Загрузка файлов примеров
 
-SQL-файлы скачиваются с помощью скрипта:
+SQL- и Liquibase-файлы скачиваются с помощью скрипта:
 
 ```bash
 pnpm install
@@ -51,7 +77,7 @@ pnpm fetch:sql
 
 Он:
 
-1. Скачивает SQL-файлы из источников
+1. Скачивает файлы из источников
 2. Проверяет целостность по sha256
 3. Складывает результаты прямо в `./examples/...`
 

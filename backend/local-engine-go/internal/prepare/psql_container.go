@@ -16,6 +16,8 @@ type scriptMount struct {
 	ContainerRoot string
 }
 
+var isWithinFn = isWithin
+
 func scriptMountForFiles(paths []string) (*scriptMount, error) {
 	if len(paths) == 0 {
 		return nil, nil
@@ -116,7 +118,7 @@ func mapScriptPath(value string, mount *scriptMount) (string, error) {
 	if !filepath.IsAbs(value) {
 		return "", fmt.Errorf("file path must be absolute: %s", value)
 	}
-	if !isWithin(mount.HostRoot, value) {
+	if !isWithinFn(mount.HostRoot, value) {
 		return "", fmt.Errorf("file path is outside script root: %s", value)
 	}
 	rel, err := filepath.Rel(mount.HostRoot, value)
@@ -134,7 +136,7 @@ func commonDir(paths []string) (string, error) {
 	root := filepath.Dir(filepath.Clean(paths[0]))
 	for _, p := range paths[1:] {
 		dir := filepath.Dir(filepath.Clean(p))
-		for !isWithin(root, dir) {
+		for !isWithinFn(root, dir) {
 			parent := filepath.Dir(root)
 			if parent == root {
 				return "", fmt.Errorf("paths do not share a common root")

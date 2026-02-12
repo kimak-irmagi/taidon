@@ -24,8 +24,11 @@ import (
 const defaultTimeout = 30 * time.Second
 const defaultStartupTimeout = 5 * time.Second
 
+var parseArgsFn = cli.ParseArgs
+var getwdFn = os.Getwd
+
 func Run(args []string) error {
-	opts, commands, err := cli.ParseArgs(args)
+	opts, commands, err := parseArgsFn(args)
 	if err != nil {
 		if errors.Is(err, cli.ErrHelp) {
 			cli.PrintUsage(os.Stdout)
@@ -35,7 +38,7 @@ func Run(args []string) error {
 		return err
 	}
 
-	cwd, err := os.Getwd()
+	cwd, err := getwdFn()
 	if err != nil {
 		return err
 	}
@@ -91,6 +94,8 @@ func Run(args []string) error {
 	if mode != "local" && mode != "remote" {
 		return fmt.Errorf("invalid mode: %s", mode)
 	}
+
+	authToken := resolveAuthToken(profile.Auth)
 
 	output := strings.ToLower(strings.TrimSpace(cfg.Client.Output))
 	if opts.Output != "" {
@@ -150,6 +155,7 @@ func Run(args []string) error {
 			runOpts := cli.LsOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -174,6 +180,7 @@ func Run(args []string) error {
 			runOpts := cli.RmOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -195,6 +202,7 @@ func Run(args []string) error {
 			runOpts := cli.PrepareOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -222,13 +230,11 @@ func Run(args []string) error {
 				return nil
 			}
 			prepared = &result
-		case "plan:psql":
-			if len(commands) > 1 {
-				return fmt.Errorf("plan cannot be combined with other commands")
-			}
+		case "prepare:lb":
 			runOpts := cli.PrepareOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -245,11 +251,72 @@ func Run(args []string) error {
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
-			return runPlan(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output)
+			if len(commands) == 1 {
+				return runPrepareLiquibase(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			}
+			result, handled, err := prepareResultLiquibase(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			if err != nil {
+				return err
+			}
+			if handled {
+				return nil
+			}
+			prepared = &result
+		case "plan:psql":
+			if len(commands) > 1 {
+				return fmt.Errorf("plan cannot be combined with other commands")
+			}
+			runOpts := cli.PrepareOptions{
+				ProfileName:     profileName,
+				Mode:            mode,
+				AuthToken:       authToken,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:    engineWSLMountUnit,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
+			}
+			return runPlanKind(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output, "psql")
+		case "plan:lb":
+			if len(commands) > 1 {
+				return fmt.Errorf("plan cannot be combined with other commands")
+			}
+			runOpts := cli.PrepareOptions{
+				ProfileName:     profileName,
+				Mode:            mode,
+				AuthToken:       authToken,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:    engineWSLMountUnit,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
+			}
+			return runPlanKind(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output, "lb")
 		case "run:psql":
 			runOpts := cli.RunOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -296,6 +363,7 @@ func Run(args []string) error {
 			runOpts := cli.RunOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -348,6 +416,7 @@ func Run(args []string) error {
 			statusOpts := cli.StatusOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -392,6 +461,7 @@ func Run(args []string) error {
 			runOpts := cli.ConfigOptions{
 				ProfileName:     profileName,
 				Mode:            mode,
+				AuthToken:       authToken,
 				Endpoint:        profile.Endpoint,
 				Autostart:       profile.Autostart,
 				DaemonPath:      daemonPath,
@@ -541,7 +611,7 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 	mountUnit := strings.TrimSpace(cfg.Engine.WSL.Mount.Unit)
 	mountFSType := strings.TrimSpace(cfg.Engine.WSL.Mount.FSType)
 	if distro == "" {
-		distros, err := listWSLDistros()
+		distros, err := listWSLDistrosFn()
 		if err != nil {
 			if mode == "required" {
 				return "", "", "", "", "", "", "", fmt.Errorf("WSL unavailable: %v", err)
@@ -563,7 +633,7 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 		return daemonPath, "", "", "", "", "", "", nil
 	}
 	if mountUnit == "" && mode == "required" {
-		return "", "", "", "", "", "", "", fmt.Errorf("WSL configuration is missing mount unit (run sqlrs init --wsl)")
+		return "", "", "", "", "", "", "", fmt.Errorf("WSL configuration is missing mount unit (run sqlrs init local --snapshot btrfs)")
 	}
 	if mountFSType == "" && mountUnit != "" {
 		mountFSType = "btrfs"
@@ -594,6 +664,15 @@ func resolveWSLSettings(cfg config.Config, dirs paths.Dirs, daemonPath string) (
 	return wslDaemonPath, runDir, wslStatePath, stateDir, distro, mountUnit, mountFSType, nil
 }
 
+func resolveAuthToken(auth config.AuthConfig) string {
+	if env := strings.TrimSpace(auth.TokenEnv); env != "" {
+		if value := strings.TrimSpace(os.Getenv(env)); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(auth.Token)
+}
+
 func windowsToWSLPath(value string) (string, error) {
 	cleaned := strings.TrimSpace(value)
 	if cleaned == "" {
@@ -602,12 +681,24 @@ func windowsToWSLPath(value string) (string, error) {
 	if strings.HasPrefix(cleaned, "/") {
 		return cleaned, nil
 	}
-	vol := filepath.VolumeName(cleaned)
-	if vol == "" {
-		return "", fmt.Errorf("path is not absolute: %s", cleaned)
+	drive := ""
+	rest := ""
+	if len(cleaned) >= 2 && cleaned[1] == ':' {
+		letter := cleaned[0]
+		if (letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z') {
+			drive = strings.ToLower(cleaned[:1])
+			rest = cleaned[2:]
+		}
 	}
-	drive := strings.TrimSuffix(strings.ToLower(vol), ":")
-	rest := strings.TrimPrefix(cleaned[len(vol):], string(filepath.Separator))
+	if drive == "" {
+		vol := filepath.VolumeName(cleaned)
+		if vol == "" {
+			return "", fmt.Errorf("path is not absolute: %s", cleaned)
+		}
+		drive = strings.TrimSuffix(strings.ToLower(vol), ":")
+		rest = cleaned[len(vol):]
+	}
+	rest = strings.TrimLeft(rest, `\/`)
 	rest = strings.ReplaceAll(rest, "\\", "/")
 	if rest == "" {
 		return fmt.Sprintf("/mnt/%s", drive), nil

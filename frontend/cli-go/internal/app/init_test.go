@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -103,6 +105,7 @@ func TestInitWritesOverrides(t *testing.T) {
 
 	absEngine := filepath.Join(workspace, "bin", "sqlrs-engine")
 	err := runInit(&out, workspace, "", []string{
+		"local",
 		"--engine", absEngine,
 		"--shared-cache",
 	}, false)
@@ -143,7 +146,7 @@ func TestInitRelativeEnginePathWithinWorkspace(t *testing.T) {
 	var out bytes.Buffer
 
 	relEngine := filepath.Join("bin", "sqlrs-engine")
-	err := runInit(&out, workspace, "", []string{"--engine", relEngine}, false)
+	err := runInit(&out, workspace, "", []string{"local", "--engine", relEngine}, false)
 	if err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
@@ -182,6 +185,7 @@ func TestInitRelativeEnginePathOutsideWorkspace(t *testing.T) {
 
 	relEngine := filepath.Join("bin", "sqlrs-engine")
 	err := runInit(&out, outside, "", []string{
+		"local",
 		"--workspace", workspace,
 		"--engine", relEngine,
 	}, false)
@@ -232,8 +236,8 @@ func TestParseInitFlagsInvalidArgs(t *testing.T) {
 	}
 }
 
-func TestParseInitFlagsStoreSizeRequiresWSL(t *testing.T) {
-	_, _, err := parseInitFlags([]string{"--store-size", "100GB"}, "")
+func TestParseInitFlagsStoreSizeRequiresImage(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"local", "--snapshot", "btrfs", "--store-size", "100GB"}, "")
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
 		t.Fatalf("expected ExitError code 64, got %v", err)
@@ -241,12 +245,18 @@ func TestParseInitFlagsStoreSizeRequiresWSL(t *testing.T) {
 }
 
 func TestParseInitFlagsStoreSizeParses(t *testing.T) {
-	opts, _, err := parseInitFlags([]string{"--wsl", "--store-size", "140GB"}, "")
+	if runtime.GOOS == "darwin" {
+		t.Skip("btrfs snapshots are not supported on macOS")
+	}
+	opts, _, err := parseInitFlags([]string{"local", "--snapshot", "btrfs", "--store", "image", "--store-size", "140GB"}, "")
 	if err != nil {
 		t.Fatalf("parseInitFlags: %v", err)
 	}
 	if opts.StoreSizeGB != 140 {
 		t.Fatalf("expected store size 140, got %d", opts.StoreSizeGB)
+	}
+	if opts.StoreType != "image" {
+		t.Fatalf("expected store type image, got %q", opts.StoreType)
 	}
 }
 
@@ -268,7 +278,7 @@ func TestRunInitExistingWorkspaceWithoutConfig(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", nil, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !strings.Contains(out.String(), "Workspace already initialized") {
@@ -329,7 +339,7 @@ func TestRunInitExistingWorkspaceWithValidConfigDryRun(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, workspace, "", []string{"--dry-run"}, false); err != nil {
+	if err := runInit(&out, workspace, "", []string{"local", "--dry-run"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !strings.Contains(out.String(), "Workspace already initialized") || !strings.Contains(out.String(), "dry-run") {
@@ -348,7 +358,7 @@ func TestRunInitForceNestedWorkspace(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runInit(&out, child, "", []string{"--force"}, false); err != nil {
+	if err := runInit(&out, child, "", []string{"local", "--force"}, false); err != nil {
 		t.Fatalf("runInit: %v", err)
 	}
 	if !dirExists(filepath.Join(child, ".sqlrs")) {
@@ -441,6 +451,180 @@ func TestParseStoreSizeGBInvalidValue(t *testing.T) {
 func TestParseStoreSizeGBZero(t *testing.T) {
 	if _, err := parseStoreSizeGB("0GB"); err == nil {
 		t.Fatalf("expected error for zero size")
+	}
+}
+
+func TestParseInitFlagsStoreDeviceRequiresPath(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"local", "--snapshot", "btrfs", "--store", "device"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestParseInitFlagsOverlayRejectsImageStore(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"local", "--snapshot", "overlay", "--store", "image"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestInitWritesSnapshotBackend(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("btrfs snapshots are not supported on macOS")
+	}
+	if runtime.GOOS == "windows" {
+		withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
+			return wslInitResult{UseWSL: true}, nil
+		})
+	}
+	workspace := t.TempDir()
+	var out bytes.Buffer
+
+	if err := runInit(&out, workspace, "", []string{"local", "--snapshot", "btrfs"}, false); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	configPath := filepath.Join(workspace, ".sqlrs", "config.yaml")
+	raw := loadConfigMap(t, configPath)
+	if got := nestedString(raw, "snapshot", "backend"); got != "btrfs" {
+		t.Fatalf("expected snapshot.backend btrfs, got %q", got)
+	}
+}
+
+func TestInitRemoteRequiresURL(t *testing.T) {
+	workspace := t.TempDir()
+	var out bytes.Buffer
+
+	err := runInit(&out, workspace, "", []string{"remote", "--token", "t"}, false)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestInitRemoteRequiresToken(t *testing.T) {
+	workspace := t.TempDir()
+	var out bytes.Buffer
+
+	err := runInit(&out, workspace, "", []string{"remote", "--url", "https://example.com"}, false)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestInitRemoteWritesProfile(t *testing.T) {
+	workspace := t.TempDir()
+	var out bytes.Buffer
+
+	if err := runInit(&out, workspace, "", []string{
+		"remote",
+		"--url", "https://engine.example.com",
+		"--token", "token-123",
+	}, false); err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+
+	configPath := filepath.Join(workspace, ".sqlrs", "config.yaml")
+	raw := loadConfigMap(t, configPath)
+	if got := nestedString(raw, "defaultProfile"); got != "remote" {
+		t.Fatalf("expected defaultProfile remote, got %q", got)
+	}
+	if got := nestedString(raw, "profiles", "remote", "mode"); got != "remote" {
+		t.Fatalf("expected profiles.remote.mode remote, got %q", got)
+	}
+	if got := nestedString(raw, "profiles", "remote", "endpoint"); got != "https://engine.example.com" {
+		t.Fatalf("expected profiles.remote.endpoint, got %q", got)
+	}
+	if got := nestedString(raw, "profiles", "remote", "auth", "token"); got != "token-123" {
+		t.Fatalf("expected profiles.remote.auth.token, got %q", got)
+	}
+}
+
+func TestPreprocessStoreArgsLongForm(t *testing.T) {
+	args := []string{"--snapshot", "btrfs", "--store", "image", "/tmp/sqlrs-store", "--no-start"}
+	got, err := preprocessStoreArgs(args)
+	if err != nil {
+		t.Fatalf("preprocessStoreArgs: %v", err)
+	}
+	want := []string{"--snapshot", "btrfs", "--store-type", "image", "--store-path", "/tmp/sqlrs-store", "--no-start"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected args: %v", got)
+	}
+}
+
+func TestPreprocessStoreArgsEqualsForm(t *testing.T) {
+	args := []string{"--store=image", "/tmp/sqlrs-store"}
+	got, err := preprocessStoreArgs(args)
+	if err != nil {
+		t.Fatalf("preprocessStoreArgs: %v", err)
+	}
+	want := []string{"--store-type", "image", "--store-path", "/tmp/sqlrs-store"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected args: %v", got)
+	}
+}
+
+func TestPreprocessStoreArgsRejectsMissingType(t *testing.T) {
+	if _, err := preprocessStoreArgs([]string{"--store"}); err == nil {
+		t.Fatalf("expected error for missing store type")
+	}
+	if _, err := preprocessStoreArgs([]string{"--store="}); err == nil {
+		t.Fatalf("expected error for empty store type")
+	}
+}
+
+func TestResolveStorePathUsesEnvRoot(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("SQLRS_STATE_STORE", root)
+
+	dirPath, err := resolveStorePath("dir", "")
+	if err != nil {
+		t.Fatalf("resolveStorePath: %v", err)
+	}
+	if dirPath != root {
+		t.Fatalf("expected dir path %q, got %q", root, dirPath)
+	}
+
+	imagePath, err := resolveStorePath("image", "")
+	if err != nil {
+		t.Fatalf("resolveStorePath: %v", err)
+	}
+	name := "btrfs.img"
+	if runtime.GOOS == "windows" {
+		name = "btrfs.vhdx"
+	}
+	expected := filepath.Join(root, name)
+	if imagePath != expected {
+		t.Fatalf("expected image path %q, got %q", expected, imagePath)
+	}
+}
+
+func TestResolveStorePathDeviceEmpty(t *testing.T) {
+	pathValue, err := resolveStorePath("device", "")
+	if err != nil {
+		t.Fatalf("resolveStorePath: %v", err)
+	}
+	if pathValue != "" {
+		t.Fatalf("expected empty path, got %q", pathValue)
+	}
+}
+
+func TestParseInitFlagsStorePathRequiresType(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"local", "--store-path", "/tmp/store"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+}
+
+func TestParseInitFlagsRemoteRejectsLocalFlags(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"remote", "--url", "https://example.com", "--token", "token", "--snapshot", "btrfs"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
 	}
 }
 

@@ -83,6 +83,96 @@ func TestLookupDBMSImageWhitespace(t *testing.T) {
 	}
 }
 
+func TestLookupLiquibaseExec(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("liquibase:\n  exec: C:\\\\Tools\\\\liquibase.exe\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	value, ok, err := LookupLiquibaseExec(path)
+	if err != nil {
+		t.Fatalf("LookupLiquibaseExec: %v", err)
+	}
+	if !ok || value != "C:\\\\Tools\\\\liquibase.exe" {
+		t.Fatalf("unexpected exec: %q (ok=%v)", value, ok)
+	}
+}
+
+func TestLookupLiquibaseExecMissing(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("liquibase:\n  exec: \"\"\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, ok, err := LookupLiquibaseExec(path)
+	if err != nil {
+		t.Fatalf("LookupLiquibaseExec: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected no exec path")
+	}
+}
+
+func TestLookupLiquibaseExecInvalidType(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("liquibase:\n  exec: 123\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, ok, err := LookupLiquibaseExec(path)
+	if err != nil {
+		t.Fatalf("LookupLiquibaseExec: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected invalid type to return ok=false")
+	}
+}
+
+func TestLookupLiquibaseExecWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("liquibase:\n  exec: \"   \"\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, ok, err := LookupLiquibaseExec(path)
+	if err != nil {
+		t.Fatalf("LookupLiquibaseExec: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected whitespace exec to return ok=false")
+	}
+}
+
+func TestLookupLiquibaseExecMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("liquibase:\n  exec_mode: windows-bat\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	value, ok, err := LookupLiquibaseExecMode(path)
+	if err != nil {
+		t.Fatalf("LookupLiquibaseExecMode: %v", err)
+	}
+	if !ok || value != "windows-bat" {
+		t.Fatalf("unexpected exec_mode: %q (ok=%v)", value, ok)
+	}
+}
+
+func TestLookupLiquibaseExecModeWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("liquibase:\n  exec_mode: \"   \"\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	_, ok, err := LookupLiquibaseExecMode(path)
+	if err != nil {
+		t.Fatalf("LookupLiquibaseExecMode: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected whitespace exec_mode to return ok=false")
+	}
+}
+
 func TestNormalizeMap(t *testing.T) {
 	input := map[any]any{
 		"key": map[any]any{

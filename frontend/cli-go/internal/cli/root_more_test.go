@@ -25,7 +25,7 @@ func TestIsCompositePrepareRunFalse(t *testing.T) {
 }
 
 func TestIsCommandToken(t *testing.T) {
-	cases := []string{"init", "ls", "rm", "plan", "prepare", "run", "status", "config", "prepare:psql", "plan:psql", "run:psql"}
+	cases := []string{"init", "ls", "rm", "plan", "prepare", "run", "status", "config", "prepare:psql", "prepare:lb", "plan:psql", "plan:lb", "run:psql"}
 	for _, value := range cases {
 		if !isCommandToken(value) {
 			t.Fatalf("expected command token for %q", value)

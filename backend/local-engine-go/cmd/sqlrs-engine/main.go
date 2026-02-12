@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -111,6 +112,49 @@ func snapshotBackendFromConfig(cfg config.Store) string {
 	}
 }
 
+func logLevelFromConfig(cfg config.Store) string {
+	if cfg == nil {
+		return ""
+	}
+	value, err := cfg.Get("log.level", true)
+	if err != nil {
+		return ""
+	}
+	level, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return level
+}
+
+func buildSummary() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info == nil {
+		return "unknown"
+	}
+	var revision, buildTime, modified string
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.time":
+			buildTime = setting.Value
+		case "vcs.modified":
+			modified = setting.Value
+		}
+	}
+	if revision == "" && buildTime == "" && modified == "" {
+		if info.GoVersion != "" {
+			return "go=" + info.GoVersion
+		}
+		return "unknown"
+	}
+	if modified == "" {
+		modified = "false"
+	}
+	return fmt.Sprintf("rev=%s time=%s modified=%s", revision, buildTime, modified)
+}
+
 var serveHTTP = func(server *http.Server, listener net.Listener) error {
 	return server.Serve(listener)
 }
@@ -177,6 +221,7 @@ func run(args []string) (int, error) {
 	} else {
 		defer closeLog()
 	}
+	log.Printf("sqlrs-engine version=%s build=%s", *version, buildSummary())
 
 	listener, err := net.Listen("tcp", *listenAddr)
 	if err != nil {
@@ -247,7 +292,9 @@ func run(args []string) (int, error) {
 		Backend:        snapshotBackendFromConfig(configMgr),
 		StateStoreRoot: stateStoreRoot,
 	})
-	connector := dbms.NewPostgres(rt)
+	connector := dbms.NewPostgres(rt, dbms.WithLogLevel(func() string {
+		return logLevelFromConfig(configMgr)
+	}))
 	prepareMgr, err := newPrepareManagerFn(prepare.Options{
 		Store:          store,
 		Queue:          queueStore,

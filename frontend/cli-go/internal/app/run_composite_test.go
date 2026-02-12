@@ -21,6 +21,9 @@ func TestCompositeRunRejectsInstanceAfterPrepare(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1/instances/"):
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"dry_run":false,"outcome":"deleted","root":{"kind":"instance","id":"inst"}}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

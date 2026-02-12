@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 
 	"sqlrs/cli/internal/cli"
 	"sqlrs/cli/internal/config"
+	"sqlrs/cli/internal/paths"
 	"sqlrs/cli/internal/util"
 )
 
@@ -24,12 +26,17 @@ type initOptions struct {
 	EnginePath  string
 	SharedCache bool
 	DryRun      bool
-	WSL         bool
-	WSLDistro   string
-	WSLRequire  bool
-	WSLNoStart  bool
-	WSLReinit   bool
+	Snapshot    string
+	StoreType   string
+	StorePath   string
 	StoreSizeGB int
+	Reinit      bool
+	Distro      string
+	NoStart     bool
+	WSLMode     string
+	RemoteURL   string
+	RemoteToken string
+	Mode        string
 	Verbose     bool
 }
 
@@ -43,6 +50,9 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 		return nil
 	}
 	opts.Verbose = verbose
+	if strings.TrimSpace(opts.Mode) == "" {
+		opts.Mode = "local"
+	}
 
 	target, err := resolveWorkspacePath(opts.Workspace, cwd)
 	if err != nil {
@@ -58,7 +68,16 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 	}
 
 	configPath := filepath.Join(localMarker, "config.yaml")
-	hasUpdateFlags := opts.EnginePath != "" || opts.SharedCache || opts.WSL
+	hasUpdateFlags := opts.EnginePath != "" ||
+		opts.SharedCache ||
+		opts.Snapshot != "" ||
+		opts.StoreType != "" ||
+		opts.StorePath != "" ||
+		opts.StoreSizeGB > 0 ||
+		opts.Reinit ||
+		opts.Distro != "" ||
+		opts.RemoteURL != "" ||
+		opts.RemoteToken != ""
 	configExists := fileExists(configPath)
 	configValid := false
 
@@ -95,27 +114,61 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 	}
 
 	var wslResult *wslInitResult
-	if opts.WSL {
-		result, err := initWSLFn(wslInitOptions{
-			Enable:      opts.WSL,
-			Distro:      opts.WSLDistro,
-			Require:     opts.WSLRequire,
-			NoStart:     opts.WSLNoStart,
-			Workspace:   target,
-			Verbose:     opts.Verbose,
-			StoreSizeGB: opts.StoreSizeGB,
-			Reinit:      opts.WSLReinit,
-		})
+	if strings.EqualFold(opts.Mode, "local") {
+		snapshot := strings.ToLower(strings.TrimSpace(opts.Snapshot))
+		if snapshot == "" {
+			snapshot = "auto"
+		}
+		opts.Snapshot = snapshot
+
+		resolvedStoreType, err := resolveStoreType(snapshot, opts.StoreType)
 		if err != nil {
-			return ExitErrorf(1, "WSL init failed: %v", err)
+			return ExitErrorf(64, "Invalid arguments: %v", err)
 		}
-		if result.Warning != "" {
-			fmt.Fprintln(os.Stderr, strings.TrimSpace(result.Warning))
+		resolvedStorePath, err := resolveStorePath(resolvedStoreType, opts.StorePath)
+		if err != nil {
+			return ExitErrorf(64, "Invalid arguments: %v", err)
 		}
-		if opts.Update && !result.UseWSL {
-			return ExitErrorf(1, "WSL init failed: %s", strings.TrimSpace(result.Warning))
+
+		storeExplicit := opts.StoreType != "" || opts.StorePath != ""
+		useWSL, requireWSL := shouldUseWSL(snapshot, resolvedStoreType, storeExplicit)
+		if useWSL && !opts.DryRun {
+			result, err := initWSLFn(wslInitOptions{
+				Enable:      true,
+				Distro:      opts.Distro,
+				Require:     requireWSL,
+				NoStart:     opts.NoStart,
+				Workspace:   target,
+				Verbose:     opts.Verbose,
+				StoreSizeGB: opts.StoreSizeGB,
+				Reinit:      opts.Reinit,
+				StorePath:   resolvedStorePath,
+			})
+			if err != nil {
+				return ExitErrorf(1, "WSL init failed: %v", err)
+			}
+			if result.Warning != "" {
+				fmt.Fprintln(os.Stderr, strings.TrimSpace(result.Warning))
+			}
+			if requireWSL && !result.UseWSL {
+				return ExitErrorf(1, "WSL init failed: %s", strings.TrimSpace(result.Warning))
+			}
+			if result.UseWSL {
+				wslResult = &result
+				if requireWSL {
+					opts.WSLMode = "required"
+				} else {
+					opts.WSLMode = "auto"
+				}
+			} else if snapshot == "auto" && !requireWSL {
+				resolvedStoreType = "dir"
+				resolvedStorePath, _ = resolveStorePath(resolvedStoreType, "")
+			}
 		}
-		wslResult = &result
+
+		if wslResult == nil && resolvedStorePath != "" {
+			opts.StorePath = resolvedStorePath
+		}
 	}
 
 	if opts.DryRun {
@@ -159,6 +212,15 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, error) {
 	var opts initOptions
 
+	mode, rest, err := splitInitMode(args)
+	if err != nil {
+		return opts, false, ExitErrorf(64, "Invalid arguments: %v", err)
+	}
+	normalizedArgs, err := preprocessStoreArgs(rest)
+	if err != nil {
+		return opts, false, ExitErrorf(64, "Invalid arguments: %v", err)
+	}
+
 	fs := flag.NewFlagSet("sqlrs init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
@@ -167,17 +229,20 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 	engine := fs.String("engine", "", "engine binary path")
 	sharedCache := fs.Bool("shared-cache", false, "use shared cache")
 	update := fs.Bool("update", false, "update existing workspace config")
-	wsl := fs.Bool("wsl", false, "setup WSL2 integration")
-	wslDistro := fs.String("distro", "", "WSL distro name")
-	wslRequire := fs.Bool("require", false, "require WSL2+btrfs (no fallback)")
-	wslNoStart := fs.Bool("no-start", false, "skip WSL engine auto-start")
-	wslReinit := fs.Bool("reinit", false, "recreate WSL btrfs store")
+	snapshot := fs.String("snapshot", "", "snapshot backend")
+	storeType := fs.String("store-type", "", "store type")
+	storePath := fs.String("store-path", "", "store path")
 	storeSize := fs.String("store-size", "", "btrfs store size (example: 100GB)")
+	reinit := fs.Bool("reinit", false, "recreate store")
+	distro := fs.String("distro", "", "WSL distro name")
+	noStart := fs.Bool("no-start", false, "skip WSL engine auto-start")
+	url := fs.String("url", "", "remote engine url")
+	token := fs.String("token", "", "remote engine token")
 	dryRun := fs.Bool("dry-run", false, "dry run")
 	help := fs.Bool("help", false, "show help")
 	helpShort := fs.Bool("h", false, "show help")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return opts, false, ExitErrorf(64, "Invalid arguments: %v", err)
 	}
 
@@ -189,6 +254,7 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 		return opts, false, ExitErrorf(64, "Invalid arguments")
 	}
 
+	opts.Mode = mode
 	opts.Workspace = strings.TrimSpace(*workspace)
 	if opts.Workspace == "" {
 		opts.Workspace = strings.TrimSpace(globalWorkspace)
@@ -198,11 +264,15 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 	opts.EnginePath = strings.TrimSpace(*engine)
 	opts.SharedCache = *sharedCache
 	opts.DryRun = *dryRun
-	opts.WSL = *wsl
-	opts.WSLDistro = strings.TrimSpace(*wslDistro)
-	opts.WSLRequire = *wslRequire
-	opts.WSLNoStart = *wslNoStart
-	opts.WSLReinit = *wslReinit
+	opts.Snapshot = normalizeSnapshot(*snapshot)
+	opts.StoreType = normalizeStoreType(*storeType)
+	opts.StorePath = strings.TrimSpace(*storePath)
+	opts.Reinit = *reinit
+	opts.Distro = strings.TrimSpace(*distro)
+	opts.NoStart = *noStart
+	opts.RemoteURL = strings.TrimSpace(*url)
+	opts.RemoteToken = strings.TrimSpace(*token)
+
 	if size := strings.TrimSpace(*storeSize); size != "" {
 		value, err := parseStoreSizeGB(size)
 		if err != nil {
@@ -210,9 +280,64 @@ func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, e
 		}
 		opts.StoreSizeGB = value
 	}
-	if (opts.StoreSizeGB > 0 || opts.WSLReinit) && !opts.WSL {
-		return opts, false, ExitErrorf(64, "Invalid arguments: --store-size/--reinit require --wsl")
+
+	mode = strings.ToLower(strings.TrimSpace(opts.Mode))
+	if mode == "" {
+		mode = "local"
+		opts.Mode = mode
 	}
+	if mode != "local" && mode != "remote" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: unknown init mode")
+	}
+
+	if mode == "remote" {
+		if opts.RemoteURL == "" || opts.RemoteToken == "" {
+			return opts, false, ExitErrorf(64, "Invalid arguments: --url and --token are required for remote init")
+		}
+		if opts.EnginePath != "" || opts.SharedCache || opts.Snapshot != "" || opts.StoreType != "" || opts.StorePath != "" || opts.StoreSizeGB > 0 || opts.Reinit || opts.Distro != "" || opts.NoStart {
+			return opts, false, ExitErrorf(64, "Invalid arguments: local-only flags are not valid for remote init")
+		}
+		return opts, false, nil
+	}
+
+	if opts.RemoteURL != "" || opts.RemoteToken != "" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: --url/--token require remote init")
+	}
+
+	if opts.Snapshot != "" && !isKnownSnapshot(opts.Snapshot) {
+		return opts, false, ExitErrorf(64, "Invalid arguments: unknown snapshot backend")
+	}
+	if opts.StorePath != "" && opts.StoreType == "" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: --store path requires a store type")
+	}
+	if opts.StoreType != "" && !isKnownStoreType(opts.StoreType) {
+		return opts, false, ExitErrorf(64, "Invalid arguments: unknown store type")
+	}
+	if opts.StoreType == "device" && opts.StorePath == "" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: --store device requires a path")
+	}
+	if opts.StoreSizeGB > 0 && opts.StoreType != "image" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: --store-size requires --store image")
+	}
+	if (opts.StoreType == "image" || opts.StoreType == "device") && (opts.Snapshot == "overlay" || opts.Snapshot == "copy") {
+		return opts, false, ExitErrorf(64, "Invalid arguments: store type requires btrfs backend")
+	}
+	if opts.Reinit && (opts.Snapshot == "overlay" || opts.Snapshot == "copy") {
+		return opts, false, ExitErrorf(64, "Invalid arguments: --reinit requires btrfs backend")
+	}
+	if opts.Snapshot == "overlay" && runtime.GOOS != "linux" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: overlay snapshots are only supported on Linux")
+	}
+	if opts.Snapshot == "btrfs" && runtime.GOOS == "darwin" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: btrfs snapshots are not supported on macOS")
+	}
+	if runtime.GOOS == "darwin" && (opts.StoreType == "image" || opts.StoreType == "device") && (opts.Snapshot == "" || opts.Snapshot == "auto") {
+		return opts, false, ExitErrorf(64, "Invalid arguments: btrfs snapshots are not supported on macOS")
+	}
+	if opts.Snapshot == "btrfs" && runtime.GOOS == "windows" && opts.StoreType == "dir" {
+		return opts, false, ExitErrorf(64, "Invalid arguments: btrfs on Windows requires an image or device store")
+	}
+
 	return opts, false, nil
 }
 
@@ -272,41 +397,57 @@ func buildWorkspaceConfig(opts initOptions, wslResult *wslInitResult, base map[s
 	if opts.SharedCache {
 		setNested(cfg, []string{"cache", "shared"}, true)
 	}
-	if opts.WSL {
-		mode := "auto"
-		if opts.WSLRequire {
-			mode = "required"
+	if strings.EqualFold(opts.Mode, "local") {
+		if strings.TrimSpace(opts.Snapshot) != "" {
+			setNested(cfg, []string{"snapshot", "backend"}, opts.Snapshot)
+		}
+		if opts.StorePath != "" {
+			setNested(cfg, []string{"engine", "storePath"}, opts.StorePath)
+		}
+	}
+	if strings.EqualFold(opts.Mode, "remote") {
+		setNested(cfg, []string{"defaultProfile"}, "remote")
+		setNested(cfg, []string{"profiles", "remote", "mode"}, "remote")
+		if opts.RemoteURL != "" {
+			setNested(cfg, []string{"profiles", "remote", "endpoint"}, opts.RemoteURL)
+		}
+		if opts.RemoteToken != "" {
+			setNested(cfg, []string{"profiles", "remote", "auth", "token"}, opts.RemoteToken)
+		}
+	}
+	if wslResult != nil {
+		mode := strings.TrimSpace(opts.WSLMode)
+		if mode == "" {
+			mode = "auto"
 		}
 		setNested(cfg, []string{"engine", "wsl", "mode"}, mode)
-		distro := opts.WSLDistro
-		if wslResult != nil && wslResult.Distro != "" {
+		distro := opts.Distro
+		if wslResult.Distro != "" {
 			distro = wslResult.Distro
 		}
 		if distro != "" {
 			setNested(cfg, []string{"engine", "wsl", "distro"}, distro)
 		}
-		if wslResult != nil {
-			if wslResult.StateDir != "" {
-				setNested(cfg, []string{"engine", "wsl", "stateDir"}, wslResult.StateDir)
-			}
-			if wslResult.EnginePath != "" {
-				setNested(cfg, []string{"engine", "wsl", "enginePath"}, wslResult.EnginePath)
-			}
-			if wslResult.MountDevice != "" {
-				setNested(cfg, []string{"engine", "wsl", "mount", "device"}, wslResult.MountDevice)
-			}
-			if wslResult.MountFSType != "" {
-				setNested(cfg, []string{"engine", "wsl", "mount", "fstype"}, wslResult.MountFSType)
-			}
-			if wslResult.MountDeviceUUID != "" {
-				setNested(cfg, []string{"engine", "wsl", "mount", "deviceUUID"}, wslResult.MountDeviceUUID)
-			}
-			if wslResult.MountUnit != "" {
-				setNested(cfg, []string{"engine", "wsl", "mount", "unit"}, wslResult.MountUnit)
-			}
-			if wslResult.StorePath != "" {
-				setNested(cfg, []string{"engine", "storePath"}, wslResult.StorePath)
-			}
+		if wslResult.StateDir != "" {
+			setNested(cfg, []string{"engine", "wsl", "stateDir"}, wslResult.StateDir)
+		}
+		if wslResult.EnginePath != "" {
+			setNested(cfg, []string{"engine", "wsl", "enginePath"}, wslResult.EnginePath)
+		}
+		if wslResult.MountDevice != "" {
+			setNested(cfg, []string{"engine", "wsl", "mount", "device"}, wslResult.MountDevice)
+		}
+		if wslResult.MountFSType != "" {
+			setNested(cfg, []string{"engine", "wsl", "mount", "fstype"}, wslResult.MountFSType)
+		}
+		if wslResult.MountDeviceUUID != "" {
+			setNested(cfg, []string{"engine", "wsl", "mount", "deviceUUID"}, wslResult.MountDeviceUUID)
+		}
+		if wslResult.MountUnit != "" {
+			setNested(cfg, []string{"engine", "wsl", "mount", "unit"}, wslResult.MountUnit)
+		}
+		if wslResult.StorePath != "" {
+			setNested(cfg, []string{"engine", "storePath"}, wslResult.StorePath)
 		}
 	}
 
@@ -417,6 +558,176 @@ func parseStoreSizeGB(value string) (int, error) {
 		return 0, fmt.Errorf("store size must be a positive integer")
 	}
 	return size, nil
+}
+
+func splitInitMode(args []string) (string, []string, error) {
+	if len(args) == 0 {
+		return "local", args, nil
+	}
+	first := strings.TrimSpace(args[0])
+	if first == "" || strings.HasPrefix(first, "-") {
+		return "local", args, nil
+	}
+	switch strings.ToLower(first) {
+	case "local", "remote":
+		return strings.ToLower(first), args[1:], nil
+	default:
+		return "", args, fmt.Errorf("unknown init mode: %s", first)
+	}
+}
+
+func preprocessStoreArgs(args []string) ([]string, error) {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--store" {
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("--store requires a type")
+			}
+			storeType := args[i+1]
+			i++
+			out = append(out, "--store-type", storeType)
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				out = append(out, "--store-path", args[i+1])
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "--store=") {
+			storeType := strings.TrimPrefix(arg, "--store=")
+			if storeType == "" {
+				return nil, fmt.Errorf("--store requires a type")
+			}
+			out = append(out, "--store-type", storeType)
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				out = append(out, "--store-path", args[i+1])
+				i++
+			}
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out, nil
+}
+
+func normalizeSnapshot(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func normalizeStoreType(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isKnownSnapshot(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "auto", "btrfs", "overlay", "copy":
+		return true
+	default:
+		return false
+	}
+}
+
+func isKnownStoreType(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "dir", "device", "image":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveStoreType(snapshot string, storeType string) (string, error) {
+	normalized := normalizeStoreType(storeType)
+	if normalized != "" {
+		return normalized, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(snapshot)) {
+	case "copy", "overlay":
+		return "dir", nil
+	case "btrfs":
+		switch runtime.GOOS {
+		case "windows":
+			return "image", nil
+		case "linux":
+			root, err := defaultStoreRoot()
+			if err != nil {
+				return "image", nil
+			}
+			ok, err := isBtrfsPath(root)
+			if err == nil && ok {
+				return "dir", nil
+			}
+			return "image", nil
+		default:
+			return "dir", nil
+		}
+	case "auto":
+		if runtime.GOOS == "windows" {
+			return "image", nil
+		}
+		return "dir", nil
+	default:
+		return "dir", nil
+	}
+}
+
+func resolveStorePath(storeType string, storePath string) (string, error) {
+	pathValue := strings.TrimSpace(storePath)
+	if pathValue != "" {
+		return pathValue, nil
+	}
+	normalized := normalizeStoreType(storeType)
+	if normalized == "" || normalized == "device" {
+		return "", nil
+	}
+	root, err := defaultStoreRoot()
+	if err != nil {
+		return "", err
+	}
+	switch normalized {
+	case "dir":
+		return root, nil
+	case "image":
+		name := "btrfs.img"
+		if runtime.GOOS == "windows" {
+			name = "btrfs.vhdx"
+		}
+		return filepath.Join(root, name), nil
+	default:
+		return "", nil
+	}
+}
+
+func defaultStoreRoot() (string, error) {
+	if value := strings.TrimSpace(os.Getenv("SQLRS_STATE_STORE")); value != "" {
+		return value, nil
+	}
+	dirs, err := paths.Resolve()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dirs.StateDir, "store"), nil
+}
+
+func shouldUseWSL(snapshot string, storeType string, storeExplicit bool) (bool, bool) {
+	if runtime.GOOS != "windows" {
+		return false, false
+	}
+	normalizedSnapshot := strings.ToLower(strings.TrimSpace(snapshot))
+	normalizedStore := normalizeStoreType(storeType)
+	if normalizedSnapshot == "btrfs" {
+		if normalizedStore == "dir" {
+			return false, true
+		}
+		return true, true
+	}
+	if normalizedSnapshot == "auto" {
+		if normalizedStore == "dir" {
+			return false, false
+		}
+		return true, storeExplicit
+	}
+	return false, false
 }
 
 func fileExists(path string) bool {
