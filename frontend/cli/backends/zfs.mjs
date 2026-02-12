@@ -8,7 +8,7 @@ const ZFS_BASE = `${ZFS_ROOT}/base`;
 const ZFS_BASE_SNAPSHOT = "clean"; // base@clean
 
 async function zfs(cmd) {
-    return runCapture({ cmd: ["zfs", ...cmd] });
+    return runCapture({ cmd: ["sudo", "zfs", ...cmd] });
 }
 
 export const zfsBackend = {
@@ -43,7 +43,6 @@ export const zfsBackend = {
     };
     },
 
-
     async destroyVolume({ volume }) {
         if (!volume?.meta?.dataset) return;
 
@@ -71,7 +70,7 @@ export const zfsBackend = {
         }
     },
 
-    async  snapshotVolumeZfs({
+    async snapshotVolume({
         workspace,
         volume,
         runId,
@@ -99,7 +98,7 @@ export const zfsBackend = {
         if (fs.existsSync(stateDir)) {
             throw new Error(`State already exists: ${stateDir}`);
         }
-        ensureDir(stateDir);
+        ensureDataset(stateDir);
 
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(
@@ -124,5 +123,12 @@ export const zfsBackend = {
             stateDir,
             snapshot
         };
+    },
+    async ensureDataset({dataset}) {
+        try {
+            await zfs(["list", dataset]);
+        } catch {
+            await zfs(["create", "-p", dataset]);
+        }
     }
 };
