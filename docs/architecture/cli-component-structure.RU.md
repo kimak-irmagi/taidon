@@ -1,76 +1,62 @@
 # Компонентная структура CLI
 
-Документ описывает внутреннюю структуру sqlrs CLI.
+Документ описывает текущую внутреннюю структуру `sqlrs` CLI.
 
 ## 1. Цели
 
-- Явно зафиксировать границы модулей до реализации.
-- Отделить логику команд от I/O и транспорта.
-- Централизовать форматирование вывода для единого UX.
+- Разделить парсинг команд, оркестрацию, транспорт и рендеринг.
+- Использовать единый транспортный слой для local и remote профилей.
+- Держать нормализацию аргументов команд в одном месте.
 
 ## 2. Пакеты и ответственность
 
 - `cmd/sqlrs`
-  - Entrypoint; вызывает `app.Run`.
+  - Точка входа; вызывает `app.Run` и маппит ошибки в exit code.
 - `internal/app`
-  - Глобальные флаги и диспетчер команд.
-  - Загружает config и workspace.
+  - Загружает workspace/global config, выбирает профиль и режим.
+  - Диспетчеризует граф команд (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`, `status`, `config`, `init`).
+  - Нормализует file/path аргументы до вызовов transport-слоя.
 - `internal/cli`
-  - Логика команд (status, init, ls, rm, prepare, plan, run, config).
-  - Выбор режима вывода и рендер human/json.
+  - Исполнители команд на стороне клиента (`RunLs`, `RunPrepare`, `RunPlan`, `RunRun`, `RunStatus`, `RunConfig`, `RunRm`).
+  - Рендеринг человекочитаемого вывода (таблицы/plan/status).
 - `internal/cli/runkind`
-  - Реестр встроенных run-kind (`psql`, `pgbench`).
-  - Правила инъекции DSN и дефолтные команды.
+  - Реестр поддерживаемых run-kind (`psql`, `pgbench`).
 - `internal/client`
-  - HTTP клиент, auth headers, обработка redirect.
-  - JSON/NDJSON парсинг.
-  - Config endpoints (`/v1/config`, `/v1/config/schema`).
+  - HTTP клиент для `/v1/*` endpoint-ов.
+  - NDJSON-стриминг событий prepare и вывода run.
 - `internal/daemon`
-  - Discovery/launch локального engine.
-  - Читает `engine.json`.
+  - Autostart/discovery локального engine (`engine.json`, lock/state orchestration).
 - `internal/config`
-  - Парсинг и merge локального CLI конфигура.
+  - Загрузка и merge CLI-конфига, typed lookup (`dbms.image`, настройки Liquibase, timeout-ы).
 - `internal/paths`
-  - Определение путей для config/cache/state.
+  - OS-aware разрешение директорий config/cache/state.
+- `internal/wsl`
+  - Определение WSL и выбор дистрибутива для `init local` и Windows local mode.
 - `internal/util`
-  - IO-хелперы (атомарная запись, NDJSON reader).
+  - Общие хелперы (NDJSON reader, атомарный IO, error helpers).
 
 ## 3. Ключевые типы и интерфейсы
 
+- `cli.GlobalOptions`, `cli.Command`
+  - Распарсенные top-level опции CLI и сегменты команд.
 - `cli.LsOptions`, `cli.LsResult`
-  - Селекторы включают jobs/tasks и фильтр `job`.
-  - Результаты содержат опциональные списки jobs/tasks рядом с names/instances/states.
-
-- `cli.PrepareOptions`
-  - Общие опции для prepare/plan (endpoint, auth, image id, args).
-  - Дополняется флагом `PlanOnly` для `sqlrs plan`.
-- `cli.RunOptions`
-  - `Kind`, `InstanceRef`, `Command`, `Args`, `OutputMode`.
-- `cli.RunTarget`
-  - Разрешенный instance id + DSN для запуска.
-- `client.RunRequest`
-  - HTTP payload для запуска (kind, command/default, args).
-- `client.RunStream`
-  - Стриминг вывода run (stdout/stderr/exit).
-- `client.PrepareJobRequest`
-  - HTTP payload для `POST /v1/prepare-jobs` (включая `plan_only`).
-- `client.PrepareJobStatus`
-  - Payload статуса с опциональным списком `tasks` для plan-only.
-- `client.PrepareJobEntry`
-  - Payload списка для `GET /v1/prepare-jobs`.
-- `client.TaskEntry`
-  - Payload списка для `GET /v1/tasks`.
-- `cli.PlanResult`
-  - CLI-представление `tasks` для рендера.
-- `client.ConfigValue`, `client.ConfigSchema`
-  - HTTP payload для config get/set/schema.
-- `cli.ConfigOptions`
-  - Path/value/effective/опции для `sqlrs config` команд.
+  - Селекторы list-операций и агрегированный payload names/instances/states/jobs/tasks.
+- `cli.PrepareOptions`, `cli.PlanResult`
+  - Общие опции prepare/plan и модель рендера плана.
+- `cli.RunOptions`, `cli.RunStep`, `cli.RunResult`
+  - Параметры запуска (kind, args, stdin/steps) и терминальный результат run.
+- `client.PrepareJobRequest`, `client.PrepareJobStatus`, `client.PrepareJobEvent`
+  - Payload prepare API, включая `plan_only` и список задач плана.
+- `client.RunRequest`, `client.RunEvent`
+  - Payload run API и стрим событий (`stdout`, `stderr`, `exit`, `error`, `log`).
+- `cli.ConfigOptions`, `client.ConfigValue`
+  - Опции config-команд и API payload для значений.
 
 ## 4. Владение данными
 
-- Локальный CLI конфиг хранится в файлах проекта; CLI загружает его в память на время команды.
-- Server config запрашивается через HTTP и не сохраняется на диск со стороны CLI.
+- CLI-конфиг файловый (workspace + global), в память грузится на время запуска команды.
+- Состояние discovery локального engine (`engine.json`, lock/process metadata) ведется через `internal/daemon`.
+- Server config принадлежит engine-side storage и читается/изменяется по HTTP (`/v1/config*`), без локального кеширования в CLI.
 
 ## 5. Диаграмма зависимостей
 
@@ -79,17 +65,21 @@ flowchart LR
   CMD["cmd/sqlrs"]
   APP["internal/app"]
   CLI["internal/cli"]
+  RUNKIND["internal/cli/runkind"]
   CLIENT["internal/client"]
   DAEMON["internal/daemon"]
   CONFIG["internal/config"]
   PATHS["internal/paths"]
+  WSL["internal/wsl"]
   UTIL["internal/util"]
 
   CMD --> APP
   APP --> CLI
   APP --> CONFIG
   APP --> PATHS
+  APP --> WSL
   APP --> UTIL
   CLI --> CLIENT
   CLI --> DAEMON
+  CLI --> RUNKIND
 ```

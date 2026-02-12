@@ -1,10 +1,10 @@
 # CLI Architecture (Local and Remote)
 
-This document describes how the `sqlrs` CLI resolves inputs and talks to the SQL Runner in local and shared deployments, including file vs URL handling and upload flows.
+This document describes how the `sqlrs` CLI resolves inputs and talks to the engine/runner in local and shared deployments, including file vs URL handling and upload flows.
 
 Note: references to `POST /runs` in this document describe the **runner API**
-used in shared deployments (future). The current MVP local engine uses
-`POST /v1/prepare-jobs` for prepare and `POST /v1/runs` for `sqlrs run`.
+used in shared deployments (future design target). The current local engine uses
+`POST /v1/prepare-jobs` for prepare/plan and `POST /v1/runs` for `sqlrs run`.
 
 ## 1. Goals
 
@@ -46,9 +46,9 @@ sequenceDiagram
   participant CLI as CLI
   participant ENG as Local Engine
 
-  CLI->>ENG: POST /runs (path:/repo/sql, entry=seed.sql)
-  ENG->>ENG: read files from local FS
-  ENG-->>CLI: stream status/results
+  CLI->>ENG: POST /v1/prepare-jobs (prepare_kind, args)
+  ENG->>ENG: resolve/validate local file paths
+  ENG-->>CLI: prepare events + terminal status
 ```
 
 ### 4.2 Remote target, local files (upload then run)
@@ -211,8 +211,8 @@ Notes:
 - `source_id` is content-addressed and can be reused across runs.
 - Large uploads are resumable; failed chunks can be retried without restarting.
 
-## 6. Liquibase Presence
+## 6. Liquibase Support
 
-- If Liquibase is available, the CLI can request Liquibase-aware planning on the runner.
-- If Liquibase is not available, CLI builds an explicit step plan (ordered script list) and passes it with the run request.
-- The same upload/resolution rules apply in both modes.
+- The CLI supports `plan:lb` and `prepare:lb` by sending Liquibase arguments to `POST /v1/prepare-jobs`.
+- The CLI does not build a fallback Liquibase step plan locally; planning/execution is owned by the engine.
+- On Windows + WSL local mode, the CLI rewrites Liquibase path arguments/workdir for host execution compatibility.

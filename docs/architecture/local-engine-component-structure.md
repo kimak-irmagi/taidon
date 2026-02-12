@@ -1,116 +1,89 @@
 # Local Engine Component Structure
 
-This document defines the internal component layout of the local sqlrs engine.
+This document defines the current internal component layout of the local `sqlrs-engine`.
 
 ## 1. Goals
 
-- Make module boundaries explicit before implementation.
-- Separate HTTP, auth, domain logic, and persistence.
-- Keep names/instances/states in persistent storage, not in-memory only.
+- Keep HTTP/API concerns separate from execution and persistence concerns.
+- Keep state and queue metadata persistent in SQLite.
+- Make filesystem snapshot responsibilities explicit.
 
 ## 2. Packages and responsibilities
 
 - `cmd/sqlrs-engine`
-  - Parse flags and build dependencies.
-  - Start the HTTP server.
-  - Resolve `SQLRS_STATE_STORE` and validate the WSL systemd mount when configured.
+  - Parses flags and wires dependencies.
+  - Opens SQLite state DB, config manager, runtime, statefs, prepare/run/delete managers.
+  - Starts HTTP server and writes/removes `engine.json`.
 - `internal/httpapi`
-  - HTTP routing and handlers.
-  - JSON/NDJSON encoding.
-  - Uses auth + registry + prepare + store + config interfaces.
-  - Exposes job/task list endpoints and job deletion.
+  - HTTP routing for `/v1/*` endpoints.
+  - JSON and NDJSON responses (prepare events, run stream).
+  - Delegates to `prepare`, `run`, `deletion`, `registry`, `config`.
 - `internal/config`
-  - Loads defaults + persisted overrides on startup.
-  - Provides get/set/rm with path resolution and schema validation.
-  - Persists JSON atomically next to the state store.
-  - Exposes the config schema to HTTP handlers.
+  - Default config + persisted override management (`config.json`).
+  - Schema exposure and path-based get/set/remove.
 - `internal/prepare`
-  - Prepare job coordination (plan, cache lookup, execute, snapshot).
-  - Handles `plan_only` jobs and task list output.
-  - Persists job/task state and event history via the queue store.
-  - Supports job listing and deletion with force/dry-run.
+  - End-to-end prepare orchestration: validation, plan building, execution, snapshotting, state/instance creation.
+  - Supports both `psql` and `lb` prepare kinds.
+  - Handles `plan_only`, event streaming, and per-job lifecycle.
 - `internal/prepare/queue`
-  - SQLite-backed queue store for jobs, tasks, and events.
-  - Supports restart recovery by reloading queued/running work.
-  - Trims completed prepare jobs beyond the per-signature retention limit from config (`orchestrator.jobs.maxIdentical`).
-  - Removes `state-store/jobs/<job_id>` when jobs are deleted.
-- `internal/executor`
-  - Runs job tasks sequentially and emits task/job events.
-  - Invokes StateFS and DBMS connector around snapshots.
-- `internal/runtime`
-  - Docker runtime adapter (CLI-based in MVP).
-  - Starts/stops containers; sets `PGDATA` and trust auth for Postgres images.
-  - Keeps warm containers after prepare until run orchestration decides to stop.
+  - Persistent job/task/event queue in SQLite.
+  - Recovery for queued/running jobs and retention trimming by signature.
 - `internal/run`
-  - Resolves target instance (id/name).
-  - Prepares runtime exec context and validates run kind rules.
-  - Executes commands inside instance containers and streams output.
-  - Recreates missing instance containers from `runtime_dir` and updates
-    `runtime_id` before executing run commands.
-- `internal/statefs`
-  - StateFS interface, backend selection, and store validation.
-  - OverlayFS or btrfs snapshots in the MVP, copy fallback.
-  - Owns path layout and FS-specific cleanup.
-- `internal/dbms`
-  - DBMS-specific hooks for snapshot preparation and resume.
-  - Postgres implementation uses `pg_ctl` for fast shutdown/restart without stopping the container.
+  - Executes `run:psql` and `run:pgbench` against existing instances.
+  - Recreates missing runtime containers from `runtime_dir` when possible.
 - `internal/deletion`
-  - Builds deletion trees for instances and states.
-  - Enforces recurse/force rules and executes removals.
-- `internal/conntrack`
-  - Tracks active connections per instance via DB introspection.
-- `internal/auth`
-  - Bearer token verification.
-  - Exempt `/v1/health`.
+  - Builds and executes deletion trees for instances/states.
+  - Applies `recurse`, `force`, `dry_run` rules.
 - `internal/registry`
-  - Domain rules for lookups and redirect decisions.
-  - ID vs name resolution for instances.
-  - Reject names that match the instance id format.
+  - Name/id resolution and list/get operations for names/instances/states.
+- `internal/statefs`
+  - State store path layout + StateFS interface.
+  - Wraps snapshot backend operations with cleanup and validation.
+- `internal/snapshot`
+  - Snapshot backend implementations and selection (`auto`, `overlay`, `btrfs`, `copy`).
+- `internal/runtime`
+  - Docker runtime adapter (init base, start/stop, exec, run container).
+- `internal/dbms`
+  - DBMS-specific snapshot hooks (Postgres stop/resume with `pg_ctl`).
+- `internal/conntrack`
+  - Connection tracking abstraction (current local wiring uses `conntrack.Noop`).
+- `internal/auth`
+  - Bearer token validation for protected endpoints.
 - `internal/id`
-  - Parsing/validation of id formats.
+  - ID format validation helpers.
 - `internal/store`
-  - Interfaces for names, instances, states.
-  - Filter types for list calls.
+  - Storage interfaces and filter models for names/instances/states.
 - `internal/store/sqlite`
-  - SQLite-backed implementation.
-  - Database file under `<StateDir>`.
-  - Implements `internal/store` interfaces.
+  - SQLite implementation of `internal/store`.
 - `internal/stream`
-  - NDJSON writer helpers.
+  - List/NDJSON stream helpers for HTTP responses.
 
 ## 3. Key types and interfaces
 
 - `prepare.Manager`
-  - Submits jobs and exposes status/events.
-  - Handles `plan_only` by returning task lists.
-- `run.Manager`
-  - Validates run requests and executes commands against instances.
-  - Streams stdout/stderr/exit back to HTTP.
-  - Emits recovery events when recreating a missing instance container.
+  - Submits prepare jobs, exposes status/events, and handles job deletion.
+- `prepare.Request`, `prepare.Status`, `prepare.PlanTask`
+  - Prepare API request/status payloads and planned task model.
 - `queue.Store`
-  - Persists jobs, tasks, and events; supports recovery queries.
-- `prepare.JobEntry`, `prepare.TaskEntry`
-  - List views for jobs and task queue entries.
-- `prepare.Request`, `prepare.Status`
-  - Job request and status payloads (includes `tasks` for plan-only).
-- `prepare.PlanTask`, `prepare.TaskInput`
-  - Task descriptions and input references for planning/execution.
-- `config.Manager`
-  - Get/set/remove config values and return schema.
-- `config.Value`, `config.Schema`
-  - JSON values and schema representation.
+  - Persistent jobs/tasks/events API used by `prepare.Manager`.
+- `run.Manager`, `run.Request`, `run.Event`
+  - Run execution manager with streamed runtime events.
+- `deletion.Manager`, `deletion.DeleteResult`
+  - Deletion planner/executor and response tree model.
+- `config.Store` (`config.Manager`)
+  - Runtime config API for `/v1/config*`.
 - `store.Store`
-  - Interface for names/instances/states persistence.
-- `deletion.Manager`
-  - Builds delete trees and executes deletions.
+  - Persistent names/instances/states interface.
+- `statefs.StateFS`
+  - Filesystem abstraction for clone/snapshot/remove and path derivation.
 
 ## 4. Data ownership
 
-- Persistent data (names/instances/states) lives in SQLite under `<StateDir>`.
-- Jobs, tasks, and job events live in SQLite under `<StateDir>`.
-- In-memory structures are caches or request-scoped only.
-- State store data lives under `<StateDir>/state-store` unless `SQLRS_STATE_STORE` overrides it.
-- Server config is stored in `<StateDir>/state-store/config.json` and mirrored in memory.
+- Metadata DB: `<state-store-root>/state.db` (names/instances/states + prepare queue tables).
+- Snapshot store: `<state-store-root>/engines/<engine>/<version>/base|states/<state_id>`.
+- Per-job runtime dirs: `<state-store-root>/jobs/<job_id>/runtime`.
+- Engine config: `<state-store-root>/config.json`.
+- Engine discovery file for CLI: `<state-dir>/sqlrs/engine.json` (path passed via `--write-engine-json`).
 
 ## 5. Dependency diagram
 
@@ -120,42 +93,51 @@ flowchart TD
   HTTP["internal/httpapi"]
   PREP["internal/prepare"]
   QUEUE["internal/prepare/queue"]
-  EXEC["internal/executor"]
-  RT["internal/runtime"]
-  SNAP["internal/statefs"]
-  DBMS["internal/dbms"]
+  RUN["internal/run"]
   DEL["internal/deletion"]
-  CONN["internal/conntrack"]
-  AUTH["internal/auth"]
   REG["internal/registry"]
-  ID["internal/id"]
+  AUTH["internal/auth"]
+  CFG["internal/config"]
   STORE["internal/store (interfaces)"]
   SQLITE["internal/store/sqlite"]
-  STREAM["internal/stream (ndjson)"]
-  CFG["internal/config"]
+  STATEFS["internal/statefs"]
+  SNAPSHOT["internal/snapshot"]
+  RT["internal/runtime"]
+  DBMS["internal/dbms"]
+  CONN["internal/conntrack"]
+  ID["internal/id"]
+  STREAM["internal/stream"]
 
   CMD --> HTTP
-  CMD --> SQLITE
   CMD --> CFG
+  CMD --> SQLITE
+  CMD --> STATEFS
+  CMD --> RT
+
   HTTP --> AUTH
   HTTP --> PREP
   HTTP --> RUN
   HTTP --> DEL
   HTTP --> REG
-  HTTP --> STREAM
   HTTP --> CFG
+  HTTP --> STREAM
+
   PREP --> QUEUE
-  PREP --> EXEC
+  PREP --> RT
+  PREP --> DBMS
+  PREP --> STATEFS
+  PREP --> STORE
   PREP --> CFG
-  EXEC --> RT
-  EXEC --> SNAP
-  EXEC --> DBMS
-  DEL --> STORE
-  DEL --> CONN
+
   RUN --> RT
   RUN --> REG
-  PREP --> STORE
+  DEL --> STORE
+  DEL --> CONN
+  DEL --> RT
+  DEL --> STATEFS
   REG --> ID
   REG --> STORE
+
+  STATEFS --> SNAPSHOT
   SQLITE --> STORE
 ```

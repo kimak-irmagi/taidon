@@ -35,7 +35,7 @@ gantt
     Бэкенд snapshot ФС (overlayfs)            :done, a2fs, after a2, 20d
     Бэкенд snapshot ФС (Btrfs)                :done, a2b, after a2fs, 30d
     Бэкенд snapshot ФС (ZFS)                  :a2z, after a2b, 30d
-    Адаптер Liquibase (применение миграций)   :a3, after a2b, 30d
+    Адаптер Liquibase (применение миграций)   :active, a3, after a2b, 30d
 
     section Продуктовый MVP (локальный)
     Drop-in подключение (proxy/adapter)       :b1, after a2, 45d
@@ -69,11 +69,11 @@ gantt
 
 ---
 
-## Статус (на 2026-01-31)
+## Статус (на 2026-02-12)
 
-- **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, CLI-основа (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
+- **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
-- **В работе**: UX CLI и детерминизм выполнения (ещё нет Liquibase-адаптера и эквивалентов `apply/status/logs/destroy`).
+- **В работе**: UX CLI и детерминизм выполнения (`prepare:lb` и `plan:lb` уже реализованы; оставшиеся пробелы parity — алиасы команд и более богатый UX для логов).
 - **Запланировано**: drop-in подключение, git-aware CLI, team on-prem оркестрация, облачный sharing, образование.
 
 ---
@@ -113,11 +113,11 @@ gantt
 
 - Taidon Engine + API (локальный режим) — **сделано** (локальный OpenAPI spec)
 - Локальный runtime (контейнеры) с lifecycle экземпляра — **сделано**
-- CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm` — **сделано**
+- CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **сделано**
 - Cache v1 (prepare jobs + reuse state + retention) — **сделано (ядро)**
 - Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs), **в планах** (ZFS)
-- Liquibase адаптер (apply changelog) — **в планах**
-- CLI parity с исходным MVP списком (`apply/status/logs/destroy`) — **в планах**
+- Liquibase адаптер (apply changelog) — **в работе** (базовый локальный поток через `prepare:lb`/`plan:lb` уже реализован)
+- CLI parity с исходным MVP списком (`apply/status/logs/destroy`) — **в работе** (`status` и эквивалент `destroy` через `rm` уже есть; parity на уровне алиасов и команда `logs` ещё в работе)
 
 **Опционально (nice-to-have)**:
 
@@ -132,7 +132,7 @@ gantt
 - Warm start переиспользует кэшированное состояние и значительно быстрее
 - Миграции детерминированы и воспроизводимы
 
-**Статус**: в работе (локальный runtime и CLI есть; Liquibase/apply ещё нет).
+**Статус**: в работе (локальный runtime и CLI есть; базовый Liquibase-поток уже реализован; parity и hardening ещё впереди).
 
 ---
 

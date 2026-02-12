@@ -1,10 +1,10 @@
 # Архитектура CLI (локально и удаленно)
 
-Этот документ описывает, как CLI `sqlrs` разрешает входы и общается с SQL Runner в локальном и shared-деплойментах, включая обработку путей/URL и загрузку источников.
+Этот документ описывает, как CLI `sqlrs` разрешает входы и общается с engine/runner в локальном и shared-деплойментах, включая обработку путей/URL и загрузку источников.
 
 Примечание: ссылки на `POST /runs` в этом документе описывают **runner API**
-для shared-деплоймента (дизайн на будущее). В текущем MVP локальный engine
-использует `POST /v1/prepare-jobs` для prepare и `POST /v1/runs` для `sqlrs run`.
+для shared-деплоймента (целевой дизайн). Текущий локальный engine использует
+`POST /v1/prepare-jobs` для prepare/plan и `POST /v1/runs` для `sqlrs run`.
 
 ## 1. Цели
 
@@ -46,9 +46,9 @@ sequenceDiagram
   participant CLI as CLI
   participant ENG as Local Engine
 
-  CLI->>ENG: POST /runs (path:/repo/sql, entry=seed.sql)
-  ENG->>ENG: read files from local FS
-  ENG-->>CLI: stream status/results
+  CLI->>ENG: POST /v1/prepare-jobs (prepare_kind, args)
+  ENG->>ENG: resolve/validate local file paths
+  ENG-->>CLI: prepare events + terminal status
 ```
 
 ### 4.2 Удаленная цель, локальные файлы (сначала загрузка)
@@ -212,8 +212,8 @@ sequenceDiagram
 - `source_id` контент-адресуемый и может переиспользоваться между запусками.
 - Большие загрузки возобновляемые; сбойные чанки можно повторить без рестарта.
 
-## 6. Наличие Liquibase
+## 6. Поддержка Liquibase
 
-- Если Liquibase доступен, CLI может запросить Liquibase-aware планирование на runner.
-- Если Liquibase недоступен, CLI строит явный step-план (упорядоченный список скриптов) и передает его в запросе запуска.
-- Одни и те же правила загрузки/разрешения применяются в обоих режимах.
+- CLI поддерживает `plan:lb` и `prepare:lb`, передавая Liquibase-аргументы в `POST /v1/prepare-jobs`.
+- CLI не строит локальный fallback step-план для Liquibase; планирование/выполнение принадлежат engine.
+- В Windows + WSL local mode CLI переписывает Liquibase path-аргументы/workdir для совместимости с host execution.

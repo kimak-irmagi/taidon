@@ -35,7 +35,7 @@ gantt
     Filesystem snapshot backend (overlayfs)    :done, a2fs, after a2, 20d
     Filesystem snapshot backend (Btrfs)        :done, a2b, after a2fs, 30d
     Filesystem snapshot backend (ZFS)          :a2z, after a2b, 30d
-    Liquibase adapter (apply migrations)       :a3, after a2b, 30d
+    Liquibase adapter (apply migrations)       :active, a3, after a2b, 30d
 
     section Product MVP (Local)
     Drop-in connection (proxy/adapter)         :b1, after a2, 45d
@@ -69,11 +69,11 @@ gantt
 
 ---
 
-## Status (as of 2026-01-31)
+## Status (as of 2026-02-12)
 
-- **Done**: local engine API surface (health, config, names, instances, runs, states, prepare jobs, tasks), local runtime and lifecycle, end-to-end init/prepare/run pipeline, job/task persistence and events, StateFS abstraction, state cache foundations and retention rules, CLI basics (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm`), WSL init flow (incl. nsenter install), instance-delete logging.
+- **Done**: local engine API surface (health, config, names, instances, runs, states, prepare jobs, tasks), local runtime and lifecycle, end-to-end init/prepare/run pipeline, job/task persistence and events, StateFS abstraction, state cache foundations and retention rules, CLI local surface (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (incl. nsenter install), instance-delete logging.
 - **Done (filesystem)**: overlayfs-based copy stub and Btrfs snapshot backend.
-- **In progress**: CLI UX hardening and deterministic execution (still missing Liquibase adapter and `apply/status/logs/destroy` equivalents).
+- **In progress**: CLI UX hardening and deterministic execution (`prepare:lb` and `plan:lb` landed; remaining parity gaps are command aliases and richer logs UX).
 - **Planned**: drop-in connection, git-aware CLI, team on-prem orchestration, cloud sharing, education.
 
 ---
@@ -113,11 +113,11 @@ gantt
 
 - Taidon Engine + API (local mode) — **Done** (local OpenAPI spec)
 - Local runtime (containers) with instance lifecycle — **Done**
-- CLI surface (local): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs plan`, `sqlrs prepare`, `sqlrs run`, `sqlrs rm` — **Done**
+- CLI surface (local): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **Done**
 - Cache v1 (prepare jobs + state reuse + retention) — **Done (core)**
 - Filesystem snapshot backends — **Done** (overlayfs copy stub, Btrfs), **Planned** (ZFS)
-- Liquibase adapter (apply changelog) — **Planned**
-- CLI parity with original MVP list (`apply/status/logs/destroy`) — **Planned**
+- Liquibase adapter (apply changelog) — **In progress** (local basic flow via `prepare:lb`/`plan:lb` is implemented)
+- CLI parity with original MVP list (`apply/status/logs/destroy`) — **In progress** (`status` and `destroy` equivalent via `rm` are available; alias-level parity and `logs` command are pending)
 
 **Optional (nice-to-have)**:
 
@@ -132,7 +132,7 @@ gantt
 - A warm start reuses cached state and is significantly faster
 - Migrations are deterministic and reproducible
 
-**Status**: In progress (core local runtime and CLI exist; Liquibase/apply flow pending).
+**Status**: In progress (core local runtime and CLI exist; Liquibase basic flow is implemented; parity/hardening remains).
 
 ---
 
