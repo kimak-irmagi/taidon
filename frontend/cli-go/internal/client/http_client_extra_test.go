@@ -167,6 +167,30 @@ func TestPrepareJobsAndTasks(t *testing.T) {
 	}
 }
 
+func TestDeletePrepareJob(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/prepare-jobs/job-1" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"dry_run":false,"outcome":"deleted","root":{"kind":"job","id":"job-1"}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	result, status, err := cli.DeletePrepareJob(context.Background(), "job-1", DeleteOptions{})
+	if err != nil {
+		t.Fatalf("DeletePrepareJob: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("unexpected status: %d", status)
+	}
+	if result.Root.ID != "job-1" || result.Outcome != "deleted" {
+		t.Fatalf("unexpected delete result: %+v", result)
+	}
+}
+
 func TestConfigEndpoints(t *testing.T) {
 	var gotConfigQuery url.Values
 	var gotRemoveQuery url.Values

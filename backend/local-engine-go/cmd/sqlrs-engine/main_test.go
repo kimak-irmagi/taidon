@@ -253,6 +253,27 @@ func TestSnapshotBackendFromConfigRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestLogLevelFromConfig(t *testing.T) {
+	if logLevelFromConfig(nil) != "" {
+		t.Fatalf("expected empty level for nil config")
+	}
+	if logLevelFromConfig(fakeConfigStore{err: errors.New("boom")}) != "" {
+		t.Fatalf("expected empty level on error")
+	}
+	if logLevelFromConfig(fakeConfigStore{value: 123}) != "" {
+		t.Fatalf("expected empty level for non-string")
+	}
+	if logLevelFromConfig(fakeConfigStore{value: "info"}) != "info" {
+		t.Fatalf("expected info level")
+	}
+}
+
+func TestBuildSummaryNotEmpty(t *testing.T) {
+	if summary := buildSummary(); summary == "" {
+		t.Fatalf("expected non-empty summary")
+	}
+}
+
 func TestSetupLoggingWritesToFile(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "engine.json")

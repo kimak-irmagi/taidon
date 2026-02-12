@@ -3,6 +3,7 @@ package dbms
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,6 +128,46 @@ func TestPostgresConnectorPrepareSnapshotVerifyFails(t *testing.T) {
 	}
 	if !containsArg(verifyArgs, "status") {
 		t.Fatalf("expected status in verify args: %v", verifyArgs)
+	}
+}
+
+func TestPostgresConnectorLogInfoEnabled(t *testing.T) {
+	connector := &PostgresConnector{}
+	if !connector.logInfoEnabled() {
+		t.Fatalf("expected default log level to be enabled")
+	}
+	connector = NewPostgres(&fakeRuntime{}, WithLogLevel(func() string { return "warn" }))
+	if connector.logInfoEnabled() {
+		t.Fatalf("expected warn to disable info logging")
+	}
+	connector = NewPostgres(&fakeRuntime{}, WithLogLevel(func() string { return "INFO" }))
+	if !connector.logInfoEnabled() {
+		t.Fatalf("expected info to enable logging")
+	}
+}
+
+func TestPostgresConnectorVerifyStoppedBranches(t *testing.T) {
+	rt := &fakeRuntime{}
+	rt.execFunc = func(ctx context.Context, id string, req runtime.ExecRequest) (string, error) {
+		return "", nil
+	}
+	connector := NewPostgres(rt)
+	if err := connector.verifyStopped(context.Background(), runtime.Instance{ID: "c1"}); err == nil || !strings.Contains(err.Error(), "pg_ctl status returned running") {
+		t.Fatalf("expected running error, got %v", err)
+	}
+
+	rt.execFunc = func(ctx context.Context, id string, req runtime.ExecRequest) (string, error) {
+		return "pg_ctl: no server running\n", errors.New("exit status 3")
+	}
+	if err := connector.verifyStopped(context.Background(), runtime.Instance{ID: "c1"}); err != nil {
+		t.Fatalf("expected no server running to succeed, got %v", err)
+	}
+
+	rt.execFunc = func(ctx context.Context, id string, req runtime.ExecRequest) (string, error) {
+		return "", errors.New("boom")
+	}
+	if err := connector.verifyStopped(context.Background(), runtime.Instance{ID: "c1"}); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected error to include exec error, got %v", err)
 	}
 }
 

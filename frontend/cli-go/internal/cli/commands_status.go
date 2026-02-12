@@ -69,6 +69,8 @@ type LocalDepsStatus struct {
 }
 
 var probeLocalDepsFn = probeLocalDeps
+var execLookPathFn = exec.LookPath
+var execCommandContextFn = exec.CommandContext
 
 func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
@@ -242,7 +244,7 @@ func probeLocalDeps(ctx context.Context, opts LocalDepsOptions) (LocalDepsStatus
 const defaultWSLStateDir = "~/.local/state/sqlrs/store"
 
 func checkDocker(ctx context.Context, verbose bool) (bool, string) {
-	if _, err := exec.LookPath("docker"); err != nil {
+	if _, err := execLookPathFn("docker"); err != nil {
 		if verbose {
 			return false, fmt.Sprintf("docker not ready: %v", err)
 		}
@@ -250,7 +252,7 @@ func checkDocker(ctx context.Context, verbose bool) (bool, string) {
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "docker", "info")
+	cmd := execCommandContextFn(checkCtx, "docker", "info")
 	if err := cmd.Run(); err != nil {
 		if verbose {
 			return false, fmt.Sprintf("docker not ready: %v", err)
@@ -261,7 +263,7 @@ func checkDocker(ctx context.Context, verbose bool) (bool, string) {
 }
 
 func checkWSL(ctx context.Context, verbose bool) (bool, string) {
-	if _, err := exec.LookPath("wsl.exe"); err != nil {
+	if _, err := execLookPathFn("wsl.exe"); err != nil {
 		if verbose {
 			return false, fmt.Sprintf("wsl not ready: %v", err)
 		}
@@ -269,7 +271,7 @@ func checkWSL(ctx context.Context, verbose bool) (bool, string) {
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "wsl.exe", "--status")
+	cmd := execCommandContextFn(checkCtx, "wsl.exe", "--status")
 	if err := cmd.Run(); err != nil {
 		if verbose {
 			return false, fmt.Sprintf("wsl not ready: %v", err)
@@ -330,7 +332,7 @@ func checkWSLBtrfs(ctx context.Context, opts LocalDepsOptions) (bool, string) {
 func listWSLDistros(ctx context.Context) ([]wsl.Distro, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "wsl.exe", "--list", "--verbose")
+	cmd := execCommandContextFn(checkCtx, "wsl.exe", "--list", "--verbose")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -341,7 +343,7 @@ func listWSLDistros(ctx context.Context) ([]wsl.Distro, error) {
 func isWSLMountUnitActive(ctx context.Context, distro, unit string) (bool, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "systemctl", "is-active", unit)
+	cmd := execCommandContextFn(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "systemctl", "is-active", unit)
 	out, err := cmd.Output()
 	if err != nil {
 		if isExitStatus(err, 3) || isExitStatus(err, 4) {
@@ -355,17 +357,17 @@ func isWSLMountUnitActive(ctx context.Context, distro, unit string) (bool, error
 func statWSLFSType(ctx context.Context, distro, stateDir string) (string, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "mkdir", "-p", stateDir)
+	cmd := execCommandContextFn(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "mkdir", "-p", stateDir)
 	if err := cmd.Run(); err != nil {
 		return "", err
 	}
-	cmd = exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "nsenter", "-t", "1", "-m", "--", "stat", "-f", "-c", "%T", stateDir)
+	cmd = execCommandContextFn(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "nsenter", "-t", "1", "-m", "--", "stat", "-f", "-c", "%T", stateDir)
 	out, err := cmd.Output()
 	if err == nil {
 		return string(out), nil
 	}
 	if strings.Contains(strings.ToLower(err.Error()), "command not found") {
-		cmd = exec.CommandContext(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "stat", "-f", "-c", "%T", stateDir)
+		cmd = execCommandContextFn(checkCtx, "wsl.exe", "-d", distro, "-u", "root", "--", "stat", "-f", "-c", "%T", stateDir)
 		out, err = cmd.Output()
 		if err != nil {
 			return "", err

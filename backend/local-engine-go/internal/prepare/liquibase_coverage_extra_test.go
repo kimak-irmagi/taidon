@@ -1,6 +1,8 @@
 package prepare
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -58,6 +60,66 @@ func TestCollectLiquibasePathsSearchPath(t *testing.T) {
 	}
 	if len(searchPaths) != 1 || !strings.Contains(searchPaths[0], "/tmp/path") {
 		t.Fatalf("unexpected search paths: %+v", searchPaths)
+	}
+}
+
+func TestHandleLiquibasePathFlagSearchPathEqualsCoverage(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cwd, "db"), 0o700); err != nil {
+		t.Fatalf("mkdir db: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(cwd, "other"), 0o700); err != nil {
+		t.Fatalf("mkdir other: %v", err)
+	}
+	args := []string{"--searchPath=db,other"}
+	idx := 0
+	normalized := []string{}
+	mounts := []engineRuntime.Mount{}
+	mountIndex := 0
+	mounted := map[string]string{}
+
+	handled, err := handleLiquibasePathFlag(args, &idx, cwd, false, false, &normalized, &mounts, &mountIndex, mounted)
+	if err != nil || !handled {
+		t.Fatalf("handleLiquibasePathFlag: %v handled=%v", err, handled)
+	}
+	if len(normalized) != 1 || !strings.HasPrefix(normalized[0], "--searchPath=") {
+		t.Fatalf("unexpected normalized: %+v", normalized)
+	}
+}
+
+func TestCollectLiquibasePathsChangelogEquals(t *testing.T) {
+	lockPaths, searchPaths, err := collectLiquibasePaths([]string{"--changelog-file=/tmp/changelog.xml"}, "")
+	if err != nil {
+		t.Fatalf("collectLiquibasePaths: %v", err)
+	}
+	if len(searchPaths) != 0 {
+		t.Fatalf("expected no search paths, got %+v", searchPaths)
+	}
+	if len(lockPaths) != 1 || !strings.Contains(lockPaths[0], "/tmp/changelog.xml") {
+		t.Fatalf("unexpected lock paths: %+v", lockPaths)
+	}
+}
+
+func TestNormalizeLiquibasePathValuesRemoteRef(t *testing.T) {
+	paths, err := normalizeLiquibasePathValues("--searchPath", "classpath:db", "")
+	if err != nil {
+		t.Fatalf("normalizeLiquibasePathValues: %v", err)
+	}
+	if len(paths) != 0 {
+		t.Fatalf("expected empty paths for remote ref, got %+v", paths)
+	}
+	paths, err = normalizeLiquibasePathValues("--changelog-file", "classpath:db/changelog.xml", "")
+	if err != nil {
+		t.Fatalf("normalizeLiquibasePathValues: %v", err)
+	}
+	if paths != nil {
+		t.Fatalf("expected nil paths for remote ref, got %+v", paths)
+	}
+}
+
+func TestNormalizeLiquibasePathRelativeNoCwd(t *testing.T) {
+	if out := normalizeLiquibasePath("db/changelog.xml", ""); out != "db/changelog.xml" {
+		t.Fatalf("expected unchanged relative path, got %q", out)
 	}
 }
 

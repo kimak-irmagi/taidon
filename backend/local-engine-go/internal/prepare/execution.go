@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"sqlrs/engine/internal/prepare/queue"
@@ -1162,13 +1163,21 @@ func withStateBuildLock(ctx context.Context, stateDir string, lockPath string, k
 }
 
 func isLockBusyError(err error, lockPath string) bool {
-	if err == nil || !os.IsPermission(err) {
+	if err == nil || !isPermissionError(err) {
 		return false
 	}
-	if _, statErr := os.Stat(lockPath); statErr == nil {
+	_, statErr := os.Stat(lockPath)
+	if statErr == nil {
+		return true
+	}
+	if runtime.GOOS == "windows" && isPermissionError(statErr) {
 		return true
 	}
 	return false
+}
+
+func isPermissionError(err error) bool {
+	return os.IsPermission(err) || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM)
 }
 
 func ensureBaseDir(ctx context.Context, fs statefs.StateFS, baseDir string) error {

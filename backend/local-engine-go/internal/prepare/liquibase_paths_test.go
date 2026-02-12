@@ -172,6 +172,49 @@ func TestMapLiquibaseEnvLinuxExecMapsPath(t *testing.T) {
 	}
 }
 
+func TestDefaultLiquibasePathMapperWSL(t *testing.T) {
+	setWSLForTest(t, true)
+	if defaultLiquibasePathMapper() == nil {
+		t.Fatalf("expected WSL path mapper")
+	}
+}
+
+func TestDefaultLiquibasePathMapperNoWSL(t *testing.T) {
+	setWSLForTest(t, false)
+	if defaultLiquibasePathMapper() != nil {
+		t.Fatalf("expected no mapper without WSL")
+	}
+}
+
+func TestSanitizeLiquibaseExecPathQuotes(t *testing.T) {
+	out := sanitizeLiquibaseExecPath(`\"C:\Tools\liquibase.exe\"`)
+	if out != `C:\Tools\liquibase.exe` {
+		t.Fatalf("expected sanitized exec path, got %q", out)
+	}
+	out = sanitizeLiquibaseExecPath(`'C:\Tools\liquibase.exe'`)
+	if out != `C:\Tools\liquibase.exe` {
+		t.Fatalf("expected sanitized single-quoted path, got %q", out)
+	}
+}
+
+func TestMapLiquibasePathValueSearchPathEmptyEntry(t *testing.T) {
+	_, err := mapLiquibasePathValue("--searchPath", " /tmp, ", fakeMapper{})
+	if err == nil || !strings.Contains(err.Error(), "searchPath is empty") {
+		t.Fatalf("expected searchPath empty error, got %v", err)
+	}
+}
+
+func TestNormalizeWindowsPath(t *testing.T) {
+	out := normalizeWindowsPath("C:/Tools/liquibase.exe")
+	if out != `C:\Tools\liquibase.exe` {
+		t.Fatalf("expected windows slashes normalized, got %q", out)
+	}
+	out = normalizeWindowsPath(`C:\Tools\liquibase.exe`)
+	if out != `C:\Tools\liquibase.exe` {
+		t.Fatalf("expected existing backslashes preserved, got %q", out)
+	}
+}
+
 func containsArgPair(args []string, key string, value string) bool {
 	for i := 0; i < len(args); i++ {
 		if args[i] == key && i+1 < len(args) && args[i+1] == value {
