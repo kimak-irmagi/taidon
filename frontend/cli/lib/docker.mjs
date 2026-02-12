@@ -23,10 +23,7 @@ export const docker = {
     try { await run({ cmd: ["docker", "network", "rm", name] }); } catch {}
   },
   async runDetached({ name, image, network, env, mounts, entrypoint, cmd }) {
-    const uid = process.getuid();
-    const gid = process.getgid();
-
-    const args = ["docker", "run", "-d", "--name", name, "--network", network, "--user", `${uid}:${gid}`];
+    const args = ["docker", "run", "-d", "--name", name, "--network", network];
     for (const [k, v] of Object.entries(env || {})) args.push("-e", `${k}=${v}`);
     for (const m of mounts || []) args.push("-v", `${m.hostPath}:${m.containerPath}`);
     if (entrypoint) args.push("--entrypoint", entrypoint);
