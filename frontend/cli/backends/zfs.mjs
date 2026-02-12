@@ -94,11 +94,11 @@ export const zfsBackend = {
         }
 
         // 2️⃣ создаём каталог состояния ТОЛЬКО для метаданных
-        const stateDir = path.join(workspace, "states", stateId);
+        const stateDir = path.join(ZFS_ROOT, "states", stateId);
         if (fs.existsSync(stateDir)) {
             throw new Error(`State already exists: ${stateDir}`);
         }
-        
+
         await ensureDataset(stateDir);
 
         // 3️⃣ сохраняем описание состояния
