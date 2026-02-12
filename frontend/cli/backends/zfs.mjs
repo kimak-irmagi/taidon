@@ -98,7 +98,8 @@ export const zfsBackend = {
         if (fs.existsSync(stateDir)) {
             throw new Error(`State already exists: ${stateDir}`);
         }
-        ensureDataset(stateDir);
+        
+        await ensureDataset(stateDir);
 
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(
@@ -123,12 +124,14 @@ export const zfsBackend = {
             stateDir,
             snapshot
         };
-    },
-    async ensureDataset({dataset}) {
-        try {
-            await zfs(["list", dataset]);
-        } catch {
-            await zfs(["create", "-p", dataset]);
-        }
     }
+    
 };
+
+async function ensureDataset(dataset) {
+    try {
+        await zfs(["list", dataset]);
+    } catch {
+        await zfs(["create", "-p", dataset]);
+    }
+}
