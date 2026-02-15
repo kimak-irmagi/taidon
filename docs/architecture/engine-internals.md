@@ -1,13 +1,17 @@
 # sqlrs Engine Internals (Local Profile)
 
-Scope: internal structure of the local `sqlrs-engine` process. This document describes the current package-level design and request flows implemented in `backend/local-engine-go`.
+Scope: internal structure of the local `sqlrs-engine` process. This document
+describes the current package-level design and request flows implemented in `backend/local-engine-go`.
 
 ## 1. Component Model
 
 ```mermaid
 flowchart LR
   API["HTTP API (internal/httpapi)"]
-  PREP["Prepare Manager (internal/prepare)"]
+  PREP["Prepare Manager Facade (internal/prepare)"]
+  COORD["prepare.jobCoordinator (internal)"]
+  EXEC["prepare.taskExecutor (internal)"]
+  SNAP_ORCH["prepare.snapshotOrchestrator (internal)"]
   QUEUE["Prepare Queue Store (internal/prepare/queue)"]
   RUN["Run Manager (internal/run)"]
   DEL["Deletion Manager (internal/deletion)"]
@@ -30,12 +34,23 @@ flowchart LR
   API --> CFG
   API --> STREAM
 
-  PREP --> QUEUE
-  PREP --> STORE
-  PREP --> STATEFS
-  PREP --> RT
-  PREP --> DBMS
-  PREP --> CFG
+  PREP --> COORD
+  PREP --> EXEC
+  PREP --> SNAP_ORCH
+
+  COORD --> QUEUE
+  COORD --> STORE
+  COORD --> CFG
+  COORD --> EXEC
+
+  EXEC --> STORE
+  EXEC --> STATEFS
+  EXEC --> RT
+  EXEC --> DBMS
+  EXEC --> SNAP_ORCH
+
+  SNAP_ORCH --> STORE
+  SNAP_ORCH --> STATEFS
 
   RUN --> REG
   RUN --> RT
@@ -61,20 +76,27 @@ flowchart LR
   - instance/state/job deletion.
 - Streams prepare events and run events as NDJSON.
 
-### 1.2 Prepare manager (planner + executor)
+### 1.2 Prepare manager facade and internal components
 
-`internal/prepare` owns the full prepare lifecycle:
+`internal/prepare` still owns the full prepare lifecycle, but now has explicit
+internal roles:
 
-- validates request (`prepare_kind`, args, image)
-- normalizes `psql`/`lb` inputs
-- resolves image digest when needed (`resolve_image` task)
-- builds plan tasks (`plan`, `state_execute`, `prepare_instance`)
-- executes tasks and snapshots resulting states
-- writes job/task/events to the queue store
-- supports `plan_only` jobs (returns tasks, does not create instance)
-- supports job deletion (`force`, `dry_run`) and retention trimming.
+- `prepare.Manager` (facade)
+  - public entrypoints for submit/status/events/delete used by `httpapi`.
+- `jobCoordinator` (internal)
+  - request normalization/validation, planning, queue/job/task/event transitions,
+    retention logic.
+- `taskExecutor` (internal)
+  - runtime/task execution and instance creation.
+- `snapshotOrchestrator` (internal)
+  - base-state initialization guards, dirty cached-state invalidation,
+    snapshot/cache hygiene helpers.
+- Implementation note:
+  - heavy method bodies now live on component methods directly; the transitional
+    `Manager -> component -> Manager.*Impl` call chain was removed.
 
-There is no separate `internal/executor` package in the current implementation.
+Package boundary is still `internal/prepare`; these are internal component roles,
+not separate packages.
 
 ### 1.3 Queue store
 
@@ -91,7 +113,8 @@ There is no separate `internal/executor` package in the current implementation.
 - validates run kind (`psql`, `pgbench`) and arguments
 - resolves instance by id/name via registry
 - executes command via runtime
-- on missing container, recreates it from `runtime_dir` (if present), updates `runtime_id`, and emits recovery log events.
+- on missing container, recreates it from `runtime_dir` (if present), updates
+`runtime_id`, and emits recovery log events.
 
 ### 1.5 StateFS and snapshot backends
 
@@ -105,13 +128,16 @@ There is no separate `internal/executor` package in the current implementation.
 
 ### 1.6 Runtime and DBMS hooks
 
-- `internal/runtime` is a Docker-based adapter (`docker` CLI): init base, start/stop containers, exec commands, run one-shot containers.
-- `internal/dbms` provides Postgres snapshot hooks (`PrepareSnapshot`, `ResumeSnapshot`) around snapshot operations.
+- `internal/runtime` is a Docker-based adapter (`docker` CLI): init base, start/stop
+containers, exec commands, run one-shot containers.
+- `internal/dbms` provides Postgres snapshot hooks (`PrepareSnapshot`,
+  `ResumeSnapshot`) around snapshot operations.
 
 ### 1.7 Deletion and connection tracking
 
 - `internal/deletion` builds and executes delete trees for instances/states.
-- `internal/conntrack` is pluggable; current local wiring in `cmd/sqlrs-engine` uses `conntrack.Noop`.
+- `internal/conntrack` is pluggable; current local wiring in `cmd/sqlrs-engine`
+  uses `conntrack.Noop`.
 
 ### 1.8 Registry and metadata store
 
@@ -122,7 +148,8 @@ There is no separate `internal/executor` package in the current implementation.
 ### 1.9 Config and discovery
 
 - runtime config is stored in `<state-store-root>/config.json` and exposed via `/v1/config*`.
-- engine discovery for CLI uses `engine.json` written by `cmd/sqlrs-engine` (endpoint, pid, auth token, version, instance id).
+- engine discovery for CLI uses `engine.json` written by `cmd/sqlrs-engine`
+  (endpoint, pid, auth token, version, instance id).
 
 ## 2. Flows (Local)
 
@@ -132,7 +159,10 @@ There is no separate `internal/executor` package in the current implementation.
 sequenceDiagram
   participant CLI as CLI
   participant API as Engine API
-  participant PREP as Prepare Manager
+  participant PREP as Prepare Facade
+  participant COORD as JobCoordinator
+  participant EXEC as TaskExecutor
+  participant SNAP as SnapshotOrchestrator
   participant QUEUE as Queue Store
   participant RT as Runtime
   participant DBMS as DBMS hooks
@@ -141,24 +171,28 @@ sequenceDiagram
 
   CLI->>API: POST /v1/prepare-jobs
   API->>PREP: Submit(request)
-  PREP->>QUEUE: create job + queued event
+  PREP->>COORD: submit + start orchestration
+  COORD->>QUEUE: create job + queued event
   API-->>CLI: 201 (job_id, events_url, status_url)
 
-  PREP->>PREP: validate + normalize args
-  PREP->>PREP: build plan tasks
-  PREP->>QUEUE: persist tasks + running/task events
+  COORD->>COORD: validate + normalize args
+  COORD->>COORD: build plan tasks
+  COORD->>QUEUE: persist tasks + running/task events
 
   loop for each uncached state_execute task
-    PREP->>RT: start/ensure runtime container
-    PREP->>PREP: execute psql/lb step
-    PREP->>DBMS: prepare snapshot
-    PREP->>STATEFS: snapshot state
-    PREP->>DBMS: resume snapshot
-    PREP->>STORE: create state metadata
+    COORD->>EXEC: execute state/task step
+    EXEC->>RT: start/ensure runtime container
+    EXEC->>EXEC: execute psql/lb step
+    EXEC->>SNAP: snapshot orchestration
+    SNAP->>DBMS: prepare snapshot
+    SNAP->>STATEFS: snapshot state
+    SNAP->>DBMS: resume snapshot
+    EXEC->>STORE: create state metadata
   end
 
-  PREP->>STORE: create instance metadata
-  PREP->>QUEUE: mark succeeded + result event
+  COORD->>EXEC: create prepared instance
+  EXEC->>STORE: create instance metadata
+  COORD->>QUEUE: mark succeeded + result event
   API-->>CLI: stream events + terminal status
 ```
 
@@ -168,13 +202,15 @@ sequenceDiagram
 sequenceDiagram
   participant CLI as CLI
   participant API as Engine API
-  participant PREP as Prepare Manager
+  participant PREP as Prepare Facade
+  participant COORD as JobCoordinator
   participant QUEUE as Queue Store
 
   CLI->>API: POST /v1/prepare-jobs (plan_only=true)
   API->>PREP: Submit(request)
-  PREP->>PREP: validate + normalize + build plan
-  PREP->>QUEUE: persist tasks and mark succeeded
+  PREP->>COORD: submit plan-only job
+  COORD->>COORD: validate + normalize + build plan
+  COORD->>QUEUE: persist tasks and mark succeeded
   API-->>CLI: terminal status with tasks
 ```
 
@@ -244,13 +280,64 @@ sequenceDiagram
 
 ## 5. Error handling
 
-- Long operations return a prepare job; terminal failures are reported via job status and event stream.
+- Long operations return a prepare job; terminal failures are reported via job
+  status and event stream.
 - Validation failures return `400` with structured error payload.
 - Runtime/docker availability failures are surfaced as actionable API errors.
-- If cached state is detected as dirty/incomplete, prepare invalidates and rebuilds it.
+- If cached state is detected as dirty/incomplete, prepare invalidates and
+  rebuilds it.
 
 ## 6. Evolution hooks
 
 - Replace Docker runtime adapter without changing API contracts.
 - Swap/extend StateFS backends while keeping `statefs.StateFS` stable.
 - Replace `conntrack.Noop` with active DB connection tracking in local/shared profiles.
+
+## 7. Helper Contracts (Normative)
+
+Helper functions that affect orchestration, safety, path mapping, or API-visible
+errors are treated as requirement-level behavior. They are not "optional internals".
+
+### 7.1 Prepare helper contracts
+
+- Lock helpers (`withInitLock`, `withStateBuildLock`) must provide exclusive build
+  execution per target, wait on active lock owners, and honor cancellation via context.
+- Marker helpers (`.init.ok`, `.build.ok`) must short-circuit waiting workers once
+  a valid initialization/build result is observable.
+- State hygiene helpers (`postmasterPIDPath`, `hasPGVersion`,
+  `invalidateDirtyCachedState`) must classify dirty/incomplete cached states and
+  remove both filesystem artifacts and metadata rows before reuse.
+- Runtime directory safety helpers must reject runtime directories nested inside
+  immutable state directories.
+
+### 7.2 Liquibase helper contracts
+
+- Argument filtering helpers must reject user-provided connection/runtime flags
+  that break deterministic engine-controlled execution.
+- Path helpers must normalize/map `--changelog-file`, `--defaults-file`,
+  `--searchPath` according to the selected execution environment.
+- Command transformation helpers must preserve planning/execution parity:
+  planning uses `updateSQL`, execution uses one-step `update-count --count=1`.
+- Host execution helpers must honor `exec_mode` (`native` vs `windows-bat`),
+  preserve `work_dir`/environment semantics, and stream command logs line-by-line.
+
+### 7.3 Runtime helper contracts
+
+- Docker error classification helpers must convert daemon-unavailable failures into
+  actionable user-facing diagnostics.
+- Host auth helpers must ensure required `pg_hba.conf` entries idempotently.
+- Port parsing helpers must fail closed on malformed `docker port` output.
+
+### 7.4 Deletion and run helper contracts
+
+- Deletion runtime-stop helpers must treat docker-daemon-unavailable as non-fatal
+  during destructive cleanup.
+- Runtime directory cleanup helpers must try StateFS removal first and fallback to
+  filesystem removal.
+- Run argument guards must reject conflicting connection flags in `run:psql` and
+  `run:pgbench`.
+
+### 7.5 HTTP stream helper contracts
+
+- Prepare events stream helpers must provide ordered NDJSON delivery, wait for new
+  events when the stream is not terminal, and stop once terminal status is reached.

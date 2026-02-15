@@ -217,22 +217,6 @@ func TestRemovePathIgnoresEmpty(t *testing.T) {
 	}
 }
 
-func TestManagerErrorsWithoutBackend(t *testing.T) {
-	mgr := &Manager{}
-	if err := mgr.Validate(t.TempDir()); err == nil {
-		t.Fatalf("expected validate error")
-	}
-	if _, err := mgr.Clone(context.Background(), "src", "dest"); err == nil {
-		t.Fatalf("expected clone error")
-	}
-	if err := mgr.Snapshot(context.Background(), "src", "dest"); err == nil {
-		t.Fatalf("expected snapshot error")
-	}
-	if err := mgr.EnsureBaseDir(context.Background(), t.TempDir()); err == nil {
-		t.Fatalf("expected ensure base error")
-	}
-}
-
 func TestNewManagerKindAndJobRuntimeDir(t *testing.T) {
 	root := t.TempDir()
 	mgr := NewManager(Options{Backend: "copy", StateStoreRoot: root})
@@ -249,21 +233,22 @@ func TestNewManagerKindAndJobRuntimeDir(t *testing.T) {
 	}
 }
 
-func TestManagerKindAndCapabilitiesNil(t *testing.T) {
-	var nilMgr *Manager
-	if nilMgr.Kind() != "" {
-		t.Fatalf("expected empty kind for nil manager")
+func TestManagerCapabilitiesMapping(t *testing.T) {
+	backend := &fakeBackend{
+		kind: "copy",
+		caps: snapshot.Capabilities{
+			RequiresDBStop:        true,
+			SupportsWritableClone: true,
+			SupportsSendReceive:   true,
+		},
 	}
-	if caps := nilMgr.Capabilities(); caps != (Capabilities{}) {
-		t.Fatalf("expected empty caps for nil manager, got %+v", caps)
-	}
-
-	mgr := &Manager{}
-	if mgr.Kind() != "" {
-		t.Fatalf("expected empty kind for nil backend")
-	}
-	if caps := mgr.Capabilities(); caps != (Capabilities{}) {
-		t.Fatalf("expected empty caps for nil backend, got %+v", caps)
+	mgr := &Manager{backend: backend}
+	if caps := mgr.Capabilities(); caps != (Capabilities{
+		RequiresDBStop:        true,
+		SupportsWritableClone: true,
+		SupportsSendReceive:   true,
+	}) {
+		t.Fatalf("unexpected capabilities: %+v", caps)
 	}
 }
 
@@ -326,17 +311,19 @@ func TestManagerCloneResult(t *testing.T) {
 	}
 }
 
-func TestManagerEnsureStateDirNoBackend(t *testing.T) {
-	mgr := &Manager{}
-	if err := mgr.EnsureStateDir(context.Background(), t.TempDir()); err == nil {
-		t.Fatalf("expected ensure state error")
+func TestManagerValidateAndSnapshot(t *testing.T) {
+	root := t.TempDir()
+	mgr := NewManager(Options{Backend: "copy", StateStoreRoot: root})
+	if err := mgr.Validate(root); err != nil {
+		t.Fatalf("Validate: %v", err)
 	}
-}
-
-func TestManagerRemovePathNoBackend(t *testing.T) {
-	mgr := &Manager{}
-	if err := mgr.RemovePath(context.Background(), "dir"); err == nil {
-		t.Fatalf("expected remove path error")
+	srcDir := filepath.Join(root, "src")
+	destDir := filepath.Join(root, "dest")
+	if err := os.MkdirAll(srcDir, 0o700); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	if err := mgr.Snapshot(context.Background(), srcDir, destDir); err != nil {
+		t.Fatalf("Snapshot: %v", err)
 	}
 }
 

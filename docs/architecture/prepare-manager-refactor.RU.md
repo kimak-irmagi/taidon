@@ -1,4 +1,6 @@
-# Рефакторинг Prepare Manager (Предложение)
+# Рефакторинг Prepare Manager
+
+Status: Реализовано (2026-02-12)
 
 ## 1. Контекст
 
@@ -60,50 +62,38 @@
 
 HTTP handlers и CLI-контракты сохраняются.
 
-## 7. План миграции
+## 7. Статус реализации
 
-### Phase 1: Введение компонентов и delegating wrappers
+Split завершён.
 
-- Добавить внутренние структуры:
-  - `jobCoordinator`
-  - `taskExecutor`
-  - `snapshotOrchestrator`
-- Инициализировать их в `NewManager`.
-- Оставить текущие методы `Manager`, но тяжёлые методы превратить в тонкие делегаты.
-
-### Phase 2: Перенос тел методов по зонам ответственности
-
-- Перенести тела оркестрации jobs в `jobCoordinator`.
-- Перенести runtime/task execution в `taskExecutor`.
-- Перенести snapshot cache/base-init в `snapshotOrchestrator`.
-
-### Phase 3: Очистка и уменьшение дублирования
-
-- Без изменения поведения убрать очевидное дублирование подготовки Liquibase запуска.
-- Проверить сохранение существующих queue/event writes и error mapping.
+- `Manager` остался фасадом для внешних/package-вызовов.
+- Тяжёлые orchestration-методы перенесены из `Manager.*Impl` в:
+  - `jobCoordinator` (`runJob`, planning, загрузка задач, Liquibase planning flow).
+  - `taskExecutor` (runtime/task execution, создание instance, Liquibase execution).
+  - `snapshotOrchestrator` (инициализация base + invalidation dirty cache).
+- Удалена промежуточная прокладка `Manager -> component -> Manager.*Impl`.
+- Переходы queue/event и error mapping сохранены совместимыми по поведению.
 
 ## 8. Риски и меры
 
 - Риск: дрейф поведения в последовательности task status/event.
-  - Мера: сначала сохранить wrapper-делегацию и прогнать существующие тесты.
+  - Мера: сохранить facade-методы, точки queue/event write и прогонять component + integration тесты.
 - Риск: регрессии конкурентности runner/heartbeat.
   - Мера: в первом проходе не менять lock-модель и ownership runner.
 - Риск: скрытая связанность через прямой доступ к полям `Manager`.
   - Мера: переносить инкрементально, затем при необходимости ужесточить внутренние контракты.
 
-## 9. Дизайн тестов (на утверждение до реализации)
+## 9. Набор верификации
 
-Новые тесты:
+Реализованная верификация ориентирована на поведенческие контракты:
 
-1. `prepare/manager_delegation_test.go`
-   - Проверка, что `Manager` делегирует тяжёлые flow в coordinator/executor/orchestrator.
-2. `prepare/job_coordinator_test.go`
-   - Покрытие переходов `runJob` для `plan_only` и execution-сценариев (queued -> running -> succeeded/failed).
-3. `prepare/task_executor_test.go`
-   - Покрытие acquire/reuse runtime и обновления статусов в `state_execute`.
-4. `prepare/snapshot_orchestrator_test.go`
-   - Покрытие invalidation грязного cached state и guard-логики base-state init.
-5. `prepare/liquibase_consistency_test.go`
-   - Гарантия паритета между planning-time и execution-time подготовкой Liquibase args/env.
-
-Существующие тесты сохраняются и продолжают проверять поведенческие инварианты.
+1. `prepare/job_coordinator_test.go`
+   - Переходы `runJob` для `plan_only` и execution flow.
+2. `prepare/task_executor_test.go`
+   - runtime reuse и обновление metadata/status в `state_execute`.
+3. `prepare/snapshot_orchestrator_test.go`
+   - invalidation грязного cached state и guard-логика base-state init.
+4. `prepare/liquibase_consistency_test.go`
+   - консистентность подготовки Liquibase request между planning и execution.
+5. Существующие `prepare`-тесты
+   - проверка порядка queue/event, error mapping и инвариантов lifecycle.

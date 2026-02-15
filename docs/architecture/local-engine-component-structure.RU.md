@@ -22,7 +22,12 @@
   - Управляет дефолтами и persisted overrides (`config.json`).
   - Отдает схему и поддерживает path-based get/set/remove.
 - `internal/prepare`
-  - Полная оркестрация prepare: валидация, план, выполнение, snapshot, создание state/instance.
+  - `prepare.Manager` — публичный фасад для HTTP handlers.
+  - Внутреннее разделение:
+    - `jobCoordinator`: жизненный цикл job, planning, переходы queue/event.
+    - `taskExecutor`: runtime/task execution и создание instance.
+    - `snapshotOrchestrator`: инициализация base state, invalidation dirty cache, snapshot guard-логика.
+  - Полная оркестрация prepare остаётся в этом пакете: валидация, план, выполнение, snapshot, создание state/instance.
   - Поддерживает prepare kind `psql` и `lb`.
   - Обрабатывает `plan_only`, стрим событий и жизненный цикл job.
 - `internal/prepare/queue`
@@ -61,7 +66,13 @@
 ## 3. Ключевые типы и интерфейсы
 
 - `prepare.Manager`
-  - Принимает prepare jobs, отдает status/events, обрабатывает удаление job.
+  - Публичный prepare фасад для submit/status/events/delete.
+- `prepare.jobCoordinator` (internal)
+  - Координирует жизненный цикл job, planning, переходы task и queue writes.
+- `prepare.taskExecutor` (internal)
+  - Выполняет задачи и runtime-операции.
+- `prepare.snapshotOrchestrator` (internal)
+  - Владеет snapshot/cache hygiene и guard-логикой base-state init.
 - `prepare.Request`, `prepare.Status`, `prepare.PlanTask`
   - API payload prepare и модель задач плана.
 - `queue.Store`
@@ -91,7 +102,10 @@
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
-  PREP["internal/prepare"]
+  PREP["internal/prepare (Manager facade)"]
+  PREP_COORD["prepare jobCoordinator (internal)"]
+  PREP_EXEC["prepare taskExecutor (internal)"]
+  PREP_SNAP["prepare snapshotOrchestrator (internal)"]
   QUEUE["internal/prepare/queue"]
   RUN["internal/run"]
   DEL["internal/deletion"]
@@ -122,12 +136,20 @@ flowchart TD
   HTTP --> CFG
   HTTP --> STREAM
 
-  PREP --> QUEUE
-  PREP --> RT
-  PREP --> DBMS
-  PREP --> STATEFS
-  PREP --> STORE
-  PREP --> CFG
+  PREP --> PREP_COORD
+  PREP --> PREP_EXEC
+  PREP --> PREP_SNAP
+  PREP_COORD --> QUEUE
+  PREP_COORD --> CFG
+  PREP_COORD --> STORE
+  PREP_COORD --> PREP_EXEC
+  PREP_EXEC --> RT
+  PREP_EXEC --> DBMS
+  PREP_EXEC --> STATEFS
+  PREP_EXEC --> STORE
+  PREP_EXEC --> PREP_SNAP
+  PREP_SNAP --> STATEFS
+  PREP_SNAP --> STORE
 
   RUN --> RT
   RUN --> REG
@@ -141,3 +163,28 @@ flowchart TD
   STATEFS --> SNAPSHOT
   SQLITE --> STORE
 ```
+
+## 6. Требования к helper-функциям и зона ответственности
+
+Технические helper-функции являются частью контрактов компонентов, когда они
+влияют на корректность, детерминизм, безопасность или наблюдаемое API-поведение.
+
+- helper-функции `internal/prepare`
+  - Отвечают за lock/marker-семантику build base/state, dirty-state detection,
+    cache invalidation, normalisation/path mapping аргументов Liquibase и
+    семантику host-exec режима Liquibase (`native` vs `windows-bat`).
+- helper-функции `internal/runtime`
+  - Отвечают за классификацию docker-ошибок, startup diagnostics, идемпотентное
+    обновление host auth в `pg_hba.conf` и гарантии парсинга host-port.
+- helper-функции `internal/run`
+  - Отвечают за guard-проверки конфликтующих connection args и триггеры recovery
+    при отсутствии контейнера.
+- helper-функции `internal/deletion`
+  - Отвечают за cleanup fallback-правила (`StateFS` first, filesystem fallback)
+    и нефатальную обработку docker-unavailable при остановке runtime в удалении.
+- helper-функции `internal/httpapi`
+  - Отвечают за поведение цикла NDJSON prepare-event stream (упорядоченная выдача,
+    ожидание новых событий, завершение при terminal status).
+
+Эти helper-контракты должны быть явно задокументированы и покрыты тестами по
+ожидаемому поведению, а не только по текущей реализации.

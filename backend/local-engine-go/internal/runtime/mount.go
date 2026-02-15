@@ -108,9 +108,6 @@ func runMountCommandInInitNamespace(name string, args ...string) (string, error)
 }
 
 func appendMountLogs(unit string, err error) error {
-	if strings.TrimSpace(unit) == "" {
-		return err
-	}
 	tail, tailErr := runMountCommandFn("journalctl", "-u", unit, "-n", "20", "--no-pager")
 	if tailErr == nil && strings.TrimSpace(tail) != "" {
 		return fmt.Errorf("%v\n%s", err, strings.TrimSpace(tail))

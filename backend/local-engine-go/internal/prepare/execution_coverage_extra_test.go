@@ -331,7 +331,7 @@ func TestParentStateID(t *testing.T) {
 }
 
 func TestExecutePrepareStepUnsupported(t *testing.T) {
-	mgr := &Manager{}
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{})
 	prepared := preparedRequest{request: Request{PrepareKind: "unknown"}}
 	if errResp := mgr.executePrepareStep(context.Background(), "job-1", prepared, nil, taskState{}); errResp == nil {
 		t.Fatalf("expected unsupported prepare kind error")
@@ -624,7 +624,7 @@ func TestFormatExecLineDefaultPath(t *testing.T) {
 }
 
 func TestEnsureBaseDirNilRunnerForJob(t *testing.T) {
-	var mgr *Manager
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{})
 	if _, errResp := mgr.ensureRuntime(context.Background(), "job-1", preparedRequest{}, &TaskInput{}, nil); errResp == nil {
 		t.Fatalf("expected error for nil runner")
 	}
@@ -648,6 +648,35 @@ func TestWithInitLockSuccess(t *testing.T) {
 	}
 	if !called {
 		t.Fatalf("expected callback")
+	}
+}
+
+func TestWithInitLockOpenFileError(t *testing.T) {
+	baseFile := filepath.Join(t.TempDir(), "base-file")
+	if err := os.WriteFile(baseFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write base file: %v", err)
+	}
+	if err := withInitLock(context.Background(), baseFile, func() error { return nil }); err == nil {
+		t.Fatalf("expected open file error for invalid base dir")
+	}
+}
+
+func TestWithStateBuildLockPathErrors(t *testing.T) {
+	rootFile := filepath.Join(t.TempDir(), "root-file")
+	if err := os.WriteFile(rootFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write root file: %v", err)
+	}
+	lockPathWithInvalidParent := filepath.Join(rootFile, "sub", "lock")
+	if err := withStateBuildLock(context.Background(), t.TempDir(), lockPathWithInvalidParent, "", func() error { return nil }); err == nil {
+		t.Fatalf("expected mkdir error when lock path parent is invalid")
+	}
+
+	lockDir := filepath.Join(t.TempDir(), "lock-dir")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatalf("mkdir lock dir: %v", err)
+	}
+	if err := withStateBuildLock(context.Background(), t.TempDir(), lockDir, "", func() error { return nil }); err == nil {
+		t.Fatalf("expected open file error when lock path points to directory")
 	}
 }
 

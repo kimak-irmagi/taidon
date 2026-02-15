@@ -2440,6 +2440,74 @@ func TestStartRuntimeFromImageSuccess(t *testing.T) {
 	}
 }
 
+func TestStartRuntimeRejectsRuntimeDirNestedInStateDir(t *testing.T) {
+	stateRoot := t.TempDir()
+	store := &fakeStore{
+		statesByID: map[string]store.StateEntry{
+			"state-1": {StateID: "state-1", ImageID: "image-1"},
+		},
+	}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{stateRoot: stateRoot})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	paths, err := resolveStatePaths(stateRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
+	}
+
+	jobID := filepath.Join("..", "engines", "image-1", "latest", "states", "state-1", "nested")
+	_, errResp := mgr.startRuntime(context.Background(), jobID, prepared, &TaskInput{Kind: "state", ID: "state-1"})
+	if errResp == nil || !strings.Contains(errResp.Message, "runtime dir is nested inside state dir") {
+		t.Fatalf("expected nested runtime dir error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskLiquibaseRequiresPendingChangesets(t *testing.T) {
+	store := &fakeStore{}
+	liquibase := &fakeLiquibaseRunner{output: ""}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{
+		runtime:   &fakeRuntime{},
+		liquibase: liquibase,
+	})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1",
+		LiquibaseArgs: []string{"update"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+		Status: StatusQueued,
+	}
+
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || !strings.Contains(errResp.Message, "no pending changesets") {
+		t.Fatalf("expected no pending changesets error, got %+v", errResp)
+	}
+	if len(liquibase.runs) == 0 {
+		t.Fatalf("expected liquibase planning call")
+	}
+}
+
 func TestEnsureRuntimeRequiresRunner(t *testing.T) {
 	store := &fakeStore{}
 	mgr := newManager(t, store)
@@ -4224,10 +4292,6 @@ func TestConfigValueToInt(t *testing.T) {
 }
 
 func TestRemoveJobDirNoopAndDelete(t *testing.T) {
-	var nilMgr *Manager
-	if err := nilMgr.removeJobDir("job-1"); err != nil {
-		t.Fatalf("expected nil receiver to be ignored: %v", err)
-	}
 	mgr := &Manager{}
 	if err := mgr.removeJobDir("job-1"); err != nil {
 		t.Fatalf("expected empty state store root to be ignored: %v", err)

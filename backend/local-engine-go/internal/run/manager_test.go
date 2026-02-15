@@ -562,6 +562,45 @@ func TestManagerRunRecreateStopsContainerOnUpdateRuntimeError(t *testing.T) {
 	}
 }
 
+func TestNewManagerRequiresDependencies(t *testing.T) {
+	if _, err := NewManager(Options{}); err == nil || !strings.Contains(err.Error(), "registry is required") {
+		t.Fatalf("expected registry required error, got %v", err)
+	}
+	db := openStore(t)
+	defer db.Close()
+	if _, err := NewManager(Options{Registry: registry.New(db)}); err == nil || !strings.Contains(err.Error(), "runtime is required") {
+		t.Fatalf("expected runtime required error, got %v", err)
+	}
+}
+
+func TestAppendLogEventNoopGuards(t *testing.T) {
+	events := []Event{}
+	appendLogEvent(nil, "message")
+	appendLogEvent(&events, "  ")
+	if len(events) != 0 {
+		t.Fatalf("expected no events for guard cases, got %+v", events)
+	}
+	appendLogEvent(&events, "message")
+	if len(events) != 1 || events[0].Type != "log" || events[0].Data != "message" {
+		t.Fatalf("unexpected log event payload: %+v", events)
+	}
+}
+
+func TestIsContainerMissingClassification(t *testing.T) {
+	if isContainerMissing(nil) {
+		t.Fatalf("expected nil error to be not missing")
+	}
+	if isContainerMissing(errors.New("boom")) {
+		t.Fatalf("expected unrelated error to be not missing")
+	}
+	if !isContainerMissing(errors.New("No such container: abc")) {
+		t.Fatalf("expected no such container to be classified as missing")
+	}
+	if !isContainerMissing(errors.New("container abc is not running")) {
+		t.Fatalf("expected not running container to be classified as missing")
+	}
+}
+
 func openStore(t *testing.T) *sqlite.Store {
 	t.Helper()
 	path := t.TempDir() + "/state.db"

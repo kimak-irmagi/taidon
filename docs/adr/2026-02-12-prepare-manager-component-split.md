@@ -1,6 +1,6 @@
 # ADR: prepare manager component split
 
-Status: Proposed
+Status: Accepted
 Date: 2026-02-12
 
 ## Decision Record 1: split prepare manager by orchestration roles
@@ -20,3 +20,20 @@ Date: 2026-02-12
 - Rationale: This split isolates lifecycle orchestration, runtime/task execution,
   and snapshot/cache-specific logic without API/storage changes; it reduces
   coupling and keeps migration incremental.
+
+## Decision Record 2: complete split by moving method bodies to components
+
+- Timestamp: 2026-02-15T09:20:00Z
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: Should we keep the transitional `Manager -> component -> Manager.*Impl`
+  indirection, or move heavy method bodies directly into component methods?
+- Alternatives:
+  - Keep transitional indirection (`Manager` wrappers + component proxies + `*Impl` on `Manager`).
+  - Revert split and keep logic on `Manager`.
+  - Complete split: keep `Manager` facade, move heavy logic to
+    `jobCoordinator`/`taskExecutor`/`snapshotOrchestrator` methods.
+- Decision: Complete split and remove `Manager.*Impl` transition layer while
+  preserving `Manager` as facade.
+- Rationale: Removes redundant boilerplate and hidden bounce calls, makes
+  component ownership explicit in code, and keeps external behavior unchanged.

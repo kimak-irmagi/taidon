@@ -68,6 +68,10 @@ type Manager struct {
 	running map[string]*jobRunner
 	events  *eventBus
 	beats   map[string]*heartbeatState
+
+	coordinator jobCoordinatorAPI
+	executor    taskExecutorAPI
+	snapshot    snapshotOrchestratorAPI
 }
 
 type jobRunner struct {
@@ -142,7 +146,7 @@ func NewManager(opts Options) (*Manager, error) {
 			return opts.StateFS.Validate(root)
 		}
 	}
-	return &Manager{
+	m := &Manager{
 		store:          opts.Store,
 		queue:          opts.Queue,
 		runtime:        opts.Runtime,
@@ -161,7 +165,11 @@ func NewManager(opts Options) (*Manager, error) {
 		running:        map[string]*jobRunner{},
 		events:         newEventBus(),
 		beats:          map[string]*heartbeatState{},
-	}, nil
+	}
+	m.snapshot = &snapshotOrchestrator{m: m}
+	m.executor = &taskExecutor{m: m, snapshot: m.snapshot}
+	m.coordinator = &jobCoordinator{m: m, executor: m.executor}
+	return m, nil
 }
 
 func (m *Manager) Recover(ctx context.Context) error {
@@ -429,7 +437,8 @@ func (m *Manager) prepareFromJob(job queue.JobRecord) (preparedRequest, error) {
 	return m.prepareRequest(req)
 }
 
-func (m *Manager) runJob(prepared preparedRequest, jobID string) {
+func (c *jobCoordinator) runJob(prepared preparedRequest, jobID string) {
+	m := c.m
 	ctx, cancel := context.WithCancel(context.Background())
 	runner := m.registerRunner(jobID, cancel)
 	jobSucceeded := false
@@ -462,7 +471,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		return
 	}
 
-	tasks, stateID, errResp := m.loadOrPlanTasks(ctx, jobID, prepared)
+	tasks, stateID, errResp := c.loadOrPlanTasks(ctx, jobID, prepared)
 	if errResp != nil {
 		_ = m.failJob(jobID, errResp)
 		return
@@ -507,7 +516,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 				return
 			}
 		case "state_execute":
-			outputID, errResp := m.executeStateTask(ctx, jobID, prepared, task)
+			outputID, errResp := c.executor.executeStateTask(ctx, jobID, prepared, task)
 			if errResp != nil {
 				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
 				_ = m.failJob(jobID, errResp)
@@ -515,7 +524,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 			}
 			stateID = outputID
 		case "prepare_instance":
-			result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
+			result, errResp := c.executor.createInstance(ctx, jobID, prepared, stateID)
 			if errResp != nil {
 				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
 				_ = m.failJob(jobID, errResp)
@@ -540,7 +549,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		_ = m.failJob(jobID, errorResponse("internal_error", "missing output state", ""))
 		return
 	}
-	result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
+	result, errResp := c.executor.createInstance(ctx, jobID, prepared, stateID)
 	if errResp != nil {
 		_ = m.failJob(jobID, errResp)
 		return
@@ -550,7 +559,8 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 	}
 }
 
-func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) {
+func (c *jobCoordinator) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) {
+	m := c.m
 	taskRecords, err := m.queue.ListTasks(ctx, jobID)
 	if err != nil {
 		return nil, "", errorResponse("internal_error", "cannot load tasks", err.Error())
@@ -564,7 +574,7 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 				return nil, "", errResp
 			}
 		}
-		tasks, stateID, errResp := m.buildPlan(ctx, jobID, prepared)
+		tasks, stateID, errResp := c.buildPlan(ctx, jobID, prepared)
 		if errResp != nil {
 			return nil, "", errResp
 		}
@@ -808,18 +818,19 @@ func usesContainerLiquibaseRunner(r liquibaseRunner) bool {
 	}
 }
 
-func (m *Manager) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (c *jobCoordinator) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	switch prepared.request.PrepareKind {
 	case "psql":
-		return m.buildPlanPsql(prepared)
+		return c.buildPlanPsql(prepared)
 	case "lb":
-		return m.buildPlanLiquibase(ctx, jobID, prepared)
+		return c.buildPlanLiquibase(ctx, jobID, prepared)
 	default:
 		return nil, "", errorResponse("internal_error", "unsupported prepare kind", prepared.request.PrepareKind)
 	}
 }
 
-func (m *Manager) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (c *jobCoordinator) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+	m := c.m
 	taskHash, errResp := m.computeTaskHash(prepared)
 	if errResp != nil {
 		return nil, "", errResp
@@ -877,12 +888,13 @@ func (m *Manager) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *
 	return tasks, stateID, nil
 }
 
-func (m *Manager) buildPlanLiquibase(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (c *jobCoordinator) buildPlanLiquibase(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+	m := c.m
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
 		return nil, "", errorResponse("internal_error", "resolved image id is required", "")
 	}
-	changesets, errResp := m.planLiquibaseChangesets(ctx, jobID, prepared)
+	changesets, errResp := c.planLiquibaseChangesets(ctx, jobID, prepared)
 	if errResp != nil {
 		return nil, "", errResp
 	}
@@ -978,7 +990,8 @@ func (m *Manager) buildPlanLiquibase(ctx context.Context, jobID string, prepared
 	return tasks, stateID, nil
 }
 
-func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, prepared preparedRequest) ([]LiquibaseChangeset, *ErrorResponse) {
+func (c *jobCoordinator) planLiquibaseChangesets(ctx context.Context, jobID string, prepared preparedRequest) ([]LiquibaseChangeset, *ErrorResponse) {
+	m := c.m
 	if m.liquibase == nil {
 		return nil, errorResponse("internal_error", "liquibase runner is required", "")
 	}
@@ -990,14 +1003,14 @@ func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, pre
 	var rt *jobRuntime
 	runner := m.getRunner(jobID)
 	if !prepared.request.PlanOnly && runner != nil {
-		planned, errResp := m.ensureRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID}, runner)
+		planned, errResp := c.executor.ensureRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID}, runner)
 		if errResp != nil {
 			return nil, errResp
 		}
 		rt = planned
 	} else {
 		temp := &jobRunner{}
-		planned, errResp := m.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID})
+		planned, errResp := c.executor.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID})
 		if errResp != nil {
 			return nil, errResp
 		}
@@ -1010,10 +1023,11 @@ func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, pre
 		return nil, errResp
 	}
 	defer lock.Close()
-	return m.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
+	return c.executor.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
 }
 
-func (m *Manager) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse) {
+func (e *taskExecutor) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse) {
+	m := e.m
 	if m.liquibase == nil {
 		return nil, errorResponse("internal_error", "liquibase runner is required", "")
 	}
@@ -1782,9 +1796,6 @@ func logLevelAllowsInfo(level string) bool {
 }
 
 func (m *Manager) removeJobDir(jobID string) error {
-	if m == nil {
-		return nil
-	}
 	if strings.TrimSpace(m.stateStoreRoot) == "" {
 		return nil
 	}

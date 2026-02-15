@@ -1,4 +1,6 @@
-# Prepare Manager Refactor (Proposed)
+# Prepare Manager Refactor
+
+Status: Implemented (2026-02-12)
 
 ## 1. Context
 
@@ -60,50 +62,38 @@ No change in public `prepare.Manager` surface:
 
 The HTTP handlers and CLI contracts stay intact.
 
-## 7. Migration plan
+## 7. Implementation status
 
-### Phase 1: Introduce components and delegation wrappers
+The split is complete.
 
-- Add internal structs:
-  - `jobCoordinator`
-  - `taskExecutor`
-  - `snapshotOrchestrator`
-- Initialize them in `NewManager`.
-- Keep existing `Manager` methods, but convert heavy methods to thin delegating wrappers.
-
-### Phase 2: Move method bodies by responsibility
-
-- Move job orchestration bodies to `jobCoordinator`.
-- Move runtime/task execution bodies to `taskExecutor`.
-- Move snapshot cache/base-init bodies to `snapshotOrchestrator`.
-
-### Phase 3: Cleanups and duplication reduction
-
-- Keep behavior identical but remove obvious duplication points in Liquibase execution setup.
-- Ensure all moved code paths preserve existing queue/event writes and error mapping.
+- `Manager` remains a facade for package/external callers.
+- Heavy orchestration methods were moved from `Manager.*Impl` to:
+  - `jobCoordinator` (`runJob`, planning, task loading, Liquibase planning flow).
+  - `taskExecutor` (runtime/task execution, instance creation, Liquibase execution).
+  - `snapshotOrchestrator` (base init + dirty cache invalidation).
+- The previous bounce `Manager -> component -> Manager.*Impl` was removed.
+- Queue/event transitions and error mapping remain behavior-compatible.
 
 ## 8. Risks and mitigations
 
 - Risk: accidental behavior drift in task status/event sequencing.
-  - Mitigation: keep delegation wrappers and existing tests green while moving bodies.
+  - Mitigation: keep facade methods, preserve queue/event write points, and run component + integration tests.
 - Risk: concurrent runner/heartbeat regressions.
   - Mitigation: keep locking model and runner ownership unchanged in first pass.
 - Risk: hidden coupling via direct `Manager` field access.
   - Mitigation: move incrementally, then optionally tighten internal contracts later.
 
-## 9. Test design (for approval before implementation)
+## 9. Verification set
 
-New tests to add:
+Implemented verification focuses on behavior contracts:
 
-1. `prepare/manager_delegation_test.go`
-   - Verifies `Manager` delegates heavy flows to coordinator/executor/orchestrator.
-2. `prepare/job_coordinator_test.go`
-   - Covers `runJob` transitions for plan-only and execute flows (queued -> running -> succeeded/failed).
-3. `prepare/task_executor_test.go`
-   - Covers runtime acquisition/reuse and `state_execute` status update behavior.
-4. `prepare/snapshot_orchestrator_test.go`
-   - Covers dirty cached state invalidation and base-state init guard behavior.
-5. `prepare/liquibase_consistency_test.go`
-   - Guards parity between planning-time and execution-time Liquibase argument/environment preparation.
-
-Existing tests should remain and continue validating behavior invariants.
+1. `prepare/job_coordinator_test.go`
+   - `runJob` plan-only and execute flow transitions.
+2. `prepare/task_executor_test.go`
+   - runtime reuse and `state_execute` metadata/status updates.
+3. `prepare/snapshot_orchestrator_test.go`
+   - dirty cached state invalidation and base-state init guard.
+4. `prepare/liquibase_consistency_test.go`
+   - planning/execution consistency for Liquibase request preparation.
+5. Existing `prepare` tests
+   - preserve queue/event ordering, error mapping, and lifecycle invariants.

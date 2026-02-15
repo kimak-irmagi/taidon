@@ -22,7 +22,12 @@ This document defines the current internal component layout of the local `sqlrs-
   - Default config + persisted override management (`config.json`).
   - Schema exposure and path-based get/set/remove.
 - `internal/prepare`
-  - End-to-end prepare orchestration: validation, plan building, execution, snapshotting, state/instance creation.
+  - `prepare.Manager` is the public facade used by HTTP handlers.
+  - Internal split:
+    - `jobCoordinator`: job lifecycle, planning, queue/event transitions.
+    - `taskExecutor`: runtime/task execution and instance creation.
+    - `snapshotOrchestrator`: base state init, dirty cache invalidation, snapshot guard logic.
+  - End-to-end prepare orchestration remains in this package: validation, planning, execution, snapshotting, state/instance creation.
   - Supports both `psql` and `lb` prepare kinds.
   - Handles `plan_only`, event streaming, and per-job lifecycle.
 - `internal/prepare/queue`
@@ -61,7 +66,13 @@ This document defines the current internal component layout of the local `sqlrs-
 ## 3. Key types and interfaces
 
 - `prepare.Manager`
-  - Submits prepare jobs, exposes status/events, and handles job deletion.
+  - Public prepare facade for submit/status/events/delete.
+- `prepare.jobCoordinator` (internal)
+  - Coordinates job lifecycle, planning, task transitions, and queue writes.
+- `prepare.taskExecutor` (internal)
+  - Executes tasks and runtime operations.
+- `prepare.snapshotOrchestrator` (internal)
+  - Owns snapshot/cache hygiene and base-state init guards.
 - `prepare.Request`, `prepare.Status`, `prepare.PlanTask`
   - Prepare API request/status payloads and planned task model.
 - `queue.Store`
@@ -91,7 +102,10 @@ This document defines the current internal component layout of the local `sqlrs-
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
-  PREP["internal/prepare"]
+  PREP["internal/prepare (Manager facade)"]
+  PREP_COORD["prepare jobCoordinator (internal)"]
+  PREP_EXEC["prepare taskExecutor (internal)"]
+  PREP_SNAP["prepare snapshotOrchestrator (internal)"]
   QUEUE["internal/prepare/queue"]
   RUN["internal/run"]
   DEL["internal/deletion"]
@@ -122,12 +136,20 @@ flowchart TD
   HTTP --> CFG
   HTTP --> STREAM
 
-  PREP --> QUEUE
-  PREP --> RT
-  PREP --> DBMS
-  PREP --> STATEFS
-  PREP --> STORE
-  PREP --> CFG
+  PREP --> PREP_COORD
+  PREP --> PREP_EXEC
+  PREP --> PREP_SNAP
+  PREP_COORD --> QUEUE
+  PREP_COORD --> CFG
+  PREP_COORD --> STORE
+  PREP_COORD --> PREP_EXEC
+  PREP_EXEC --> RT
+  PREP_EXEC --> DBMS
+  PREP_EXEC --> STATEFS
+  PREP_EXEC --> STORE
+  PREP_EXEC --> PREP_SNAP
+  PREP_SNAP --> STATEFS
+  PREP_SNAP --> STORE
 
   RUN --> RT
   RUN --> REG
@@ -141,3 +163,27 @@ flowchart TD
   STATEFS --> SNAPSHOT
   SQLITE --> STORE
 ```
+
+## 6. Helper Requirements and Ownership
+
+Technical helpers are part of component contracts when they influence correctness,
+determinism, safety, or observable API behavior.
+
+- `internal/prepare` helpers
+  - Own lock/marker semantics for base/state build, dirty-state detection, cache
+    invalidation, Liquibase argument/path normalization, and host Liquibase
+    execution mode (`native` vs `windows-bat`) semantics.
+- `internal/runtime` helpers
+  - Own docker error classification, startup diagnostics, `pg_hba.conf` host auth
+    patching, and host-port parsing guarantees.
+- `internal/run` helpers
+  - Own connection-argument conflict guards and container-missing recovery triggers.
+- `internal/deletion` helpers
+  - Own cleanup fallback rules (`StateFS` first, filesystem fallback) and
+    non-fatal handling of docker-unavailable runtime stop during deletion.
+- `internal/httpapi` helpers
+  - Own NDJSON prepare-event stream loop behavior (ordered emit, wait-until-event,
+    terminal completion).
+
+These helper contracts must be documented and tested against expected behavior,
+not only against current implementation details.
