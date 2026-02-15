@@ -64,11 +64,11 @@ type StateFS interface {
 
 ## 4. Точки интеграции
 
-- `prepare.Manager`
-  - использует `StateFS.Validate` перед выполнением
-  - использует `StateFS.EnsureBaseDir`/`EnsureStateDir`
-  - использует `Clone`/`Snapshot` при построении state
-  - использует `JobRuntimeDir` для runtime каталога
+- facade `prepare.PrepareService` и внутренние prepare-компоненты
+  - `jobCoordinator` использует `StateFS.Validate` перед выполнением.
+  - `taskExecutor` использует `Clone` и `EnsureStateDir` при runtime/state переходах.
+  - `snapshotOrchestrator` использует `EnsureBaseDir`, `Snapshot` и helper-логику очистки dirty state.
+  - runtime-пути prepare вычисляются через layout helper-ы `StateFS`.
 - `deletion.Manager`
   - использует `RemovePath` для runtime-директорий
 - `run.Manager`
@@ -83,3 +83,4 @@ type StateFS interface {
 
 - Нужен ли отдельный объект `PathLayout` вместо набора функций?
 - Нужны ли отдельные методы (`RemoveRuntimeDir`, `RemoveStateDir`) или достаточно `RemovePath`?
+

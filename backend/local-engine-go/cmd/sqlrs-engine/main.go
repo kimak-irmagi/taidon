@@ -176,8 +176,8 @@ var openDBFn = func(path string) (*sql.DB, error) {
 }
 var newStoreFn = sqlite.New
 var newQueueFn = queue.New
-var newPrepareManagerFn = prepare.NewManager
-var prepareRecoverFn = func(mgr *prepare.Manager) error {
+var newPrepareServiceFn = prepare.NewPrepareService
+var prepareRecoverFn = func(mgr *prepare.PrepareService) error {
 	return mgr.Recover(context.Background())
 }
 var newDeletionManagerFn = deletion.NewManager
@@ -295,7 +295,7 @@ func run(args []string) (int, error) {
 	connector := dbms.NewPostgres(rt, dbms.WithLogLevel(func() string {
 		return logLevelFromConfig(configMgr)
 	}))
-	prepareMgr, err := newPrepareManagerFn(prepare.Options{
+	prepareSvc, err := newPrepareServiceFn(prepare.Options{
 		Store:          store,
 		Queue:          queueStore,
 		Runtime:        rt,
@@ -307,9 +307,9 @@ func run(args []string) (int, error) {
 		Async:          true,
 	})
 	if err != nil {
-		return 1, fmt.Errorf("prepare manager: %v", err)
+		return 1, fmt.Errorf("prepare service: %v", err)
 	}
-	if err := prepareRecoverFn(prepareMgr); err != nil {
+	if err := prepareRecoverFn(prepareSvc); err != nil {
 		return 1, fmt.Errorf("prepare recovery: %v", err)
 	}
 
@@ -337,7 +337,7 @@ func run(args []string) (int, error) {
 		InstanceID: instanceID,
 		AuthToken:  authToken,
 		Registry:   reg,
-		Prepare:    prepareMgr,
+		Prepare:    prepareSvc,
 		Deletion:   deleteMgr,
 		Run:        runMgr,
 		Config:     configMgr,

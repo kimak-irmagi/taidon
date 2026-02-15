@@ -64,11 +64,11 @@ Notes:
 
 ## 4. Integration Points
 
-- `prepare.Manager`
-  - uses `StateFS.Validate` before execution
-  - uses `StateFS.EnsureBaseDir`/`EnsureStateDir`
-  - uses `Clone`/`Snapshot` for runtime and state transitions
-  - uses `JobRuntimeDir` for job runtime paths
+- `prepare.PrepareService` facade and internal prepare components
+  - `jobCoordinator` uses `StateFS.Validate` before execution.
+  - `taskExecutor` uses `Clone` and `EnsureStateDir` for runtime/state transitions.
+  - `snapshotOrchestrator` uses `EnsureBaseDir`, `Snapshot`, and dirty-state cleanup helpers.
+  - prepare runtime paths are derived via `StateFS` layout helpers.
 - `deletion.Manager`
   - uses `RemovePath` for runtime directories (instances)
 - `run.Manager`
@@ -83,3 +83,4 @@ Notes:
 
 - Should `StateFS` expose a single `PathLayout` object instead of individual path helpers?
 - Do we need distinct removal methods (`RemoveRuntimeDir`, `RemoveStateDir`) or is `RemovePath` sufficient?
+

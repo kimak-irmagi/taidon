@@ -28,3 +28,13 @@ func TestIsLockBusyError(t *testing.T) {
 		t.Fatalf("expected lock not busy for nil error")
 	}
 }
+
+func TestIsLockBusyErrorDirectoryPath(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "lock-dir")
+	if err := os.MkdirAll(lockPath, 0o700); err != nil {
+		t.Fatalf("mkdir lock dir: %v", err)
+	}
+	if isLockBusyError(os.ErrPermission, lockPath) {
+		t.Fatalf("expected lock not busy when lock path points to directory")
+	}
+}

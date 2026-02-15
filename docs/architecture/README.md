@@ -16,6 +16,7 @@ Entry points for Taidon architecture and service design.
 - [`cli-architecture.md`](cli-architecture.md) - CLI flows for local vs remote and source uploads.
 - [`cli-component-structure.md`](cli-component-structure.md) - CLI internal component structure.
 - [`local-engine-component-structure.md`](local-engine-component-structure.md) - local engine component structure.
+- [`prepare-manager-refactor.md`](prepare-manager-refactor.md) - prepare manager split into coordinator/executor/snapshot roles.
 - [`statefs-component-structure.md`](statefs-component-structure.md) - StateFS contract and filesystem isolation in the engine.
 - [`local-engine-storage-schema.md`](local-engine-storage-schema.md) - SQLite schema for local engine state.
 - [`../api-guides/sqlrs-engine.openapi.yaml`](../api-guides/sqlrs-engine.openapi.yaml) - OpenAPI 3.1 spec for the local engine (MVP).

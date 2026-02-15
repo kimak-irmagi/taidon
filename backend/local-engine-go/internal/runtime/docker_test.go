@@ -222,10 +222,54 @@ func TestEnsureHostAuthAddsEntries(t *testing.T) {
 	}
 }
 
+func TestEnsureHostAuthAddsNewlineBeforeAppendedEntries(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.WriteFile(path, []byte("local all all trust"), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("ensureHostAuth: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pg_hba: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "trust\nhost all all 0.0.0.0/0 trust") {
+		t.Fatalf("expected newline before appended host entries, got %q", text)
+	}
+}
+
 func TestEnsureHostAuthSkipsWhenMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	if err := ensureHostAuth(dir); err != nil {
 		t.Fatalf("expected missing pg_hba to be ignored, got %v", err)
+	}
+}
+
+func TestEnsureHostAuthReturnsReadError(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatalf("mkdir pg_hba as dir: %v", err)
+	}
+	if err := ensureHostAuth(dir); err == nil {
+		t.Fatalf("expected read error for directory path")
+	}
+}
+
+func TestEnsureHostAuthRequiresDataDir(t *testing.T) {
+	if err := ensureHostAuth(""); err == nil {
+		t.Fatalf("expected error for empty data dir")
 	}
 }
 
@@ -249,6 +293,33 @@ func TestEnsureHostAuthIdempotent(t *testing.T) {
 	}
 	if string(content) != initial {
 		t.Fatalf("expected pg_hba to be unchanged, got %q", string(content))
+	}
+}
+
+func TestEnsureHostAuthAddsOnlyMissingAddressFamily(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	initial := "host all all 0.0.0.0/0 trust\n"
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("ensureHostAuth: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pg_hba: %v", err)
+	}
+	text := string(content)
+	if strings.Count(text, "0.0.0.0/0") != 1 {
+		t.Fatalf("expected ipv4 entry to stay single, got %q", text)
+	}
+	if strings.Count(text, "::/0") != 1 {
+		t.Fatalf("expected exactly one appended ipv6 entry, got %q", text)
 	}
 }
 
@@ -694,6 +765,14 @@ func TestParseHostPort(t *testing.T) {
 	if err != nil || port != 5433 {
 		t.Fatalf("unexpected parse result: port=%d err=%v", port, err)
 	}
+	port, err = parseHostPort("\n \n0.0.0.0:5434\n")
+	if err != nil || port != 5434 {
+		t.Fatalf("unexpected parse result with empty lines: port=%d err=%v", port, err)
+	}
+	port, err = parseHostPort("invalid\n \n0.0.0.0:5435\n")
+	if err != nil || port != 5435 {
+		t.Fatalf("unexpected parse result with middle blank line: port=%d err=%v", port, err)
+	}
 	if _, err := parseHostPort(""); err == nil {
 		t.Fatalf("expected error for empty output")
 	}
@@ -721,6 +800,15 @@ func TestIsDockerUnavailableOutput(t *testing.T) {
 	if !isDockerUnavailableOutput("Is the docker daemon running?", errors.New("fail")) {
 		t.Fatalf("expected unavailable for daemon running hint")
 	}
+	if !isDockerUnavailableOutput("Cannot connect to the Docker daemon", nil) {
+		t.Fatalf("expected unavailable for daemon string even without wrapped error")
+	}
+	if !isDockerUnavailableOutput("", errors.New("npipe docker pipe")) {
+		t.Fatalf("expected unavailable for npipe+docker+pipe pattern")
+	}
+	if isDockerUnavailableOutput("   ", emptyErr{}) {
+		t.Fatalf("expected unavailable false for effectively empty combined value")
+	}
 }
 
 func TestIsDockerNotFoundOutput(t *testing.T) {
@@ -737,6 +825,10 @@ func TestIsDockerNotFoundOutput(t *testing.T) {
 		t.Fatalf("expected empty output to be false")
 	}
 }
+
+type emptyErr struct{}
+
+func (emptyErr) Error() string { return "" }
 
 func TestDockerUnavailableErrorMessage(t *testing.T) {
 	if (DockerUnavailableError{}).Error() != "docker daemon unavailable" {

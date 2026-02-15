@@ -450,23 +450,23 @@ func TestRunOpenQueueDBError(t *testing.T) {
 }
 
 func TestRunPrepareManagerError(t *testing.T) {
-	prevNew := newPrepareManagerFn
-	newPrepareManagerFn = func(prepare.Options) (*prepare.Manager, error) {
+	prevNew := newPrepareServiceFn
+	newPrepareServiceFn = func(prepare.Options) (*prepare.PrepareService, error) {
 		return nil, errors.New("boom")
 	}
-	t.Cleanup(func() { newPrepareManagerFn = prevNew })
+	t.Cleanup(func() { newPrepareServiceFn = prevNew })
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "engine.json")
 	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath})
-	if code != 1 || err == nil || !strings.Contains(err.Error(), "prepare manager") {
-		t.Fatalf("expected prepare manager error, got code=%d err=%v", code, err)
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "prepare service") {
+		t.Fatalf("expected prepare service error, got code=%d err=%v", code, err)
 	}
 }
 
 func TestRunPrepareRecoverError(t *testing.T) {
 	prevRecover := prepareRecoverFn
-	prepareRecoverFn = func(*prepare.Manager) error {
+	prepareRecoverFn = func(*prepare.PrepareService) error {
 		return errors.New("boom")
 	}
 	t.Cleanup(func() { prepareRecoverFn = prevRecover })

@@ -1,6 +1,7 @@
 # Taidon Roadmap
 
-This roadmap prioritises scenarios, use cases, and components to maximise early product value while keeping a clear path to team (on-prem) and cloud/education offerings.
+This roadmap prioritises scenarios, use cases, and components to maximise early
+product value while keeping a clear path to team (on-prem) and cloud/education offerings.
 
 ---
 
@@ -71,10 +72,18 @@ gantt
 
 ## Status (as of 2026-02-12)
 
-- **Done**: local engine API surface (health, config, names, instances, runs, states, prepare jobs, tasks), local runtime and lifecycle, end-to-end init/prepare/run pipeline, job/task persistence and events, StateFS abstraction, state cache foundations and retention rules, CLI local surface (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (incl. nsenter install), instance-delete logging.
+- **Done**: local engine API surface (health, config, names, instances, runs,
+  states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
+  init/prepare/run pipeline, job/task persistence and events, StateFS abstraction,
+  state cache foundations and retention rules, CLI local surface (`sqlrs init`,
+  `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`,
+  `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`,
+  `sqlrs rm`), WSL init flow (incl. nsenter install), instance-delete logging.
 - **Done (filesystem)**: overlayfs-based copy stub and Btrfs snapshot backend.
-- **In progress**: CLI UX hardening and deterministic execution (`prepare:lb` and `plan:lb` landed; remaining parity gaps are command aliases and richer logs UX).
-- **Planned**: drop-in connection, git-aware CLI, team on-prem orchestration, cloud sharing, education.
+- **In progress**: CLI UX hardening and deterministic execution (`prepare:lb` and
+  `plan:lb` landed; remaining parity gaps are command aliases and richer logs UX).
+- **Planned**: drop-in connection, git-aware CLI, team on-prem orchestration,
+  cloud sharing, education.
 
 ---
 
@@ -113,11 +122,17 @@ gantt
 
 - Taidon Engine + API (local mode) — **Done** (local OpenAPI spec)
 - Local runtime (containers) with instance lifecycle — **Done**
-- CLI surface (local): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **Done**
+- CLI surface (local): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`,
+  `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`,
+  `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **Done**
 - Cache v1 (prepare jobs + state reuse + retention) — **Done (core)**
-- Filesystem snapshot backends — **Done** (overlayfs copy stub, Btrfs), **Planned** (ZFS)
-- Liquibase adapter (apply changelog) — **In progress** (local basic flow via `prepare:lb`/`plan:lb` is implemented)
-- CLI parity with original MVP list (`apply/status/logs/destroy`) — **In progress** (`status` and `destroy` equivalent via `rm` are available; alias-level parity and `logs` command are pending)
+- Filesystem snapshot backends — **Done** (overlayfs copy stub, Btrfs),
+  **Planned** (ZFS)
+- Liquibase adapter (apply changelog) — **In progress** (local basic flow via
+  `prepare:lb`/`plan:lb` is implemented)
+- CLI parity with original MVP list (`apply/status/logs/destroy`) — **In progress**
+  (`status` and `destroy` equivalent via `rm` are available; alias-level parity
+  and `logs` command are pending)
 
 **Optional (nice-to-have)**:
 
@@ -132,7 +147,8 @@ gantt
 - A warm start reuses cached state and is significantly faster
 - Migrations are deterministic and reproducible
 
-**Status**: In progress (core local runtime and CLI exist; Liquibase basic flow is implemented; parity/hardening remains).
+**Status**: In progress (core local runtime and CLI exist; Liquibase basic flow
+is implemented; parity/hardening remains).
 
 ---
 
@@ -259,7 +275,8 @@ gantt
 - PR slash commands:
   - `/taidon warmup --prepare <path>`
   - `/taidon diff --from-ref base --to-ref head --prepare <path>`
-  - `/taidon compare --from-ref base --from-prepare <path> --to-ref head --to-prepare <path> --run "..."`
+  - `/taidon compare --from-ref base --from-prepare <path> --to-ref head --to-prepare
+    <path> --run "..."`
 - Check Runs:
   - warmup status
   - Taidon-aware diff summary
@@ -334,13 +351,20 @@ gantt
 ## Next Documents to Detail
 
 - [`api-contract.md`](api-contract.md) (REST/gRPC + events)
-- [`sql-runner-api.md`](architecture/sql-runner-api.md) (timeouts, cancel, streaming, cache-aware planning)
+- [`sql-runner-api.md`](architecture/sql-runner-api.md) (timeouts, cancel,
+  streaming, cache-aware planning)
 - [`runtime-and-isolation.md`](runtime-and-isolation.md) (local + k8s)
-- [`liquibase-integration.md`](architecture/liquibase-integration.md) (modes, config discovery)
-- [`state-cache-design.md`](architecture/state-cache-design.md) (snapshotting, hashing, retention)
+- [`liquibase-integration.md`](architecture/liquibase-integration.md) (modes,
+  config discovery)
+- [`state-cache-design.md`](architecture/state-cache-design.md) (snapshotting,
+  hashing, retention)
 - [`cli-spec.md`](cli-spec.md) (commands and exit codes)
 - [`security-model.md`](security-model.md) (cloud-hardening, redaction, audit)
-- [`runtime-snapshotting.md`](architecture/runtime-snapshotting.md) (details of the snapshot mechanics)
-- [`git-aware-passive.md`](architecture/git-aware-passive.md) (CLI by ref, zero-copy, provenance)
-- [`git-aware-active.md`](architecture/git-aware-active.md) (PR automation, warmup/diff checks)
-- [`k8s-architecture.md`](architecture/k8s-architecture.md) (single entry gateway in k8s)
+- [`runtime-snapshotting.md`](architecture/runtime-snapshotting.md) (details of
+  the snapshot mechanics)
+- [`git-aware-passive.md`](architecture/git-aware-passive.md) (CLI by ref,
+  zero-copy, provenance)
+- [`git-aware-active.md`](architecture/git-aware-active.md) (PR automation,
+  warmup/diff checks)
+- [`k8s-architecture.md`](architecture/k8s-architecture.md) (single entry gateway
+  in k8s)

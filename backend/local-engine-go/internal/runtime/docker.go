@@ -676,9 +676,6 @@ func parseHostPort(value string) (int, error) {
 			continue
 		}
 		parts := strings.Split(line, ":")
-		if len(parts) == 0 {
-			continue
-		}
 		portStr := parts[len(parts)-1]
 		port, err := strconv.Atoi(strings.TrimSpace(portStr))
 		if err != nil {
@@ -724,7 +721,11 @@ func isDockerUnavailableOutput(output string, err error) bool {
 	if err == nil && strings.TrimSpace(output) == "" {
 		return false
 	}
-	combined := strings.ToLower(strings.TrimSpace(output + " " + err.Error()))
+	combined := strings.TrimSpace(output)
+	if err != nil {
+		combined = strings.TrimSpace(combined + " " + err.Error())
+	}
+	combined = strings.ToLower(combined)
 	if combined == "" {
 		return false
 	}

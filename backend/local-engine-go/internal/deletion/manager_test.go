@@ -94,6 +94,7 @@ func (f *fakeRuntime) WaitForReady(ctx context.Context, id string, timeout time.
 type fakeStateFS struct {
 	kind         string
 	removeCalls  []string
+	removeErr    error
 	stateDirErr  error
 	stateRootErr error
 }
@@ -161,6 +162,9 @@ func (f *fakeStateFS) Snapshot(ctx context.Context, srcDir string, destDir strin
 
 func (f *fakeStateFS) RemovePath(ctx context.Context, dir string) error {
 	f.removeCalls = append(f.removeCalls, dir)
+	if f.removeErr != nil {
+		return f.removeErr
+	}
 	if strings.TrimSpace(dir) == "" {
 		return nil
 	}
@@ -867,5 +871,86 @@ func TestRemoveStateDirNoop(t *testing.T) {
 	manager = &Manager{stateStoreRoot: t.TempDir(), statefs: &fakeStateFS{}}
 	if err := manager.removeStateDir(nil, ""); err != nil {
 		t.Fatalf("expected noop for empty state id, got %v", err)
+	}
+}
+
+func TestRemoveRuntimeDirUsesStateFS(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "runtime")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	fs := &fakeStateFS{}
+	manager := &Manager{statefs: fs}
+
+	if err := manager.removeRuntimeDir(strPtr(dir)); err != nil {
+		t.Fatalf("removeRuntimeDir: %v", err)
+	}
+	if len(fs.removeCalls) != 1 || fs.removeCalls[0] != dir {
+		t.Fatalf("expected statefs remove call for %s, got %+v", dir, fs.removeCalls)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime dir removed, err=%v", err)
+	}
+}
+
+func TestRemoveRuntimeDirFallsBackWhenStateFSRemoveFails(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "runtime")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	fs := &fakeStateFS{removeErr: errors.New("statefs remove failed")}
+	manager := &Manager{statefs: fs}
+
+	if err := manager.removeRuntimeDir(strPtr(dir)); err != nil {
+		t.Fatalf("removeRuntimeDir fallback: %v", err)
+	}
+	if len(fs.removeCalls) != 1 || fs.removeCalls[0] != dir {
+		t.Fatalf("expected statefs remove attempt for %s, got %+v", dir, fs.removeCalls)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected runtime dir removed by fallback, err=%v", err)
+	}
+}
+
+func TestRemoveRuntimeDirNoopGuards(t *testing.T) {
+	manager := &Manager{}
+	if err := manager.removeRuntimeDir(nil); err != nil {
+		t.Fatalf("expected nil runtime dir to be ignored: %v", err)
+	}
+	empty := "   "
+	if err := manager.removeRuntimeDir(&empty); err != nil {
+		t.Fatalf("expected empty runtime dir to be ignored: %v", err)
+	}
+}
+
+func TestStopRuntimeNonUnavailableError(t *testing.T) {
+	manager := &Manager{runtime: &fakeRuntime{stopErr: errors.New("boom")}}
+	runtimeID := "container-1"
+	if err := manager.stopRuntime(context.Background(), &runtimeID); err == nil {
+		t.Fatalf("expected runtime stop error")
+	}
+}
+
+func TestStopRuntimeIgnoresDockerUnavailable(t *testing.T) {
+	manager := &Manager{runtime: &fakeRuntime{stopErr: runtime.DockerUnavailableError{Message: "daemon unavailable"}}}
+	runtimeID := "container-1"
+	if err := manager.stopRuntime(context.Background(), &runtimeID); err != nil {
+		t.Fatalf("expected docker unavailable to be ignored, got %v", err)
+	}
+}
+
+func TestStopRuntimeNoopGuards(t *testing.T) {
+	manager := &Manager{}
+	if err := manager.stopRuntime(context.Background(), nil); err != nil {
+		t.Fatalf("expected nil runtime id to be ignored: %v", err)
+	}
+	runtimeID := "container-1"
+	if err := manager.stopRuntime(context.Background(), &runtimeID); err != nil {
+		t.Fatalf("expected missing runtime adapter to be ignored: %v", err)
+	}
+	manager.runtime = &fakeRuntime{}
+	empty := "   "
+	if err := manager.stopRuntime(context.Background(), &empty); err != nil {
+		t.Fatalf("expected empty runtime id to be ignored: %v", err)
 	}
 }

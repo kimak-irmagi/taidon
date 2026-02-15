@@ -16,6 +16,7 @@
 - [`cli-architecture.RU.md`](cli-architecture.RU.md) - CLI флоу для local vs remote и загрузки исходников.
 - [`cli-component-structure.RU.md`](cli-component-structure.RU.md) - внутренняя структура CLI.
 - [`local-engine-component-structure.RU.md`](local-engine-component-structure.RU.md) - внутренняя структура локального engine.
+- [`prepare-manager-refactor.RU.md`](prepare-manager-refactor.RU.md) - разбиение prepare manager на coordinator/executor/snapshot роли.
 - [`statefs-component-structure.RU.md`](statefs-component-structure.RU.md) - контракт StateFS и изоляция ФС-логики в engine.
 - [`local-engine-storage-schema.RU.md`](local-engine-storage-schema.RU.md) - схема SQLite для локального engine.
 - [`../api-guides/sqlrs-engine.openapi.yaml`](../api-guides/sqlrs-engine.openapi.yaml) - спецификация OpenAPI 3.1 для локального engine (MVP).

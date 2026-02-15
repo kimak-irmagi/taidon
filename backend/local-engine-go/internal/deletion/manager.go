@@ -323,7 +323,7 @@ func (m *Manager) removeRuntimeDir(runtimeDir *string) error {
 	if dir == "" {
 		return nil
 	}
-	if m != nil && m.statefs != nil {
+	if m.statefs != nil {
 		if err := m.statefs.RemovePath(context.Background(), dir); err == nil {
 			return nil
 		}
@@ -332,9 +332,6 @@ func (m *Manager) removeRuntimeDir(runtimeDir *string) error {
 }
 
 func (m *Manager) removeStateDir(imageID *string, stateID string) error {
-	if m == nil {
-		return nil
-	}
 	if strings.TrimSpace(m.stateStoreRoot) == "" {
 		return nil
 	}

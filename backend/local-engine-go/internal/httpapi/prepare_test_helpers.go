@@ -123,7 +123,7 @@ func (f *fakePsqlRunner) Run(ctx context.Context, instance engineRuntime.Instanc
 	return "", nil
 }
 
-func newPrepareManager(t *testing.T, store store.Store, queueStore queue.Store, opts ...func(*prepare.Options)) *prepare.Manager {
+func newPrepareManager(t *testing.T, store store.Store, queueStore queue.Store, opts ...func(*prepare.Options)) *prepare.PrepareService {
 	t.Helper()
 	stateRoot := filepath.Join(t.TempDir(), "state-store")
 	options := prepare.Options{
@@ -140,9 +140,9 @@ func newPrepareManager(t *testing.T, store store.Store, queueStore queue.Store, 
 	for _, opt := range opts {
 		opt(&options)
 	}
-	mgr, err := prepare.NewManager(options)
+	mgr, err := prepare.NewPrepareService(options)
 	if err != nil {
-		t.Fatalf("prepare manager: %v", err)
+		t.Fatalf("prepare service: %v", err)
 	}
 	return mgr
 }

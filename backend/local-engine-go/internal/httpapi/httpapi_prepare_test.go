@@ -16,6 +16,7 @@ import (
 
 	"sqlrs/engine/internal/deletion"
 	"sqlrs/engine/internal/prepare"
+	"sqlrs/engine/internal/prepare/queue"
 	"sqlrs/engine/internal/registry"
 	"sqlrs/engine/internal/store"
 	"sqlrs/engine/internal/store/sqlite"
@@ -631,6 +632,82 @@ func TestPrepareEventsWithoutFlusher(t *testing.T) {
 	streamPrepareEvents(writer, req, nil, "job")
 	if writer.code != http.StatusInternalServerError {
 		t.Fatalf("expected 500, got %d", writer.code)
+	}
+}
+
+func TestPrepareEventsReturnsInternalErrorWhenEventsReadFails(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+	st, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	queueStore := mustOpenQueue(t, dbPath)
+	prep := newPrepareManager(t, st, queueStore)
+	handler := NewHandler(Options{
+		Version:    "test",
+		InstanceID: "instance",
+		AuthToken:  "secret",
+		Prepare:    prep,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	jobID := submitPlanOnlyJob(t, server.URL, "secret")
+	if err := queueStore.Close(); err != nil {
+		t.Fatalf("close queue: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs/"+jobID+"/events", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("events request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestPrepareEventsWaitStopsOnRequestCancel(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "state.db")
+	st, err := sqlite.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	queueStore := mustOpenQueue(t, dbPath)
+	defer queueStore.Close()
+	prep := newPrepareManager(t, st, queueStore)
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if err := queueStore.CreateJob(context.Background(), queue.JobRecord{
+		JobID:       "job-wait",
+		Status:      prepare.StatusRunning,
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		CreatedAt:   now,
+	}); err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "http://example/v1/prepare-jobs/job-wait/events", nil).WithContext(ctx)
+	resp := httptest.NewRecorder()
+
+	streamPrepareEvents(resp, req, prep, "job-wait")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected stream to end cleanly on cancel with 200, got %d", resp.Code)
+	}
+	if strings.TrimSpace(resp.Body.String()) != "" {
+		t.Fatalf("expected no events emitted, got %q", resp.Body.String())
 	}
 }
 

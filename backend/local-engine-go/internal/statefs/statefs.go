@@ -2,7 +2,6 @@ package statefs
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,16 +60,10 @@ func NewManager(opts Options) StateFS {
 }
 
 func (m *Manager) Kind() string {
-	if m == nil || m.backend == nil {
-		return ""
-	}
 	return m.backend.Kind()
 }
 
 func (m *Manager) Capabilities() Capabilities {
-	if m == nil || m.backend == nil {
-		return Capabilities{}
-	}
 	caps := m.backend.Capabilities()
 	return Capabilities{
 		RequiresDBStop:        caps.RequiresDBStop,
@@ -80,9 +73,6 @@ func (m *Manager) Capabilities() Capabilities {
 }
 
 func (m *Manager) Validate(root string) error {
-	if m == nil || m.backend == nil {
-		return fmt.Errorf("statefs backend is required")
-	}
 	return snapshot.ValidateStore(m.backend.Kind(), root)
 }
 
@@ -103,9 +93,6 @@ func (m *Manager) JobRuntimeDir(root, jobID string) (string, error) {
 }
 
 func (m *Manager) EnsureBaseDir(ctx context.Context, baseDir string) error {
-	if m == nil || m.backend == nil {
-		return fmt.Errorf("statefs backend is required")
-	}
 	if ensurer, ok := m.backend.(subvolumeEnsurer); ok {
 		return ensurer.EnsureSubvolume(ctx, baseDir)
 	}
@@ -113,9 +100,6 @@ func (m *Manager) EnsureBaseDir(ctx context.Context, baseDir string) error {
 }
 
 func (m *Manager) EnsureStateDir(ctx context.Context, stateDir string) error {
-	if m == nil || m.backend == nil {
-		return fmt.Errorf("statefs backend is required")
-	}
 	if ensurer, ok := m.backend.(subvolumeEnsurer); ok {
 		if m.backend.Kind() == "btrfs" {
 			return os.MkdirAll(filepath.Dir(stateDir), 0o700)
@@ -126,9 +110,6 @@ func (m *Manager) EnsureStateDir(ctx context.Context, stateDir string) error {
 }
 
 func (m *Manager) Clone(ctx context.Context, srcDir, destDir string) (CloneResult, error) {
-	if m == nil || m.backend == nil {
-		return CloneResult{}, fmt.Errorf("statefs backend is required")
-	}
 	res, err := m.backend.Clone(ctx, srcDir, destDir)
 	if err != nil {
 		return CloneResult{}, err
@@ -137,16 +118,10 @@ func (m *Manager) Clone(ctx context.Context, srcDir, destDir string) (CloneResul
 }
 
 func (m *Manager) Snapshot(ctx context.Context, srcDir, destDir string) error {
-	if m == nil || m.backend == nil {
-		return fmt.Errorf("statefs backend is required")
-	}
 	return m.backend.Snapshot(ctx, srcDir, destDir)
 }
 
 func (m *Manager) RemovePath(ctx context.Context, path string) error {
-	if m == nil || m.backend == nil {
-		return fmt.Errorf("statefs backend is required")
-	}
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil

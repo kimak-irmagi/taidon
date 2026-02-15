@@ -61,10 +61,35 @@ func TestMapLiquibaseArgsMissingValue(t *testing.T) {
 	}
 }
 
+func TestMapLiquibaseArgsEqualsFormsValidationErrors(t *testing.T) {
+	cases := [][]string{
+		{"--changelog-file="},
+		{"--defaults-file="},
+		{"--searchPath="},
+	}
+	for _, args := range cases {
+		if _, err := mapLiquibaseArgs(args, fakeMapper{}); err == nil {
+			t.Fatalf("expected validation error for args %v", args)
+		}
+	}
+}
+
 func TestMapLiquibaseArgsMapperError(t *testing.T) {
 	_, err := mapLiquibaseArgs([]string{"--changelog-file", "/x"}, fakeMapper{err: errors.New("boom")})
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected mapper error, got %v", err)
+	}
+}
+
+func TestMapLiquibaseArgsNilMapperReturnsCopy(t *testing.T) {
+	args := []string{"update", "--searchPath", "/tmp"}
+	out, err := mapLiquibaseArgs(args, nil)
+	if err != nil {
+		t.Fatalf("mapLiquibaseArgs: %v", err)
+	}
+	out[0] = "changed"
+	if args[0] != "update" {
+		t.Fatalf("expected source args to stay unchanged, got %v", args)
 	}
 }
 
@@ -77,6 +102,24 @@ func TestWslPathMapperKeepsRelativePath(t *testing.T) {
 	}
 	if out != "liquibase\\changelog.xml" {
 		t.Fatalf("expected relative path to stay, got %q", out)
+	}
+}
+
+func TestWslPathMapperPassThroughForBlankAndWindowsPath(t *testing.T) {
+	mapper := wslPathMapper{}
+	out, err := mapper.MapPath("   ")
+	if err != nil {
+		t.Fatalf("MapPath blank: %v", err)
+	}
+	if out != "   " {
+		t.Fatalf("expected original blank value, got %q", out)
+	}
+	out, err = mapper.MapPath(`C:\work\file.xml`)
+	if err != nil {
+		t.Fatalf("MapPath windows: %v", err)
+	}
+	if out != `C:\work\file.xml` {
+		t.Fatalf("expected windows path unchanged, got %q", out)
 	}
 }
 
@@ -97,6 +140,32 @@ func TestWslPathMapperUsesWslpathM(t *testing.T) {
 	}
 	if out != "C:\\Users\\Zlygo\\work\\file.xml" {
 		t.Fatalf("expected windows path, got %q", out)
+	}
+}
+
+func TestWslPathMapperFallsBackToWslpathW(t *testing.T) {
+	prev := execCommand
+	t.Cleanup(func() { execCommand = prev })
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if len(args) > 0 && args[0] == "-m" {
+			if runtime.GOOS == "windows" {
+				return exec.CommandContext(ctx, "cmd", "/c", "exit 1")
+			}
+			return exec.CommandContext(ctx, "sh", "-c", "exit 1")
+		}
+		if runtime.GOOS == "windows" {
+			return exec.CommandContext(ctx, "cmd", "/c", "echo C:/Users/Zlygo/work/file.xml")
+		}
+		return exec.CommandContext(ctx, "sh", "-c", "echo C:/Users/Zlygo/work/file.xml")
+	}
+	setWSLForTest(t, true)
+	mapper := wslPathMapper{}
+	out, err := mapper.MapPath("/mnt/c/Users/Zlygo/work/file.xml")
+	if err != nil {
+		t.Fatalf("MapPath: %v", err)
+	}
+	if out != "C:/Users/Zlygo/work/file.xml" {
+		t.Fatalf("expected fallback wslpath -w output, got %q", out)
 	}
 }
 
@@ -137,9 +206,13 @@ func TestLooksLikeWindowsPath(t *testing.T) {
 	if looksLikeWindowsPath("/mnt/c/Tools") {
 		t.Fatalf("expected non-windows path")
 	}
+	if looksLikeWindowsPath("1:\\Tools") {
+		t.Fatalf("expected non-windows path for non-letter drive")
+	}
 }
 
 func TestMapLiquibaseEnvWindowsExecKeepsPath(t *testing.T) {
+	setWSLForTest(t, true)
 	env := map[string]string{"JAVA_HOME": "C:\\Java"}
 	out, err := mapLiquibaseEnv(env, true)
 	if err != nil {
@@ -147,6 +220,35 @@ func TestMapLiquibaseEnvWindowsExecKeepsPath(t *testing.T) {
 	}
 	if out["JAVA_HOME"] != "C:\\Java" {
 		t.Fatalf("expected JAVA_HOME to stay windows, got %q", out["JAVA_HOME"])
+	}
+}
+
+func TestMapLiquibaseEnvNoopBranches(t *testing.T) {
+	out, err := mapLiquibaseEnv(nil, false)
+	if err != nil {
+		t.Fatalf("mapLiquibaseEnv nil: %v", err)
+	}
+	if out != nil {
+		t.Fatalf("expected nil env for empty input, got %v", out)
+	}
+
+	plain := map[string]string{"FOO": "bar"}
+	out, err = mapLiquibaseEnv(plain, false)
+	if err != nil {
+		t.Fatalf("mapLiquibaseEnv without JAVA_HOME: %v", err)
+	}
+	if out["FOO"] != "bar" {
+		t.Fatalf("expected env passthrough, got %v", out)
+	}
+
+	setWSLForTest(t, true)
+	env := map[string]string{"JAVA_HOME": "/usr/lib/jvm"}
+	out, err = mapLiquibaseEnv(env, false)
+	if err != nil {
+		t.Fatalf("mapLiquibaseEnv non-windows JAVA_HOME: %v", err)
+	}
+	if out["JAVA_HOME"] != "/usr/lib/jvm" {
+		t.Fatalf("expected JAVA_HOME passthrough, got %q", out["JAVA_HOME"])
 	}
 }
 
@@ -204,6 +306,54 @@ func TestMapLiquibasePathValueSearchPathEmptyEntry(t *testing.T) {
 	}
 }
 
+func TestMapLiquibasePathValuePathBranches(t *testing.T) {
+	if _, err := mapLiquibasePathValue("--changelog-file", " ", fakeMapper{}); err == nil || !strings.Contains(err.Error(), "path is empty") {
+		t.Fatalf("expected path empty error, got %v", err)
+	}
+	out, err := mapLiquibasePathValue("--changelog-file", "classpath:db/changelog.xml", fakeMapper{})
+	if err != nil {
+		t.Fatalf("mapLiquibasePathValue remote: %v", err)
+	}
+	if out != "classpath:db/changelog.xml" {
+		t.Fatalf("expected remote ref passthrough, got %q", out)
+	}
+	_, err = mapLiquibasePathValue("--defaults-file", "/tmp/lb.properties", fakeMapper{err: errors.New("boom")})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected mapper error, got %v", err)
+	}
+	_, err = mapLiquibasePathValue("--searchPath", "/tmp", fakeMapper{err: errors.New("boom")})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected searchPath mapper error, got %v", err)
+	}
+}
+
+func TestMapLiquibaseArgsEqualsForms(t *testing.T) {
+	mapper := fakeMapper{mapped: map[string]string{
+		"/tmp/changelog.xml": "C:\\work\\changelog.xml",
+		"/tmp/lb.properties": "C:\\work\\lb.properties",
+		"/tmp/db":            "C:\\work\\db",
+	}}
+	args := []string{
+		"update",
+		"--changelog-file=/tmp/changelog.xml",
+		"--defaults-file=/tmp/lb.properties",
+		"--searchPath=/tmp/db,classpath:db",
+	}
+	out, err := mapLiquibaseArgs(args, mapper)
+	if err != nil {
+		t.Fatalf("mapLiquibaseArgs: %v", err)
+	}
+	if !containsArgValue(out, "--changelog-file=C:\\work\\changelog.xml") {
+		t.Fatalf("expected changelog = form mapping, got %v", out)
+	}
+	if !containsArgValue(out, "--defaults-file=C:\\work\\lb.properties") {
+		t.Fatalf("expected defaults = form mapping, got %v", out)
+	}
+	if !containsArgValue(out, "--searchPath=C:\\work\\db,classpath:db") {
+		t.Fatalf("expected searchPath = form mapping, got %v", out)
+	}
+}
+
 func TestNormalizeWindowsPath(t *testing.T) {
 	out := normalizeWindowsPath("C:/Tools/liquibase.exe")
 	if out != `C:\Tools\liquibase.exe` {
@@ -212,6 +362,20 @@ func TestNormalizeWindowsPath(t *testing.T) {
 	out = normalizeWindowsPath(`C:\Tools\liquibase.exe`)
 	if out != `C:\Tools\liquibase.exe` {
 		t.Fatalf("expected existing backslashes preserved, got %q", out)
+	}
+}
+
+func TestWslPathConvertEmptyOutput(t *testing.T) {
+	prev := execCommand
+	t.Cleanup(func() { execCommand = prev })
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if runtime.GOOS == "windows" {
+			return exec.CommandContext(ctx, "cmd", "/c", "echo.")
+		}
+		return exec.CommandContext(ctx, "sh", "-c", "printf ''")
+	}
+	if _, err := wslPathConvert("-u", "C:\\Tools\\liquibase.exe"); err == nil || !strings.Contains(err.Error(), "returned empty output") {
+		t.Fatalf("expected empty output error, got %v", err)
 	}
 }
 

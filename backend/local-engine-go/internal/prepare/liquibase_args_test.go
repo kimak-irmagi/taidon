@@ -40,6 +40,16 @@ func TestPrepareLiquibaseArgsAcceptsUpdateCommands(t *testing.T) {
 	}
 }
 
+func TestPrepareLiquibaseArgsIgnoresSeparatorsAndBlankArgs(t *testing.T) {
+	out, err := prepareLiquibaseArgsContainer([]string{" ", "--", "update", "--", " "}, "", false)
+	if err != nil {
+		t.Fatalf("prepareLiquibaseArgs: %v", err)
+	}
+	if len(out.normalizedArgs) != 1 || out.normalizedArgs[0] != "update" {
+		t.Fatalf("expected only update command after normalization, got %v", out.normalizedArgs)
+	}
+}
+
 func TestPrepareLiquibaseArgsRejectsConnectionFlags(t *testing.T) {
 	flags := []string{
 		"--url", "--url=jdbc:postgresql://localhost/postgres",
@@ -183,6 +193,55 @@ func TestPrepareLiquibaseArgsWindowsModeSkipsMounts(t *testing.T) {
 	}
 	if len(out.normalizedArgs) < 2 || out.normalizedArgs[1] != "C:\\work\\changelog.xml" {
 		t.Fatalf("expected windows path preserved, got %+v", out.normalizedArgs)
+	}
+}
+
+func TestPrepareLiquibaseArgsWindowsModeNormalizesSearchPathAliasEquals(t *testing.T) {
+	out, err := prepareLiquibaseArgsContainer([]string{"update", "--search-path=C:\\work\\db"}, "C:\\work", true)
+	if err != nil {
+		t.Fatalf("prepareLiquibaseArgs: %v", err)
+	}
+	if !containsArg(out.normalizedArgs, "--searchPath=C:\\work\\db") {
+		t.Fatalf("expected --search-path= alias to normalize to --searchPath=, got %v", out.normalizedArgs)
+	}
+}
+
+func TestPrepareLiquibaseArgsWindowsModeCollectsSearchPathValueErrors(t *testing.T) {
+	_, err := prepareLiquibaseArgsContainer([]string{"update", "--searchPath="}, "C:\\work", true)
+	expectValidationError(t, err, "path is empty")
+}
+
+func TestPrepareLiquibaseArgsKeepsPreAndPostCommandFlags(t *testing.T) {
+	out, err := prepareLiquibaseArgsContainer([]string{"--log-level=info", "update", "--label-filter=dev"}, t.TempDir(), false)
+	if err != nil {
+		t.Fatalf("prepareLiquibaseArgs: %v", err)
+	}
+	expected := []string{"--log-level=info", "update", "--label-filter=dev"}
+	for i, want := range expected {
+		if i >= len(out.normalizedArgs) || out.normalizedArgs[i] != want {
+			t.Fatalf("expected normalized args %v, got %v", expected, out.normalizedArgs)
+		}
+	}
+}
+
+func TestPrepareLiquibaseArgsReusesMountForSamePath(t *testing.T) {
+	dir := t.TempDir()
+	changelog := filepath.Join(dir, "changelog.xml")
+	writeTempFile(t, changelog, "<databaseChangeLog/>")
+
+	out, err := prepareLiquibaseArgsContainer([]string{
+		"update",
+		"--changelog-file", changelog,
+		"--defaults-file", changelog,
+	}, dir, false)
+	if err != nil {
+		t.Fatalf("prepareLiquibaseArgs: %v", err)
+	}
+	if len(out.mounts) != 1 {
+		t.Fatalf("expected single mount reused for duplicate path, got %+v", out.mounts)
+	}
+	if strings.Count(strings.Join(out.normalizedArgs, " "), "/sqlrs/mnt/path1") < 2 {
+		t.Fatalf("expected same mapped path reused in args, got %v", out.normalizedArgs)
 	}
 }
 
