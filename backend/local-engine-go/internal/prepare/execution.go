@@ -1173,9 +1173,12 @@ func isLockBusyError(err error, lockPath string) bool {
 	if err == nil || !isPermissionError(err) {
 		return false
 	}
-	_, statErr := os.Stat(lockPath)
+	info, statErr := os.Stat(lockPath)
 	if statErr == nil {
-		return true
+		// Lock paths are expected to be plain files created with O_EXCL.
+		// If the path exists but is not a regular file (for example, a directory),
+		// treat it as an invalid path error instead of a transient busy lock.
+		return info.Mode().IsRegular()
 	}
 	if runtime.GOOS == "windows" && isPermissionError(statErr) {
 		return true
