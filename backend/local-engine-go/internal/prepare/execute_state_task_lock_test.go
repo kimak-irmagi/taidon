@@ -194,9 +194,9 @@ func TestExecuteStateTaskRebuildsWhenMarkerStale(t *testing.T) {
 	}
 }
 
-func newManagerWithStateFS(t *testing.T, store *fakeStore, fs statefs.StateFS) *Manager {
+func newManagerWithStateFS(t *testing.T, store *fakeStore, fs statefs.StateFS) *PrepareService {
 	t.Helper()
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          store,
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},

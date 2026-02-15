@@ -53,3 +53,18 @@ Date: 2026-02-12
   backward compatibility via alias/constructor wrapper.
 - Rationale: Improves API readability and role clarity while avoiding broad
   breakage in existing tests/integrations.
+
+## Decision Record 4: remove temporary compatibility alias
+
+- Timestamp: 2026-02-15T10:15:00Z
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: Should temporary compatibility symbols (`type Manager = PrepareService`,
+  `NewManager`) remain in the codebase?
+- Alternatives:
+  - Keep temporary compatibility symbols for an additional transition window.
+  - Remove compatibility symbols immediately and migrate all references.
+- Decision: Remove compatibility symbols and keep only `PrepareService` and
+  `NewPrepareService`.
+- Rationale: Codebase is already migrated; keeping aliases would prolong
+  naming ambiguity without practical benefit.

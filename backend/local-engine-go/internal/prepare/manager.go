@@ -74,10 +74,6 @@ type PrepareService struct {
 	snapshot    snapshotOrchestratorAPI
 }
 
-// Manager is a backward-compatible alias for PrepareService.
-// Deprecated: use PrepareService.
-type Manager = PrepareService
-
 type jobRunner struct {
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -174,12 +170,6 @@ func NewPrepareService(opts Options) (*PrepareService, error) {
 	m.executor = &taskExecutor{m: m, snapshot: m.snapshot}
 	m.coordinator = &jobCoordinator{m: m, executor: m.executor}
 	return m, nil
-}
-
-// NewManager is a backward-compatible constructor alias for NewPrepareService.
-// Deprecated: use NewPrepareService.
-func NewManager(opts Options) (*PrepareService, error) {
-	return NewPrepareService(opts)
 }
 
 func (m *PrepareService) Recover(ctx context.Context) error {

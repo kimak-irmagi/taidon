@@ -255,9 +255,9 @@ func TestEnsureBaseStateResetsNonEmptyDir(t *testing.T) {
 	}
 }
 
-func newManagerWithRuntime(t *testing.T, rt engineRuntime.Runtime) *Manager {
+func newManagerWithRuntime(t *testing.T, rt engineRuntime.Runtime) *PrepareService {
 	t.Helper()
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          newQueueStore(t),
 		Runtime:        rt,

@@ -110,7 +110,7 @@ func (s *snapshotSpy) invalidateDirtyCachedState(ctx context.Context, jobID stri
 }
 
 func TestManagerDelegatesToCoordinator(t *testing.T) {
-	mgr := &Manager{}
+	mgr := &PrepareService{}
 	coordinator := &coordinatorSpy{}
 	mgr.coordinator = coordinator
 
@@ -151,7 +151,7 @@ func TestManagerDelegatesToCoordinator(t *testing.T) {
 }
 
 func TestManagerDelegatesToExecutorAndSnapshot(t *testing.T) {
-	mgr := &Manager{}
+	mgr := &PrepareService{}
 	executor := &executorSpy{}
 	snapshot := &snapshotSpy{}
 	mgr.executor = executor

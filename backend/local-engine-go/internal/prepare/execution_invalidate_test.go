@@ -202,10 +202,9 @@ func TestInvalidateDirtyCachedStateMissingPGVersionDeleteError(t *testing.T) {
 	}
 }
 
-
-func newManagerWithStoreAndStateFS(t *testing.T, st store.Store, fs statefs.StateFS) *Manager {
+func newManagerWithStoreAndStateFS(t *testing.T, st store.Store, fs statefs.StateFS) *PrepareService {
 	t.Helper()
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          st,
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},

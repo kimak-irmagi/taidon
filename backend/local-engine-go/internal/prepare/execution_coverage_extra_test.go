@@ -20,18 +20,30 @@ type errorStateFS struct {
 	stateErr  error
 }
 
-func (e *errorStateFS) Kind() string                                    { return "err" }
-func (e *errorStateFS) Capabilities() statefs.Capabilities             { return statefs.Capabilities{} }
-func (e *errorStateFS) Validate(root string) error                      { return nil }
-func (e *errorStateFS) BaseDir(root, imageID string) (string, error)    { if e.baseErr != nil { return "", e.baseErr }; return filepath.Join(root, "base"), nil }
-func (e *errorStateFS) StatesDir(root, imageID string) (string, error)  { if e.statesErr != nil { return "", e.statesErr }; return filepath.Join(root, "states"), nil }
+func (e *errorStateFS) Kind() string                       { return "err" }
+func (e *errorStateFS) Capabilities() statefs.Capabilities { return statefs.Capabilities{} }
+func (e *errorStateFS) Validate(root string) error         { return nil }
+func (e *errorStateFS) BaseDir(root, imageID string) (string, error) {
+	if e.baseErr != nil {
+		return "", e.baseErr
+	}
+	return filepath.Join(root, "base"), nil
+}
+func (e *errorStateFS) StatesDir(root, imageID string) (string, error) {
+	if e.statesErr != nil {
+		return "", e.statesErr
+	}
+	return filepath.Join(root, "states"), nil
+}
 func (e *errorStateFS) StateDir(root, imageID, stateID string) (string, error) {
 	if e.stateErr != nil {
 		return "", e.stateErr
 	}
 	return filepath.Join(root, "states", stateID), nil
 }
-func (e *errorStateFS) JobRuntimeDir(root, jobID string) (string, error) { return filepath.Join(root, "jobs", jobID), nil }
+func (e *errorStateFS) JobRuntimeDir(root, jobID string) (string, error) {
+	return filepath.Join(root, "jobs", jobID), nil
+}
 func (e *errorStateFS) EnsureBaseDir(ctx context.Context, baseDir string) error {
 	return nil
 }
