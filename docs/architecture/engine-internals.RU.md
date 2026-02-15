@@ -7,7 +7,7 @@
 ```mermaid
 flowchart LR
   API["HTTP API (internal/httpapi)"]
-  PREP["Prepare Manager Facade (internal/prepare)"]
+  PREP["Prepare Service Facade (internal/prepare)"]
   COORD["prepare.jobCoordinator (internal)"]
   EXEC["prepare.taskExecutor (internal)"]
   SNAP_ORCH["prepare.snapshotOrchestrator (internal)"]
@@ -79,7 +79,7 @@ flowchart LR
 
 `internal/prepare` по-прежнему владеет полным жизненным циклом prepare, но теперь имеет явные внутренние роли:
 
-- `prepare.Manager` (facade)
+- `prepare.PrepareService` (facade)
   - публичные entrypoint-ы submit/status/events/delete для `httpapi`.
 - `jobCoordinator` (internal)
   - нормализация/валидация запроса, planning, переходы queue/job/task/event, retention logic.
@@ -330,3 +330,4 @@ Helper-функции, влияющие на orchestration, safety, path mapping
 
 - Helper-ы стрима prepare events должны обеспечивать упорядоченную доставку NDJSON,
   ожидание новых событий до terminal-состояния и завершение при terminal status.
+

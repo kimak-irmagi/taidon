@@ -16,7 +16,7 @@ The current shape increases coupling and makes change-safety lower, especially a
 ## 2. Goals
 
 - Keep external behavior and HTTP/API contracts unchanged.
-- Reduce responsibility concentration in `prepare.Manager`.
+- Reduce responsibility concentration in `prepare.PrepareService`.
 - Isolate execution and snapshot logic from job coordination logic.
 - Make refactoring incremental and test-safe.
 
@@ -29,7 +29,7 @@ The current shape increases coupling and makes change-safety lower, especially a
 
 ## 4. Target component structure
 
-`prepare.Manager` remains an external facade used by `httpapi`, but delegates to three
+`prepare.PrepareService` remains an external facade used by `httpapi`, but delegates to three
 internal components:
 
 - `JobCoordinator`
@@ -55,7 +55,7 @@ No new package-level dependencies are introduced. Components live in `internal/p
 
 ## 6. Public API impact
 
-No change in public `prepare.Manager` surface:
+No change in public `prepare.PrepareService` surface:
 
 - `Submit`, `Recover`, `Get`, `ListJobs`, `ListTasks`, `Delete`
 - `EventsSince`, `WaitForEvent`
@@ -97,3 +97,4 @@ Implemented verification focuses on behavior contracts:
    - planning/execution consistency for Liquibase request preparation.
 5. Existing `prepare` tests
    - preserve queue/event ordering, error mapping, and lifecycle invariants.
+

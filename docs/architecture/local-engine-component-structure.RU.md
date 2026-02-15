@@ -22,7 +22,7 @@
   - Управляет дефолтами и persisted overrides (`config.json`).
   - Отдает схему и поддерживает path-based get/set/remove.
 - `internal/prepare`
-  - `prepare.Manager` — публичный фасад для HTTP handlers.
+  - `prepare.PrepareService` — публичный фасад для HTTP handlers.
   - Внутреннее разделение:
     - `jobCoordinator`: жизненный цикл job, planning, переходы queue/event.
     - `taskExecutor`: runtime/task execution и создание instance.
@@ -65,7 +65,7 @@
 
 ## 3. Ключевые типы и интерфейсы
 
-- `prepare.Manager`
+- `prepare.PrepareService`
   - Публичный prepare фасад для submit/status/events/delete.
 - `prepare.jobCoordinator` (internal)
   - Координирует жизненный цикл job, planning, переходы task и queue writes.
@@ -76,7 +76,7 @@
 - `prepare.Request`, `prepare.Status`, `prepare.PlanTask`
   - API payload prepare и модель задач плана.
 - `queue.Store`
-  - Персистентный API jobs/tasks/events для `prepare.Manager`.
+  - Персистентный API jobs/tasks/events для `prepare.PrepareService`.
 - `run.Manager`, `run.Request`, `run.Event`
   - Менеджер исполнения run и stream runtime-событий.
 - `deletion.Manager`, `deletion.DeleteResult`
@@ -102,7 +102,7 @@
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
-  PREP["internal/prepare (Manager facade)"]
+  PREP["internal/prepare (PrepareService facade)"]
   PREP_COORD["prepare jobCoordinator (internal)"]
   PREP_EXEC["prepare taskExecutor (internal)"]
   PREP_SNAP["prepare snapshotOrchestrator (internal)"]
@@ -188,3 +188,4 @@ flowchart TD
 
 Эти helper-контракты должны быть явно задокументированы и покрыты тестами по
 ожидаемому поведению, а не только по текущей реализации.
+

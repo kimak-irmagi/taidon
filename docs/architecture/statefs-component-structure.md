@@ -64,7 +64,7 @@ Notes:
 
 ## 4. Integration Points
 
-- `prepare.Manager` facade and internal prepare components
+- `prepare.PrepareService` facade and internal prepare components
   - `jobCoordinator` uses `StateFS.Validate` before execution.
   - `taskExecutor` uses `Clone` and `EnsureStateDir` for runtime/state transitions.
   - `snapshotOrchestrator` uses `EnsureBaseDir`, `Snapshot`, and dirty-state cleanup helpers.
@@ -83,3 +83,4 @@ Notes:
 
 - Should `StateFS` expose a single `PathLayout` object instead of individual path helpers?
 - Do we need distinct removal methods (`RemoveRuntimeDir`, `RemoveStateDir`) or is `RemovePath` sufficient?
+

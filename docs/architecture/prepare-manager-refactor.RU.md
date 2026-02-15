@@ -16,7 +16,7 @@ Status: Реализовано (2026-02-12)
 ## 2. Цели
 
 - Сохранить внешнее поведение и HTTP/API-контракты без изменений.
-- Убрать концентрацию ответственности в `prepare.Manager`.
+- Убрать концентрацию ответственности в `prepare.PrepareService`.
 - Изолировать execution/snapshot-логику от job-координации.
 - Выполнить рефакторинг поэтапно и безопасно для тестов.
 
@@ -29,7 +29,7 @@ Status: Реализовано (2026-02-12)
 
 ## 4. Целевая структура компонентов
 
-`prepare.Manager` остаётся внешним фасадом для `httpapi`, но делегирует во внутренние
+`prepare.PrepareService` остаётся внешним фасадом для `httpapi`, но делегирует во внутренние
 компоненты:
 
 - `JobCoordinator`
@@ -55,7 +55,7 @@ Status: Реализовано (2026-02-12)
 
 ## 6. Влияние на публичный API
 
-Публичная поверхность `prepare.Manager` не меняется:
+Публичная поверхность `prepare.PrepareService` не меняется:
 
 - `Submit`, `Recover`, `Get`, `ListJobs`, `ListTasks`, `Delete`
 - `EventsSince`, `WaitForEvent`
@@ -97,3 +97,4 @@ Split завершён.
    - консистентность подготовки Liquibase request между planning и execution.
 5. Существующие `prepare`-тесты
    - проверка порядка queue/event, error mapping и инвариантов lifecycle.
+

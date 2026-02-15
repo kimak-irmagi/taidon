@@ -8,7 +8,7 @@ describes the current package-level design and request flows implemented in `bac
 ```mermaid
 flowchart LR
   API["HTTP API (internal/httpapi)"]
-  PREP["Prepare Manager Facade (internal/prepare)"]
+  PREP["Prepare Service Facade (internal/prepare)"]
   COORD["prepare.jobCoordinator (internal)"]
   EXEC["prepare.taskExecutor (internal)"]
   SNAP_ORCH["prepare.snapshotOrchestrator (internal)"]
@@ -76,12 +76,12 @@ flowchart LR
   - instance/state/job deletion.
 - Streams prepare events and run events as NDJSON.
 
-### 1.2 Prepare manager facade and internal components
+### 1.2 Prepare Service Facade and internal components
 
 `internal/prepare` still owns the full prepare lifecycle, but now has explicit
 internal roles:
 
-- `prepare.Manager` (facade)
+- `prepare.PrepareService` (facade)
   - public entrypoints for submit/status/events/delete used by `httpapi`.
 - `jobCoordinator` (internal)
   - request normalization/validation, planning, queue/job/task/event transitions,
@@ -341,3 +341,4 @@ errors are treated as requirement-level behavior. They are not "optional interna
 
 - Prepare events stream helpers must provide ordered NDJSON delivery, wait for new
   events when the stream is not terminal, and stop once terminal status is reached.
+

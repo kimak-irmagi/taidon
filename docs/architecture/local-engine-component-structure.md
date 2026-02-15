@@ -22,7 +22,7 @@ This document defines the current internal component layout of the local `sqlrs-
   - Default config + persisted override management (`config.json`).
   - Schema exposure and path-based get/set/remove.
 - `internal/prepare`
-  - `prepare.Manager` is the public facade used by HTTP handlers.
+  - `prepare.PrepareService` is the public facade used by HTTP handlers.
   - Internal split:
     - `jobCoordinator`: job lifecycle, planning, queue/event transitions.
     - `taskExecutor`: runtime/task execution and instance creation.
@@ -65,7 +65,7 @@ This document defines the current internal component layout of the local `sqlrs-
 
 ## 3. Key types and interfaces
 
-- `prepare.Manager`
+- `prepare.PrepareService`
   - Public prepare facade for submit/status/events/delete.
 - `prepare.jobCoordinator` (internal)
   - Coordinates job lifecycle, planning, task transitions, and queue writes.
@@ -76,7 +76,7 @@ This document defines the current internal component layout of the local `sqlrs-
 - `prepare.Request`, `prepare.Status`, `prepare.PlanTask`
   - Prepare API request/status payloads and planned task model.
 - `queue.Store`
-  - Persistent jobs/tasks/events API used by `prepare.Manager`.
+  - Persistent jobs/tasks/events API used by `prepare.PrepareService`.
 - `run.Manager`, `run.Request`, `run.Event`
   - Run execution manager with streamed runtime events.
 - `deletion.Manager`, `deletion.DeleteResult`
@@ -102,7 +102,7 @@ This document defines the current internal component layout of the local `sqlrs-
 flowchart TD
   CMD["cmd/sqlrs-engine"]
   HTTP["internal/httpapi"]
-  PREP["internal/prepare (Manager facade)"]
+  PREP["internal/prepare (PrepareService facade)"]
   PREP_COORD["prepare jobCoordinator (internal)"]
   PREP_EXEC["prepare taskExecutor (internal)"]
   PREP_SNAP["prepare snapshotOrchestrator (internal)"]
@@ -187,3 +187,4 @@ determinism, safety, or observable API behavior.
 
 These helper contracts must be documented and tested against expected behavior,
 not only against current implementation details.
+

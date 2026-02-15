@@ -28,79 +28,79 @@ type snapshotOrchestratorAPI interface {
 }
 
 type jobCoordinator struct {
-	m        *Manager
+	m        *PrepareService
 	executor taskExecutorAPI
 }
 
 type taskExecutor struct {
-	m        *Manager
+	m        *PrepareService
 	snapshot snapshotOrchestratorAPI
 }
 
 type snapshotOrchestrator struct {
-	m *Manager
+	m *PrepareService
 }
 
-func (m *Manager) runJob(prepared preparedRequest, jobID string) {
+func (m *PrepareService) runJob(prepared preparedRequest, jobID string) {
 	m.coordinator.runJob(prepared, jobID)
 }
 
-func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) {
+func (m *PrepareService) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) {
 	return m.coordinator.loadOrPlanTasks(ctx, jobID, prepared)
 }
 
-func (m *Manager) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (m *PrepareService) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	return m.coordinator.buildPlan(ctx, jobID, prepared)
 }
 
-func (m *Manager) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (m *PrepareService) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	return m.coordinator.buildPlanPsql(prepared)
 }
 
-func (m *Manager) buildPlanLiquibase(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (m *PrepareService) buildPlanLiquibase(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	return m.coordinator.buildPlanLiquibase(ctx, jobID, prepared)
 }
 
-func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, prepared preparedRequest) ([]LiquibaseChangeset, *ErrorResponse) {
+func (m *PrepareService) planLiquibaseChangesets(ctx context.Context, jobID string, prepared preparedRequest) ([]LiquibaseChangeset, *ErrorResponse) {
 	return m.coordinator.planLiquibaseChangesets(ctx, jobID, prepared)
 }
 
-func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) (string, *ErrorResponse) {
+func (m *PrepareService) executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) (string, *ErrorResponse) {
 	return m.executor.executeStateTask(ctx, jobID, prepared, task)
 }
 
-func (m *Manager) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+func (m *PrepareService) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	return m.executor.executePrepareStep(ctx, jobID, prepared, rt, task)
 }
 
-func (m *Manager) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
+func (m *PrepareService) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
 	return m.executor.executePsqlStep(ctx, jobID, prepared, rt)
 }
 
-func (m *Manager) executeLiquibaseStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+func (m *PrepareService) executeLiquibaseStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	return m.executor.executeLiquibaseStep(ctx, jobID, prepared, rt, task)
 }
 
-func (m *Manager) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse) {
+func (m *PrepareService) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse) {
 	return m.executor.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
 }
 
-func (m *Manager) createInstance(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (*Result, *ErrorResponse) {
+func (m *PrepareService) createInstance(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (*Result, *ErrorResponse) {
 	return m.executor.createInstance(ctx, jobID, prepared, stateID)
 }
 
-func (m *Manager) ensureRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput, runner *jobRunner) (*jobRuntime, *ErrorResponse) {
+func (m *PrepareService) ensureRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput, runner *jobRunner) (*jobRuntime, *ErrorResponse) {
 	return m.executor.ensureRuntime(ctx, jobID, prepared, input, runner)
 }
 
-func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput) (*jobRuntime, *ErrorResponse) {
+func (m *PrepareService) startRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput) (*jobRuntime, *ErrorResponse) {
 	return m.executor.startRuntime(ctx, jobID, prepared, input)
 }
 
-func (m *Manager) ensureBaseState(ctx context.Context, imageID string, baseDir string) error {
+func (m *PrepareService) ensureBaseState(ctx context.Context, imageID string, baseDir string) error {
 	return m.snapshot.ensureBaseState(ctx, imageID, baseDir)
 }
 
-func (m *Manager) invalidateDirtyCachedState(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (bool, *ErrorResponse) {
+func (m *PrepareService) invalidateDirtyCachedState(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (bool, *ErrorResponse) {
 	return m.snapshot.invalidateDirtyCachedState(ctx, jobID, prepared, stateID)
 }

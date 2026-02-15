@@ -1204,7 +1204,7 @@ func resetStateDir(ctx context.Context, fs statefs.StateFS, stateDir string) err
 	return fs.EnsureStateDir(ctx, stateDir)
 }
 
-func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) {
+func (m *PrepareService) cleanupRuntime(ctx context.Context, runner *jobRunner) {
 	if runner == nil {
 		return
 	}
@@ -1223,7 +1223,7 @@ func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) {
 	}
 }
 
-func (m *Manager) runnerForJob(jobID string) (*jobRunner, bool) {
+func (m *PrepareService) runnerForJob(jobID string) (*jobRunner, bool) {
 	if strings.TrimSpace(jobID) != "" {
 		if runner := m.getRunner(jobID); runner != nil {
 			return runner, false

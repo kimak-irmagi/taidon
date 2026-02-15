@@ -37,3 +37,19 @@ Date: 2026-02-12
   preserving `Manager` as facade.
 - Rationale: Removes redundant boilerplate and hidden bounce calls, makes
   component ownership explicit in code, and keeps external behavior unchanged.
+
+## Decision Record 3: rename facade type to PrepareService
+
+- Timestamp: 2026-02-15T09:55:00Z
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: Should we keep facade type name `Manager` or rename it to
+  `PrepareService` now that coordinator/executor/snapshot split is complete?
+- Alternatives:
+  - Keep `Manager` as the public facade type.
+  - Rename to `PrepareService` and remove old symbol immediately.
+  - Rename to `PrepareService` and keep `Manager` as a compatibility alias during migration.
+- Decision: Rename the public facade type to `PrepareService` and keep
+  backward compatibility via alias/constructor wrapper.
+- Rationale: Improves API readability and role clarity while avoiding broad
+  breakage in existing tests/integrations.
