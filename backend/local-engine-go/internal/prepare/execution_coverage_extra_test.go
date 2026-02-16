@@ -687,8 +687,14 @@ func TestWithStateBuildLockPathErrors(t *testing.T) {
 	if err := os.MkdirAll(lockDir, 0o700); err != nil {
 		t.Fatalf("mkdir lock dir: %v", err)
 	}
-	if err := withStateBuildLock(context.Background(), t.TempDir(), lockDir, "", func() error { return nil }); err == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := withStateBuildLock(ctx, t.TempDir(), lockDir, "", func() error { return nil })
+	if err == nil {
 		t.Fatalf("expected open file error when lock path points to directory")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("withStateBuildLock stuck in retry loop for directory lock path: %v", err)
 	}
 }
 
@@ -698,8 +704,14 @@ func TestWithInitLockPathErrors(t *testing.T) {
 	if err := os.MkdirAll(lockDir, 0o700); err != nil {
 		t.Fatalf("mkdir lock dir: %v", err)
 	}
-	if err := withInitLock(context.Background(), baseDir, func() error { return nil }); err == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := withInitLock(ctx, baseDir, func() error { return nil })
+	if err == nil {
 		t.Fatalf("expected open file error when init lock path points to directory")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("withInitLock stuck in retry loop for directory lock path: %v", err)
 	}
 }
 
