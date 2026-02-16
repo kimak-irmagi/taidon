@@ -692,6 +692,17 @@ func TestWithStateBuildLockPathErrors(t *testing.T) {
 	}
 }
 
+func TestWithInitLockPathErrors(t *testing.T) {
+	baseDir := t.TempDir()
+	lockDir := filepath.Join(baseDir, baseInitLockName)
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatalf("mkdir lock dir: %v", err)
+	}
+	if err := withInitLock(context.Background(), baseDir, func() error { return nil }); err == nil {
+		t.Fatalf("expected open file error when init lock path points to directory")
+	}
+}
+
 func TestExecuteLiquibaseStepContextCancelAfterRun(t *testing.T) {
 	liquibase := &fakeLiquibaseRunner{output: "ok"}
 	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{liquibase: liquibase})

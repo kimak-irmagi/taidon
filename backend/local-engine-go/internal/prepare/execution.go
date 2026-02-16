@@ -1077,7 +1077,7 @@ func withInitLock(ctx context.Context, baseDir string, fn func() error) error {
 			defer os.Remove(lockPath)
 			return fn()
 		}
-		if errors.Is(err, os.ErrExist) || isLockBusyError(err, lockPath) {
+		if shouldRetryLockAcquire(err, lockPath) {
 			if initMarkerExists(baseDir) {
 				_ = os.Remove(lockPath)
 				return nil
@@ -1157,7 +1157,7 @@ func withStateBuildLock(ctx context.Context, stateDir string, lockPath string, k
 			defer os.Remove(lockPath)
 			return fn()
 		}
-		if errors.Is(err, os.ErrExist) || isLockBusyError(err, lockPath) {
+		if shouldRetryLockAcquire(err, lockPath) {
 			if stateBuildMarkerExists(stateDir, kind) {
 				_ = os.Remove(lockPath)
 				return nil
@@ -1167,6 +1167,23 @@ func withStateBuildLock(ctx context.Context, stateDir string, lockPath string, k
 		}
 		return err
 	}
+}
+
+func shouldRetryLockAcquire(err error, lockPath string) bool {
+	if isLockBusyError(err, lockPath) {
+		return true
+	}
+	if !errors.Is(err, os.ErrExist) {
+		return false
+	}
+	info, statErr := os.Stat(lockPath)
+	if statErr == nil {
+		return info.Mode().IsRegular()
+	}
+	if runtime.GOOS == "windows" && isPermissionError(statErr) {
+		return true
+	}
+	return false
 }
 
 func isLockBusyError(err error, lockPath string) bool {
