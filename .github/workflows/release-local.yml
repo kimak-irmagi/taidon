@@ -503,6 +503,36 @@ jobs:
             --pattern "release-manifest.json" \
             --clobber
 
+      - name: Validate RC manifest provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="rc-assets/release-manifest.json"
+          if [[ ! -f "$manifest" ]]; then
+            echo "release manifest is missing in RC assets" >&2
+            exit 1
+          fi
+
+          manifest_source_sha="$(
+            python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('source_sha',''))" "$manifest"
+          )"
+          if [[ -z "$manifest_source_sha" ]]; then
+            echo "release manifest source_sha is empty" >&2
+            exit 1
+          fi
+          if [[ "$manifest_source_sha" != "${{ github.sha }}" ]]; then
+            echo "manifest source_sha ($manifest_source_sha) does not match tag commit (${{ github.sha }})" >&2
+            exit 1
+          fi
+
+          manifest_version="$(
+            python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('version',''))" "$manifest"
+          )"
+          if [[ "$manifest_version" != "${{ github.ref_name }}" ]]; then
+            echo "manifest version ($manifest_version) does not match GA tag (${{ github.ref_name }})" >&2
+            exit 1
+          fi
+
       - name: Verify asset checksums
         shell: bash
         run: |

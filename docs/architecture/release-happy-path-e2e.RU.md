@@ -80,8 +80,9 @@ Release-blocking сценарии для MVP:
 6. `publish_rc` создает/обновляет pre-release и прикладывает валидированные
    артефакты, если обязательные E2E прошли.
 7. Maintainer пушит GA tag `vX.Y.Z`.
-8. `promote_ga` забирает RC-артефакты по manifest/checksum и публикует финальный
-   релиз без пересборки.
+8. `promote_ga` забирает RC-артефакты, валидирует provenance manifest
+   (`release-manifest.json` `source_sha` должен совпадать с commit SHA GA-тега),
+   проверяет checksums и публикует финальный релиз без пересборки.
 
 Любой сбой на этапе валидации должен блокировать promotion.
 

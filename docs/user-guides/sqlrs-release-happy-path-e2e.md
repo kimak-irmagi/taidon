@@ -42,6 +42,8 @@ Use two tag classes:
 5. Push GA tag `vX.Y.Z` to promote the exact RC assets.
 
 Promotion must verify checksums before publishing.
+Promotion must also verify that `release-manifest.json` `source_sha` matches the
+GA tag commit SHA.
 
 ---
 

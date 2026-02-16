@@ -77,8 +77,9 @@ Scenario metadata is declared in:
 6. `publish_rc` creates/updates pre-release and attaches validated artifacts if
    all required E2E jobs passed.
 7. Maintainer pushes GA tag `vX.Y.Z`.
-8. `promote_ga` fetches RC assets by manifest/checksum and publishes the final
-   release without rebuilding.
+8. `promote_ga` fetches RC assets, validates manifest provenance
+   (`release-manifest.json` `source_sha` equals the GA tag commit SHA), verifies
+   checksums, and publishes the final release without rebuilding.
 
 Failure at any validation step must block promotion.
 
