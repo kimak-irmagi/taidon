@@ -64,11 +64,37 @@ function runCommand({ cmd, cwd, env, stdoutPath, stderrPath }) {
     child.stdout.pipe(stdout);
     child.stderr.pipe(stderr);
 
-    child.on("error", (err) => reject(err));
-    child.on("exit", (code) => {
-      stdout.end();
-      stderr.end();
-      resolve(code ?? 1);
+    const stdoutDone = new Promise((resolveDone, rejectDone) => {
+      stdout.on("finish", resolveDone);
+      stdout.on("error", rejectDone);
+    });
+    const stderrDone = new Promise((resolveDone, rejectDone) => {
+      stderr.on("finish", resolveDone);
+      stderr.on("error", rejectDone);
+    });
+
+    let settled = false;
+    const settleError = (err) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      stdout.destroy();
+      stderr.destroy();
+      reject(err);
+    };
+
+    child.on("error", settleError);
+    child.on("close", (code) => {
+      Promise.all([stdoutDone, stderrDone])
+        .then(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          resolve(code ?? 1);
+        })
+        .catch(settleError);
     });
   });
 }
