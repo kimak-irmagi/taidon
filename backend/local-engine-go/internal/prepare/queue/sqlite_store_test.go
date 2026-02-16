@@ -213,7 +213,7 @@ func TestSQLiteStoreListJobsBySignatureEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListJobsBySignature: %v", err)
 	}
-	if jobs != nil && len(jobs) != 0 {
+	if len(jobs) != 0 {
 		t.Fatalf("expected empty jobs slice")
 	}
 }
@@ -593,6 +593,80 @@ func TestEnsureTaskChangesetColumnsSecondExecError(t *testing.T) {
 	})
 	if err := ensureTaskChangesetColumns(db); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestEnsureTaskChangesetColumnsThirdExecError(t *testing.T) {
+	db := openErrorDB(t, []error{
+		errors.New("duplicate column name: changeset_id"),
+		errors.New("duplicate column name: changeset_author"),
+		errors.New("boom"),
+	})
+	if err := ensureTaskChangesetColumns(db); err == nil {
+		t.Fatalf("expected error on third alter")
+	}
+}
+
+func TestEnsureTaskChangesetColumnsThirdExecNoTable(t *testing.T) {
+	db := openErrorDB(t, []error{
+		errors.New("duplicate column name: changeset_id"),
+		errors.New("duplicate column name: changeset_author"),
+		errors.New("no such table: prepare_tasks"),
+	})
+	if err := ensureTaskChangesetColumns(db); err != nil {
+		t.Fatalf("expected nil for no-table migration step, got %v", err)
+	}
+}
+
+func TestInitDBPropagatesMigrationErrors(t *testing.T) {
+	db := openErrorDB(t, []error{errors.New("pragma failed")})
+	if err := initDB(db); err == nil {
+		t.Fatalf("expected pragma error")
+	}
+
+	db = openErrorDB(t, []error{
+		nil,
+		errors.New("image migration failed"),
+	})
+	if err := initDB(db); err == nil {
+		t.Fatalf("expected task image migration error")
+	}
+
+	db = openErrorDB(t, []error{
+		nil,
+		errors.New("duplicate column name: image_id"),
+		errors.New("duplicate column name: resolved_image_id"),
+		errors.New("changeset migration failed"),
+	})
+	if err := initDB(db); err == nil {
+		t.Fatalf("expected changeset migration error")
+	}
+
+	db = openErrorDB(t, []error{
+		nil,
+		errors.New("duplicate column name: image_id"),
+		errors.New("duplicate column name: resolved_image_id"),
+		errors.New("duplicate column name: changeset_id"),
+		errors.New("duplicate column name: changeset_author"),
+		errors.New("duplicate column name: changeset_path"),
+		errors.New("signature migration failed"),
+	})
+	if err := initDB(db); err == nil {
+		t.Fatalf("expected signature migration error")
+	}
+
+	db = openErrorDB(t, []error{
+		nil,
+		errors.New("duplicate column name: image_id"),
+		errors.New("duplicate column name: resolved_image_id"),
+		errors.New("duplicate column name: changeset_id"),
+		errors.New("duplicate column name: changeset_author"),
+		errors.New("duplicate column name: changeset_path"),
+		errors.New("duplicate column name: signature"),
+		errors.New("schema apply failed"),
+	})
+	if err := initDB(db); err == nil {
+		t.Fatalf("expected schema apply error")
 	}
 }
 

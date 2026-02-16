@@ -18,17 +18,32 @@ func TestHasPsqlConnectionArgs(t *testing.T) {
 	if hasPsqlConnectionArgs([]string{"-c", "select 1"}) {
 		t.Fatalf("unexpected connection args")
 	}
+	if hasPsqlConnectionArgs([]string{" ", "\t", "\n"}) {
+		t.Fatalf("expected blank args to be ignored")
+	}
 }
 
 func TestHasPgbenchConnectionArgs(t *testing.T) {
 	if !hasPgbenchConnectionArgs([]string{"-h", "localhost"}) {
 		t.Fatalf("expected connection args")
 	}
+	if !hasPgbenchConnectionArgs([]string{"-hlocalhost"}) {
+		t.Fatalf("expected -hvalue")
+	}
 	if !hasPgbenchConnectionArgs([]string{"-p5432"}) {
 		t.Fatalf("expected -pvalue")
 	}
+	if !hasPgbenchConnectionArgs([]string{"-Usqlrs"}) {
+		t.Fatalf("expected -Uvalue")
+	}
+	if !hasPgbenchConnectionArgs([]string{"-dpostgres"}) {
+		t.Fatalf("expected -dvalue")
+	}
 	if hasPgbenchConnectionArgs([]string{"-c", "10"}) {
 		t.Fatalf("unexpected connection args")
+	}
+	if hasPgbenchConnectionArgs([]string{" ", "\t", "\n"}) {
+		t.Fatalf("expected blank args to be ignored")
 	}
 }
 

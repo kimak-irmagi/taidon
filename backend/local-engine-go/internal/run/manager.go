@@ -102,9 +102,6 @@ func (m *Manager) Run(ctx context.Context, req Request) (Result, error) {
 	if command == "" {
 		command = defaultCommand(kind)
 	}
-	if command == "" {
-		return Result{}, ValidationError{Message: "command is required"}
-	}
 
 	if len(req.Steps) > 0 {
 		if kind != kindPsql {
@@ -251,28 +248,21 @@ func isKnownKind(kind string) bool {
 }
 
 func defaultCommand(kind string) string {
-	switch kind {
-	case kindPsql:
+	if kind == kindPsql {
 		return "psql"
-	case kindPgbench:
-		return "pgbench"
-	default:
-		return ""
 	}
+	return "pgbench"
 }
 
 func buildExecArgs(kind string, command string, args []string) []string {
 	execArgs := []string{command}
-	switch kind {
-	case kindPsql:
+	if kind == kindPsql {
 		execArgs = append(execArgs, args...)
 		execArgs = append(execArgs, defaultDSN())
-	case kindPgbench:
-		execArgs = append(execArgs, "-h", "127.0.0.1", "-p", "5432", "-U", "sqlrs", "-d", "postgres")
-		execArgs = append(execArgs, args...)
-	default:
-		execArgs = append(execArgs, args...)
+		return execArgs
 	}
+	execArgs = append(execArgs, "-h", "127.0.0.1", "-p", "5432", "-U", "sqlrs", "-d", "postgres")
+	execArgs = append(execArgs, args...)
 	return execArgs
 }
 
