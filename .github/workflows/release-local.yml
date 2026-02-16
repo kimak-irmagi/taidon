@@ -359,11 +359,23 @@ jobs:
           $bundleRoot = Join-Path $PWD "bundle"
           New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
           Expand-Archive -Path $archive.FullName -DestinationPath $bundleRoot -Force
-          $bundleDir = Get-ChildItem -Path $bundleRoot -Directory | Select-Object -First 1
-          if (-not $bundleDir) {
-            throw "extracted windows bundle directory not found"
+
+          $sqlrsBin = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs.exe" |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $sqlrsBin) {
+            throw "sqlrs.exe not found in extracted windows bundle"
           }
-          "bundle_dir=$($bundleDir.FullName)" >> $env:GITHUB_OUTPUT
+
+          $engineBin = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs-engine.exe" |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $engineBin) {
+            throw "sqlrs-engine.exe not found in extracted windows bundle"
+          }
+
+          "sqlrs_bin=$($sqlrsBin.FullName)" >> $env:GITHUB_OUTPUT
+          "engine_bin=$($engineBin.FullName)" >> $env:GITHUB_OUTPUT
 
       - name: Extract darwin bundle
         if: matrix.os_family == 'darwin'
@@ -398,8 +410,8 @@ jobs:
           $outDir = Join-Path $env:RUNNER_TEMP "smoke-windows"
           "out_dir=$outDir" >> $env:GITHUB_OUTPUT
           node scripts/e2e-release/smoke-bundle.mjs `
-            --sqlrs "${{ steps.bundle-windows.outputs.bundle_dir }}\sqlrs.exe" `
-            --engine "${{ steps.bundle-windows.outputs.bundle_dir }}\sqlrs-engine.exe" `
+            --sqlrs "${{ steps.bundle-windows.outputs.sqlrs_bin }}" `
+            --engine "${{ steps.bundle-windows.outputs.engine_bin }}" `
             --out-dir "$outDir"
 
       - name: Run darwin smoke checks
