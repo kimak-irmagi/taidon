@@ -111,6 +111,7 @@ async function main() {
   const sqlrsPath = path.resolve(args.sqlrs || "");
   const enginePath = path.resolve(args.engine || "");
   const outDir = path.resolve(args["out-dir"] || path.join(repoRoot, "artifacts", "e2e", scenarioId || "unknown"));
+  const runTimeout = typeof args.timeout === "string" && args.timeout.trim() !== "" ? args.timeout.trim() : "15m";
 
   if (!scenarioId) {
     throw new Error("Missing --scenario");
@@ -167,6 +168,8 @@ async function main() {
 
   const flowCmd = [
     sqlrsPath,
+    "--timeout",
+    runTimeout,
     "--workspace",
     workspaceDir,
     "prepare:psql",

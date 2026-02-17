@@ -187,6 +187,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Use pnpm
+        run: corepack prepare pnpm@10.26.2 --activate
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch example SQL datasets (locked)
+        run: pnpm fetch:sql --lock
+
       - name: Resolve release versions
         id: version
         shell: bash
@@ -284,6 +301,7 @@ jobs:
             --scenarios "test/e2e/release/scenarios.json" \
             --sqlrs "${{ steps.bundle.outputs.bundle_dir }}/sqlrs" \
             --engine "${{ steps.bundle.outputs.bundle_dir }}/sqlrs-engine" \
+            --timeout "15m" \
             --out-dir "$out_dir"
           node scripts/e2e-release/normalize-output.mjs \
             --scenario "${{ matrix.scenario }}" \

@@ -51,6 +51,8 @@ GA tag commit SHA.
 
 Happy-path scenarios are sourced from `examples/` with stable scripts and
 queries.
+In CI, datasets are fetched in locked mode (`pnpm fetch:sql --lock`) before
+executing scenarios.
 
 Scenario catalog lives in:
 
