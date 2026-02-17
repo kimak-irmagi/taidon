@@ -192,18 +192,6 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Enable pnpm
-        run: corepack enable
-
-      - name: Use pnpm
-        run: corepack prepare pnpm@10.26.2 --activate
-
-      - name: Install JS dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Fetch example SQL datasets (locked)
-        run: pnpm fetch:sql --lock
-
       - name: Resolve release versions
         id: version
         shell: bash
@@ -256,6 +244,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Use pnpm
+        run: corepack prepare pnpm@10.26.2 --activate
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch example SQL datasets (locked)
+        run: pnpm fetch:sql --lock
 
       - name: Resolve release versions
         id: version
