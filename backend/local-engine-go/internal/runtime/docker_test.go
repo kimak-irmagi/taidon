@@ -267,6 +267,30 @@ func TestEnsureHostAuthReturnsReadError(t *testing.T) {
 	}
 }
 
+func TestEnsureHostAuthSkipsPermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows does not enforce unix permission bits")
+	}
+
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.WriteFile(path, []byte("local all all trust\n"), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("chmod pg_hba: %v", err)
+	}
+	defer func() { _ = os.Chmod(path, 0o600) }()
+
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("expected permission denied to be ignored, got %v", err)
+	}
+}
+
 func TestEnsureHostAuthRequiresDataDir(t *testing.T) {
 	if err := ensureHostAuth(""); err == nil {
 		t.Fatalf("expected error for empty data dir")

@@ -248,6 +248,11 @@ func ensureHostAuth(dataDir string) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
+		if errors.Is(err, os.ErrPermission) {
+			// Some runtimes initialize pgdata with container-only ownership (e.g. uid 999, mode 0700).
+			// In that case host-side patching is not possible, but initdb host auth settings still apply.
+			return nil
+		}
 		return err
 	}
 	existing := string(content)
@@ -268,10 +273,16 @@ func ensureHostAuth(dataDir string) error {
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil
+		}
 		return err
 	}
 	defer f.Close()
 	if _, err := f.WriteString(b.String()); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil
+		}
 		return err
 	}
 	return nil
