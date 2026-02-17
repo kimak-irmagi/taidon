@@ -358,7 +358,7 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
-		"chown", "-R", "postgres:postgres", PostgresDataDirRoot,
+		"chown", "-R", "postgres:postgres", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
@@ -367,7 +367,7 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
-		"chmod", "-R", "0700", PostgresDataDirRoot,
+		"chmod", "-R", "0700", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err

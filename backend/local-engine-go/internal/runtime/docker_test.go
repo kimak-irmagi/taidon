@@ -158,8 +158,14 @@ func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
 	if !containsArg(runner.calls[1].args, "chown", "-R") {
 		t.Fatalf("expected chown call, got %+v", runner.calls[1].args)
 	}
+	if !containsFlag(runner.calls[1].args, PostgresDataDir) {
+		t.Fatalf("expected chown target %q, got %+v", PostgresDataDir, runner.calls[1].args)
+	}
 	if !(containsFlag(runner.calls[2].args, "chmod") && containsFlag(runner.calls[2].args, "0700")) {
 		t.Fatalf("expected chmod call, got %+v", runner.calls[2].args)
+	}
+	if !containsFlag(runner.calls[2].args, PostgresDataDir) {
+		t.Fatalf("expected chmod target %q, got %+v", PostgresDataDir, runner.calls[2].args)
 	}
 	if !containsArg(runner.calls[4].args, "initdb", "--username=sqlrs") {
 		found := false
