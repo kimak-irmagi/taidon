@@ -328,7 +328,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-linux-${{ matrix.scenario }}
-          path: ${{ runner.temp }}/e2e/${{ matrix.scenario }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/command-init.txt
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/command-flow.txt
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/init-stdout.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/init-stderr.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/raw-stdout.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/raw-stderr.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/normalized-stdout.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/diff.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/result.json
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/scenario.json
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/workspace/*.sql
 
   e2e-smoke:
     if: contains(github.event.inputs.version || github.ref_name, '-rc.')
