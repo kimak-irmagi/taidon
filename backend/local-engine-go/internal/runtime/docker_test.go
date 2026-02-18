@@ -195,7 +195,11 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExists(t *testing.T) {
 	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) != 3 {
+	expectedCalls := 3
+	if runtime.GOOS == "linux" {
+		expectedCalls = 4
+	}
+	if len(runner.calls) != expectedCalls {
 		t.Fatalf("expected only permission calls, got %+v", runner.calls)
 	}
 	for _, call := range runner.calls {
@@ -368,7 +372,11 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExistsInContainer(t *testing.T) 
 	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) != 4 {
+	expectedCalls := 4
+	if runtime.GOOS == "linux" {
+		expectedCalls = 5
+	}
+	if len(runner.calls) != expectedCalls {
 		t.Fatalf("expected permission calls + pgversion check, got %+v", runner.calls)
 	}
 	if containsArg(runner.calls[len(runner.calls)-1].args, "initdb", "--username=sqlrs") {

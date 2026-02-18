@@ -159,6 +159,9 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	if ok, err := r.pgVersionReady(ctx, imageID, dataDir); err != nil {
 		return err
 	} else if ok {
+		if err := r.ensureHostReadableDataDir(ctx, imageID, dataDir); err != nil {
+			return err
+		}
 		return ensureHostAuth(dataDir)
 	}
 	args := []string{
@@ -187,6 +190,9 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 		return fmt.Errorf("initdb failed: %w", err)
 	}
 	if ok, checkErr := r.pgVersionReady(ctx, imageID, dataDir); checkErr == nil && ok {
+		if err := r.ensureHostReadableDataDir(ctx, imageID, dataDir); err != nil {
+			return err
+		}
 		return ensureHostAuth(dataDir)
 	} else if checkErr != nil {
 		return checkErr
@@ -369,6 +375,22 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
 		"chmod", "-R", "0700", PostgresDataDir,
+	}
+	if err := r.runPermissionCommand(ctx, args); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *DockerRuntime) ensureHostReadableDataDir(ctx context.Context, imageID string, dataDir string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	args := []string{
+		"run", "--rm",
+		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		imageID,
+		"chmod", "-R", "a+rX", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
