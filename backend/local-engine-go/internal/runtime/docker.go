@@ -345,6 +345,7 @@ func (r *DockerRuntime) inspectImageDigest(ctx context.Context, imageID string) 
 }
 
 func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, dataDir string) error {
+	ensureHostDataDirAccess(dataDir)
 	args := []string{
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
@@ -373,6 +374,18 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 		return err
 	}
 	return nil
+}
+
+func ensureHostDataDirAccess(dataDir string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	info, err := os.Stat(dataDir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	// Best effort: allow container postgres user to traverse mounted base dir.
+	_ = os.Chmod(dataDir, 0o755)
 }
 
 func (r *DockerRuntime) runPermissionCommand(ctx context.Context, args []string) error {
