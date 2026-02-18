@@ -68,7 +68,8 @@ function main() {
   }
 
   const scenario = loadScenario(scenariosPath, scenarioId);
-  const dropPatterns = Array.isArray(scenario?.normalize?.dropLinePatterns) ? scenario.normalize.dropLinePatterns : [];
+  const scenarioDropPatterns = Array.isArray(scenario?.normalize?.dropLinePatterns) ? scenario.normalize.dropLinePatterns : [];
+  const dropPatterns = ["^Deleting instance\\b.*$", ...scenarioDropPatterns];
   const input = fs.readFileSync(inputPath, "utf8");
   const normalized = normalizeLines(input, dropPatterns);
   fs.writeFileSync(outputPath, normalized, "utf8");
