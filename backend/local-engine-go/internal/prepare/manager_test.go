@@ -3032,6 +3032,45 @@ func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 	}
 }
 
+func TestUpdateTaskStatusIncludesErrorEventPayload(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", []queue.TaskRecord{
+		{JobID: "job-1", TaskID: "execute-0", Position: 0, Type: "state_execute", Status: StatusQueued},
+	}); err != nil {
+		t.Fatalf("ReplaceTasks: %v", err)
+	}
+
+	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	errResp := errorResponse("internal_error", "psql execution failed", "exit status 3")
+	if err := mgr.updateTaskStatus(context.Background(), "job-1", "execute-0", StatusFailed, nil, &finishedAt, errResp); err != nil {
+		t.Fatalf("updateTaskStatus: %v", err)
+	}
+
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	var failedTask *Event
+	for i := range events {
+		if events[i].Type == "task" && events[i].TaskID == "execute-0" && events[i].Status == StatusFailed {
+			failedTask = &events[i]
+			break
+		}
+	}
+	if failedTask == nil {
+		t.Fatalf("expected failed task event, got %+v", events)
+	}
+	if failedTask.Message != "psql execution failed" {
+		t.Fatalf("expected task message, got %+v", failedTask)
+	}
+	if failedTask.Error == nil || failedTask.Error.Details != "exit status 3" {
+		t.Fatalf("expected task error payload, got %+v", failedTask)
+	}
+}
+
 func TestAppendLogIgnoresEmpty(t *testing.T) {
 	queueStore := newQueueStore(t)
 	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
@@ -3091,6 +3130,20 @@ func TestNormalizeHeartbeat(t *testing.T) {
 	}
 	if got := normalizeHeartbeat(300 * time.Millisecond); got != 300*time.Millisecond {
 		t.Fatalf("expected passthrough heartbeat, got %v", got)
+	}
+}
+
+func TestSummarizeLogDetails(t *testing.T) {
+	if got := summarizeLogDetails(""); got != "" {
+		t.Fatalf("expected empty summary, got %q", got)
+	}
+	if got := summarizeLogDetails("line1\nline2"); got != "line1 | line2" {
+		t.Fatalf("unexpected newline summary: %q", got)
+	}
+	long := strings.Repeat("x", 600)
+	got := summarizeLogDetails(long)
+	if !strings.Contains(got, "(truncated)") {
+		t.Fatalf("expected truncation marker, got %q", got)
 	}
 }
 

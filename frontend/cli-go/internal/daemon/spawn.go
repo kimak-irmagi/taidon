@@ -5,13 +5,17 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
-func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountUnit, mountFSType, logPath string) (*exec.Cmd, error) {
+func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountUnit, mountFSType string, idleTimeout time.Duration, logPath string) (*exec.Cmd, error) {
 	args := []string{
 		"--run-dir", runDir,
 		"--listen", "127.0.0.1:0",
 		"--write-engine-json", statePath,
+	}
+	if idleTimeout > 0 {
+		args = append(args, "--idle-timeout", idleTimeout.String())
 	}
 	if wslDistro != "" {
 		wslCmd := []string{"-d", wslDistro, "-u", "root", "--"}

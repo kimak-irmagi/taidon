@@ -30,6 +30,7 @@ type ConfigOptions struct {
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
+	IdleTimeout     time.Duration
 	StartupTimeout  time.Duration
 	Verbose         bool
 
@@ -100,6 +101,7 @@ func configClient(ctx context.Context, opts ConfigOptions) (*client.Client, erro
 				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
+				IdleTimeout:     opts.IdleTimeout,
 				StartupTimeout:  opts.StartupTimeout,
 				ClientTimeout:   opts.Timeout,
 				Verbose:         opts.Verbose,

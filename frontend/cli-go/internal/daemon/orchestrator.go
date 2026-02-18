@@ -9,9 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
-	"strings"
 
 	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/util"
@@ -30,8 +30,9 @@ type ConnectOptions struct {
 	WSLDistro       string
 	EngineStoreDir  string
 	WSLVHDXPath     string
-	WSLMountUnit  string
+	WSLMountUnit    string
 	WSLMountFSType  string
+	IdleTimeout     time.Duration
 	StartupTimeout  time.Duration
 	ClientTimeout   time.Duration
 	Verbose         bool
@@ -113,7 +114,17 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	if daemonStatePath == "" {
 		daemonStatePath = enginePath
 	}
-	cmd, err := buildDaemonCommand(opts.DaemonPath, daemonRunDir, daemonStatePath, opts.WSLDistro, opts.EngineStoreDir, opts.WSLMountUnit, opts.WSLMountFSType, logPath)
+	cmd, err := buildDaemonCommand(
+		opts.DaemonPath,
+		daemonRunDir,
+		daemonStatePath,
+		opts.WSLDistro,
+		opts.EngineStoreDir,
+		opts.WSLMountUnit,
+		opts.WSLMountFSType,
+		opts.IdleTimeout,
+		logPath,
+	)
 	if err != nil {
 		return ConnectResult{}, err
 	}

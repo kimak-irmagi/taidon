@@ -23,6 +23,7 @@ import (
 
 const defaultTimeout = 30 * time.Second
 const defaultStartupTimeout = 5 * time.Second
+const defaultIdleTimeout = 120 * time.Second
 
 var parseArgsFn = cli.ParseArgs
 var getwdFn = os.Getwd
@@ -121,6 +122,10 @@ func Run(args []string) error {
 	if err != nil {
 		return err
 	}
+	idleTimeout, err := config.ParseDuration(cfg.Orchestrator.IdleTimeout, defaultIdleTimeout)
+	if err != nil {
+		return err
+	}
 
 	runDir := cfg.Orchestrator.RunDir
 	if runDir == "" {
@@ -169,6 +174,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -194,6 +200,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -216,6 +223,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -248,6 +256,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -283,6 +292,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -308,6 +318,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -330,6 +341,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -377,6 +389,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -430,6 +443,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
@@ -475,6 +489,7 @@ func Run(args []string) error {
 				WSLMountFSType:  engineWSLMountFSType,
 				WSLDistro:       wslDistro,
 				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
 			}
