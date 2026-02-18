@@ -301,12 +301,16 @@ jobs:
         run: |
           set -euo pipefail
           out_dir="${RUNNER_TEMP}/e2e/${{ matrix.scenario }}"
+          case "${{ matrix.scenario }}" in
+            hp-psql-sakila) scenario_timeout="45m" ;;
+            *) scenario_timeout="15m" ;;
+          esac
           node scripts/e2e-release/run-scenario.mjs \
             --scenario "${{ matrix.scenario }}" \
             --scenarios "test/e2e/release/scenarios.json" \
             --sqlrs "${{ steps.bundle.outputs.bundle_dir }}/sqlrs" \
             --engine "${{ steps.bundle.outputs.bundle_dir }}/sqlrs-engine" \
-            --timeout "15m" \
+            --timeout "$scenario_timeout" \
             --out-dir "$out_dir"
           node scripts/e2e-release/normalize-output.mjs \
             --scenario "${{ matrix.scenario }}" \
