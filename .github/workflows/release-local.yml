@@ -297,10 +297,15 @@ jobs:
           echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
 
       - name: Run happy-path scenario
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-config
+          XDG_STATE_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state
+          XDG_CACHE_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-cache
         shell: bash
         run: |
           set -euo pipefail
           out_dir="${RUNNER_TEMP}/e2e/${{ matrix.scenario }}"
+          mkdir -p "${XDG_CONFIG_HOME}" "${XDG_STATE_HOME}" "${XDG_CACHE_HOME}"
           case "${{ matrix.scenario }}" in
             hp-psql-sakila) scenario_timeout="45m" ;;
             *) scenario_timeout="15m" ;;
@@ -344,6 +349,9 @@ jobs:
             ${{ runner.temp }}/e2e/${{ matrix.scenario }}/diff.log
             ${{ runner.temp }}/e2e/${{ matrix.scenario }}/result.json
             ${{ runner.temp }}/e2e/${{ matrix.scenario }}/scenario.json
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/engine.json
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/logs/engine.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/logs/engine-wsl.log
             ${{ runner.temp }}/e2e/${{ matrix.scenario }}/workspace/*.sql
 
   e2e-smoke:
