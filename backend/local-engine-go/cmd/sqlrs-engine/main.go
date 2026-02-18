@@ -48,7 +48,8 @@ type EngineState struct {
 }
 
 type activityTracker struct {
-	last int64
+	last     int64
+	inflight int64
 }
 
 func newActivityTracker() *activityTracker {
@@ -57,6 +58,30 @@ func newActivityTracker() *activityTracker {
 
 func (a *activityTracker) Touch() {
 	atomic.StoreInt64(&a.last, time.Now().UnixNano())
+}
+
+func (a *activityTracker) StartRequest() {
+	atomic.AddInt64(&a.inflight, 1)
+}
+
+func (a *activityTracker) FinishRequest() {
+	for {
+		current := atomic.LoadInt64(&a.inflight)
+		if current <= 0 {
+			return
+		}
+		next := current - 1
+		if atomic.CompareAndSwapInt64(&a.inflight, current, next) {
+			if next == 0 {
+				a.Touch()
+			}
+			return
+		}
+	}
+}
+
+func (a *activityTracker) HasInflightRequests() bool {
+	return atomic.LoadInt64(&a.inflight) > 0
 }
 
 func (a *activityTracker) IdleFor() time.Duration {
@@ -345,7 +370,8 @@ func run(args []string) (int, error) {
 
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			activity.Touch()
+			activity.StartRequest()
+			defer activity.FinishRequest()
 			start := time.Now()
 			rec := &statusRecorder{ResponseWriter: w}
 			writer := http.ResponseWriter(rec)
@@ -385,7 +411,7 @@ func run(args []string) (int, error) {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if activity.IdleFor() >= *idleTimeout {
+					if !activity.HasInflightRequests() && activity.IdleFor() >= *idleTimeout {
 						shutdown("idle timeout")
 						return
 					}

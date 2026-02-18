@@ -39,6 +39,36 @@ func TestActivityTrackerIdleFor(t *testing.T) {
 	}
 }
 
+func TestActivityTrackerInflightRequests(t *testing.T) {
+	tracker := newActivityTracker()
+	if tracker.HasInflightRequests() {
+		t.Fatalf("expected no in-flight requests")
+	}
+	tracker.StartRequest()
+	if !tracker.HasInflightRequests() {
+		t.Fatalf("expected in-flight request")
+	}
+	tracker.FinishRequest()
+	if tracker.HasInflightRequests() {
+		t.Fatalf("expected in-flight requests to be drained")
+	}
+}
+
+func TestActivityTrackerIdleStartsFromLastRequestCompletion(t *testing.T) {
+	tracker := newActivityTracker()
+	tracker.last = time.Now().Add(-2 * time.Second).UnixNano()
+
+	tracker.StartRequest()
+	if tracker.IdleFor() < time.Second {
+		t.Fatalf("start request must not reset idle timer")
+	}
+
+	tracker.FinishRequest()
+	if tracker.IdleFor() > 200*time.Millisecond {
+		t.Fatalf("finish request should reset idle timer, got %v", tracker.IdleFor())
+	}
+}
+
 func TestRandomHex(t *testing.T) {
 	value, err := randomHex(8)
 	if err != nil {
@@ -823,6 +853,89 @@ func TestRunIdleTimeoutShutdown(t *testing.T) {
 		return server.Serve(listener)
 	}
 	t.Cleanup(func() { serveHTTP = previousServe })
+	prevTicker := idleTickerEvery
+	idleTickerEvery = 10 * time.Millisecond
+	t.Cleanup(func() { idleTickerEvery = prevTicker })
+
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "engine.json")
+	code, err := run([]string{"--listen=127.0.0.1:0", "--write-engine-json=" + statePath, "--idle-timeout=100ms"})
+	if err != nil || code != 0 {
+		t.Fatalf("expected success, got code=%d err=%v", code, err)
+	}
+}
+
+func TestRunIdleTimeoutWaitsForInflightRequest(t *testing.T) {
+	prevHandler := newHandlerFn
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	newHandlerFn = func(opts httpapi.Options) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case started <- struct{}{}:
+			default:
+			}
+			<-release
+			w.WriteHeader(http.StatusOK)
+		})
+	}
+	t.Cleanup(func() { newHandlerFn = prevHandler })
+
+	previousServe := serveHTTP
+	serveHTTP = func(server *http.Server, listener net.Listener) error {
+		defer func() { _ = server.Close() }()
+
+		serverDone := make(chan error, 1)
+		go func() {
+			serverDone <- server.Serve(listener)
+		}()
+
+		reqDone := make(chan error, 1)
+		go func() {
+			resp, err := http.Get("http://" + listener.Addr().String() + "/hold")
+			if err == nil {
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					err = errors.New("unexpected status code")
+				}
+			}
+			reqDone <- err
+		}()
+
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			return errors.New("request did not reach handler")
+		}
+
+		time.Sleep(300 * time.Millisecond)
+
+		select {
+		case <-serverDone:
+			return errors.New("server shut down while request was still in flight")
+		default:
+		}
+
+		close(release)
+
+		select {
+		case err := <-reqDone:
+			if err != nil {
+				return err
+			}
+		case <-time.After(2 * time.Second):
+			return errors.New("request did not complete")
+		}
+
+		select {
+		case err := <-serverDone:
+			return err
+		case <-time.After(2 * time.Second):
+			return errors.New("server did not shut down after request completion")
+		}
+	}
+	t.Cleanup(func() { serveHTTP = previousServe })
+
 	prevTicker := idleTickerEvery
 	idleTickerEvery = 10 * time.Millisecond
 	t.Cleanup(func() { idleTickerEvery = prevTicker })
