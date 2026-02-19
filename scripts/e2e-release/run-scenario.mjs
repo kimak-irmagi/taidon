@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRootDefault = path.resolve(__dirname, "..", "..");
+const allowedSnapshotBackends = new Set(["auto", "btrfs", "overlay", "copy"]);
 
 function parseArgs(argv) {
   const out = {};
@@ -103,6 +104,134 @@ function writeJSON(pathname, value) {
   fs.writeFileSync(pathname, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function runCheckedSync({ cmd, cwd, env }) {
+  const result = spawnSync(cmd[0], cmd.slice(1), {
+    cwd,
+    env,
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+    const stdout = typeof result.stdout === "string" ? result.stdout.trim() : "";
+    const detail = stderr || stdout || `exit=${result.status}`;
+    throw new Error(`Command failed: ${commandToString(cmd)} (${detail})`);
+  }
+  return result;
+}
+
+function readCommandOutput({ cmd, cwd, env }) {
+  const result = spawnSync(cmd[0], cmd.slice(1), {
+    cwd,
+    env,
+    encoding: "utf8"
+  });
+  if (result.status !== 0) {
+    const stderr = typeof result.stderr === "string" ? result.stderr.trim() : "";
+    const stdout = typeof result.stdout === "string" ? result.stdout.trim() : "";
+    const detail = stderr || stdout || `exit=${result.status}`;
+    throw new Error(`Command failed: ${commandToString(cmd)} (${detail})`);
+  }
+  return typeof result.stdout === "string" ? result.stdout.trim() : "";
+}
+
+function commandExists(name) {
+  const result = spawnSync("which", [name], { encoding: "utf8" });
+  return result.status === 0;
+}
+
+function detectLinuxFSType(targetPath) {
+  return readCommandOutput({
+    cmd: ["stat", "-f", "-c", "%T", targetPath]
+  }).toLowerCase();
+}
+
+export function resolveSnapshotBackend(raw) {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (value === "") {
+    return "copy";
+  }
+  if (!allowedSnapshotBackends.has(value)) {
+    throw new Error(`Invalid --snapshot-backend: ${value}`);
+  }
+  return value;
+}
+
+export function buildInitCommand({ sqlrsPath, workspaceDir, enginePath, storeDir, snapshotBackend }) {
+  return [
+    sqlrsPath,
+    "--workspace",
+    workspaceDir,
+    "init",
+    "local",
+    "--engine",
+    enginePath,
+    "--snapshot",
+    snapshotBackend,
+    "--store",
+    "dir",
+    storeDir,
+    "--no-start"
+  ];
+}
+
+export function resolveStorePlan(snapshotBackend, outDir) {
+  if (snapshotBackend === "btrfs") {
+    const mountDir = path.join(outDir, "btrfs-store");
+    return {
+      mountType: "btrfs-loop",
+      mountDir,
+      imagePath: path.join(outDir, "btrfs-store.img"),
+      storeDir: path.join(mountDir, "store")
+    };
+  }
+  return {
+    mountType: "plain-dir",
+    storeDir: path.join(outDir, "store")
+  };
+}
+
+function setupStorePlan(plan) {
+  if (plan.mountType !== "btrfs-loop") {
+    ensureDir(plan.storeDir);
+    return () => {};
+  }
+  if (process.platform !== "linux") {
+    throw new Error("snapshot backend btrfs requires Linux runner");
+  }
+  if (!commandExists("mkfs.btrfs")) {
+    throw new Error("mkfs.btrfs is not available (install btrfs-progs)");
+  }
+  let mounted = false;
+  try {
+    ensureDir(plan.mountDir);
+    runCheckedSync({ cmd: ["truncate", "-s", "8G", plan.imagePath] });
+    runCheckedSync({ cmd: ["sudo", "mkfs.btrfs", "-f", plan.imagePath] });
+    runCheckedSync({ cmd: ["sudo", "mount", "-o", "loop", plan.imagePath, plan.mountDir] });
+    mounted = true;
+    if (typeof process.getuid === "function" && typeof process.getgid === "function") {
+      runCheckedSync({
+        cmd: ["sudo", "chown", "-R", `${process.getuid()}:${process.getgid()}`, plan.mountDir]
+      });
+    }
+    ensureDir(plan.storeDir);
+    const fsType = detectLinuxFSType(plan.storeDir);
+    if (fsType !== "btrfs") {
+      throw new Error(`expected btrfs store filesystem, got ${fsType}`);
+    }
+  } catch (err) {
+    if (mounted) {
+      spawnSync("sudo", ["umount", "-l", plan.mountDir], { encoding: "utf8" });
+    }
+    throw err;
+  }
+  return () => {
+    const unmount = spawnSync("sudo", ["umount", plan.mountDir], { encoding: "utf8" });
+    if (unmount.status !== 0) {
+      spawnSync("sudo", ["umount", "-l", plan.mountDir], { encoding: "utf8" });
+    }
+  };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(args["repo-root"] || repoRootDefault);
@@ -112,6 +241,7 @@ async function main() {
   const enginePath = path.resolve(args.engine || "");
   const outDir = path.resolve(args["out-dir"] || path.join(repoRoot, "artifacts", "e2e", scenarioId || "unknown"));
   const runTimeout = typeof args.timeout === "string" && args.timeout.trim() !== "" ? args.timeout.trim() : "15m";
+  const snapshotBackend = resolveSnapshotBackend(args["snapshot-backend"]);
 
   if (!scenarioId) {
     throw new Error("Missing --scenario");
@@ -138,29 +268,22 @@ async function main() {
   ensureDir(outDir);
 
   const workspaceDir = path.join(outDir, "workspace");
-  const storeDir = path.join(outDir, "store");
   ensureDir(workspaceDir);
-  ensureDir(storeDir);
   fs.cpSync(exampleDir, workspaceDir, { recursive: true });
+  const storePlan = resolveStorePlan(snapshotBackend, outDir);
+  let cleanupStore = () => {};
+  cleanupStore = setupStorePlan(storePlan);
 
   const queryPath = path.join(workspaceDir, ".e2e-query.sql");
   fs.copyFileSync(queryTemplatePath, queryPath);
 
-  const initCmd = [
+  const initCmd = buildInitCommand({
     sqlrsPath,
-    "--workspace",
     workspaceDir,
-    "init",
-    "local",
-    "--engine",
     enginePath,
-    "--snapshot",
-    "copy",
-    "--store",
-    "dir",
-    storeDir,
-    "--no-start"
-  ];
+    storeDir: storePlan.storeDir,
+    snapshotBackend
+  });
 
   const prepareArgs = Array.isArray(scenario.prepareArgs) ? scenario.prepareArgs : ["-f", "prepare.sql"];
   const runArgs = Array.isArray(scenario.runArgs) ? scenario.runArgs : ["-At", "-f", ".e2e-query.sql"];
@@ -186,45 +309,51 @@ async function main() {
   fs.writeFileSync(path.join(outDir, "command-flow.txt"), `${commandToString(flowCmd)}\n`, "utf8");
   writeJSON(path.join(outDir, "scenario.json"), scenario);
 
-  const baseEnv = { ...process.env };
-  const initExit = await runCommand({
-    cmd: initCmd,
-    cwd: workspaceDir,
-    env: baseEnv,
-    stdoutPath: path.join(outDir, "init-stdout.log"),
-    stderrPath: path.join(outDir, "init-stderr.log")
-  });
-  if (initExit !== 0) {
+  try {
+    const baseEnv = { ...process.env };
+    const initExit = await runCommand({
+      cmd: initCmd,
+      cwd: workspaceDir,
+      env: baseEnv,
+      stdoutPath: path.join(outDir, "init-stdout.log"),
+      stderrPath: path.join(outDir, "init-stderr.log")
+    });
+    if (initExit !== 0) {
+      writeJSON(path.join(outDir, "result.json"), {
+        scenario: scenarioId,
+        stage: "init",
+        exitCode: initExit,
+        workspaceDir
+      });
+      throw new Error(`Init command failed for ${scenarioId}`);
+    }
+
+    const flowExit = await runCommand({
+      cmd: flowCmd,
+      cwd: workspaceDir,
+      env: baseEnv,
+      stdoutPath: path.join(outDir, "raw-stdout.log"),
+      stderrPath: path.join(outDir, "raw-stderr.log")
+    });
+
     writeJSON(path.join(outDir, "result.json"), {
       scenario: scenarioId,
-      stage: "init",
-      exitCode: initExit,
+      stage: "prepare+run",
+      exitCode: flowExit,
       workspaceDir
     });
-    throw new Error(`Init command failed for ${scenarioId}`);
-  }
 
-  const flowExit = await runCommand({
-    cmd: flowCmd,
-    cwd: workspaceDir,
-    env: baseEnv,
-    stdoutPath: path.join(outDir, "raw-stdout.log"),
-    stderrPath: path.join(outDir, "raw-stderr.log")
-  });
-
-  writeJSON(path.join(outDir, "result.json"), {
-    scenario: scenarioId,
-    stage: "prepare+run",
-    exitCode: flowExit,
-    workspaceDir
-  });
-
-  if (flowExit !== 0) {
-    throw new Error(`Scenario failed: ${scenarioId}`);
+    if (flowExit !== 0) {
+      throw new Error(`Scenario failed: ${scenarioId}`);
+    }
+  } finally {
+    cleanupStore();
   }
 }
 
-main().catch((err) => {
-  console.error(err?.stack || String(err));
-  process.exit(1);
-});
+if (path.resolve(process.argv[1] || "") === __filename) {
+  main().catch((err) => {
+    console.error(err?.stack || String(err));
+    process.exit(1);
+  });
+}

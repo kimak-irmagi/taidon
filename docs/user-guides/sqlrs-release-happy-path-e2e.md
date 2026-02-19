@@ -17,7 +17,20 @@ Main rule:
 
 No new end-user CLI syntax is introduced by this design.
 
-E2E uses existing commands and examples.
+E2E uses existing commands and examples, including existing init backend flag:
+
+- `sqlrs init local --snapshot <auto|btrfs|overlay|copy>`
+
+---
+
+## Selected Direction (2026-02-19)
+
+The next confidence step is to keep the same release-blocking happy-path
+scenarios (`hp-psql-chinook`, `hp-psql-sakila`) and add a CoW-oriented profile
+on Linux by running them with `--snapshot btrfs`.
+
+This improves release confidence for the real snapshot path, not only fallback
+copy path.
 
 ---
 
@@ -37,7 +50,8 @@ Use two tag classes:
 
 1. Push RC tag `vX.Y.Z-rc.N`.
 2. Build bundles for target platforms/architectures.
-3. Run happy-path E2E against downloaded RC bundles.
+3. Run Linux happy-path E2E against downloaded RC bundles using matrix:
+   `scenario x snapshot_backend`.
 4. Publish RC assets as pre-release only if E2E passed.
 5. Push GA tag `vX.Y.Z` to promote the exact RC assets.
 
@@ -65,6 +79,32 @@ Each scenario should define:
 - Run command.
 - Expected output snapshot path.
 - Output normalization rules.
+
+Linux runner matrix adds one more runtime axis in workflow configuration:
+
+- `snapshot_backend`: `copy`, `btrfs`.
+
+The same `scenarios.json` catalog is reused for both backends.
+
+---
+
+## Linux CoW Matrix Contract
+
+Release workflow should execute Linux happy-path E2E with:
+
+- scenario axis: `hp-psql-chinook`, `hp-psql-sakila`;
+- snapshot backend axis: `copy`, `btrfs`.
+
+Expected init behavior per matrix cell:
+
+- `copy`: `sqlrs init local --snapshot copy`.
+- `btrfs`: `sqlrs init local --snapshot btrfs` (and btrfs-compatible store
+  parameters when needed by the runner environment).
+
+Blocking policy:
+
+- both Linux backend profiles are required for RC publication;
+- Windows/macOS smoke checks remain required unchanged.
 
 ---
 

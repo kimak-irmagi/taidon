@@ -18,6 +18,7 @@ The design goal is to ensure users receive the same binaries that passed E2E.
 - Validate artifacts, not source tree state.
 - Use deterministic comparisons with normalization of unstable fields.
 - Keep happy-path scenarios short and reproducible.
+- Validate both fallback and CoW snapshot paths in release-gated Linux E2E.
 - Preserve cross-platform release bundles.
 - Prefer `build once -> test -> promote` over rebuild-on-release.
 
@@ -72,7 +73,8 @@ Scenario metadata is declared in:
 2. `build_rc` compiles `sqlrs` and `sqlrs-engine` for all targets and packages bundles.
 3. `build_rc` publishes archives, checksums, and `release-manifest.json` as
    workflow artifacts.
-4. `e2e_happy_path` downloads RC artifacts and runs scenario matrix in clean runners.
+4. `e2e_happy_path` downloads RC artifacts and runs Linux scenario matrix in
+   clean runners with axes `scenario x snapshot_backend`.
 5. Each scenario run normalizes output and compares against golden snapshots.
 6. `publish_rc` creates/updates pre-release and attaches validated artifacts if
    all required E2E jobs passed.
@@ -143,6 +145,7 @@ Data ownership:
 Responsibilities for E2E:
 
 - isolate scenario runs in clean runner workspace;
+- pass snapshot backend profile (`copy`/`btrfs`) to scenario init command;
 - collect logs, normalized outputs, and diffs as artifacts;
 - enforce gating policy for release publication.
 
@@ -156,18 +159,19 @@ Data ownership:
 
 ## Runner Strategy for 3 Platforms
 
-Target state (strict 3-platform full E2E):
+Current blocking profile:
+
+- Linux full E2E is blocking with matrix:
+  - scenarios: `hp-psql-chinook`, `hp-psql-sakila`;
+  - snapshot backends: `copy`, `btrfs`.
+- Windows/macOS run bundle + command smoke checks.
+
+Target state:
 
 - full happy-path E2E on Linux, Windows, and macOS before GA promotion.
 
-MVP transitional mode (if runtime prerequisites are unavailable on hosted runners):
-
-- Linux full E2E is blocking.
-- Windows/macOS run bundle + command smoke checks.
-- Full Windows/macOS E2E moves to blocking once self-hosted runners with required
-  runtime are available.
-
-This keeps release momentum while preserving a clear path to strict 3-platform gating.
+This adds CoW-path confidence immediately while preserving the path to strict
+3-platform gating.
 
 ---
 
@@ -193,8 +197,9 @@ Failure diagnostics must upload:
 
 - Current task uses phased gating:
   Linux full happy-path E2E is blocking; Windows/macOS run smoke checks.
-- Immediate next step after current task:
-  move to full blocking on Linux, Windows, and macOS.
+- Next release-gating improvement:
+  keep phased platform model, but require Linux happy-path matrix for both
+  `copy` and `btrfs` snapshot backends.
 - MVP release-blocking scenarios:
   `hp-psql-chinook` and `hp-psql-sakila`.
 - Liquibase happy-path:
