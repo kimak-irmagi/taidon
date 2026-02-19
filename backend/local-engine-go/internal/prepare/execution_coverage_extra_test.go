@@ -715,6 +715,14 @@ func TestWithInitLockPathErrors(t *testing.T) {
 	}
 }
 
+func TestShouldRetryLockAcquireOnTransientExistRace(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), baseInitLockName)
+	err := &os.PathError{Op: "open", Path: lockPath, Err: os.ErrExist}
+	if !shouldRetryLockAcquire(err, lockPath) {
+		t.Fatalf("expected retry for transient exist error when lock file disappeared")
+	}
+}
+
 func TestExecuteLiquibaseStepContextCancelAfterRun(t *testing.T) {
 	liquibase := &fakeLiquibaseRunner{output: "ok"}
 	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{liquibase: liquibase})

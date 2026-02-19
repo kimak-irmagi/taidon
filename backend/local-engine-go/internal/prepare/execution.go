@@ -1173,12 +1173,17 @@ func shouldRetryLockAcquire(err error, lockPath string) bool {
 	if isLockBusyError(err, lockPath) {
 		return true
 	}
-	if !errors.Is(err, os.ErrExist) {
+	if !os.IsExist(err) && !errors.Is(err, os.ErrExist) {
 		return false
 	}
 	info, statErr := os.Stat(lockPath)
 	if statErr == nil {
 		return info.Mode().IsRegular()
+	}
+	if errors.Is(statErr, os.ErrNotExist) {
+		// Another process may have released the lock between OpenFile and Stat.
+		// Retry instead of surfacing a transient "file exists" error.
+		return true
 	}
 	if runtime.GOOS == "windows" && isPermissionError(statErr) {
 		return true
