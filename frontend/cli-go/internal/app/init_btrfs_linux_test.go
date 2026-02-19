@@ -117,3 +117,50 @@ func TestRunInitReturnsExitErrorWhenLinuxBtrfsInitFails(t *testing.T) {
 		t.Fatalf("expected exit code 1, got %d", exitErr.Code)
 	}
 }
+
+func TestDetectMountFSTypeIgnoresContainingFilesystem(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "store")
+	prevRun := localBtrfsRunAllowFailureFn
+	localBtrfsRunAllowFailureFn = func(desc string, command string, args ...string) (string, error) {
+		if command != "findmnt" {
+			t.Fatalf("unexpected command %q", command)
+		}
+		return "/ ext4", nil
+	}
+	t.Cleanup(func() {
+		localBtrfsRunAllowFailureFn = prevRun
+	})
+
+	fsType, mounted, err := detectMountFSType(storeDir)
+	if err != nil {
+		t.Fatalf("detectMountFSType: %v", err)
+	}
+	if mounted {
+		t.Fatalf("expected mounted=false for containing fs match, got mounted=true fs=%q", fsType)
+	}
+}
+
+func TestDetectMountFSTypeReturnsMountedForExactTarget(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "store")
+	prevRun := localBtrfsRunAllowFailureFn
+	localBtrfsRunAllowFailureFn = func(desc string, command string, args ...string) (string, error) {
+		if command != "findmnt" {
+			t.Fatalf("unexpected command %q", command)
+		}
+		return storeDir + " btrfs", nil
+	}
+	t.Cleanup(func() {
+		localBtrfsRunAllowFailureFn = prevRun
+	})
+
+	fsType, mounted, err := detectMountFSType(storeDir)
+	if err != nil {
+		t.Fatalf("detectMountFSType: %v", err)
+	}
+	if !mounted {
+		t.Fatalf("expected mounted=true")
+	}
+	if fsType != "btrfs" {
+		t.Fatalf("expected fsType btrfs, got %q", fsType)
+	}
+}

@@ -102,12 +102,9 @@ func planLocalBtrfsStore(storeType string, storePath string) (localBtrfsStorePla
 }
 
 func ensureLocalBtrfsPrerequisites(plan localBtrfsStorePlan) error {
-	required := []string{"mkfs.btrfs", "mount", "umount"}
+	required := []string{"mkfs.btrfs", "mount", "umount", "findmnt"}
 	if plan.imagePath != "" {
 		required = append(required, "truncate")
-	}
-	if plan.devicePath != "" {
-		required = append(required, "findmnt")
 	}
 	for _, command := range required {
 		if _, err := localBtrfsLookPathFn(command); err != nil {
@@ -264,16 +261,28 @@ func detectBlockFSType(path string) (string, bool, error) {
 }
 
 func detectMountFSType(target string) (string, bool, error) {
-	out, err := localBtrfsRunAllowFailureFn("detect mount filesystem", "findmnt", "-n", "-o", "FSTYPE", "-T", target)
+	out, err := localBtrfsRunAllowFailureFn("detect mount filesystem", "findmnt", "-n", "-o", "TARGET,FSTYPE", "-T", target)
 	if err != nil {
 		if isExitStatus(err, 1) {
 			return "", false, nil
 		}
 		return "", false, err
 	}
-	fsType := strings.TrimSpace(out)
-	if fsType == "" {
+	line := strings.TrimSpace(out)
+	if line == "" {
 		return "", false, nil
+	}
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "", false, nil
+	}
+	mountTarget := fields[0]
+	if !sameMountTarget(mountTarget, target) {
+		return "", false, nil
+	}
+	fsType := ""
+	if len(fields) > 1 {
+		fsType = fields[1]
 	}
 	return fsType, true, nil
 }
@@ -382,6 +391,21 @@ func looksLikeImagePath(path string) bool {
 	return strings.HasSuffix(base, ".img") ||
 		strings.HasSuffix(base, ".raw") ||
 		strings.HasSuffix(base, ".qcow2")
+}
+
+func sameMountTarget(found string, expected string) bool {
+	return normalizeMountTarget(found) == normalizeMountTarget(expected)
+}
+
+func normalizeMountTarget(value string) string {
+	cleaned := filepath.Clean(strings.TrimSpace(value))
+	if cleaned == "" {
+		return ""
+	}
+	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return cleaned
 }
 
 func logLocalBtrfsInit(verbose bool, format string, args ...any) {
