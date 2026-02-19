@@ -5,6 +5,9 @@ Date: 2026-02-16
 
 ## Decision Record 1: MVP release gating scope by platform
 
+Status: Obsolete (superseded by
+[2026-02-19-release-e2e-btrfs-matrix.md](2026-02-19-release-e2e-btrfs-matrix.md))
+
 - Timestamp: 2026-02-16T16:38:17.8397425+07:00
 - User: @evilguest
 - Agent: Codex (GPT-5)

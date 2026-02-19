@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRootDefault = path.resolve(__dirname, "..", "..");
+const allowedSnapshotBackends = new Set(["auto", "btrfs", "overlay", "copy"]);
 
 function parseArgs(argv) {
   const out = {};
@@ -103,6 +104,35 @@ function writeJSON(pathname, value) {
   fs.writeFileSync(pathname, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+export function resolveSnapshotBackend(raw) {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (value === "") {
+    return "copy";
+  }
+  if (!allowedSnapshotBackends.has(value)) {
+    throw new Error(`Invalid --snapshot-backend: ${value}`);
+  }
+  return value;
+}
+
+export function buildInitCommand({ sqlrsPath, workspaceDir, enginePath, storeDir, snapshotBackend }) {
+  return [
+    sqlrsPath,
+    "--workspace",
+    workspaceDir,
+    "init",
+    "local",
+    "--engine",
+    enginePath,
+    "--snapshot",
+    snapshotBackend,
+    "--store",
+    "dir",
+    storeDir,
+    "--no-start"
+  ];
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(args["repo-root"] || repoRootDefault);
@@ -112,6 +142,7 @@ async function main() {
   const enginePath = path.resolve(args.engine || "");
   const outDir = path.resolve(args["out-dir"] || path.join(repoRoot, "artifacts", "e2e", scenarioId || "unknown"));
   const runTimeout = typeof args.timeout === "string" && args.timeout.trim() !== "" ? args.timeout.trim() : "15m";
+  const snapshotBackend = resolveSnapshotBackend(args["snapshot-backend"]);
 
   if (!scenarioId) {
     throw new Error("Missing --scenario");
@@ -146,21 +177,13 @@ async function main() {
   const queryPath = path.join(workspaceDir, ".e2e-query.sql");
   fs.copyFileSync(queryTemplatePath, queryPath);
 
-  const initCmd = [
+  const initCmd = buildInitCommand({
     sqlrsPath,
-    "--workspace",
     workspaceDir,
-    "init",
-    "local",
-    "--engine",
     enginePath,
-    "--snapshot",
-    "copy",
-    "--store",
-    "dir",
     storeDir,
-    "--no-start"
-  ];
+    snapshotBackend
+  });
 
   const prepareArgs = Array.isArray(scenario.prepareArgs) ? scenario.prepareArgs : ["-f", "prepare.sql"];
   const runArgs = Array.isArray(scenario.runArgs) ? scenario.runArgs : ["-At", "-f", ".e2e-query.sql"];
@@ -224,7 +247,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(err?.stack || String(err));
-  process.exit(1);
-});
+if (path.resolve(process.argv[1] || "") === __filename) {
+  main().catch((err) => {
+    console.error(err?.stack || String(err));
+    process.exit(1);
+  });
+}

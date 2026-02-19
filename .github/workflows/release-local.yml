@@ -241,6 +241,9 @@ jobs:
         scenario:
           - hp-psql-chinook
           - hp-psql-sakila
+        snapshot_backend:
+          - copy
+          - btrfs
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -312,6 +315,7 @@ jobs:
           esac
           node scripts/e2e-release/run-scenario.mjs \
             --scenario "${{ matrix.scenario }}" \
+            --snapshot-backend "${{ matrix.snapshot_backend }}" \
             --scenarios "test/e2e/release/scenarios.json" \
             --sqlrs "${{ steps.bundle.outputs.bundle_dir }}/sqlrs" \
             --engine "${{ steps.bundle.outputs.bundle_dir }}/sqlrs-engine" \
@@ -336,7 +340,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-linux-${{ matrix.scenario }}
+          name: e2e-linux-${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/e2e/${{ matrix.scenario }}/command-init.txt

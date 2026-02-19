@@ -19,6 +19,7 @@
 - Сравнение результатов должно быть детерминированным, с нормализацией
   нестабильных полей.
 - Happy-path сценарии должны быть короткими и воспроизводимыми.
+- В Linux release-gated E2E должны валидироваться и fallback, и CoW snapshot пути.
 - Кросс-платформенные релизные бандлы должны сохраняться.
 - Предпочитаем `build once -> test -> promote` вместо пересборки при публикации.
 
@@ -74,8 +75,8 @@ Release-blocking сценарии для MVP:
    упаковывает бандлы.
 3. `build_rc` публикует архивы, checksums и `release-manifest.json` как workflow
    artifacts.
-4. `e2e_happy_path` скачивает RC-артефакты и выполняет матрицу сценариев в чистых
-   runner-ах.
+4. `e2e_happy_path` скачивает RC-артефакты и выполняет Linux-матрицу в чистых
+   runner-ах с осями `scenario x snapshot_backend`.
 5. Каждый прогон нормализует вывод и сравнивает с golden snapshots.
 6. `publish_rc` создает/обновляет pre-release и прикладывает валидированные
    артефакты, если обязательные E2E прошли.
@@ -146,6 +147,7 @@ Data ownership:
 Ответственности в E2E:
 
 - изолировать прогон сценариев в чистом workspace runner-а;
+- передавать профиль snapshot backend (`copy`/`btrfs`) в init-команду сценария;
 - собирать логи, нормализованные outputs и diffs в artifacts;
 - enforce policy блокировки публикации релиза.
 
@@ -158,18 +160,19 @@ Data ownership:
 
 ## Стратегия runner-ов для 3 платформ
 
-Целевое состояние (строгое full E2E на 3 платформах):
+Текущий blocking-профиль:
+
+- Linux full E2E является blocking с матрицей:
+  - сценарии: `hp-psql-chinook`, `hp-psql-sakila`;
+  - snapshot backend: `copy`, `btrfs`.
+- Windows/macOS выполняют проверку бандла и smoke команд.
+
+Целевое состояние:
 
 - full happy-path E2E на Linux, Windows и macOS перед GA promotion.
 
-Переходный MVP-режим (если на hosted runner-ах нет нужных runtime prerequisites):
-
-- Linux full E2E является blocking.
-- Windows/macOS выполняют проверку бандла и smoke команд.
-- Windows/macOS full E2E становится blocking после появления self-hosted runner-ов
-  с нужным runtime.
-
-Так сохраняется скорость релизов при понятном пути к строгому 3-платформенному gating.
+Так CoW-путь покрывается уже сейчас и сохраняется понятный путь к строгому
+3-платформенному gating.
 
 ---
 
@@ -195,8 +198,9 @@ Pipeline golden-сравнения:
 
 - Для текущей задачи используется поэтапный gating:
   Linux full happy-path E2E blocking; Windows/macOS выполняют smoke checks.
-- Следующий шаг сразу после текущей задачи:
-  перейти на full blocking на Linux, Windows и macOS.
+- Следующее улучшение release-gating:
+  сохранить поэтапную модель по платформам, но требовать Linux happy-path
+  матрицу для двух snapshot backend-ов: `copy` и `btrfs`.
 - MVP release-blocking сценарии:
   `hp-psql-chinook` и `hp-psql-sakila`.
 - Liquibase happy-path:
