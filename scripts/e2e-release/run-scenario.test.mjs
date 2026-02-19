@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildInitCommand,
-  resolveSnapshotBackend
+  resolveSnapshotBackend,
+  resolveStorePlan
 } from "./run-scenario.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -45,4 +46,20 @@ run("default snapshot backend is copy", () => {
 
 run("unknown snapshot backend is rejected", () => {
   assert.throws(() => resolveSnapshotBackend("zfs"), /Invalid --snapshot-backend: zfs/);
+});
+
+run("btrfs backend uses dedicated loopback btrfs store plan", () => {
+  const outDir = path.join(path.sep, "tmp", "e2e-out");
+  const plan = resolveStorePlan("btrfs", outDir);
+  assert.equal(plan.mountType, "btrfs-loop");
+  assert.equal(plan.mountDir, path.join(outDir, "btrfs-store"));
+  assert.equal(plan.storeDir, path.join(outDir, "btrfs-store", "store"));
+  assert.equal(plan.imagePath, path.join(outDir, "btrfs-store.img"));
+});
+
+run("non-btrfs backend uses plain directory store plan", () => {
+  const outDir = path.join(path.sep, "tmp", "e2e-out");
+  const plan = resolveStorePlan("copy", outDir);
+  assert.equal(plan.mountType, "plain-dir");
+  assert.equal(plan.storeDir, path.join(outDir, "store"));
 });

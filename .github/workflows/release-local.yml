@@ -265,6 +265,14 @@ jobs:
       - name: Fetch example SQL datasets (locked)
         run: pnpm fetch:sql --lock
 
+      - name: Install btrfs tooling
+        if: matrix.snapshot_backend == 'btrfs'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y btrfs-progs
+
       - name: Resolve release versions
         id: version
         shell: bash
