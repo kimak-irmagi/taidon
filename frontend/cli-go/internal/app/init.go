@@ -40,6 +40,22 @@ type initOptions struct {
 	Verbose     bool
 }
 
+type localBtrfsInitOptions struct {
+	StoreType   string
+	StorePath   string
+	StoreSizeGB int
+	Reinit      bool
+	Verbose     bool
+}
+
+type localBtrfsInitResult struct {
+	StorePath string
+}
+
+const defaultBtrfsStoreSizeGB = 100
+
+var initLocalBtrfsStoreFn = initLocalBtrfsStore
+
 func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bool) error {
 	opts, showHelp, err := parseInitFlags(args, globalWorkspace)
 	if err != nil {
@@ -166,6 +182,25 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 			}
 		}
 
+		// Strict btrfs policy is shared across platforms:
+		// when snapshot backend is btrfs, init must provision/verify real btrfs
+		// or fail fast instead of silently degrading.
+		if shouldRunStrictBtrfsInit(snapshot, opts.DryRun, wslResult) {
+			localResult, err := initLocalBtrfsStoreFn(localBtrfsInitOptions{
+				StoreType:   resolvedStoreType,
+				StorePath:   resolvedStorePath,
+				StoreSizeGB: opts.StoreSizeGB,
+				Reinit:      opts.Reinit,
+				Verbose:     opts.Verbose,
+			})
+			if err != nil {
+				return ExitErrorf(1, "Linux btrfs init failed: %v", err)
+			}
+			if strings.TrimSpace(localResult.StorePath) != "" {
+				resolvedStorePath = strings.TrimSpace(localResult.StorePath)
+			}
+		}
+
 		if wslResult == nil && resolvedStorePath != "" {
 			opts.StorePath = resolvedStorePath
 		}
@@ -207,6 +242,10 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 		fmt.Fprintf(w, "Initialized workspace at %s\n", target)
 	}
 	return nil
+}
+
+func shouldRunStrictBtrfsInit(snapshot string, dryRun bool, wslResult *wslInitResult) bool {
+	return strings.EqualFold(strings.TrimSpace(snapshot), "btrfs") && !dryRun && wslResult == nil
 }
 
 func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, error) {
