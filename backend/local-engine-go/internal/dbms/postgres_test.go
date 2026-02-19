@@ -60,8 +60,8 @@ func TestPostgresConnectorPrepareSnapshot(t *testing.T) {
 	if err := connector.PrepareSnapshot(context.Background(), runtime.Instance{ID: "c1"}); err != nil {
 		t.Fatalf("PrepareSnapshot: %v", err)
 	}
-	if len(rt.execCalls) != 2 {
-		t.Fatalf("expected 2 exec calls, got %d", len(rt.execCalls))
+	if len(rt.execCalls) != 3 {
+		t.Fatalf("expected 3 exec calls, got %d", len(rt.execCalls))
 	}
 	args := rt.execCalls[0].Args
 	if len(args) == 0 || args[0] != "pg_ctl" {
@@ -77,6 +77,13 @@ func TestPostgresConnectorPrepareSnapshot(t *testing.T) {
 	if !containsArg(verifyArgs, "status") {
 		t.Fatalf("expected status in verify args: %v", verifyArgs)
 	}
+	chmodArgs := rt.execCalls[2].Args
+	if len(chmodArgs) == 0 || chmodArgs[0] != "chmod" {
+		t.Fatalf("unexpected chmod args: %v", chmodArgs)
+	}
+	if !containsArg(chmodArgs, "a+rX") {
+		t.Fatalf("expected a+rX chmod args: %v", chmodArgs)
+	}
 }
 
 func TestPostgresConnectorResumeSnapshot(t *testing.T) {
@@ -85,10 +92,17 @@ func TestPostgresConnectorResumeSnapshot(t *testing.T) {
 	if err := connector.ResumeSnapshot(context.Background(), runtime.Instance{ID: "c1"}); err != nil {
 		t.Fatalf("ResumeSnapshot: %v", err)
 	}
-	if len(rt.execCalls) != 1 {
-		t.Fatalf("expected exec call, got %d", len(rt.execCalls))
+	if len(rt.execCalls) != 2 {
+		t.Fatalf("expected 2 exec calls, got %d", len(rt.execCalls))
 	}
-	args := rt.execCalls[0].Args
+	chmodArgs := rt.execCalls[0].Args
+	if len(chmodArgs) == 0 || chmodArgs[0] != "chmod" {
+		t.Fatalf("unexpected harden args: %v", chmodArgs)
+	}
+	if !containsArg(chmodArgs, "0700") {
+		t.Fatalf("expected 0700 chmod args: %v", chmodArgs)
+	}
+	args := rt.execCalls[1].Args
 	if len(args) == 0 || args[0] != "pg_ctl" {
 		t.Fatalf("unexpected exec args: %v", args)
 	}

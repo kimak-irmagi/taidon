@@ -158,8 +158,14 @@ func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
 	if !containsArg(runner.calls[1].args, "chown", "-R") {
 		t.Fatalf("expected chown call, got %+v", runner.calls[1].args)
 	}
+	if !containsFlag(runner.calls[1].args, PostgresDataDir) {
+		t.Fatalf("expected chown target %q, got %+v", PostgresDataDir, runner.calls[1].args)
+	}
 	if !(containsFlag(runner.calls[2].args, "chmod") && containsFlag(runner.calls[2].args, "0700")) {
 		t.Fatalf("expected chmod call, got %+v", runner.calls[2].args)
+	}
+	if !containsFlag(runner.calls[2].args, PostgresDataDir) {
+		t.Fatalf("expected chmod target %q, got %+v", PostgresDataDir, runner.calls[2].args)
 	}
 	if !containsArg(runner.calls[4].args, "initdb", "--username=sqlrs") {
 		found := false
@@ -189,7 +195,11 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExists(t *testing.T) {
 	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) != 3 {
+	expectedCalls := 3
+	if runtime.GOOS == "linux" {
+		expectedCalls = 4
+	}
+	if len(runner.calls) != expectedCalls {
 		t.Fatalf("expected only permission calls, got %+v", runner.calls)
 	}
 	for _, call := range runner.calls {
@@ -267,6 +277,30 @@ func TestEnsureHostAuthReturnsReadError(t *testing.T) {
 	}
 }
 
+func TestEnsureHostAuthSkipsPermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows does not enforce unix permission bits")
+	}
+
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.WriteFile(path, []byte("local all all trust\n"), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("chmod pg_hba: %v", err)
+	}
+	defer func() { _ = os.Chmod(path, 0o600) }()
+
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("expected permission denied to be ignored, got %v", err)
+	}
+}
+
 func TestEnsureHostAuthRequiresDataDir(t *testing.T) {
 	if err := ensureHostAuth(""); err == nil {
 		t.Fatalf("expected error for empty data dir")
@@ -338,7 +372,11 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExistsInContainer(t *testing.T) 
 	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) != 4 {
+	expectedCalls := 4
+	if runtime.GOOS == "linux" {
+		expectedCalls = 5
+	}
+	if len(runner.calls) != expectedCalls {
 		t.Fatalf("expected permission calls + pgversion check, got %+v", runner.calls)
 	}
 	if containsArg(runner.calls[len(runner.calls)-1].args, "initdb", "--username=sqlrs") {

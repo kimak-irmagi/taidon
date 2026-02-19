@@ -4,18 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g., v0.1.0)"
+        description: "Release candidate version (e.g., v0.1.0-rc.1)"
         required: true
-      engine_dir:
-        description: "Directory containing sqlrs-engine binaries per target (default: dist/engine)"
-        required: false
-        default: "dist/engine"
   push:
     tags:
       - "v*"
 
+env:
+  RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
 jobs:
   test-cli:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -35,6 +35,7 @@ jobs:
         run: go test ./...
 
   lint-openapi:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -61,6 +62,7 @@ jobs:
         run: pnpm run docs:schemas
 
   test-engine:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -79,12 +81,13 @@ jobs:
         working-directory: backend/local-engine-go
         run: go test ./...
 
-  build:
+  build-rc:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
     runs-on: ${{ matrix.runner }}
     needs: [test-cli, test-engine, lint-openapi]
     env:
-      VERSION: ${{ inputs.version || github.ref_name }}
-      ENGINE_DIR: ${{ inputs.engine_dir || 'dist/engine' }}
+      RAW_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+      ENGINE_DIR: dist/engine
     strategy:
       fail-fast: false
       matrix:
@@ -113,6 +116,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve release versions
+        id: version
+        shell: pwsh
+        run: |
+          $raw = "${{ env.RAW_VERSION }}"
+          if ([string]::IsNullOrWhiteSpace($raw)) {
+            throw "release version is empty"
+          }
+          $base = $raw -replace '-rc\.[0-9]+$',''
+          if ([string]::IsNullOrWhiteSpace($base)) {
+            throw "base version is empty"
+          }
+          "raw=$raw" >> $env:GITHUB_OUTPUT
+          "base=$base" >> $env:GITHUB_OUTPUT
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -147,7 +165,7 @@ jobs:
       - name: Build local release
         run: >
           node scripts/release-local.mjs
-          --version "${{ env.VERSION }}"
+          --version "${{ steps.version.outputs.base }}"
           --os "${{ matrix.goos }}"
           --arch "${{ matrix.goarch }}"
           --engine-bin "${{ github.workspace }}/${{ env.ENGINE_DIR }}/${{ matrix.goos }}_${{ matrix.goarch }}/sqlrs-engine${{ matrix.exe }}"
@@ -157,4 +175,448 @@ jobs:
         with:
           name: sqlrs_${{ matrix.goos }}_${{ matrix.goarch }}
           path: |
-            dist/release/sqlrs_${{ env.VERSION }}_${{ matrix.goos }}_${{ matrix.goarch }}.*
+            dist/release/sqlrs_${{ steps.version.outputs.base }}_${{ matrix.goos }}_${{ matrix.goarch }}.*
+
+  assemble-release-manifest:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
+    runs-on: ubuntu-latest
+    needs: [build-rc]
+    outputs:
+      base_version: ${{ steps.version.outputs.base }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve release versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${{ env.RELEASE_VERSION }}"
+          if [[ -z "$raw" ]]; then
+            echo "release version is empty" >&2
+            exit 1
+          fi
+          base="${raw%-rc.*}"
+          if [[ -z "$base" ]]; then
+            echo "base version is empty" >&2
+            exit 1
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sqlrs_*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Create release manifest
+        run: >
+          node scripts/e2e-release/create-release-manifest.mjs
+          --version "${{ steps.version.outputs.base }}"
+          --input-dir release-assets
+          --output release-assets/release-manifest.json
+          --source-sha "${{ github.sha }}"
+          --workflow-run-id "${{ github.run_id }}"
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-assets/release-manifest.json
+
+  e2e-linux-happy:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
+    runs-on: ubuntu-latest
+    needs: [build-rc, assemble-release-manifest]
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - hp-psql-chinook
+          - hp-psql-sakila
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Use pnpm
+        run: corepack prepare pnpm@10.26.2 --activate
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch example SQL datasets (locked)
+        run: pnpm fetch:sql --lock
+
+      - name: Resolve release versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${{ env.RELEASE_VERSION }}"
+          base="${raw%-rc.*}"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Download linux rc artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sqlrs_linux_amd64
+          path: rc-artifacts
+
+      - name: Extract linux bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find rc-artifacts -name "sqlrs_${{ steps.version.outputs.base }}_linux_amd64.tar.gz" -print -quit)"
+          if [[ -z "$archive" ]]; then
+            echo "linux release archive not found" >&2
+            exit 1
+          fi
+          mkdir -p bundle
+          tar -xzf "$archive" -C bundle
+          bundle_dir="$(find bundle -maxdepth 1 -type d -name "sqlrs_*_linux_amd64" -print -quit)"
+          if [[ -z "$bundle_dir" ]]; then
+            echo "extracted bundle directory not found" >&2
+            exit 1
+          fi
+          echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Run happy-path scenario
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-config
+          XDG_STATE_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state
+          XDG_CACHE_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          out_dir="${RUNNER_TEMP}/e2e/${{ matrix.scenario }}"
+          mkdir -p "${XDG_CONFIG_HOME}" "${XDG_STATE_HOME}" "${XDG_CACHE_HOME}"
+          case "${{ matrix.scenario }}" in
+            hp-psql-sakila) scenario_timeout="45m" ;;
+            *) scenario_timeout="15m" ;;
+          esac
+          node scripts/e2e-release/run-scenario.mjs \
+            --scenario "${{ matrix.scenario }}" \
+            --scenarios "test/e2e/release/scenarios.json" \
+            --sqlrs "${{ steps.bundle.outputs.bundle_dir }}/sqlrs" \
+            --engine "${{ steps.bundle.outputs.bundle_dir }}/sqlrs-engine" \
+            --timeout "$scenario_timeout" \
+            --out-dir "$out_dir"
+          node scripts/e2e-release/normalize-output.mjs \
+            --scenario "${{ matrix.scenario }}" \
+            --scenarios "test/e2e/release/scenarios.json" \
+            --input "$out_dir/raw-stdout.log" \
+            --output "$out_dir/normalized-stdout.log"
+          case "${{ matrix.scenario }}" in
+            hp-psql-chinook) golden="test/e2e/release/hp-psql-chinook/golden.txt" ;;
+            hp-psql-sakila) golden="test/e2e/release/hp-psql-sakila/golden.txt" ;;
+            *) echo "unknown scenario: ${{ matrix.scenario }}" >&2; exit 1 ;;
+          esac
+          node scripts/e2e-release/compare-golden.mjs \
+            --expected "$golden" \
+            --actual "$out_dir/normalized-stdout.log" \
+            --diff "$out_dir/diff.log"
+
+      - name: Upload Linux E2E diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-linux-${{ matrix.scenario }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/command-init.txt
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/command-flow.txt
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/init-stdout.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/init-stderr.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/raw-stdout.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/raw-stderr.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/normalized-stdout.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/diff.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/result.json
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/scenario.json
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/engine.json
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/logs/engine.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/logs/engine-wsl.log
+            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/workspace/*.sql
+
+  e2e-smoke:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
+    runs-on: ${{ matrix.runner }}
+    needs: [build-rc]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            os_family: windows
+          - runner: macos-latest
+            os_family: darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${{ env.RELEASE_VERSION }}"
+          base="${raw%-rc.*}"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Download windows rc artifact
+        if: matrix.os_family == 'windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: sqlrs_windows_amd64
+          path: rc-artifacts
+
+      - name: Download darwin rc artifacts
+        if: matrix.os_family == 'darwin'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sqlrs_darwin_*
+          merge-multiple: true
+          path: rc-artifacts
+
+      - name: Extract windows bundle
+        if: matrix.os_family == 'windows'
+        id: bundle-windows
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem -Path rc-artifacts -Recurse -Filter "sqlrs_${{ steps.version.outputs.base }}_windows_amd64.zip" | Select-Object -First 1
+          if (-not $archive) {
+            throw "windows release archive not found"
+          }
+          $bundleRoot = Join-Path $PWD "bundle"
+          New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
+          Expand-Archive -Path $archive.FullName -DestinationPath $bundleRoot -Force
+
+          $sqlrsBin = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs.exe" |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $sqlrsBin) {
+            throw "sqlrs.exe not found in extracted windows bundle"
+          }
+
+          $engineBin = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs-engine.exe" |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $engineBin) {
+            throw "sqlrs-engine.exe not found in extracted windows bundle"
+          }
+
+          "sqlrs_bin=$($sqlrsBin.FullName)" >> $env:GITHUB_OUTPUT
+          "engine_bin=$($engineBin.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Extract darwin bundle
+        if: matrix.os_family == 'darwin'
+        id: bundle-darwin
+        shell: bash
+        run: |
+          set -euo pipefail
+          host_arch="$(uname -m)"
+          target_arch="amd64"
+          if [[ "$host_arch" == "arm64" || "$host_arch" == "aarch64" ]]; then
+            target_arch="arm64"
+          fi
+          archive="$(find rc-artifacts -name "sqlrs_${{ steps.version.outputs.base }}_darwin_${target_arch}.tar.gz" -print -quit)"
+          if [[ -z "$archive" ]]; then
+            echo "darwin release archive not found for arch=$target_arch" >&2
+            exit 1
+          fi
+          mkdir -p bundle
+          tar -xzf "$archive" -C bundle
+          bundle_dir="$(find bundle -maxdepth 1 -type d -name "sqlrs_*_darwin_${target_arch}" -print -quit)"
+          if [[ -z "$bundle_dir" ]]; then
+            echo "extracted darwin bundle directory not found" >&2
+            exit 1
+          fi
+          echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Run windows smoke checks
+        if: matrix.os_family == 'windows'
+        id: smoke-windows
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $env:RUNNER_TEMP "smoke-windows"
+          "out_dir=$outDir" >> $env:GITHUB_OUTPUT
+          node scripts/e2e-release/smoke-bundle.mjs `
+            --sqlrs "${{ steps.bundle-windows.outputs.sqlrs_bin }}" `
+            --engine "${{ steps.bundle-windows.outputs.engine_bin }}" `
+            --out-dir "$outDir"
+
+      - name: Run darwin smoke checks
+        if: matrix.os_family == 'darwin'
+        id: smoke-darwin
+        shell: bash
+        run: |
+          set -euo pipefail
+          out_dir="${RUNNER_TEMP}/smoke-darwin"
+          echo "out_dir=$out_dir" >> "$GITHUB_OUTPUT"
+          node scripts/e2e-release/smoke-bundle.mjs \
+            --sqlrs "${{ steps.bundle-darwin.outputs.bundle_dir }}/sqlrs" \
+            --engine "${{ steps.bundle-darwin.outputs.bundle_dir }}/sqlrs-engine" \
+            --out-dir "$out_dir"
+
+      - name: Upload windows smoke diagnostics
+        if: always() && matrix.os_family == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-windows
+          path: ${{ runner.temp }}/smoke-windows
+
+      - name: Upload darwin smoke diagnostics
+        if: always() && matrix.os_family == 'darwin'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-darwin
+          path: ${{ runner.temp }}/smoke-darwin
+
+  publish-rc:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
+    runs-on: ubuntu-latest
+    needs: [assemble-release-manifest, e2e-linux-happy, e2e-smoke]
+    permissions:
+      contents: write
+    steps:
+      - name: Download release bundles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sqlrs_*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Download manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: release-assets
+
+      - name: Publish RC release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_VERSION }}
+          name: ${{ env.RELEASE_VERSION }}
+          prerelease: true
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: |
+            release-assets/sqlrs_*.tar.gz
+            release-assets/sqlrs_*.zip
+            release-assets/sqlrs_*.sha256
+            release-assets/release-manifest.json
+
+  promote-ga:
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'v') && !contains(github.ref_name, '-rc.')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Find latest RC tag for this version
+        id: rc
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ github.ref_name }}"
+          rc_tag="$(
+            gh release list --limit 200 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true) | .tagName' \
+              | awk -v v="$version" 'index($0, v "-rc.") == 1' \
+              | sort -V \
+              | tail -n1
+          )"
+          if [[ -z "$rc_tag" ]]; then
+            echo "no RC release found for ${version}" >&2
+            exit 1
+          fi
+          echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download RC assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p rc-assets
+          gh release download "${{ steps.rc.outputs.rc_tag }}" \
+            --dir rc-assets \
+            --pattern "sqlrs_${{ github.ref_name }}_*" \
+            --clobber
+          gh release download "${{ steps.rc.outputs.rc_tag }}" \
+            --dir rc-assets \
+            --pattern "release-manifest.json" \
+            --clobber
+
+      - name: Validate RC manifest provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="rc-assets/release-manifest.json"
+          if [[ ! -f "$manifest" ]]; then
+            echo "release manifest is missing in RC assets" >&2
+            exit 1
+          fi
+
+          manifest_source_sha="$(
+            python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('source_sha',''))" "$manifest"
+          )"
+          if [[ -z "$manifest_source_sha" ]]; then
+            echo "release manifest source_sha is empty" >&2
+            exit 1
+          fi
+          if [[ "$manifest_source_sha" != "${{ github.sha }}" ]]; then
+            echo "manifest source_sha ($manifest_source_sha) does not match tag commit (${{ github.sha }})" >&2
+            exit 1
+          fi
+
+          manifest_version="$(
+            python -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('version',''))" "$manifest"
+          )"
+          if [[ "$manifest_version" != "${{ github.ref_name }}" ]]; then
+            echo "manifest version ($manifest_version) does not match GA tag (${{ github.ref_name }})" >&2
+            exit 1
+          fi
+
+      - name: Verify asset checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          checksum_files=(rc-assets/*.sha256)
+          if [[ ${#checksum_files[@]} -eq 0 ]]; then
+            echo "no checksum files downloaded from RC release" >&2
+            exit 1
+          fi
+          (
+            cd rc-assets
+            sha256sum -c ./*.sha256
+          )
+
+      - name: Publish GA release from verified RC assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: false
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: |
+            rc-assets/sqlrs_${{ github.ref_name }}_*.tar.gz
+            rc-assets/sqlrs_${{ github.ref_name }}_*.zip
+            rc-assets/sqlrs_${{ github.ref_name }}_*.sha256
+            rc-assets/release-manifest.json

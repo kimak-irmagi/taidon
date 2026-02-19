@@ -653,6 +653,26 @@ func TestRunInvalidStartupTimeout(t *testing.T) {
 	}
 }
 
+func TestRunInvalidIdleTimeout(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	dirs, err := paths.Resolve()
+	if err != nil {
+		t.Fatalf("resolve dirs: %v", err)
+	}
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), []byte("orchestrator:\n  idleTimeout: bad\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := Run([]string{"status"}); err == nil {
+		t.Fatalf("expected idle timeout error")
+	}
+}
+
 func TestRunStatusError(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)

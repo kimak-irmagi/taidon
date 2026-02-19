@@ -41,6 +41,7 @@ type PrepareOptions struct {
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
+	IdleTimeout     time.Duration
 	StartupTimeout  time.Duration
 	Verbose         bool
 
@@ -210,6 +211,7 @@ func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, er
 				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
+				IdleTimeout:     opts.IdleTimeout,
 				StartupTimeout:  opts.StartupTimeout,
 				ClientTimeout:   opts.Timeout,
 				Verbose:         opts.Verbose,
@@ -321,6 +323,10 @@ func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string,
 				case "failed":
 					resp.Body.Close()
 					if status.Error != nil {
+						tracker.Update(client.PrepareJobEvent{
+							Type:  "error",
+							Error: status.Error,
+						})
 						if status.Error.Details != "" {
 							return client.PrepareJobStatus{}, fmt.Errorf("%s: %s", status.Error.Message, status.Error.Details)
 						}
@@ -549,6 +555,18 @@ func prepareEventKey(event client.PrepareJobEvent) string {
 
 func formatPrepareEvent(event client.PrepareJobEvent) string {
 	message := strings.TrimSpace(event.Message)
+	if message == "" && event.Error != nil {
+		errMsg := strings.TrimSpace(event.Error.Message)
+		errDetails := strings.TrimSpace(event.Error.Details)
+		switch {
+		case errMsg != "" && errDetails != "":
+			message = errMsg + ": " + errDetails
+		case errMsg != "":
+			message = errMsg
+		case errDetails != "":
+			message = errDetails
+		}
+	}
 	suffix := ""
 	if message != "" {
 		suffix = " - " + message

@@ -159,6 +159,9 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	if ok, err := r.pgVersionReady(ctx, imageID, dataDir); err != nil {
 		return err
 	} else if ok {
+		if err := r.ensureHostReadableDataDir(ctx, imageID, dataDir); err != nil {
+			return err
+		}
 		return ensureHostAuth(dataDir)
 	}
 	args := []string{
@@ -187,6 +190,9 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 		return fmt.Errorf("initdb failed: %w", err)
 	}
 	if ok, checkErr := r.pgVersionReady(ctx, imageID, dataDir); checkErr == nil && ok {
+		if err := r.ensureHostReadableDataDir(ctx, imageID, dataDir); err != nil {
+			return err
+		}
 		return ensureHostAuth(dataDir)
 	} else if checkErr != nil {
 		return checkErr
@@ -248,6 +254,11 @@ func ensureHostAuth(dataDir string) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
+		if errors.Is(err, os.ErrPermission) {
+			// Some runtimes initialize pgdata with container-only ownership (e.g. uid 999, mode 0700).
+			// In that case host-side patching is not possible, but initdb host auth settings still apply.
+			return nil
+		}
 		return err
 	}
 	existing := string(content)
@@ -268,10 +279,16 @@ func ensureHostAuth(dataDir string) error {
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil
+		}
 		return err
 	}
 	defer f.Close()
 	if _, err := f.WriteString(b.String()); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -334,6 +351,7 @@ func (r *DockerRuntime) inspectImageDigest(ctx context.Context, imageID string) 
 }
 
 func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, dataDir string) error {
+	ensureHostDataDirAccess(dataDir)
 	args := []string{
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
@@ -347,7 +365,7 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
-		"chown", "-R", "postgres:postgres", PostgresDataDirRoot,
+		"chown", "-R", "postgres:postgres", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
@@ -356,12 +374,40 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
 		imageID,
-		"chmod", "-R", "0700", PostgresDataDirRoot,
+		"chmod", "-R", "0700", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (r *DockerRuntime) ensureHostReadableDataDir(ctx context.Context, imageID string, dataDir string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	args := []string{
+		"run", "--rm",
+		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		imageID,
+		"chmod", "-R", "a+rX", PostgresDataDir,
+	}
+	if err := r.runPermissionCommand(ctx, args); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureHostDataDirAccess(dataDir string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	info, err := os.Stat(dataDir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	// Best effort: allow container postgres user to traverse mounted base dir.
+	_ = os.Chmod(dataDir, 0o755)
 }
 
 func (r *DockerRuntime) runPermissionCommand(ctx context.Context, args []string) error {

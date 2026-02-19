@@ -31,6 +31,7 @@ type LsOptions struct {
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
+	IdleTimeout     time.Duration
 	StartupTimeout  time.Duration
 	Verbose         bool
 
@@ -93,6 +94,7 @@ func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
 				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
+				IdleTimeout:     opts.IdleTimeout,
 				StartupTimeout:  opts.StartupTimeout,
 				ClientTimeout:   opts.Timeout,
 				Verbose:         opts.Verbose,

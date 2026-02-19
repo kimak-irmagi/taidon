@@ -1194,6 +1194,10 @@ func (m *PrepareService) updateTaskStatus(ctx context.Context, jobID string, tas
 		Status: status,
 		TaskID: taskID,
 	}
+	if errResp != nil {
+		event.Message = errResp.Message
+		event.Error = errResp
+	}
 	return m.appendEvent(jobID, event)
 }
 
@@ -1270,7 +1274,11 @@ func (m *PrepareService) failJob(jobID string, errResp *ErrorResponse) error {
 		return err
 	}
 	if errResp != nil {
-		m.logJob(jobID, "failed code=%s message=%s", errResp.Code, errResp.Message)
+		if details := summarizeLogDetails(errResp.Details); details != "" {
+			m.logJob(jobID, "failed code=%s message=%s details=%s", errResp.Code, errResp.Message, details)
+		} else {
+			m.logJob(jobID, "failed code=%s message=%s", errResp.Code, errResp.Message)
+		}
 	} else {
 		m.logJob(jobID, "failed")
 	}
@@ -1701,6 +1709,19 @@ func nullableString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func summarizeLogDetails(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, "\r\n", "\n")
+	trimmed = strings.ReplaceAll(trimmed, "\n", " | ")
+	if len(trimmed) <= 512 {
+		return trimmed
+	}
+	return trimmed[:512] + "... (truncated)"
 }
 
 const defaultMaxIdenticalJobs = 2
