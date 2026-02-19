@@ -1,4 +1,5 @@
 \echo 'Sakila sanity checks'
+\c sakila
 select count(*) as films from film;
 select count(*) as customers from customer;
 

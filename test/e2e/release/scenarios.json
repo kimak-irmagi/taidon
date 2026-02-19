@@ -18,12 +18,14 @@
       "id": "hp-psql-sakila",
       "example": "sakila",
       "prepareArgs": ["-f", "prepare.sql"],
-      "runArgs": ["-d", "sakila", "-At", "-f", ".e2e-query.sql"],
+      "runArgs": ["-At", "-f", ".e2e-query.sql"],
       "queryTemplate": "test/e2e/release/hp-psql-sakila/query.sql",
       "golden": "test/e2e/release/hp-psql-sakila/golden.txt",
       "image": "postgres:17",
       "normalize": {
-        "dropLinePatterns": []
+        "dropLinePatterns": [
+          "^You are now connected to database .*"
+        ]
       }
     }
   ]
