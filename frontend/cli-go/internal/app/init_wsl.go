@@ -53,7 +53,6 @@ var runHostCommandFn = runHostCommand
 var isElevatedFn = isElevated
 var isWindows = runtime.GOOS == "windows"
 
-const defaultStoreSizeGB = 100
 const defaultVHDXName = "btrfs.vhdx"
 
 func initWSL(opts wslInitOptions) (wslInitResult, error) {
@@ -127,7 +126,7 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 
 	sizeGB := opts.StoreSizeGB
 	if sizeGB <= 0 {
-		sizeGB = defaultStoreSizeGB
+		sizeGB = defaultBtrfsStoreSizeGB
 	}
 
 	ctx := context.Background()

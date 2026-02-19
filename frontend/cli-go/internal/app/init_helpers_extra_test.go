@@ -99,3 +99,18 @@ func TestDefaultStoreRootEnv(t *testing.T) {
 		t.Fatalf("expected env root, got %q err=%v", out, err)
 	}
 }
+
+func TestShouldRunStrictBtrfsInit(t *testing.T) {
+	if !shouldRunStrictBtrfsInit("btrfs", false, nil) {
+		t.Fatalf("expected strict btrfs init to run")
+	}
+	if shouldRunStrictBtrfsInit("copy", false, nil) {
+		t.Fatalf("did not expect strict btrfs init for copy")
+	}
+	if shouldRunStrictBtrfsInit("btrfs", true, nil) {
+		t.Fatalf("did not expect strict btrfs init in dry-run")
+	}
+	if shouldRunStrictBtrfsInit("btrfs", false, &wslInitResult{UseWSL: true}) {
+		t.Fatalf("did not expect strict linux btrfs init when WSL path is active")
+	}
+}
