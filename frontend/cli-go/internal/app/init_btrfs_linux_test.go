@@ -117,12 +117,3 @@ func TestRunInitReturnsExitErrorWhenLinuxBtrfsInitFails(t *testing.T) {
 		t.Fatalf("expected exit code 1, got %d", exitErr.Code)
 	}
 }
-
-func withInitLocalBtrfsStub(t *testing.T, fn func(localBtrfsInitOptions) (localBtrfsInitResult, error)) {
-	t.Helper()
-	prev := initLocalBtrfsStoreFn
-	initLocalBtrfsStoreFn = fn
-	t.Cleanup(func() {
-		initLocalBtrfsStoreFn = prev
-	})
-}

@@ -474,11 +474,7 @@ func TestInitWritesSnapshotBackend(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("btrfs snapshots are not supported on macOS")
 	}
-	if runtime.GOOS == "windows" {
-		withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
-			return wslInitResult{UseWSL: true}, nil
-		})
-	}
+	stubBtrfsInitForTests(t)
 	workspace := t.TempDir()
 	var out bytes.Buffer
 
