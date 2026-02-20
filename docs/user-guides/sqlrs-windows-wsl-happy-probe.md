@@ -20,13 +20,15 @@ Execution model:
 2. Build Linux `sqlrs` and `sqlrs-engine` binaries from source.
 3. Initialize Docker on the Windows host via `docker/setup-docker-action`.
 4. Install/setup WSL distro (`Ubuntu-24.04`) via `Vampire/setup-wsl`.
-5. Inside WSL:
+5. Download `examples/chinook/Chinook_PostgreSql.sql` on host with locked
+   sha256 verification.
+6. Inside WSL:
    - ensure Docker daemon is available;
    - run `sqlrs init local --snapshot copy`;
    - run `prepare:psql` + `run:psql` for `examples/chinook`.
-6. Normalize stdout and compare with committed golden output:
+7. Normalize stdout and compare with committed golden output:
    `test/e2e/release/hp-psql-chinook/golden.txt`.
-7. Upload diagnostics artifacts for post-failure analysis.
+8. Upload diagnostics artifacts for post-failure analysis.
 
 ## Trigger
 

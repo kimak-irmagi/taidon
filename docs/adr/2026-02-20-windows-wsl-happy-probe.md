@@ -55,3 +55,20 @@ Date: 2026-02-20
   keeping `workflow_dispatch`.
 - Rationale: This allows immediate branch-level validation before merge and
   avoids extra noise on `main`.
+
+## Decision Record 4: bootstrap Chinook SQL asset explicitly in probe workflow
+
+- Timestamp: 2026-02-20T23:08:45.7211390+07:00
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: How should the probe guarantee `prepare.sql` dependencies for
+  `hp-psql-chinook` on clean runners?
+- Alternatives:
+  - Assume `Chinook_PostgreSql.sql` is already present in repository checkout.
+  - Run repo-wide `pnpm fetch:sql --lock` in probe.
+  - Add explicit chinook-only download with sha256 verification in probe.
+- Decision: Add an explicit locked bootstrap step in the workflow that downloads
+  `examples/chinook/Chinook_PostgreSql.sql` and verifies the expected sha256
+  before WSL execution.
+- Rationale: This directly satisfies the dependency of `prepare.sql` in a clean
+  runner and avoids extra tooling assumptions in the probe path.

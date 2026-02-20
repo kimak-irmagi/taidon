@@ -48,6 +48,21 @@ jobs:
           wsl --status
           wsl --list --verbose
 
+      - name: Fetch Chinook SQL asset (locked)
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:GITHUB_WORKSPACE "examples\chinook\Chinook_PostgreSql.sql"
+          $url = "https://raw.githubusercontent.com/lerocha/chinook-database/master/ChinookDatabase/DataSources/Chinook_PostgreSql.sql"
+          $expected = "e3fde5c1a5b51a2a91429a702c9ca6e69ba56e6c7f5e112724d70c3d03db695e"
+
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $dst
+
+          $actual = (Get-FileHash -Algorithm SHA256 -Path $dst).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Chinook SQL sha256 mismatch: expected=$expected actual=$actual"
+          }
+
       - name: Build linux sqlrs binary
         working-directory: frontend/cli-go
         shell: pwsh

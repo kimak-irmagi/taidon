@@ -54,6 +54,15 @@ run("probe workflow sets up docker on windows host", () => {
   assert.equal(step.uses, "docker/setup-docker-action@v4");
 });
 
+run("probe workflow fetches locked chinook sql asset", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["windows-wsl-happy"];
+  const step = (job.steps || []).find((item) => item.name === "Fetch Chinook SQL asset (locked)");
+  assert.ok(step, "missing chinook asset fetch step");
+  assert.match(String(step.run || ""), /Chinook_PostgreSql\.sql/);
+  assert.match(String(step.run || ""), /e3fde5c1a5b51a2a91429a702c9ca6e69ba56e6c7f5e112724d70c3d03db695e/);
+});
+
 run("probe workflow runs happy-path in WSL shell", () => {
   const workflow = loadWorkflow();
   const job = workflow.jobs?.["windows-wsl-happy"];
