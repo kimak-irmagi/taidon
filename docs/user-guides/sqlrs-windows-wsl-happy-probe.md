@@ -30,9 +30,10 @@ Execution model:
 
 ## Trigger
 
-Manual trigger only:
+Temporary triggers during probe stage:
 
-- `workflow_dispatch`
+- `push` to any branch except `main`;
+- `workflow_dispatch` (manual run).
 
 Input:
 

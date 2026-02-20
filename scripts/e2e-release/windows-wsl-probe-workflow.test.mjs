@@ -31,6 +31,13 @@ run("probe workflow has windows-latest job", () => {
   assert.equal(job["runs-on"], "windows-latest");
 });
 
+run("probe workflow has temporary push trigger for non-main branches", () => {
+  const workflow = loadWorkflow();
+  const push = workflow.on?.push;
+  assert.ok(push, "missing push trigger");
+  assert.deepEqual(push["branches-ignore"], ["main"]);
+});
+
 run("probe workflow installs WSL via setup-wsl action", () => {
   const workflow = loadWorkflow();
   const job = workflow.jobs?.["windows-wsl-happy"];

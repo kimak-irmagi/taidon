@@ -1,6 +1,9 @@
 name: e2e-windows-wsl-probe
 
 on:
+  push:
+    branches-ignore:
+      - main
   workflow_dispatch:
     inputs:
       scenario:

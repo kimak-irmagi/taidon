@@ -39,3 +39,19 @@ Date: 2026-02-20
   execution, while retaining in-WSL daemon bootstrap logic.
 - Rationale: This improves startup robustness on hosted runners and preserves the
   existing WSL-local fallback path if host-level setup is insufficient.
+
+## Decision Record 3: add temporary push trigger for branch iteration
+
+- Timestamp: 2026-02-20T23:05:03.4995942+07:00
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: How should the probe workflow be triggered before merge so it is
+  visible and runnable during branch work?
+- Alternatives:
+  - Keep `workflow_dispatch` only.
+  - Add temporary `push` trigger for non-main branches plus keep
+    `workflow_dispatch`.
+- Decision: Add temporary `push` trigger with `branches-ignore: [main]` while
+  keeping `workflow_dispatch`.
+- Rationale: This allows immediate branch-level validation before merge and
+  avoids extra noise on `main`.
