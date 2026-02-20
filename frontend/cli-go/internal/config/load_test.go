@@ -106,7 +106,7 @@ func TestReadConfigMapNonMap(t *testing.T) {
 
 func TestLoadUsesGetwdAndResolveWhenOptionsAreEmpty(t *testing.T) {
 	projectDir := t.TempDir()
-	t.Chdir(projectDir)
+	chdirForTest(t, projectDir)
 
 	result, err := Load(LoadOptions{})
 	if err != nil {
@@ -118,4 +118,18 @@ func TestLoadUsesGetwdAndResolveWhenOptionsAreEmpty(t *testing.T) {
 	if result.Config.DefaultProfile == "" {
 		t.Fatalf("expected default profile to be set")
 	}
+}
+
+func chdirForTest(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %q: %v", dir, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(prev)
+	})
 }
