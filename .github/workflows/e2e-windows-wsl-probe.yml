@@ -230,4 +230,5 @@ jobs:
         with:
           name: e2e-windows-wsl-probe-${{ env.SCENARIO_ID }}
           if-no-files-found: warn
+          include-hidden-files: true
           path: ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}

@@ -104,5 +104,6 @@ run("probe workflow uploads full diagnostics directory on any outcome", () => {
   assert.ok(step, "missing diagnostics upload step");
   assert.equal(step.if, "always()");
   assert.equal(step.uses, "actions/upload-artifact@v4");
+  assert.equal(step.with?.["include-hidden-files"], true);
   assert.match(String(step.with?.path || ""), /e2e-probe\/\$\{\{\s*env\.SCENARIO_ID\s*\}\}/);
 });

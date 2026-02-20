@@ -613,6 +613,53 @@ func TestRunDefaultsFromConfig(t *testing.T) {
 	}
 }
 
+func TestRunUsesWorkspaceFlagForProjectConfig(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	defer server.Close()
+
+	workspace := filepath.Join(temp, "workspace")
+	if err := os.MkdirAll(filepath.Join(workspace, ".sqlrs"), 0o700); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	projectConfig := []byte(
+		"defaultProfile: remote\n" +
+			"profiles:\n" +
+			"  remote:\n" +
+			"    mode: remote\n" +
+			"    endpoint: " + server.URL + "\n",
+	)
+	if err := os.WriteFile(filepath.Join(workspace, ".sqlrs", "config.yaml"), projectConfig, 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	outside := filepath.Join(temp, "outside")
+	if err := os.MkdirAll(outside, 0o700); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(outside); err != nil {
+		t.Fatalf("chdir outside: %v", err)
+	}
+
+	if err := Run([]string{"--workspace", workspace, "status"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
 func TestRunInvalidClientTimeout(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)

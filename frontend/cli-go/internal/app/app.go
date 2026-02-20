@@ -55,7 +55,16 @@ func Run(args []string) error {
 		return runInit(os.Stdout, cwd, opts.Workspace, commands[0].Args, opts.Verbose)
 	}
 
-	cfgResult, err := config.Load(config.LoadOptions{WorkingDir: cwd})
+	configWorkingDir := cwd
+	if workspace := strings.TrimSpace(opts.Workspace); workspace != "" {
+		if filepath.IsAbs(workspace) {
+			configWorkingDir = filepath.Clean(workspace)
+		} else {
+			configWorkingDir = filepath.Clean(filepath.Join(cwd, workspace))
+		}
+	}
+
+	cfgResult, err := config.Load(config.LoadOptions{WorkingDir: configWorkingDir})
 	if err != nil {
 		return err
 	}
