@@ -1,0 +1,196 @@
+name: e2e-windows-wsl-probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Happy-path scenario id"
+        required: true
+        default: hp-psql-chinook
+        type: choice
+        options:
+          - hp-psql-chinook
+
+jobs:
+  windows-wsl-happy:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      SCENARIO_ID: ${{ github.event.inputs.scenario || 'hp-psql-chinook' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: frontend/cli-go/go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Docker on host
+        uses: docker/setup-docker-action@v4
+
+      - name: Set up WSL
+        uses: Vampire/setup-wsl@v6
+        with:
+          distribution: Ubuntu-24.04
+
+      - name: Show host WSL status
+        shell: pwsh
+        run: |
+          wsl --status
+          wsl --list --verbose
+
+      - name: Build linux sqlrs binary
+        working-directory: frontend/cli-go
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $env:GITHUB_WORKSPACE "dist\probe\linux-amd64"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "linux"
+          $env:GOARCH = "amd64"
+          go build -o (Join-Path $outDir "sqlrs") ./cmd/sqlrs
+
+      - name: Build linux sqlrs-engine binary
+        working-directory: backend/local-engine-go
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $env:GITHUB_WORKSPACE "dist\probe\linux-amd64"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "linux"
+          $env:GOARCH = "amd64"
+          go build -o (Join-Path $outDir "sqlrs-engine") ./cmd/sqlrs-engine
+
+      - name: Run chinook happy-path inside WSL
+        shell: wsl-bash {0}
+        run: |
+          set -euo pipefail
+
+          repo="$(wslpath -u "$GITHUB_WORKSPACE")"
+          runner_temp="$(wslpath -u "$RUNNER_TEMP")"
+          scenario="${SCENARIO_ID:-hp-psql-chinook}"
+          out_dir="$runner_temp/e2e-probe/$scenario"
+          sqlrs="$repo/dist/probe/linux-amd64/sqlrs"
+          engine="$repo/dist/probe/linux-amd64/sqlrs-engine"
+          workspace_dir="$out_dir/workspace"
+          store_dir="$out_dir/store"
+
+          mkdir -p "$out_dir"
+          chmod +x "$sqlrs" "$engine"
+
+          if ! command -v docker >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update
+              apt-get install -y docker.io
+            else
+              sudo apt-get update
+              sudo apt-get install -y docker.io
+            fi
+          fi
+
+          if ! docker info >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              nohup dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=false >"$out_dir/dockerd.log" 2>&1 &
+            else
+              nohup sudo dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=false >"$out_dir/dockerd.log" 2>&1 &
+            fi
+            ready=0
+            for _ in $(seq 1 90); do
+              if docker info >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$ready" != "1" ]; then
+              echo "docker daemon did not become ready" >&2
+              tail -n 200 "$out_dir/dockerd.log" || true
+              exit 1
+            fi
+          fi
+
+          if [ "$(id -u)" -eq 0 ]; then
+            chmod 666 /var/run/docker.sock || true
+          else
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+
+          docker version >"$out_dir/docker-version.txt" 2>&1 || true
+
+          rm -rf "$workspace_dir" "$store_dir"
+          mkdir -p "$workspace_dir" "$store_dir"
+          cp -R "$repo/examples/chinook/." "$workspace_dir/"
+          cp "$repo/test/e2e/release/hp-psql-chinook/query.sql" "$workspace_dir/.e2e-query.sql"
+
+          export XDG_CONFIG_HOME="$out_dir/xdg-config"
+          export XDG_STATE_HOME="$out_dir/xdg-state"
+          export XDG_CACHE_HOME="$out_dir/xdg-cache"
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+
+          printf '%s\n' "$sqlrs --workspace $workspace_dir init local --engine $engine --snapshot copy --store dir $store_dir --no-start" >"$out_dir/command-init.txt"
+          printf '%s\n' "$sqlrs --timeout 15m --workspace $workspace_dir prepare:psql --image postgres:17 -- -f prepare.sql run:psql -- -At -f .e2e-query.sql" >"$out_dir/command-flow.txt"
+
+          "$sqlrs" \
+            --workspace "$workspace_dir" \
+            init local \
+            --engine "$engine" \
+            --snapshot copy \
+            --store dir "$store_dir" \
+            --no-start \
+            >"$out_dir/init-stdout.log" \
+            2>"$out_dir/init-stderr.log"
+
+          "$sqlrs" \
+            --timeout "15m" \
+            --workspace "$workspace_dir" \
+            prepare:psql \
+            --image "postgres:17" \
+            -- \
+            -f prepare.sql \
+            run:psql \
+            -- \
+            -At -f .e2e-query.sql \
+            >"$out_dir/raw-stdout.log" \
+            2>"$out_dir/raw-stderr.log"
+
+      - name: Normalize and compare golden output
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $env:RUNNER_TEMP "e2e-probe\$env:SCENARIO_ID"
+          node scripts/e2e-release/normalize-output.mjs `
+            --scenario "$env:SCENARIO_ID" `
+            --scenarios "test/e2e/release/scenarios.json" `
+            --input "$outDir/raw-stdout.log" `
+            --output "$outDir/normalized-stdout.log"
+
+          node scripts/e2e-release/compare-golden.mjs `
+            --expected "test/e2e/release/hp-psql-chinook/golden.txt" `
+            --actual "$outDir/normalized-stdout.log" `
+            --diff "$outDir/diff.log"
+
+      - name: Upload probe diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-windows-wsl-probe-${{ env.SCENARIO_ID }}
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/command-init.txt
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/command-flow.txt
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/init-stdout.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/init-stderr.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/raw-stdout.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/raw-stderr.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/normalized-stdout.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/diff.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/dockerd.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/docker-version.txt
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/xdg-state/sqlrs/engine.json
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/xdg-state/sqlrs/logs/engine.log
+            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/xdg-state/sqlrs/logs/engine-wsl.log
