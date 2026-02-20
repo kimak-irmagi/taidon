@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -241,5 +242,110 @@ func TestLoadHealthyStateWithReasonPidNotRunning(t *testing.T) {
 	_, ok, reason := loadHealthyStateWithReason(context.Background(), statePath, time.Second)
 	if ok || !strings.Contains(reason, "engine pid not running") {
 		t.Fatalf("expected pid not running reason, got ok=%v reason=%q", ok, reason)
+	}
+}
+
+func TestConnectOrStartTimesOutWhenDaemonNeverBecomesHealthy(t *testing.T) {
+	temp := t.TempDir()
+	runDir := filepath.Join(temp, "run")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatalf("mkdir run: %v", err)
+	}
+	stateDir, err := os.MkdirTemp("", "sqlrs-daemon-timeout-*")
+	if err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = waitUntilFileUnlockedAndRemove(filepath.Join(stateDir, "logs", "engine.log"), 15*time.Second)
+		_ = os.RemoveAll(stateDir)
+	})
+	logPath := filepath.Join(stateDir, "logs", "engine.log")
+
+	daemonPath := writeDaemonScript(t, temp, "sleep")
+	_, err = ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:       "auto",
+		Autostart:      true,
+		DaemonPath:     daemonPath,
+		RunDir:         runDir,
+		StateDir:       stateDir,
+		ClientTimeout:  50 * time.Millisecond,
+		StartupTimeout: 100 * time.Millisecond,
+	})
+	if err == nil || !strings.Contains(err.Error(), "did not become healthy") {
+		t.Fatalf("expected startup timeout, got %v", err)
+	}
+	if err := waitUntilFileUnlockedAndRemove(logPath, 5*time.Second); err != nil {
+		t.Logf("wait for engine log unlock: %v", err)
+	}
+}
+
+func TestConnectOrStartReturnsExitCodeWhenDaemonExitsEarly(t *testing.T) {
+	temp := t.TempDir()
+	runDir := filepath.Join(temp, "run")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatalf("mkdir run: %v", err)
+	}
+
+	daemonPath := writeDaemonScript(t, temp, "exit")
+	_, err := ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:       "auto",
+		Autostart:      true,
+		DaemonPath:     daemonPath,
+		RunDir:         runDir,
+		StateDir:       temp,
+		ClientTimeout:  50 * time.Millisecond,
+		StartupTimeout: time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "exit code 7") {
+		t.Fatalf("expected early exit with code, got %v", err)
+	}
+}
+
+func writeDaemonScript(t *testing.T, dir, mode string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		path := filepath.Join(dir, "daemon.cmd")
+		content := "@echo off\r\n"
+		switch mode {
+		case "sleep":
+			content += "ping -n 2 127.0.0.1 >nul\r\n"
+		case "exit":
+			content += "exit /b 7\r\n"
+		default:
+			t.Fatalf("unknown mode %q", mode)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+			t.Fatalf("write daemon script: %v", err)
+		}
+		return path
+	}
+
+	path := filepath.Join(dir, "daemon.sh")
+	content := "#!/bin/sh\n"
+	switch mode {
+	case "sleep":
+		content += "sleep 1\n"
+	case "exit":
+		content += "exit 7\n"
+	default:
+		t.Fatalf("unknown mode %q", mode)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+		t.Fatalf("write daemon script: %v", err)
+	}
+	return path
+}
+
+func waitUntilFileUnlockedAndRemove(path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		err := os.Remove(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

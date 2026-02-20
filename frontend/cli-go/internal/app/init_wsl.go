@@ -51,6 +51,7 @@ var runWSLCommandAllowFailureFn = runWSLCommandAllowFailure
 var runWSLCommandWithInputFn = runWSLCommandWithInput
 var runHostCommandFn = runHostCommand
 var isElevatedFn = isElevated
+var isTerminalWriterFn = isTerminalWriter
 var isWindows = runtime.GOOS == "windows"
 
 const defaultVHDXName = "btrfs.vhdx"
@@ -1238,7 +1239,7 @@ func startSpinner(label string, verbose bool) func() {
 	if verbose {
 		return func() {}
 	}
-	if !isTerminalWriter(os.Stderr) {
+	if !isTerminalWriterFn(os.Stderr) {
 		return func() {}
 	}
 

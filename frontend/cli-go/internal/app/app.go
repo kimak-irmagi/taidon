@@ -557,7 +557,7 @@ func formatCleanupResult(result client.DeleteResult) string {
 func startCleanupSpinner(instanceID string, verbose bool) func() {
 	label := fmt.Sprintf("Deleting instance %s", instanceID)
 	out := os.Stdout
-	if verbose || !isTerminalWriter(out) {
+	if verbose || !isTerminalWriterFn(out) {
 		fmt.Fprintln(out, label)
 		return func() {}
 	}

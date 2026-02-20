@@ -322,6 +322,25 @@ func TestResolveWSLSettingsListDistroFailure(t *testing.T) {
 	}
 }
 
+func TestResolveWSLSettingsAutoIgnoresListDistroFailure(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Engine.WSL.Mode = "auto"
+	cfg.Engine.WSL.StateDir = "/mnt/sqlrs/store"
+	prev := listWSLDistrosFn
+	listWSLDistrosFn = func() ([]wsl.Distro, error) {
+		return nil, errors.New("boom")
+	}
+	t.Cleanup(func() { listWSLDistrosFn = prev })
+
+	daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS, err := resolveWSLSettings(cfg, paths.Dirs{}, "daemon")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if daemon != "daemon" || runDir != "" || statePath != "" || stateDir != "" || distro != "" || mountUnit != "" || mountFS != "" {
+		t.Fatalf("expected auto fallback, got daemon=%q runDir=%q statePath=%q stateDir=%q distro=%q unit=%q fs=%q", daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS)
+	}
+}
+
 func TestResolveWSLSettingsSelectDistroFailure(t *testing.T) {
 	cfg := config.Config{}
 	cfg.Engine.WSL.Mode = "required"
@@ -334,6 +353,57 @@ func TestResolveWSLSettingsSelectDistroFailure(t *testing.T) {
 	_, _, _, _, _, _, _, err := resolveWSLSettings(cfg, paths.Dirs{}, "daemon")
 	if err == nil || !strings.Contains(err.Error(), "distro resolution") {
 		t.Fatalf("expected distro resolution error, got %v", err)
+	}
+}
+
+func TestResolveWSLSettingsAutoIgnoresSelectDistroFailure(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Engine.WSL.Mode = "auto"
+	cfg.Engine.WSL.StateDir = "/mnt/sqlrs/store"
+	prev := listWSLDistrosFn
+	listWSLDistrosFn = func() ([]wsl.Distro, error) {
+		return []wsl.Distro{}, nil
+	}
+	t.Cleanup(func() { listWSLDistrosFn = prev })
+
+	daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS, err := resolveWSLSettings(cfg, paths.Dirs{}, "daemon")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if daemon != "daemon" || runDir != "" || statePath != "" || stateDir != "" || distro != "" || mountUnit != "" || mountFS != "" {
+		t.Fatalf("expected auto fallback, got daemon=%q runDir=%q statePath=%q stateDir=%q distro=%q unit=%q fs=%q", daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS)
+	}
+}
+
+func TestResolveWSLSettingsAutoMissingStateDirFallback(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Engine.WSL.Mode = "auto"
+	cfg.Engine.WSL.Distro = "Ubuntu"
+	cfg.Engine.WSL.StateDir = ""
+
+	daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS, err := resolveWSLSettings(cfg, paths.Dirs{}, "daemon")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if daemon != "daemon" || runDir != "" || statePath != "" || stateDir != "" || distro != "" || mountUnit != "" || mountFS != "" {
+		t.Fatalf("expected auto fallback, got daemon=%q runDir=%q statePath=%q stateDir=%q distro=%q unit=%q fs=%q", daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS)
+	}
+}
+
+func TestResolveWSLSettingsAutoPathConversionFallback(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Engine.WSL.Mode = "auto"
+	cfg.Engine.WSL.Distro = "Ubuntu"
+	cfg.Engine.WSL.StateDir = "/mnt/sqlrs/store"
+	cfg.Engine.WSL.Mount.Unit = "sqlrs-store.mount"
+	cfg.Engine.WSL.EnginePath = "relative-daemon"
+
+	daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS, err := resolveWSLSettings(cfg, paths.Dirs{StateDir: "relative-state"}, "daemon")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if daemon != "daemon" || runDir != "" || statePath != "" || stateDir != "" || distro != "" || mountUnit != "" || mountFS != "" {
+		t.Fatalf("expected auto fallback, got daemon=%q runDir=%q statePath=%q stateDir=%q distro=%q unit=%q fs=%q", daemon, runDir, statePath, stateDir, distro, mountUnit, mountFS)
 	}
 }
 

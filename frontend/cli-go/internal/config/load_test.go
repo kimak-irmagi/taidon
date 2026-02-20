@@ -103,3 +103,33 @@ func TestReadConfigMapNonMap(t *testing.T) {
 		t.Fatalf("expected empty map, got %+v", data)
 	}
 }
+
+func TestLoadUsesGetwdAndResolveWhenOptionsAreEmpty(t *testing.T) {
+	projectDir := t.TempDir()
+	chdirForTest(t, projectDir)
+
+	result, err := Load(LoadOptions{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if result.Paths.ConfigDir == "" || result.Paths.StateDir == "" || result.Paths.CacheDir == "" {
+		t.Fatalf("expected resolved dirs, got %+v", result.Paths)
+	}
+	if result.Config.DefaultProfile == "" {
+		t.Fatalf("expected default profile to be set")
+	}
+}
+
+func chdirForTest(t *testing.T, dir string) {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir %q: %v", dir, err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(prev)
+	})
+}
