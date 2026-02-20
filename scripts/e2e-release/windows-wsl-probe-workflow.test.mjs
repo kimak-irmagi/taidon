@@ -70,6 +70,8 @@ run("probe workflow runs host sqlrs happy-path with btrfs", () => {
   assert.ok(step, "missing host scenario step");
   assert.equal(step.shell, "pwsh");
   assert.match(String(step.run || ""), /sqlrs\.exe/);
+  assert.match(String(step.run || ""), /Push-Location\s+\$workspaceDir/);
+  assert.match(String(step.run || ""), /Pop-Location/);
   assert.match(String(step.run || ""), /init", "local"/);
   assert.match(String(step.run || ""), /"--snapshot", "btrfs"/);
   assert.match(String(step.run || ""), /prepare:psql/);

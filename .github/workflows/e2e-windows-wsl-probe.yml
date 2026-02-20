@@ -179,19 +179,24 @@ jobs:
           ($initCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-init.txt") -Encoding utf8
           ($flowCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-flow.txt") -Encoding utf8
 
-          & $sqlrs @initArgs 1> (Join-Path $outDir "init-stdout.log") 2> (Join-Path $outDir "init-stderr.log")
-          if ($LASTEXITCODE -ne 0) {
-            throw "init local --snapshot btrfs failed with exit code $LASTEXITCODE"
-          }
+          Push-Location $workspaceDir
+          try {
+            & $sqlrs @initArgs 1> (Join-Path $outDir "init-stdout.log") 2> (Join-Path $outDir "init-stderr.log")
+            if ($LASTEXITCODE -ne 0) {
+              throw "init local --snapshot btrfs failed with exit code $LASTEXITCODE"
+            }
 
-          wsl.exe -d Ubuntu-24.04 -- bash -lc "docker version" 1> (Join-Path $outDir "docker-version.txt") 2> (Join-Path $outDir "dockerd.log")
-          if ($LASTEXITCODE -ne 0) {
-            throw "wsl docker prereq check failed with exit code $LASTEXITCODE"
-          }
+            wsl.exe -d Ubuntu-24.04 -- bash -lc "docker version" 1> (Join-Path $outDir "docker-version.txt") 2> (Join-Path $outDir "dockerd.log")
+            if ($LASTEXITCODE -ne 0) {
+              throw "wsl docker prereq check failed with exit code $LASTEXITCODE"
+            }
 
-          & $sqlrs @flowArgs 1> (Join-Path $outDir "raw-stdout.log") 2> (Join-Path $outDir "raw-stderr.log")
-          if ($LASTEXITCODE -ne 0) {
-            throw "prepare/run flow failed with exit code $LASTEXITCODE"
+            & $sqlrs @flowArgs 1> (Join-Path $outDir "raw-stdout.log") 2> (Join-Path $outDir "raw-stderr.log")
+            if ($LASTEXITCODE -ne 0) {
+              throw "prepare/run flow failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Pop-Location
           }
 
       - name: Normalize and compare golden output
