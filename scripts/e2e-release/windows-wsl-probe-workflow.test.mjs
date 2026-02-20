@@ -63,14 +63,26 @@ run("probe workflow fetches locked chinook sql asset", () => {
   assert.match(String(step.run || ""), /e3fde5c1a5b51a2a91429a702c9ca6e69ba56e6c7f5e112724d70c3d03db695e/);
 });
 
-run("probe workflow runs happy-path in WSL shell", () => {
+run("probe workflow runs host sqlrs happy-path with btrfs", () => {
   const workflow = loadWorkflow();
   const job = workflow.jobs?.["windows-wsl-happy"];
-  const step = (job.steps || []).find((item) => item.name === "Run chinook happy-path inside WSL");
-  assert.ok(step, "missing WSL scenario step");
-  assert.equal(step.shell, "wsl-bash {0}");
+  const step = (job.steps || []).find((item) => item.name === "Run host sqlrs happy-path (btrfs)");
+  assert.ok(step, "missing host scenario step");
+  assert.equal(step.shell, "pwsh");
+  assert.match(String(step.run || ""), /sqlrs\.exe/);
+  assert.match(String(step.run || ""), /init", "local"/);
+  assert.match(String(step.run || ""), /"--snapshot", "btrfs"/);
   assert.match(String(step.run || ""), /prepare:psql/);
   assert.match(String(step.run || ""), /postgres:17/);
+});
+
+run("probe workflow ensures docker prereq inside WSL distro", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["windows-wsl-happy"];
+  const step = (job.steps || []).find((item) => item.name === "Ensure Docker in WSL distro (prereq)");
+  assert.ok(step, "missing WSL docker prereq step");
+  assert.equal(step.shell, "wsl-bash {0}");
+  assert.match(String(step.run || ""), /docker info/);
 });
 
 run("probe workflow validates output against chinook golden", () => {

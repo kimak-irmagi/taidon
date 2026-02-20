@@ -5,6 +5,7 @@ Date: 2026-02-20
 
 ## Decision Record 1: validate Windows hosted-runner happy-path via standalone workflow
 
+- Status: Obsolete (superseded by [Decision Record 5](#decision-record-5-run-probe-via-windows-host-sqlrs-with-btrfs-init))
 - Timestamp: 2026-02-20T22:53:14.6043817+07:00
 - User: @evilguest
 - Agent: Codex (GPT-5)
@@ -72,3 +73,22 @@ Date: 2026-02-20
   before WSL execution.
 - Rationale: This directly satisfies the dependency of `prepare.sql` in a clean
   runner and avoids extra tooling assumptions in the probe path.
+
+## Decision Record 5: run probe via Windows-host sqlrs with strict btrfs init
+
+- Timestamp: 2026-02-21T00:20:00+07:00
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: Should probe execution emulate the real user path where `sqlrs` is
+  a Windows-host application and `btrfs` snapshot mode is required?
+- Alternatives:
+  - Keep Linux-style run inside WSL and `snapshot=copy`.
+  - Run host `sqlrs.exe` but keep non-strict snapshot fallback.
+  - Run host `sqlrs.exe` and require strict `snapshot=btrfs` initialization with
+    WSL+Docker prerequisites.
+- Decision: Update probe workflow to run `sqlrs.exe` on Windows host, execute
+  `init local --snapshot btrfs --store image ... --distro Ubuntu-24.04`, and
+  fail the job if prerequisite checks (WSL distro, Docker availability, init)
+  fail.
+- Rationale: This validates the real user contract and prevents false-green
+  results that bypass actual `btrfs` behavior.

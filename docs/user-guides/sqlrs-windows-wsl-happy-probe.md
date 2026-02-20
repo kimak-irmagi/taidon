@@ -4,7 +4,8 @@
 
 This workflow is an experimental pre-integration check to validate that
 `hp-psql-chinook` happy-path E2E can run on standard `windows-latest` GitHub
-hosted runners using WSL2.
+hosted runners with Windows host `sqlrs` execution, while requiring WSL2 and
+Docker prerequisites for `btrfs` snapshot mode.
 
 It is intentionally separate from `release-local.yml` until the path is stable.
 
@@ -17,18 +18,23 @@ Workflow file:
 Execution model:
 
 1. Checkout repository on `windows-latest`.
-2. Build Linux `sqlrs` and `sqlrs-engine` binaries from source.
+2. Build Windows `sqlrs.exe` and `sqlrs-engine.exe` binaries from source.
 3. Initialize Docker on the Windows host via `docker/setup-docker-action`.
 4. Install/setup WSL distro (`Ubuntu-24.04`) via `Vampire/setup-wsl`.
-5. Download `examples/chinook/Chinook_PostgreSql.sql` on host with locked
+5. Ensure Docker daemon is available inside the WSL distro.
+6. Assert the host session is elevated (Administrator), required for
+   loopback-backed `btrfs` init.
+7. Download `examples/chinook/Chinook_PostgreSql.sql` on host with locked
    sha256 verification.
-6. Inside WSL:
-   - ensure Docker daemon is available;
-   - run `sqlrs init local --snapshot copy`;
-   - run `prepare:psql` + `run:psql` for `examples/chinook`.
-7. Normalize stdout and compare with committed golden output:
+8. On Windows host (not inside WSL), run:
+   - `sqlrs init local --snapshot btrfs --store image ... --distro Ubuntu-24.04`;
+   - `sqlrs prepare:psql` + `sqlrs run:psql` for `examples/chinook`.
+9. Normalize stdout and compare with committed golden output:
    `test/e2e/release/hp-psql-chinook/golden.txt`.
-8. Upload diagnostics artifacts for post-failure analysis.
+10. Upload diagnostics artifacts for post-failure analysis.
+
+This matches real user behavior where CLI runs as a Windows application and
+delegates Linux runtime concerns through WSL.
 
 ## Trigger
 
