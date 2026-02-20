@@ -209,24 +209,20 @@ jobs:
             --actual "$outDir/normalized-stdout.log" `
             --diff "$outDir/diff.log"
 
+      - name: Collect WSL dockerd diagnostics
+        if: always()
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $env:RUNNER_TEMP "e2e-probe\$env:SCENARIO_ID"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          wsl.exe -d Ubuntu-24.04 -- bash -lc "test -f /tmp/sqlrs-probe-dockerd.log && cat /tmp/sqlrs-probe-dockerd.log || true" `
+            1> (Join-Path $outDir "dockerd-wsl.log") `
+            2> $null
+
       - name: Upload probe diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-windows-wsl-probe-${{ env.SCENARIO_ID }}
           if-no-files-found: warn
-          path: |
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/command-init.txt
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/command-flow.txt
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/init-stdout.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/init-stderr.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/raw-stdout.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/raw-stderr.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/normalized-stdout.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/diff.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/dockerd.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/docker-version.txt
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/appdata/sqlrs/config/config.yaml
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/localappdata/sqlrs/engine.json
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/localappdata/sqlrs/logs/engine.log
-            ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}/localappdata/sqlrs/logs/engine-wsl.log
+          path: ${{ runner.temp }}/e2e-probe/${{ env.SCENARIO_ID }}

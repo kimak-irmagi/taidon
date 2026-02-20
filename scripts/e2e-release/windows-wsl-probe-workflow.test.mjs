@@ -94,3 +94,13 @@ run("probe workflow validates output against chinook golden", () => {
   assert.match(String(step.run || ""), /compare-golden\.mjs/);
   assert.match(String(step.run || ""), /hp-psql-chinook\/golden\.txt/);
 });
+
+run("probe workflow uploads full diagnostics directory on any outcome", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["windows-wsl-happy"];
+  const step = (job.steps || []).find((item) => item.name === "Upload probe diagnostics");
+  assert.ok(step, "missing diagnostics upload step");
+  assert.equal(step.if, "always()");
+  assert.equal(step.uses, "actions/upload-artifact@v4");
+  assert.match(String(step.with?.path || ""), /e2e-probe\/\$\{\{\s*env\.SCENARIO_ID\s*\}\}/);
+});
