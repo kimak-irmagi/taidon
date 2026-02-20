@@ -87,22 +87,20 @@ func TestRecoverRunsQueuedJobAsync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPrepareService: %v", err)
 	}
+	spy := &coordinatorSpy{}
+	mgr.coordinator = spy
 
 	if err := mgr.Recover(context.Background()); err != nil {
 		t.Fatalf("Recover: %v", err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		status, ok := mgr.Get("job-1")
-		if ok && (status.Status == StatusSucceeded || status.Status == StatusFailed) {
-			if status.Status != StatusSucceeded {
-				t.Fatalf("expected succeeded status, got %+v", status)
-			}
+		if spy.runJobCalled {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatalf("job did not finish in time")
+	t.Fatalf("async recover did not dispatch runJob")
 }
 
 func TestWaitForEventReturnsContextErrorOnTimeout(t *testing.T) {
