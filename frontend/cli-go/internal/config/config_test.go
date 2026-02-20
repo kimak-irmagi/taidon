@@ -83,6 +83,26 @@ func TestLookupDBMSImageWhitespace(t *testing.T) {
 	}
 }
 
+func TestLookupDBMSImageNoSectionOrField(t *testing.T) {
+	dir := t.TempDir()
+
+	noSection := filepath.Join(dir, "no-section.yaml")
+	if err := os.WriteFile(noSection, []byte("client:\n  timeout: 10s\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, ok, err := LookupDBMSImage(noSection); err != nil || ok {
+		t.Fatalf("expected missing dbms section to return ok=false, ok=%v err=%v", ok, err)
+	}
+
+	noField := filepath.Join(dir, "no-field.yaml")
+	if err := os.WriteFile(noField, []byte("dbms:\n  mode: local\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, ok, err := LookupDBMSImage(noField); err != nil || ok {
+		t.Fatalf("expected missing dbms.image to return ok=false, ok=%v err=%v", ok, err)
+	}
+}
+
 func TestLookupLiquibaseExec(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -143,6 +163,26 @@ func TestLookupLiquibaseExecWhitespace(t *testing.T) {
 	}
 }
 
+func TestLookupLiquibaseExecNoSectionOrField(t *testing.T) {
+	dir := t.TempDir()
+
+	noSection := filepath.Join(dir, "no-section.yaml")
+	if err := os.WriteFile(noSection, []byte("dbms:\n  image: postgres:15\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, ok, err := LookupLiquibaseExec(noSection); err != nil || ok {
+		t.Fatalf("expected missing liquibase section to return ok=false, ok=%v err=%v", ok, err)
+	}
+
+	noField := filepath.Join(dir, "no-field.yaml")
+	if err := os.WriteFile(noField, []byte("liquibase:\n  exec_mode: windows-bat\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, ok, err := LookupLiquibaseExec(noField); err != nil || ok {
+		t.Fatalf("expected missing liquibase.exec to return ok=false, ok=%v err=%v", ok, err)
+	}
+}
+
 func TestLookupLiquibaseExecMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -170,6 +210,34 @@ func TestLookupLiquibaseExecModeWhitespace(t *testing.T) {
 	}
 	if ok {
 		t.Fatalf("expected whitespace exec_mode to return ok=false")
+	}
+}
+
+func TestLookupLiquibaseExecModeNoSectionFieldAndInvalidType(t *testing.T) {
+	dir := t.TempDir()
+
+	noSection := filepath.Join(dir, "no-section.yaml")
+	if err := os.WriteFile(noSection, []byte("dbms:\n  image: postgres:15\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, ok, err := LookupLiquibaseExecMode(noSection); err != nil || ok {
+		t.Fatalf("expected missing liquibase section to return ok=false, ok=%v err=%v", ok, err)
+	}
+
+	noField := filepath.Join(dir, "no-field.yaml")
+	if err := os.WriteFile(noField, []byte("liquibase:\n  exec: C:\\\\Tools\\\\liquibase.exe\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, ok, err := LookupLiquibaseExecMode(noField); err != nil || ok {
+		t.Fatalf("expected missing liquibase.exec_mode to return ok=false, ok=%v err=%v", ok, err)
+	}
+
+	invalidType := filepath.Join(dir, "invalid-type.yaml")
+	if err := os.WriteFile(invalidType, []byte("liquibase:\n  exec_mode: 42\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, ok, err := LookupLiquibaseExecMode(invalidType); err != nil || ok {
+		t.Fatalf("expected invalid liquibase.exec_mode type to return ok=false, ok=%v err=%v", ok, err)
 	}
 }
 
