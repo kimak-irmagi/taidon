@@ -621,13 +621,24 @@ jobs:
             }
             $env:DOCKER_HOST = $dockerHostCopy
             $env:SQLRS_DOCKER_HOST_PATH_STYLE = "linux"
+            $wslStoreDir = "/tmp/sqlrs-e2e/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)/$scenario-$env:SNAPSHOT_BACKEND-store"
+            wsl.exe -d "${{ matrix.wsl_distro }}" -- bash -lc "mkdir -p '$wslStoreDir'"
+            if ($LASTEXITCODE -ne 0) {
+              throw "failed to create WSL store dir for windows copy backend"
+            }
+            $wslStoreWinPath = $wslStoreDir.TrimStart('/') -replace '/', '\'
+            $storeRoot = '\\wsl$\' + "${{ matrix.wsl_distro }}" + '\' + $wslStoreWinPath
           }
 
           $env:APPDATA = Join-Path $outDir "appdata"
           $env:LOCALAPPDATA = Join-Path $outDir "localappdata"
           $env:SQLRS_STATE_STORE = $storeRoot
 
-          New-Item -ItemType Directory -Force -Path $outDir, $workspaceDir, $storeRoot, $env:APPDATA, $env:LOCALAPPDATA | Out-Null
+          $dirs = @($outDir, $workspaceDir, $env:APPDATA, $env:LOCALAPPDATA)
+          if ($isBtrfs) {
+            $dirs += $storeRoot
+          }
+          New-Item -ItemType Directory -Force -Path $dirs | Out-Null
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "examples\chinook\*") -Destination $workspaceDir -Recurse -Force
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE ("test\e2e\release\" + $scenario + "\query.sql")) -Destination (Join-Path $workspaceDir ".e2e-query.sql") -Force
 
@@ -659,6 +670,7 @@ jobs:
           $flowCommand = @($sqlrs) + $flowArgs
           ($initCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-init.txt") -Encoding utf8
           ($flowCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-flow.txt") -Encoding utf8
+          ("STORE_ROOT=" + $storeRoot) | Out-File -FilePath (Join-Path $outDir "store-root.txt") -Encoding utf8
           ("DOCKER_HOST=" + ($env:DOCKER_HOST ?? "")) | Out-File -FilePath (Join-Path $outDir "docker-host.txt") -Encoding utf8
           ("SQLRS_DOCKER_HOST_PATH_STYLE=" + ($env:SQLRS_DOCKER_HOST_PATH_STYLE ?? "")) | Out-File -FilePath (Join-Path $outDir "docker-host-path-style.txt") -Encoding utf8
 

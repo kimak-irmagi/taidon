@@ -623,6 +623,26 @@ func TestWindowsDrivePathToLinux(t *testing.T) {
 	}
 }
 
+func TestWindowsWSLUNCPathToLinux(t *testing.T) {
+	got, ok := windowsWSLUNCPathToLinux(`\\wsl$\Ubuntu-24.04\tmp\sqlrs\store`)
+	if !ok {
+		t.Fatalf("expected UNC conversion to succeed")
+	}
+	if got != "/tmp/sqlrs/store" {
+		t.Fatalf("unexpected UNC conversion: %s", got)
+	}
+	got, ok = windowsWSLUNCPathToLinux(`\\wsl.localhost\Ubuntu\var\lib\sqlrs`)
+	if !ok {
+		t.Fatalf("expected localhost UNC conversion to succeed")
+	}
+	if got != "/var/lib/sqlrs" {
+		t.Fatalf("unexpected localhost UNC conversion: %s", got)
+	}
+	if _, ok := windowsWSLUNCPathToLinux(`\\server\share\path`); ok {
+		t.Fatalf("expected non-WSL UNC path to skip conversion")
+	}
+}
+
 func TestDockerBindSpecUsesLinuxPathStyleOnWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("windows-only path normalization")
@@ -635,6 +655,10 @@ func TestDockerBindSpecUsesLinuxPathStyleOnWindows(t *testing.T) {
 	readOnly := dockerBindSpec(`C:\workspace`, "/work", true)
 	if readOnly != "/mnt/c/workspace:/work:ro" {
 		t.Fatalf("unexpected readonly bind spec: %s", readOnly)
+	}
+	unc := dockerBindSpec(`\\wsl$\Ubuntu-24.04\tmp\sqlrs\store`, PostgresDataDirRoot, false)
+	if unc != "/tmp/sqlrs/store:"+PostgresDataDirRoot {
+		t.Fatalf("unexpected UNC bind spec: %s", unc)
 	}
 }
 

@@ -739,6 +739,9 @@ func normalizeDockerHostPath(hostPath string) string {
 	if hostPath == "" || !useLinuxMountPathStyle() {
 		return hostPath
 	}
+	if converted, ok := windowsWSLUNCPathToLinux(hostPath); ok {
+		return converted
+	}
 	if converted, ok := windowsDrivePathToLinux(hostPath); ok {
 		return converted
 	}
@@ -767,6 +770,29 @@ func windowsDrivePathToLinux(hostPath string) (string, bool) {
 		return prefix, true
 	}
 	return prefix + "/" + rest, true
+}
+
+func windowsWSLUNCPathToLinux(hostPath string) (string, bool) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(hostPath), "/", `\`)
+	lower := strings.ToLower(normalized)
+	prefixes := []string{`\\wsl$\`, `\\wsl.localhost\`}
+	for _, prefix := range prefixes {
+		if !strings.HasPrefix(lower, prefix) {
+			continue
+		}
+		rest := normalized[len(prefix):]
+		parts := strings.SplitN(rest, `\`, 2)
+		if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" {
+			return "", false
+		}
+		subPath := strings.TrimLeft(parts[1], `\`)
+		if subPath == "" {
+			return "/", true
+		}
+		subPath = strings.ReplaceAll(subPath, `\`, "/")
+		return "/" + strings.TrimLeft(subPath, "/"), true
+	}
+	return "", false
 }
 
 func wrapDockerError(err error, output string) error {
