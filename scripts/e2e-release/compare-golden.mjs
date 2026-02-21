@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+function normalizeLineEndings(text) {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -19,8 +23,8 @@ function parseArgs(argv) {
 }
 
 function buildDiff(expected, actual) {
-  const exp = expected.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  const act = actual.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const exp = normalizeLineEndings(expected).split("\n");
+  const act = normalizeLineEndings(actual).split("\n");
   const max = Math.max(exp.length, act.length);
   const lines = ["--- expected", "+++ actual"];
   for (let i = 0; i < max; i += 1) {
@@ -60,7 +64,7 @@ function main() {
 
   const expected = fs.readFileSync(expectedPath, "utf8");
   const actual = fs.readFileSync(actualPath, "utf8");
-  if (expected === actual) {
+  if (normalizeLineEndings(expected) === normalizeLineEndings(actual)) {
     fs.writeFileSync(diffPath, "match\n", "utf8");
     return;
   }
