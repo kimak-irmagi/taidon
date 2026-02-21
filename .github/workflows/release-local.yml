@@ -310,13 +310,13 @@ jobs:
         uses: docker/setup-docker-action@v4
 
       - name: Set up WSL
-        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        if: matrix.platform == 'windows'
         uses: Vampire/setup-wsl@v6
         with:
           distribution: ${{ matrix.wsl_distro }}
 
       - name: Show host WSL status
-        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           wsl --status
@@ -332,7 +332,7 @@ jobs:
           }
 
       - name: Ensure Docker in WSL distro (prereq)
-        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        if: matrix.platform == 'windows'
         shell: wsl-bash {0}
         run: |
           set -euo pipefail
@@ -347,9 +347,9 @@ jobs:
           fi
           if ! docker info >/dev/null 2>&1; then
             if [ "$(id -u)" -eq 0 ]; then
-              nohup dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+              nohup dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
             else
-              nohup sudo dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+              nohup sudo dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
             fi
             ready=0
             for _ in $(seq 1 90); do
@@ -540,6 +540,11 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($engine)) {
             throw "engine binary path is empty for snapshot backend $env:SNAPSHOT_BACKEND"
           }
+          if ($isBtrfs) {
+            Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+          } else {
+            $env:DOCKER_HOST = "tcp://127.0.0.1:2375"
+          }
 
           $env:APPDATA = Join-Path $outDir "appdata"
           $env:LOCALAPPDATA = Join-Path $outDir "localappdata"
@@ -590,6 +595,11 @@ jobs:
               if ($LASTEXITCODE -ne 0) {
                 throw "wsl docker prereq check failed with exit code $LASTEXITCODE"
               }
+            } else {
+              docker version 1> (Join-Path $outDir "docker-version.txt") 2> (Join-Path $outDir "dockerd.log")
+              if ($LASTEXITCODE -ne 0) {
+                throw "host docker check failed with exit code $LASTEXITCODE"
+              }
             }
 
             & $sqlrs @flowArgs 1> (Join-Path $outDir "raw-stdout.log") 2> (Join-Path $outDir "raw-stderr.log")
@@ -618,7 +628,7 @@ jobs:
             --diff "$outDir/diff.log"
 
       - name: Collect WSL dockerd diagnostics
-        if: always() && matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        if: always() && matrix.platform == 'windows'
         shell: pwsh
         run: |
           $outDir = Join-Path $env:RUNNER_TEMP "e2e\windows\${{ matrix.scenario }}-${{ matrix.snapshot_backend }}"
