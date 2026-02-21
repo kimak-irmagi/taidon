@@ -75,8 +75,12 @@ Release-blocking сценарии для MVP:
    упаковывает бандлы.
 3. `build_rc` публикует архивы, checksums и `release-manifest.json` как workflow
    artifacts.
-4. `e2e_happy_path` скачивает RC-артефакты и выполняет Linux-матрицу в чистых
-   runner-ах с осями `scenario x snapshot_backend`.
+4. `e2e_happy_path` скачивает RC-артефакты и выполняет release-gated матрицу в
+   чистых runner-ах с осями `platform x scenario x snapshot_backend`.
+   Текущие blocking-ячейки:
+   - Linux: `hp-psql-chinook`/`hp-psql-sakila` с `copy` и `btrfs`.
+   - Windows: `hp-psql-chinook` с `copy` (host engine) и `btrfs`
+     (host `sqlrs.exe` + WSL runtime).
 5. Каждый прогон нормализует вывод и сравнивает с golden snapshots.
 6. `publish_rc` создает/обновляет pre-release и прикладывает валидированные
    артефакты, если обязательные E2E прошли.
@@ -162,10 +166,11 @@ Data ownership:
 
 Текущий blocking-профиль:
 
-- Linux full E2E является blocking с матрицей:
-  - сценарии: `hp-psql-chinook`, `hp-psql-sakila`;
-  - snapshot backend: `copy`, `btrfs`.
-- Windows/macOS выполняют проверку бандла и smoke команд.
+- Happy-path release матрица является blocking с осью platform:
+  - Linux: сценарии `hp-psql-chinook`, `hp-psql-sakila`; backend-ы `copy`, `btrfs`.
+  - Windows: сценарий `hp-psql-chinook`; backend-ы `copy`, `btrfs`
+    (`copy` использует host engine, `btrfs` использует WSL-backed runtime).
+- macOS выполняет проверку бандла и smoke команд.
 
 Целевое состояние:
 
@@ -196,11 +201,12 @@ Pipeline golden-сравнения:
 
 ## Утвержденные решения
 
-- Для текущей задачи используется поэтапный gating:
-  Linux full happy-path E2E blocking; Windows/macOS выполняют smoke checks.
+- Для текущей задачи используется поэтапный gating с platform-aware матрицей:
+  Linux full happy-path E2E blocking, а Windows
+  `hp-psql-chinook + (copy|btrfs)` blocking в том же release workflow.
 - Следующее улучшение release-gating:
-  сохранить поэтапную модель по платформам, но требовать Linux happy-path
-  матрицу для двух snapshot backend-ов: `copy` и `btrfs`.
+  расширить blocking-матрицу Windows за пределы `hp-psql-chinook`, затем
+  включить full happy-path blocking на macOS.
 - MVP release-blocking сценарии:
   `hp-psql-chinook` и `hp-psql-sakila`.
 - Liquibase happy-path:

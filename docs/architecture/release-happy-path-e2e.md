@@ -73,8 +73,12 @@ Scenario metadata is declared in:
 2. `build_rc` compiles `sqlrs` and `sqlrs-engine` for all targets and packages bundles.
 3. `build_rc` publishes archives, checksums, and `release-manifest.json` as
    workflow artifacts.
-4. `e2e_happy_path` downloads RC artifacts and runs Linux scenario matrix in
-   clean runners with axes `scenario x snapshot_backend`.
+4. `e2e_happy_path` downloads RC artifacts and runs release-gated matrix in
+   clean runners with axes `platform x scenario x snapshot_backend`.
+   Current blocking cells are:
+   - Linux: `hp-psql-chinook`/`hp-psql-sakila` with `copy` and `btrfs`.
+   - Windows: `hp-psql-chinook` with `copy` (host engine) and `btrfs`
+     (host `sqlrs.exe` + WSL runtime).
 5. Each scenario run normalizes output and compares against golden snapshots.
 6. `publish_rc` creates/updates pre-release and attaches validated artifacts if
    all required E2E jobs passed.
@@ -161,10 +165,11 @@ Data ownership:
 
 Current blocking profile:
 
-- Linux full E2E is blocking with matrix:
-  - scenarios: `hp-psql-chinook`, `hp-psql-sakila`;
-  - snapshot backends: `copy`, `btrfs`.
-- Windows/macOS run bundle + command smoke checks.
+- Happy-path release matrix is blocking with platform axis:
+  - Linux: scenarios `hp-psql-chinook`, `hp-psql-sakila`; backends `copy`, `btrfs`.
+  - Windows: scenario `hp-psql-chinook`; backends `copy`, `btrfs`
+    (`copy` uses host engine, `btrfs` uses WSL-backed runtime).
+- macOS runs bundle + command smoke checks.
 
 Target state:
 
@@ -195,11 +200,12 @@ Failure diagnostics must upload:
 
 ## Approved Decisions
 
-- Current task uses phased gating:
-  Linux full happy-path E2E is blocking; Windows/macOS run smoke checks.
+- Current task uses phased gating with platform-aware matrix:
+  Linux full happy-path E2E is blocking, and Windows
+  `hp-psql-chinook + (copy|btrfs)` is blocking in the same release workflow.
 - Next release-gating improvement:
-  keep phased platform model, but require Linux happy-path matrix for both
-  `copy` and `btrfs` snapshot backends.
+  extend blocking Windows matrix beyond `hp-psql-chinook`, then enable full
+  happy-path blocking on macOS.
 - MVP release-blocking scenarios:
   `hp-psql-chinook` and `hp-psql-sakila`.
 - Liquibase happy-path:

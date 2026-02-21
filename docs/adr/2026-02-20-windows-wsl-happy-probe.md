@@ -92,3 +92,58 @@ Date: 2026-02-20
   fail.
 - Rationale: This validates the real user contract and prevents false-green
   results that bypass actual `btrfs` behavior.
+
+## Decision Record 6: integrate Windows WSL happy-path into release-local matrix
+
+- Timestamp: 2026-02-21T04:15:00+07:00
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: How should the validated Windows WSL happy-path flow be integrated
+  into release gating?
+- Alternatives:
+  - Keep probe-only validation and leave `release-local.yml` unchanged.
+  - Add separate Windows happy-path job outside existing E2E matrix.
+  - Extend release E2E matrix with a `platform` axis and include Windows WSL
+    blocking cells there.
+- Decision: Extend `release-local.yml` E2E job to a matrix with
+  `platform x scenario x snapshot_backend`, keeping Linux full matrix and adding
+  Windows blocking cell `hp-psql-chinook + btrfs` (host `sqlrs.exe`, WSL
+  runtime prerequisites, diagnostics upload).
+- Rationale: This moves the validated path under release gate control while
+  preserving phased rollout by limiting Windows scope to the proven scenario.
+
+## Decision Record 7: enable Windows copy backend cell in release matrix
+
+- Timestamp: 2026-02-21T05:10:00+07:00
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: Should Windows release E2E also validate `snapshot=copy` and how
+  should engine binary selection be handled?
+- Alternatives:
+  - Keep only Windows `btrfs` cell and skip `copy`.
+  - Enable Windows `copy` but keep WSL-only engine contract.
+  - Enable Windows `copy` and route engine per backend:
+    host Windows engine for `copy`, Linux engine in WSL for `btrfs`.
+- Decision: Enable Windows `copy` for `hp-psql-chinook` in release matrix and
+  branch engine selection by backend:
+  - `copy` -> Windows `sqlrs-engine.exe` on host;
+  - `btrfs` -> Linux `sqlrs-engine` via WSL.
+- Rationale: This broadens blocking coverage on Windows while preserving correct
+  runtime contract for each backend and avoiding platform-mismatched engine
+  execution.
+
+## Decision Record 8: keep probe workflow as manual diagnostic path only
+
+- Timestamp: 2026-02-21T05:25:00+07:00
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: Should `.github/workflows/e2e-windows-wsl-probe.yml` be removed or
+  still kept after integration into `release-local.yml`?
+- Alternatives:
+  - Delete probe workflow entirely.
+  - Keep probe workflow but disable automatic triggers.
+  - Keep current automatic push trigger.
+- Decision: Keep probe workflow, remove automatic `push` trigger, and leave
+  `workflow_dispatch` only.
+- Rationale: Release gating is now covered by `release-local.yml`; manual probe
+  remains useful for focused troubleshooting without extra CI noise.

@@ -7,7 +7,9 @@ This workflow is an experimental pre-integration check to validate that
 hosted runners with Windows host `sqlrs` execution, while requiring WSL2 and
 Docker prerequisites for `btrfs` snapshot mode.
 
-It is intentionally separate from `release-local.yml` until the path is stable.
+The same execution model is now integrated into
+`.github/workflows/release-local.yml` as part of release-gated E2E matrix.
+This probe workflow remains available for isolated troubleshooting.
 
 ## Workflow
 
@@ -39,9 +41,8 @@ delegates Linux runtime concerns through WSL.
 
 ## Trigger
 
-Temporary triggers during probe stage:
+Trigger:
 
-- `push` to any branch except `main`;
 - `workflow_dispatch` (manual run).
 
 Input:

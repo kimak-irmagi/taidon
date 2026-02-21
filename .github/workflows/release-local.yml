@@ -231,19 +231,31 @@ jobs:
           name: release-manifest
           path: release-assets/release-manifest.json
 
-  e2e-linux-happy:
+  e2e-happy:
     if: contains(github.event.inputs.version || github.ref_name, '-rc.')
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     needs: [build-rc, assemble-release-manifest]
     strategy:
       fail-fast: false
       matrix:
+        platform:
+          - linux
+          - windows
         scenario:
           - hp-psql-chinook
           - hp-psql-sakila
         snapshot_backend:
           - copy
           - btrfs
+        include:
+          - platform: linux
+            runner: ubuntu-latest
+          - platform: windows
+            runner: windows-latest
+            wsl_distro: Ubuntu-24.04
+        exclude:
+          - platform: windows
+            scenario: hp-psql-sakila
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -254,27 +266,115 @@ jobs:
           node-version: "20"
 
       - name: Enable pnpm
+        if: matrix.platform == 'linux'
         run: corepack enable
 
       - name: Use pnpm
+        if: matrix.platform == 'linux'
         run: corepack prepare pnpm@10.26.2 --activate
 
       - name: Install JS dependencies
+        if: matrix.platform == 'linux'
         run: pnpm install --frozen-lockfile
 
       - name: Fetch example SQL datasets (locked)
+        if: matrix.platform == 'linux'
         run: pnpm fetch:sql --lock
 
+      - name: Fetch Chinook SQL asset (locked)
+        if: matrix.platform == 'windows' && matrix.scenario == 'hp-psql-chinook'
+        shell: pwsh
+        run: |
+          $dst = Join-Path $env:GITHUB_WORKSPACE "examples\chinook\Chinook_PostgreSql.sql"
+          $url = "https://raw.githubusercontent.com/lerocha/chinook-database/master/ChinookDatabase/DataSources/Chinook_PostgreSql.sql"
+          $expected = "e3fde5c1a5b51a2a91429a702c9ca6e69ba56e6c7f5e112724d70c3d03db695e"
+
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $dst
+
+          $actual = (Get-FileHash -Algorithm SHA256 -Path $dst).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Chinook SQL sha256 mismatch: expected=$expected actual=$actual"
+          }
+
       - name: Install btrfs tooling
-        if: matrix.snapshot_backend == 'btrfs'
+        if: matrix.platform == 'linux' && matrix.snapshot_backend == 'btrfs'
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y btrfs-progs
 
-      - name: Resolve release versions
-        id: version
+      - name: Set up Docker on host
+        if: matrix.platform == 'windows'
+        uses: docker/setup-docker-action@v4
+
+      - name: Set up WSL
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        uses: Vampire/setup-wsl@v6
+        with:
+          distribution: ${{ matrix.wsl_distro }}
+
+      - name: Show host WSL status
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        shell: pwsh
+        run: |
+          wsl --status
+          wsl --list --verbose
+
+      - name: Require elevated host session
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        shell: pwsh
+        run: |
+          $isAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          if (-not $isAdmin) {
+            throw "This release E2E cell requires Administrator privileges for sqlrs init --snapshot btrfs."
+          }
+
+      - name: Ensure Docker in WSL distro (prereq)
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        shell: wsl-bash {0}
+        run: |
+          set -euo pipefail
+          if ! command -v docker >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update
+              apt-get install -y docker.io
+            else
+              sudo apt-get update
+              sudo apt-get install -y docker.io
+            fi
+          fi
+          if ! docker info >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              nohup dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+            else
+              nohup sudo dockerd --host=unix:///var/run/docker.sock --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+            fi
+            ready=0
+            for _ in $(seq 1 90); do
+              if docker info >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$ready" != "1" ]; then
+              echo "docker daemon did not become ready" >&2
+              tail -n 200 /tmp/sqlrs-release-dockerd.log || true
+              exit 1
+            fi
+          fi
+          if [ "$(id -u)" -eq 0 ]; then
+            chmod 666 /var/run/docker.sock || true
+          else
+            sudo chmod 666 /var/run/docker.sock || true
+          fi
+          docker version
+
+      - name: Resolve release versions (linux)
+        if: matrix.platform == 'linux'
+        id: version-linux
         shell: bash
         run: |
           set -euo pipefail
@@ -282,18 +382,46 @@ jobs:
           base="${raw%-rc.*}"
           echo "base=$base" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve release versions (windows)
+        if: matrix.platform == 'windows'
+        id: version-windows
+        shell: pwsh
+        run: |
+          $raw = "${{ env.RELEASE_VERSION }}"
+          $base = $raw -replace '-rc\.[0-9]+$',''
+          if ([string]::IsNullOrWhiteSpace($base)) {
+            throw "base version is empty"
+          }
+          "base=$base" >> $env:GITHUB_OUTPUT
+
       - name: Download linux rc artifact
+        if: matrix.platform == 'linux'
         uses: actions/download-artifact@v4
         with:
           name: sqlrs_linux_amd64
           path: rc-artifacts
 
+      - name: Download windows rc artifact
+        if: matrix.platform == 'windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: sqlrs_windows_amd64
+          path: rc-artifacts
+
+      - name: Download linux rc artifact for WSL engine
+        if: matrix.platform == 'windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: sqlrs_linux_amd64
+          path: rc-artifacts-linux
+
       - name: Extract linux bundle
-        id: bundle
+        if: matrix.platform == 'linux'
+        id: bundle-linux
         shell: bash
         run: |
           set -euo pipefail
-          archive="$(find rc-artifacts -name "sqlrs_${{ steps.version.outputs.base }}_linux_amd64.tar.gz" -print -quit)"
+          archive="$(find rc-artifacts -name "sqlrs_${{ steps.version-linux.outputs.base }}_linux_amd64.tar.gz" -print -quit)"
           if [[ -z "$archive" ]]; then
             echo "linux release archive not found" >&2
             exit 1
@@ -307,15 +435,62 @@ jobs:
           fi
           echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Run happy-path scenario
+      - name: Extract windows and linux bundles
+        if: matrix.platform == 'windows'
+        id: bundle-windows
+        shell: pwsh
+        run: |
+          $base = "${{ steps.version-windows.outputs.base }}"
+          $bundleRoot = Join-Path $PWD "bundle"
+          New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
+
+          $windowsArchive = Get-ChildItem -Path rc-artifacts -Recurse -Filter "sqlrs_${base}_windows_amd64.zip" | Select-Object -First 1
+          if (-not $windowsArchive) {
+            throw "windows release archive not found"
+          }
+          Expand-Archive -Path $windowsArchive.FullName -DestinationPath $bundleRoot -Force
+
+          $windowsSqlrs = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs.exe" |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $windowsSqlrs) {
+            throw "sqlrs.exe not found in extracted windows bundle"
+          }
+          $windowsEngine = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs-engine.exe" |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $windowsEngine) {
+            throw "sqlrs-engine.exe not found in extracted windows bundle"
+          }
+
+          $linuxArchive = Get-ChildItem -Path rc-artifacts-linux -Recurse -Filter "sqlrs_${base}_linux_amd64.tar.gz" | Select-Object -First 1
+          if (-not $linuxArchive) {
+            throw "linux release archive for WSL engine not found"
+          }
+          tar -xzf $linuxArchive.FullName -C $bundleRoot
+
+          $linuxEngine = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs-engine" |
+            Where-Object { $_.FullName -match "linux_amd64" } |
+            Sort-Object { $_.FullName.Length } |
+            Select-Object -First 1
+          if (-not $linuxEngine) {
+            throw "linux sqlrs-engine not found in extracted linux bundle"
+          }
+
+          "sqlrs_bin=$($windowsSqlrs.FullName)" >> $env:GITHUB_OUTPUT
+          "engine_windows_bin=$($windowsEngine.FullName)" >> $env:GITHUB_OUTPUT
+          "engine_linux_bin=$($linuxEngine.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Run happy-path scenario (linux)
+        if: matrix.platform == 'linux'
         env:
-          XDG_CONFIG_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-config
-          XDG_STATE_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state
-          XDG_CACHE_HOME: ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-cache
+          XDG_CONFIG_HOME: ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/xdg-config
+          XDG_STATE_HOME: ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/xdg-state
+          XDG_CACHE_HOME: ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/xdg-cache
         shell: bash
         run: |
           set -euo pipefail
-          out_dir="${RUNNER_TEMP}/e2e/${{ matrix.scenario }}"
+          out_dir="${RUNNER_TEMP}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}"
           mkdir -p "${XDG_CONFIG_HOME}" "${XDG_STATE_HOME}" "${XDG_CACHE_HOME}"
           case "${{ matrix.scenario }}" in
             hp-psql-sakila) scenario_timeout="45m" ;;
@@ -325,8 +500,8 @@ jobs:
             --scenario "${{ matrix.scenario }}" \
             --snapshot-backend "${{ matrix.snapshot_backend }}" \
             --scenarios "test/e2e/release/scenarios.json" \
-            --sqlrs "${{ steps.bundle.outputs.bundle_dir }}/sqlrs" \
-            --engine "${{ steps.bundle.outputs.bundle_dir }}/sqlrs-engine" \
+            --sqlrs "${{ steps.bundle-linux.outputs.bundle_dir }}/sqlrs" \
+            --engine "${{ steps.bundle-linux.outputs.bundle_dir }}/sqlrs-engine" \
             --timeout "$scenario_timeout" \
             --out-dir "$out_dir"
           node scripts/e2e-release/normalize-output.mjs \
@@ -344,27 +519,144 @@ jobs:
             --actual "$out_dir/normalized-stdout.log" \
             --diff "$out_dir/diff.log"
 
+      - name: Run happy-path scenario (windows host)
+        if: matrix.platform == 'windows'
+        env:
+          SCENARIO_ID: ${{ matrix.scenario }}
+          SNAPSHOT_BACKEND: ${{ matrix.snapshot_backend }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $scenario = $env:SCENARIO_ID
+          $outDir = Join-Path $env:RUNNER_TEMP "e2e\windows\$scenario-$env:SNAPSHOT_BACKEND"
+          $workspaceDir = Join-Path $outDir "workspace"
+          $storeRoot = Join-Path $outDir "store"
+          $storeImage = Join-Path $storeRoot "btrfs.vhdx"
+          $sqlrs = "${{ steps.bundle-windows.outputs.sqlrs_bin }}"
+          $engineWindows = "${{ steps.bundle-windows.outputs.engine_windows_bin }}"
+          $engineLinux = "${{ steps.bundle-windows.outputs.engine_linux_bin }}"
+          $isBtrfs = $env:SNAPSHOT_BACKEND -eq "btrfs"
+          $engine = if ($isBtrfs) { $engineLinux } else { $engineWindows }
+          if ([string]::IsNullOrWhiteSpace($engine)) {
+            throw "engine binary path is empty for snapshot backend $env:SNAPSHOT_BACKEND"
+          }
+
+          $env:APPDATA = Join-Path $outDir "appdata"
+          $env:LOCALAPPDATA = Join-Path $outDir "localappdata"
+          $env:SQLRS_STATE_STORE = $storeRoot
+
+          New-Item -ItemType Directory -Force -Path $outDir, $workspaceDir, $storeRoot, $env:APPDATA, $env:LOCALAPPDATA | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "examples\chinook\*") -Destination $workspaceDir -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE ("test\e2e\release\" + $scenario + "\query.sql")) -Destination (Join-Path $workspaceDir ".e2e-query.sql") -Force
+
+          $initArgs = @(
+            "--workspace", $workspaceDir,
+            "init", "local",
+            "--engine", $engine,
+            "--snapshot", $env:SNAPSHOT_BACKEND
+          )
+          if ($isBtrfs) {
+            $initArgs += @("--store", "image", $storeImage, "--distro", "${{ matrix.wsl_distro }}")
+          } else {
+            $initArgs += @("--store", "dir", $storeRoot)
+          }
+          $initArgs += @("--no-start")
+          $flowArgs = @(
+            "--timeout", "15m",
+            "--workspace", $workspaceDir,
+            "prepare:psql",
+            "--image", "postgres:17",
+            "--",
+            "-f", "prepare.sql",
+            "run:psql",
+            "--",
+            "-At", "-f", ".e2e-query.sql"
+          )
+
+          $initCommand = @($sqlrs) + $initArgs
+          $flowCommand = @($sqlrs) + $flowArgs
+          ($initCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-init.txt") -Encoding utf8
+          ($flowCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-flow.txt") -Encoding utf8
+
+          Push-Location $workspaceDir
+          try {
+            & $sqlrs @initArgs 1> (Join-Path $outDir "init-stdout.log") 2> (Join-Path $outDir "init-stderr.log")
+            if ($LASTEXITCODE -ne 0) {
+              throw "init local --snapshot $env:SNAPSHOT_BACKEND failed with exit code $LASTEXITCODE"
+            }
+
+            if ($isBtrfs) {
+              wsl.exe -d "${{ matrix.wsl_distro }}" -- bash -lc "docker version" 1> (Join-Path $outDir "docker-version.txt") 2> (Join-Path $outDir "dockerd.log")
+              if ($LASTEXITCODE -ne 0) {
+                throw "wsl docker prereq check failed with exit code $LASTEXITCODE"
+              }
+            }
+
+            & $sqlrs @flowArgs 1> (Join-Path $outDir "raw-stdout.log") 2> (Join-Path $outDir "raw-stderr.log")
+            if ($LASTEXITCODE -ne 0) {
+              throw "prepare/run flow failed with exit code $LASTEXITCODE"
+            }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Normalize and compare golden output (windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $env:RUNNER_TEMP "e2e\windows\${{ matrix.scenario }}-${{ matrix.snapshot_backend }}"
+          $golden = "test\e2e\release\${{ matrix.scenario }}\golden.txt"
+          node scripts/e2e-release/normalize-output.mjs `
+            --scenario "${{ matrix.scenario }}" `
+            --scenarios "test/e2e/release/scenarios.json" `
+            --input "$outDir/raw-stdout.log" `
+            --output "$outDir/normalized-stdout.log"
+
+          node scripts/e2e-release/compare-golden.mjs `
+            --expected "$golden" `
+            --actual "$outDir/normalized-stdout.log" `
+            --diff "$outDir/diff.log"
+
+      - name: Collect WSL dockerd diagnostics
+        if: always() && matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
+        shell: pwsh
+        run: |
+          $outDir = Join-Path $env:RUNNER_TEMP "e2e\windows\${{ matrix.scenario }}-${{ matrix.snapshot_backend }}"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          wsl.exe -d "${{ matrix.wsl_distro }}" -- bash -lc "test -f /tmp/sqlrs-release-dockerd.log && cat /tmp/sqlrs-release-dockerd.log || true" `
+            1> (Join-Path $outDir "dockerd-wsl.log") `
+            2> $null
+
       - name: Upload Linux E2E diagnostics
-        if: always()
+        if: always() && matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-linux-${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
+          name: e2e-${{ matrix.platform }}-${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
           if-no-files-found: warn
           path: |
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/command-init.txt
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/command-flow.txt
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/init-stdout.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/init-stderr.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/raw-stdout.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/raw-stderr.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/normalized-stdout.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/diff.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/result.json
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/scenario.json
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/engine.json
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/logs/engine.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/xdg-state/sqlrs/logs/engine-wsl.log
-            ${{ runner.temp }}/e2e/${{ matrix.scenario }}/workspace/*.sql
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/command-init.txt
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/command-flow.txt
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/init-stdout.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/init-stderr.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/raw-stdout.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/raw-stderr.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/normalized-stdout.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/diff.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/result.json
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/scenario.json
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/xdg-state/sqlrs/engine.json
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/xdg-state/sqlrs/logs/engine.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/xdg-state/sqlrs/logs/engine-wsl.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/workspace/*.sql
+
+      - name: Upload Windows E2E diagnostics
+        if: always() && matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.platform }}-${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: ${{ runner.temp }}/e2e/windows/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
 
   e2e-smoke:
     if: contains(github.event.inputs.version || github.ref_name, '-rc.')
@@ -374,8 +666,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: windows-latest
-            os_family: windows
           - runner: macos-latest
             os_family: darwin
     steps:
@@ -391,13 +681,6 @@ jobs:
           base="${raw%-rc.*}"
           echo "base=$base" >> "$GITHUB_OUTPUT"
 
-      - name: Download windows rc artifact
-        if: matrix.os_family == 'windows'
-        uses: actions/download-artifact@v4
-        with:
-          name: sqlrs_windows_amd64
-          path: rc-artifacts
-
       - name: Download darwin rc artifacts
         if: matrix.os_family == 'darwin'
         uses: actions/download-artifact@v4
@@ -405,36 +688,6 @@ jobs:
           pattern: sqlrs_darwin_*
           merge-multiple: true
           path: rc-artifacts
-
-      - name: Extract windows bundle
-        if: matrix.os_family == 'windows'
-        id: bundle-windows
-        shell: pwsh
-        run: |
-          $archive = Get-ChildItem -Path rc-artifacts -Recurse -Filter "sqlrs_${{ steps.version.outputs.base }}_windows_amd64.zip" | Select-Object -First 1
-          if (-not $archive) {
-            throw "windows release archive not found"
-          }
-          $bundleRoot = Join-Path $PWD "bundle"
-          New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
-          Expand-Archive -Path $archive.FullName -DestinationPath $bundleRoot -Force
-
-          $sqlrsBin = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs.exe" |
-            Sort-Object { $_.FullName.Length } |
-            Select-Object -First 1
-          if (-not $sqlrsBin) {
-            throw "sqlrs.exe not found in extracted windows bundle"
-          }
-
-          $engineBin = Get-ChildItem -Path $bundleRoot -Recurse -File -Filter "sqlrs-engine.exe" |
-            Sort-Object { $_.FullName.Length } |
-            Select-Object -First 1
-          if (-not $engineBin) {
-            throw "sqlrs-engine.exe not found in extracted windows bundle"
-          }
-
-          "sqlrs_bin=$($sqlrsBin.FullName)" >> $env:GITHUB_OUTPUT
-          "engine_bin=$($engineBin.FullName)" >> $env:GITHUB_OUTPUT
 
       - name: Extract darwin bundle
         if: matrix.os_family == 'darwin'
@@ -461,18 +714,6 @@ jobs:
           fi
           echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Run windows smoke checks
-        if: matrix.os_family == 'windows'
-        id: smoke-windows
-        shell: pwsh
-        run: |
-          $outDir = Join-Path $env:RUNNER_TEMP "smoke-windows"
-          "out_dir=$outDir" >> $env:GITHUB_OUTPUT
-          node scripts/e2e-release/smoke-bundle.mjs `
-            --sqlrs "${{ steps.bundle-windows.outputs.sqlrs_bin }}" `
-            --engine "${{ steps.bundle-windows.outputs.engine_bin }}" `
-            --out-dir "$outDir"
-
       - name: Run darwin smoke checks
         if: matrix.os_family == 'darwin'
         id: smoke-darwin
@@ -486,13 +727,6 @@ jobs:
             --engine "${{ steps.bundle-darwin.outputs.bundle_dir }}/sqlrs-engine" \
             --out-dir "$out_dir"
 
-      - name: Upload windows smoke diagnostics
-        if: always() && matrix.os_family == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-smoke-windows
-          path: ${{ runner.temp }}/smoke-windows
-
       - name: Upload darwin smoke diagnostics
         if: always() && matrix.os_family == 'darwin'
         uses: actions/upload-artifact@v4
@@ -503,7 +737,7 @@ jobs:
   publish-rc:
     if: contains(github.event.inputs.version || github.ref_name, '-rc.')
     runs-on: ubuntu-latest
-    needs: [assemble-release-manifest, e2e-linux-happy, e2e-smoke]
+    needs: [assemble-release-manifest, e2e-happy, e2e-smoke]
     permissions:
       contents: write
     steps:
