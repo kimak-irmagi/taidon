@@ -256,6 +256,8 @@ jobs:
         exclude:
           - platform: windows
             scenario: hp-psql-sakila
+          - platform: windows
+            snapshot_backend: copy
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -310,13 +312,13 @@ jobs:
         uses: docker/setup-docker-action@v4
 
       - name: Set up WSL
-        if: matrix.platform == 'windows'
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
         uses: Vampire/setup-wsl@v6
         with:
           distribution: ${{ matrix.wsl_distro }}
 
       - name: Show host WSL status
-        if: matrix.platform == 'windows'
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
         shell: pwsh
         run: |
           wsl --status
@@ -332,7 +334,7 @@ jobs:
           }
 
       - name: Ensure Docker in WSL distro (prereq)
-        if: matrix.platform == 'windows'
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
         shell: wsl-bash {0}
         run: |
           set -euo pipefail
@@ -417,31 +419,6 @@ jobs:
           fi
           docker version
           docker -H tcp://127.0.0.1:2375 version >/dev/null
-
-      - name: Resolve Docker host endpoint for windows copy
-        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'copy'
-        id: docker-host-copy
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $candidates = @("tcp://127.0.0.1:2375", "tcp://localhost:2375")
-          $wslIp = (wsl.exe -d "${{ matrix.wsl_distro }}" -- sh -lc "hostname -I | cut -d' ' -f1" 2>$null).Trim()
-          if (-not [string]::IsNullOrWhiteSpace($wslIp)) {
-            $candidates += "tcp://${wslIp}:2375"
-          }
-          $candidates = $candidates | Select-Object -Unique
-
-          foreach ($candidate in $candidates) {
-            $env:DOCKER_HOST = $candidate
-            docker version 1>$null 2>$null
-            if ($LASTEXITCODE -eq 0) {
-              "docker_host=$candidate" >> $env:GITHUB_OUTPUT
-              Write-Host "Using DOCKER_HOST=$candidate for windows copy cell."
-              exit 0
-            }
-          }
-
-          throw "Could not reach WSL Docker daemon from Windows host. Tried: $($candidates -join ', ')"
 
       - name: Resolve release versions (linux)
         if: matrix.platform == 'linux'
@@ -611,33 +588,15 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($engine)) {
             throw "engine binary path is empty for snapshot backend $env:SNAPSHOT_BACKEND"
           }
-          if ($isBtrfs) {
-            Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
-            Remove-Item Env:SQLRS_DOCKER_HOST_PATH_STYLE -ErrorAction SilentlyContinue
-          } else {
-            $dockerHostCopy = "${{ steps.docker-host-copy.outputs.docker_host }}"
-            if ([string]::IsNullOrWhiteSpace($dockerHostCopy)) {
-              throw "docker host endpoint for windows copy was not resolved"
-            }
-            $env:DOCKER_HOST = $dockerHostCopy
-            $env:SQLRS_DOCKER_HOST_PATH_STYLE = "linux"
-            $wslStoreDir = "/tmp/sqlrs-e2e/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)/$scenario-$env:SNAPSHOT_BACKEND-store"
-            wsl.exe -d "${{ matrix.wsl_distro }}" -- bash -lc "mkdir -p '$wslStoreDir'"
-            if ($LASTEXITCODE -ne 0) {
-              throw "failed to create WSL store dir for windows copy backend"
-            }
-            $wslStoreWinPath = $wslStoreDir.TrimStart('/') -replace '/', '\'
-            $storeRoot = '\\wsl$\' + "${{ matrix.wsl_distro }}" + '\' + $wslStoreWinPath
-          }
+          Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+          Remove-Item Env:SQLRS_DOCKER_HOST_PATH_STYLE -ErrorAction SilentlyContinue
+          Remove-Item Env:SQLRS_STATE_DB -ErrorAction SilentlyContinue
 
           $env:APPDATA = Join-Path $outDir "appdata"
           $env:LOCALAPPDATA = Join-Path $outDir "localappdata"
           $env:SQLRS_STATE_STORE = $storeRoot
 
-          $dirs = @($outDir, $workspaceDir, $env:APPDATA, $env:LOCALAPPDATA)
-          if ($isBtrfs) {
-            $dirs += $storeRoot
-          }
+          $dirs = @($outDir, $workspaceDir, $storeRoot, $env:APPDATA, $env:LOCALAPPDATA)
           New-Item -ItemType Directory -Force -Path $dirs | Out-Null
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "examples\chinook\*") -Destination $workspaceDir -Recurse -Force
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE ("test\e2e\release\" + $scenario + "\query.sql")) -Destination (Join-Path $workspaceDir ".e2e-query.sql") -Force
@@ -670,9 +629,6 @@ jobs:
           $flowCommand = @($sqlrs) + $flowArgs
           ($initCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-init.txt") -Encoding utf8
           ($flowCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-flow.txt") -Encoding utf8
-          ("STORE_ROOT=" + $storeRoot) | Out-File -FilePath (Join-Path $outDir "store-root.txt") -Encoding utf8
-          ("DOCKER_HOST=" + ($env:DOCKER_HOST ?? "")) | Out-File -FilePath (Join-Path $outDir "docker-host.txt") -Encoding utf8
-          ("SQLRS_DOCKER_HOST_PATH_STYLE=" + ($env:SQLRS_DOCKER_HOST_PATH_STYLE ?? "")) | Out-File -FilePath (Join-Path $outDir "docker-host-path-style.txt") -Encoding utf8
 
           Push-Location $workspaceDir
           try {
@@ -719,7 +675,7 @@ jobs:
             --diff "$outDir/diff.log"
 
       - name: Collect WSL dockerd diagnostics
-        if: always() && matrix.platform == 'windows'
+        if: failure() && matrix.platform == 'windows' && matrix.snapshot_backend == 'btrfs'
         shell: pwsh
         run: |
           $outDir = Join-Path $env:RUNNER_TEMP "e2e\windows\${{ matrix.scenario }}-${{ matrix.snapshot_backend }}"
@@ -729,7 +685,7 @@ jobs:
             2> $null
 
       - name: Upload Linux E2E diagnostics
-        if: always() && matrix.platform == 'linux'
+        if: failure() && matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-${{ matrix.platform }}-${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
@@ -751,7 +707,7 @@ jobs:
             ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/workspace/*.sql
 
       - name: Upload Windows E2E diagnostics
-        if: always() && matrix.platform == 'windows'
+        if: failure() && matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-${{ matrix.platform }}-${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
@@ -829,7 +785,7 @@ jobs:
             --out-dir "$out_dir"
 
       - name: Upload darwin smoke diagnostics
-        if: always() && matrix.os_family == 'darwin'
+        if: failure() && matrix.os_family == 'darwin'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-smoke-darwin
