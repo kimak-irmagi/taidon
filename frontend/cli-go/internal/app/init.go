@@ -148,6 +148,11 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 
 		storeExplicit := opts.StoreType != "" || opts.StorePath != ""
 		useWSL, requireWSL := shouldUseWSL(snapshot, resolvedStoreType, storeExplicit)
+		if useWSL {
+			if err := validateLinuxEngineBinaryForWSL(opts.EnginePath); err != nil {
+				return ExitErrorf(64, "Invalid arguments: %v", err)
+			}
+		}
 		if useWSL && !opts.DryRun {
 			result, err := initWSLFn(wslInitOptions{
 				Enable:      true,
@@ -246,6 +251,54 @@ func runInit(w io.Writer, cwd, globalWorkspace string, args []string, verbose bo
 
 func shouldRunStrictBtrfsInit(snapshot string, dryRun bool, wslResult *wslInitResult) bool {
 	return strings.EqualFold(strings.TrimSpace(snapshot), "btrfs") && !dryRun && wslResult == nil
+}
+
+func validateLinuxEngineBinaryForWSL(enginePath string) error {
+	pathValue := strings.TrimSpace(enginePath)
+	if pathValue == "" {
+		return nil
+	}
+	if strings.EqualFold(filepath.Ext(pathValue), ".exe") {
+		return fmt.Errorf("--engine must point to a Linux sqlrs-engine binary when WSL runtime is required")
+	}
+
+	format, err := detectBinaryFormat(pathValue)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Keep backward compatibility when the path is configured before the file is built.
+			return nil
+		}
+		return fmt.Errorf("cannot inspect --engine binary %q: %v", pathValue, err)
+	}
+
+	switch format {
+	case "elf":
+		return nil
+	case "pe":
+		return fmt.Errorf("--engine must point to a Linux sqlrs-engine binary when WSL runtime is required")
+	default:
+		return fmt.Errorf("--engine binary %q is not recognized as Linux ELF", pathValue)
+	}
+}
+
+func detectBinaryFormat(pathValue string) (string, error) {
+	file, err := os.Open(pathValue)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	header := make([]byte, 4)
+	if _, err := io.ReadFull(file, header); err != nil {
+		return "", err
+	}
+	if header[0] == 0x7f && header[1] == 'E' && header[2] == 'L' && header[3] == 'F' {
+		return "elf", nil
+	}
+	if header[0] == 'M' && header[1] == 'Z' {
+		return "pe", nil
+	}
+	return "unknown", nil
 }
 
 func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, error) {

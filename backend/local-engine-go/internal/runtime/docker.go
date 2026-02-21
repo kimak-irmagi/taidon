@@ -29,6 +29,8 @@ var (
 
 const (
 	defaultDockerBinary = "docker"
+	dockerHostPathStyleEnv = "SQLRS_DOCKER_HOST_PATH_STYLE"
+	dockerHostPathLinux   = "linux"
 )
 
 type Options struct {
@@ -167,7 +169,7 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	args := []string{
 		"run", "--rm",
 		"-u", "postgres",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"initdb",
 		"--username=sqlrs",
@@ -210,7 +212,7 @@ func (r *DockerRuntime) pgVersionReady(ctx context.Context, imageID string, data
 func (r *DockerRuntime) hasPGVersionInContainer(ctx context.Context, imageID string, dataDir string) (bool, error) {
 	args := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"test", "-f", filepath.ToSlash(filepath.Join(PostgresDataDirRoot, "pgdata", "PG_VERSION")),
 	}
@@ -354,7 +356,7 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 	ensureHostDataDirAccess(dataDir)
 	args := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"mkdir", "-p", PostgresDataDir,
 	}
@@ -363,7 +365,7 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 	}
 	args = []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"chown", "-R", "postgres:postgres", PostgresDataDir,
 	}
@@ -372,7 +374,7 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 	}
 	args = []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"chmod", "-R", "0700", PostgresDataDir,
 	}
@@ -388,7 +390,7 @@ func (r *DockerRuntime) ensureHostReadableDataDir(ctx context.Context, imageID s
 	}
 	args := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"chmod", "-R", "a+rX", PostgresDataDir,
 	}
@@ -437,7 +439,7 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 	args := []string{
 		"run", "-d", "--rm",
 		"-p", "0:5432",
-		"-v", fmt.Sprintf("%s:%s", req.DataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(req.DataDir, PostgresDataDirRoot, false),
 		"-e", "PGDATA=" + PostgresDataDir,
 		"-e", "POSTGRES_HOST_AUTH_METHOD=trust",
 	}
@@ -445,11 +447,7 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 		if strings.TrimSpace(mount.HostPath) == "" || strings.TrimSpace(mount.ContainerPath) == "" {
 			continue
 		}
-		spec := fmt.Sprintf("%s:%s", mount.HostPath, mount.ContainerPath)
-		if mount.ReadOnly {
-			spec += ":ro"
-		}
-		args = append(args, "-v", spec)
+		args = append(args, "-v", dockerBindSpec(mount.HostPath, mount.ContainerPath, mount.ReadOnly))
 	}
 	if strings.TrimSpace(req.Name) != "" {
 		args = append(args, "--name", req.Name)
@@ -690,11 +688,7 @@ func (r *DockerRuntime) RunContainer(ctx context.Context, req RunRequest) (strin
 		if strings.TrimSpace(mount.HostPath) == "" || strings.TrimSpace(mount.ContainerPath) == "" {
 			continue
 		}
-		spec := fmt.Sprintf("%s:%s", mount.HostPath, mount.ContainerPath)
-		if mount.ReadOnly {
-			spec += ":ro"
-		}
-		args = append(args, "-v", spec)
+		args = append(args, "-v", dockerBindSpec(mount.HostPath, mount.ContainerPath, mount.ReadOnly))
 	}
 	args = append(args, imageID)
 	if len(req.Args) > 0 {
@@ -730,6 +724,75 @@ func parseHostPort(value string) (int, error) {
 		return port, nil
 	}
 	return 0, fmt.Errorf("cannot parse docker port output: %q", value)
+}
+
+func dockerBindSpec(hostPath, containerPath string, readOnly bool) string {
+	spec := fmt.Sprintf("%s:%s", normalizeDockerHostPath(hostPath), containerPath)
+	if readOnly {
+		spec += ":ro"
+	}
+	return spec
+}
+
+func normalizeDockerHostPath(hostPath string) string {
+	hostPath = strings.TrimSpace(hostPath)
+	if hostPath == "" || !useLinuxMountPathStyle() {
+		return hostPath
+	}
+	if converted, ok := windowsWSLUNCPathToLinux(hostPath); ok {
+		return converted
+	}
+	if converted, ok := windowsDrivePathToLinux(hostPath); ok {
+		return converted
+	}
+	return hostPath
+}
+
+func useLinuxMountPathStyle() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(dockerHostPathStyleEnv)), dockerHostPathLinux)
+}
+
+func windowsDrivePathToLinux(hostPath string) (string, bool) {
+	if len(hostPath) < 2 || hostPath[1] != ':' {
+		return "", false
+	}
+	drive := hostPath[0]
+	if !((drive >= 'a' && drive <= 'z') || (drive >= 'A' && drive <= 'Z')) {
+		return "", false
+	}
+	rest := strings.TrimLeft(hostPath[2:], `\/`)
+	rest = strings.ReplaceAll(rest, `\`, "/")
+	prefix := "/mnt/" + strings.ToLower(string(drive))
+	if rest == "" {
+		return prefix, true
+	}
+	return prefix + "/" + rest, true
+}
+
+func windowsWSLUNCPathToLinux(hostPath string) (string, bool) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(hostPath), "/", `\`)
+	lower := strings.ToLower(normalized)
+	prefixes := []string{`\\wsl$\`, `\\wsl.localhost\`}
+	for _, prefix := range prefixes {
+		if !strings.HasPrefix(lower, prefix) {
+			continue
+		}
+		rest := normalized[len(prefix):]
+		parts := strings.SplitN(rest, `\`, 2)
+		if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" {
+			return "", false
+		}
+		subPath := strings.TrimLeft(parts[1], `\`)
+		if subPath == "" {
+			return "/", true
+		}
+		subPath = strings.ReplaceAll(subPath, `\`, "/")
+		return "/" + strings.TrimLeft(subPath, "/"), true
+	}
+	return "", false
 }
 
 func wrapDockerError(err error, output string) error {
