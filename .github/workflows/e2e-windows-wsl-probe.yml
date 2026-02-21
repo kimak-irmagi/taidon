@@ -82,16 +82,16 @@ jobs:
           $env:GOARCH = "amd64"
           go build -o (Join-Path $outDir "sqlrs.exe") ./cmd/sqlrs
 
-      - name: Build windows sqlrs-engine binary
+      - name: Build linux sqlrs-engine binary for WSL runtime
         working-directory: backend/local-engine-go
         shell: pwsh
         run: |
-          $outDir = Join-Path $env:GITHUB_WORKSPACE "dist\probe\windows-amd64"
+          $outDir = Join-Path $env:GITHUB_WORKSPACE "dist\probe\linux-amd64"
           New-Item -ItemType Directory -Force -Path $outDir | Out-Null
           $env:CGO_ENABLED = "0"
-          $env:GOOS = "windows"
+          $env:GOOS = "linux"
           $env:GOARCH = "amd64"
-          go build -o (Join-Path $outDir "sqlrs-engine.exe") ./cmd/sqlrs-engine
+          go build -o (Join-Path $outDir "sqlrs-engine") ./cmd/sqlrs-engine
 
       - name: Ensure Docker in WSL distro (prereq)
         shell: wsl-bash {0}
@@ -143,7 +143,7 @@ jobs:
           $storeRoot = Join-Path $outDir "store"
           $storeImage = Join-Path $storeRoot "btrfs.vhdx"
           $sqlrs = Join-Path $env:GITHUB_WORKSPACE "dist\probe\windows-amd64\sqlrs.exe"
-          $engine = Join-Path $env:GITHUB_WORKSPACE "dist\probe\windows-amd64\sqlrs-engine.exe"
+          $engine = Join-Path $env:GITHUB_WORKSPACE "dist\probe\linux-amd64\sqlrs-engine"
 
           $env:APPDATA = Join-Path $outDir "appdata"
           $env:LOCALAPPDATA = Join-Path $outDir "localappdata"

@@ -54,6 +54,15 @@ run("probe workflow sets up docker on windows host", () => {
   assert.equal(step.uses, "docker/setup-docker-action@v4");
 });
 
+run("probe workflow builds linux engine binary for WSL runtime", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["windows-wsl-happy"];
+  const step = (job.steps || []).find((item) => item.name === "Build linux sqlrs-engine binary for WSL runtime");
+  assert.ok(step, "missing linux engine build step");
+  assert.match(String(step.run || ""), /GOOS = "linux"/);
+  assert.match(String(step.run || ""), /sqlrs-engine"/);
+});
+
 run("probe workflow fetches locked chinook sql asset", () => {
   const workflow = loadWorkflow();
   const job = workflow.jobs?.["windows-wsl-happy"];
@@ -70,6 +79,7 @@ run("probe workflow runs host sqlrs happy-path with btrfs", () => {
   assert.ok(step, "missing host scenario step");
   assert.equal(step.shell, "pwsh");
   assert.match(String(step.run || ""), /sqlrs\.exe/);
+  assert.match(String(step.run || ""), /dist\\probe\\linux-amd64\\sqlrs-engine/);
   assert.match(String(step.run || ""), /Push-Location\s+\$workspaceDir/);
   assert.match(String(step.run || ""), /Pop-Location/);
   assert.match(String(step.run || ""), /init", "local"/);

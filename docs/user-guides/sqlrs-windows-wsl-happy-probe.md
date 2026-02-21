@@ -18,7 +18,8 @@ Workflow file:
 Execution model:
 
 1. Checkout repository on `windows-latest`.
-2. Build Windows `sqlrs.exe` and `sqlrs-engine.exe` binaries from source.
+2. Build Windows `sqlrs.exe` (host CLI) and Linux `sqlrs-engine` (WSL runtime)
+   binaries from source.
 3. Initialize Docker on the Windows host via `docker/setup-docker-action`.
 4. Install/setup WSL distro (`Ubuntu-24.04`) via `Vampire/setup-wsl`.
 5. Ensure Docker daemon is available inside the WSL distro.
