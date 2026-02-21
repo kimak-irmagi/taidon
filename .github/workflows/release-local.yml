@@ -613,12 +613,14 @@ jobs:
           }
           if ($isBtrfs) {
             Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+            Remove-Item Env:SQLRS_DOCKER_HOST_PATH_STYLE -ErrorAction SilentlyContinue
           } else {
             $dockerHostCopy = "${{ steps.docker-host-copy.outputs.docker_host }}"
             if ([string]::IsNullOrWhiteSpace($dockerHostCopy)) {
               throw "docker host endpoint for windows copy was not resolved"
             }
             $env:DOCKER_HOST = $dockerHostCopy
+            $env:SQLRS_DOCKER_HOST_PATH_STYLE = "linux"
           }
 
           $env:APPDATA = Join-Path $outDir "appdata"
@@ -658,6 +660,7 @@ jobs:
           ($initCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-init.txt") -Encoding utf8
           ($flowCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-flow.txt") -Encoding utf8
           ("DOCKER_HOST=" + ($env:DOCKER_HOST ?? "")) | Out-File -FilePath (Join-Path $outDir "docker-host.txt") -Encoding utf8
+          ("SQLRS_DOCKER_HOST_PATH_STYLE=" + ($env:SQLRS_DOCKER_HOST_PATH_STYLE ?? "")) | Out-File -FilePath (Join-Path $outDir "docker-host-path-style.txt") -Encoding utf8
 
           Push-Location $workspaceDir
           try {

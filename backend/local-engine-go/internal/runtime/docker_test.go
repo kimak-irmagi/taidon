@@ -606,6 +606,62 @@ func TestDockerRuntimeRunContainerBuildsArgs(t *testing.T) {
 	}
 }
 
+func TestWindowsDrivePathToLinux(t *testing.T) {
+	got, ok := windowsDrivePathToLinux(`D:\a\temp\store`)
+	if !ok {
+		t.Fatalf("expected conversion to succeed")
+	}
+	if got != "/mnt/d/a/temp/store" {
+		t.Fatalf("unexpected converted path: %s", got)
+	}
+	root, ok := windowsDrivePathToLinux(`C:\`)
+	if !ok || root != "/mnt/c" {
+		t.Fatalf("unexpected root conversion: ok=%v path=%s", ok, root)
+	}
+	if _, ok := windowsDrivePathToLinux(`/var/tmp/store`); ok {
+		t.Fatalf("expected non-drive path to skip conversion")
+	}
+}
+
+func TestDockerBindSpecUsesLinuxPathStyleOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path normalization")
+	}
+	t.Setenv(dockerHostPathStyleEnv, dockerHostPathLinux)
+	spec := dockerBindSpec(`D:\a\temp\store`, PostgresDataDirRoot, false)
+	if spec != "/mnt/d/a/temp/store:"+PostgresDataDirRoot {
+		t.Fatalf("unexpected bind spec: %s", spec)
+	}
+	readOnly := dockerBindSpec(`C:\workspace`, "/work", true)
+	if readOnly != "/mnt/c/workspace:/work:ro" {
+		t.Fatalf("unexpected readonly bind spec: %s", readOnly)
+	}
+}
+
+func TestDockerRuntimeRunContainerConvertsMountsForLinuxPathStyleOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path normalization")
+	}
+	t.Setenv(dockerHostPathStyleEnv, dockerHostPathLinux)
+	runner := &fakeRunner{responses: []runResponse{{output: "ok\n"}}}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	_, err := rt.RunContainer(context.Background(), RunRequest{
+		ImageID: "liquibase:latest",
+		Mounts: []Mount{
+			{HostPath: `D:\work\project`, ContainerPath: "/work", ReadOnly: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunContainer: %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected one docker call, got %d", len(runner.calls))
+	}
+	if !containsArg(runner.calls[0].args, "-v", "/mnt/d/work/project:/work:ro") {
+		t.Fatalf("expected converted mount path, got %+v", runner.calls[0].args)
+	}
+}
+
 func TestDockerRuntimeRunContainerDockerUnavailable(t *testing.T) {
 	runner := &fakeRunner{responses: []runResponse{{err: DockerUnavailableError{Message: "daemon unavailable"}}}}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
