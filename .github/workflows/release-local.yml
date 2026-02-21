@@ -336,6 +336,8 @@ jobs:
         shell: wsl-bash {0}
         run: |
           set -euo pipefail
+          unset DOCKER_HOST
+          unset DOCKER_CONTEXT
           if ! command -v docker >/dev/null 2>&1; then
             if [ "$(id -u)" -eq 0 ]; then
               apt-get update
@@ -347,9 +349,22 @@ jobs:
           fi
           if ! docker info >/dev/null 2>&1; then
             if [ "$(id -u)" -eq 0 ]; then
-              nohup dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+              pkill -f dockerd || true
+              pkill -f containerd || true
             else
-              nohup sudo dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+              sudo pkill -f dockerd || true
+              sudo pkill -f containerd || true
+            fi
+            sleep 2
+            if [ "$(id -u)" -eq 0 ]; then
+              rm -f /var/run/docker.pid
+            else
+              sudo rm -f /var/run/docker.pid
+            fi
+            if [ "$(id -u)" -eq 0 ]; then
+              nohup dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+            else
+              nohup sudo dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
             fi
             ready=0
             for _ in $(seq 1 90); do
@@ -365,12 +380,68 @@ jobs:
               exit 1
             fi
           fi
+          if ! docker -H tcp://127.0.0.1:2375 info >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              pkill -f dockerd || true
+              pkill -f containerd || true
+            else
+              sudo pkill -f dockerd || true
+              sudo pkill -f containerd || true
+            fi
+            sleep 2
+            if [ "$(id -u)" -eq 0 ]; then
+              rm -f /var/run/docker.pid
+              nohup dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+            else
+              sudo rm -f /var/run/docker.pid
+              nohup sudo dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 --storage-driver=vfs --iptables=false >/tmp/sqlrs-release-dockerd.log 2>&1 &
+            fi
+            ready_tcp=0
+            for _ in $(seq 1 90); do
+              if docker -H tcp://127.0.0.1:2375 info >/dev/null 2>&1; then
+                ready_tcp=1
+                break
+              fi
+              sleep 2
+            done
+            if [ "$ready_tcp" != "1" ]; then
+              echo "docker daemon tcp endpoint did not become ready" >&2
+              tail -n 200 /tmp/sqlrs-release-dockerd.log || true
+              exit 1
+            fi
+          fi
           if [ "$(id -u)" -eq 0 ]; then
             chmod 666 /var/run/docker.sock || true
           else
             sudo chmod 666 /var/run/docker.sock || true
           fi
           docker version
+          docker -H tcp://127.0.0.1:2375 version >/dev/null
+
+      - name: Resolve Docker host endpoint for windows copy
+        if: matrix.platform == 'windows' && matrix.snapshot_backend == 'copy'
+        id: docker-host-copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $candidates = @("tcp://127.0.0.1:2375", "tcp://localhost:2375")
+          $wslIp = (wsl.exe -d "${{ matrix.wsl_distro }}" -- sh -lc "hostname -I | cut -d' ' -f1" 2>$null).Trim()
+          if (-not [string]::IsNullOrWhiteSpace($wslIp)) {
+            $candidates += "tcp://${wslIp}:2375"
+          }
+          $candidates = $candidates | Select-Object -Unique
+
+          foreach ($candidate in $candidates) {
+            $env:DOCKER_HOST = $candidate
+            docker version 1>$null 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              "docker_host=$candidate" >> $env:GITHUB_OUTPUT
+              Write-Host "Using DOCKER_HOST=$candidate for windows copy cell."
+              exit 0
+            }
+          }
+
+          throw "Could not reach WSL Docker daemon from Windows host. Tried: $($candidates -join ', ')"
 
       - name: Resolve release versions (linux)
         if: matrix.platform == 'linux'
@@ -543,7 +614,11 @@ jobs:
           if ($isBtrfs) {
             Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
           } else {
-            $env:DOCKER_HOST = "tcp://127.0.0.1:2375"
+            $dockerHostCopy = "${{ steps.docker-host-copy.outputs.docker_host }}"
+            if ([string]::IsNullOrWhiteSpace($dockerHostCopy)) {
+              throw "docker host endpoint for windows copy was not resolved"
+            }
+            $env:DOCKER_HOST = $dockerHostCopy
           }
 
           $env:APPDATA = Join-Path $outDir "appdata"
@@ -582,6 +657,7 @@ jobs:
           $flowCommand = @($sqlrs) + $flowArgs
           ($initCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-init.txt") -Encoding utf8
           ($flowCommand | ForEach-Object { if ($_ -match '\s') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ } }) -join " " | Out-File -FilePath (Join-Path $outDir "command-flow.txt") -Encoding utf8
+          ("DOCKER_HOST=" + ($env:DOCKER_HOST ?? "")) | Out-File -FilePath (Join-Path $outDir "docker-host.txt") -Encoding utf8
 
           Push-Location $workspaceDir
           try {
