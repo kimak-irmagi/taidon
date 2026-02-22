@@ -38,16 +38,17 @@ gantt
     Адаптер Liquibase (применение миграций)   :active, a3, after a2b, 30d
 
     section Продуктовый MVP (локальный)
-    Drop-in подключение (proxy/adapter)       :b1, after a2, 45d
-    CLI UX + детерминированные запуски        :active, b2, after a2, 45d
-    Кэш состояний v1 (reuse states)           :active, b3, after a3, 45d
+    CLI UX + детерминированные запуски        :done, b2, after a2, 45d
+    Кэш состояний v1 (reuse states)           :done, b3, after a3, 45d
+    Ограничения кэша (размер + eviction)      :active, b3g, after b3, 30d
     Git-aware CLI (ref/diff/provenance)       :b4, after b3, 30d
 
     section Team (On-Prem)
     Оркестратор + квоты + TTL                 :c1, after b2, 45d
+    Drop-in подключение (proxy/adapter)       :c0, after c1, 45d
     K8s gateway + topology контроллеров       :c6, after c1, 30d
     Хранилище артефактов (S3/fs) + audit log  :c2, after c1, 45d
-    Шаблоны интеграции CI/CD                  :c3, after c1, 30d
+    Шаблоны интеграции CI/CD                  :active, c3, after c1, 30d
     Auth (OIDC) + RBAC (basic)                :c4, after c1, 45d
     Автомасштабирование (instances + cache)   :c5, after c2, 30d
 
@@ -69,12 +70,37 @@ gantt
 
 ---
 
-## Статус (на 2026-02-12)
+## Статус (на 2026-02-22)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
-- **В работе**: UX CLI и детерминизм выполнения (`prepare:lb` и `plan:lb` уже реализованы; оставшиеся пробелы parity — алиасы команд и более богатый UX для логов).
-- **Запланировано**: drop-in подключение, git-aware CLI, team on-prem оркестрация, облачный sharing, образование.
+- **Сделано (PR #37-#41, hardening)**: добавлены release happy-path e2e сценарии
+  для Chinook/Sakila с расширением матрицы (включая Btrfs), поведение
+  `init --btrfs` выровнено между Linux и Windows, Windows WSL/docker probe
+  встроен в release-проверки, усилена детерминированность output/workspace.
+- **Сделано (MVP command surface)**: локальный MVP-набор команд стабилен вокруг
+  `init/config/ls/status/plan/prepare/run/rm`; legacy-нейминг команд в
+  документации считается устаревшим.
+- **В работе**: ограничения ёмкости state-cache (макс. размер и политика eviction),
+  чтобы исключить неограниченный рост workspace в долгоживущих средах.
+- **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
+  уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
+  ещё впереди.
+- **Запланировано**: git-aware CLI, team on-prem оркестрация (включая drop-in
+  proxy/adapter), облачный sharing, образование.
+
+---
+
+## Ближайший Следующий Шаг (Выбран)
+
+- **Направление**: внедрить bounded cache-поведение перед масштабированием team-контура.
+- **Следующий PR-срез**:
+  - добавить конфигурируемые лимиты размера кэша (глобально и per-workspace profile);
+  - реализовать детерминированный eviction неиспользуемых states (TTL + pressure по размеру);
+  - отразить заполненность кэша и решения eviction в CLI/диагностике;
+  - расширить release e2e-проверки на сценарии cache-pressure.
+- **Почему сейчас**: локальный MVP уже рабочий и без drop-in proxy; главный
+  операционный риск сейчас - неограниченный рост кэша.
 
 ---
 
@@ -85,7 +111,7 @@ gantt
 **Результат**: стабильные концепты и контракты до тяжелой реализации.
 
 - Зафиксировать канонические сущности: project, instance, run, artefact, share
-- Зафиксировать core API surface (create/apply/run/destroy + status/events)
+- Зафиксировать core API surface (create/prepare/run/remove + status/events)
 - Принять подход к runtime изоляции для MVP (локальные контейнеры vs альтернативы)
 
 **Статус**: сделано (архитектура закреплена ADR и локальным OpenAPI для engine).
@@ -115,9 +141,11 @@ gantt
 - Локальный runtime (контейнеры) с lifecycle экземпляра — **сделано**
 - CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **сделано**
 - Cache v1 (prepare jobs + reuse state + retention) — **сделано (ядро)**
+- Ограничения ёмкости кэша (лимиты размера + eviction) — **в работе**
 - Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs), **в планах** (ZFS)
-- Liquibase адаптер (apply changelog) — **в работе** (базовый локальный поток через `prepare:lb`/`plan:lb` уже реализован)
-- CLI parity с исходным MVP списком (`apply/status/logs/destroy`) — **в работе** (`status` и эквивалент `destroy` через `rm` уже есть; parity на уровне алиасов и команда `logs` ещё в работе)
+- Liquibase адаптер (apply changelog) — **сделано (MVP scope)** (базовый локальный поток через `prepare:lb`/`plan:lb` реализован)
+- Release happy-path e2e gate — **сделано** (покрытие Linux/macOS/Windows WSL
+  для сценариев Chinook/Sakila, включая Btrfs в матрице валидации)
 
 **Опционально (nice-to-have)**:
 
@@ -132,13 +160,14 @@ gantt
 - Warm start переиспользует кэшированное состояние и значительно быстрее
 - Миграции детерминированы и воспроизводимы
 
-**Статус**: в работе (локальный runtime и CLI есть; базовый Liquibase-поток уже реализован; parity и hardening ещё впереди).
+**Статус**: сделано (MVP baseline). Дальнейший hardening идёт через
+ограничения ёмкости кэша и улучшение наблюдаемости.
 
 ---
 
-### M2. Drop-in Replacement (Developer Experience)
+### M2. Developer Experience (Post-MVP Local)
 
-**Цель**: сделать adoption почти без трения.
+**Цель**: снизить трение при локальном onboarding и улучшить инструменты воспроизводимости.
 
 **Целевые use cases**:
 
@@ -146,9 +175,6 @@ gantt
 
 **Deliverables**:
 
-- Drop-in стратегия подключения (выбрать одну для MVP):
-  - локальный proxy, который поднимает `localhost:<port>` как Postgres/MySQL, или
-  - driver/URL адаптер (для выбранных стеков)
 - Конвенции конфигурации:
   - обнаружение миграций по layout репозитория
   - профили (dev/test) и обработка секретов
@@ -160,7 +186,8 @@ gantt
 
 **Exit criteria**:
 
-- Разработчик может запускать тесты с одним изменением env var (или одной строкой конфига)
+- Разработчик может выполнять типовые сценарии с минимальной конфигурацией и
+  понятной диагностикой происхождения/содержимого кэша.
 
 ---
 
@@ -191,6 +218,9 @@ gantt
   - organisation/team scopes
 - CI шаблоны:
   - GitHub Actions / GitLab CI примеры
+- Drop-in стратегия подключения (team deployment profile):
+  - proxy/adapter, совместимый с networking/policy оркестратора
+  - включает detection/visibility подключений для эфемерных инстансов
 - Autoscaling controller (instances + cache workers):
   - HPA/VPA профили по backlog/cache метрикам
   - warm pool для быстрого старта; graceful drain на scale-in

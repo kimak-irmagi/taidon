@@ -39,16 +39,17 @@ gantt
     Liquibase adapter (apply migrations)       :active, a3, after a2b, 30d
 
     section Product MVP (Local)
-    Drop-in connection (proxy/adapter)         :b1, after a2, 45d
-    CLI UX + deterministic runs                :active, b2, after a2, 45d
-    State cache v1 (reuse states)              :active, b3, after a3, 45d
+    CLI UX + deterministic runs                :done, b2, after a2, 45d
+    State cache v1 (reuse states)              :done, b3, after a3, 45d
+    State cache guardrails (size + eviction)   :active, b3g, after b3, 30d
     Git-aware CLI (ref/diff/provenance)        :b4, after b3, 30d
 
     section Team (On-Prem)
     Orchestrator + quotas + TTL                :c1, after b2, 45d
+    Drop-in connection (proxy/adapter)         :c0, after c1, 45d
     K8s gateway + controller topology          :c6, after c1, 30d
     Artifact store (S3/fs) + audit log         :c2, after c1, 45d
-    CI/CD integration templates                :c3, after c1, 30d
+    CI/CD integration templates                :active, c3, after c1, 30d
     Auth (OIDC) + RBAC (basic)                 :c4, after c1, 45d
     Autoscaling (instances + cache workers)    :c5, after c2, 30d
 
@@ -70,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-02-12)
+## Status (as of 2026-02-22)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -80,10 +81,33 @@ gantt
   `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`,
   `sqlrs rm`), WSL init flow (incl. nsenter install), instance-delete logging.
 - **Done (filesystem)**: overlayfs-based copy stub and Btrfs snapshot backend.
-- **In progress**: CLI UX hardening and deterministic execution (`prepare:lb` and
-  `plan:lb` landed; remaining parity gaps are command aliases and richer logs UX).
-- **Planned**: drop-in connection, git-aware CLI, team on-prem orchestration,
-  cloud sharing, education.
+- **Done (PR #37-#41 hardening)**: release happy-path e2e scenarios landed for
+  Chinook/Sakila with matrix expansion (incl. Btrfs), `init --btrfs` behaviour
+  unified across Linux/Windows, Windows WSL/docker probe moved into release
+  verification, and deterministic output/workspace handling was tightened.
+- **Done (MVP command surface)**: local MVP command set is stable around
+  `init/config/ls/status/plan/prepare/run/rm`; legacy command naming is
+  deprecated in docs.
+- **In progress**: state-cache capacity controls (max size and eviction policy)
+  to prevent unbounded workspace growth in long-lived environments.
+- **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
+  are active; broader team templates (e.g., GitLab and on-prem deployment variants)
+  are still pending.
+- **Planned**: git-aware CLI, team on-prem orchestration (including drop-in
+  proxy/adapter), cloud sharing, education.
+
+---
+
+## Immediate Next Step (Selected)
+
+- **Direction**: add bounded cache behaviour before scaling team usage.
+- **Next PR slice**:
+  - introduce configurable cache size limits (global and per-workspace profile);
+  - implement deterministic eviction for unreferenced states (TTL + size pressure);
+  - expose cache occupancy and eviction decisions in CLI/diagnostics output;
+  - extend release e2e checks to verify cache-pressure behaviour.
+- **Rationale**: local MVP is already usable without a drop-in proxy; unbounded
+  cache growth is now the highest operational risk and should be addressed first.
 
 ---
 
@@ -94,7 +118,7 @@ gantt
 **Outcome**: stable concepts and contracts before heavy implementation.
 
 - Freeze canonical entities: project, instance, run, artefact, share
-- Freeze core API surface (create/apply/run/destroy + status/events)
+- Freeze core API surface (create/prepare/run/remove + status/events)
 - Decide runtime isolation approach for MVP (local containers vs other)
 
 **Status**: Done (architecture captured via ADRs and the local engine OpenAPI spec).
@@ -126,13 +150,13 @@ gantt
   `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`,
   `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **Done**
 - Cache v1 (prepare jobs + state reuse + retention) — **Done (core)**
+- Cache capacity guardrails (size limits + eviction) — **In progress**
 - Filesystem snapshot backends — **Done** (overlayfs copy stub, Btrfs),
   **Planned** (ZFS)
-- Liquibase adapter (apply changelog) — **In progress** (local basic flow via
+- Liquibase adapter (apply changelog) — **Done (MVP scope)** (local flow via
   `prepare:lb`/`plan:lb` is implemented)
-- CLI parity with original MVP list (`apply/status/logs/destroy`) — **In progress**
-  (`status` and `destroy` equivalent via `rm` are available; alias-level parity
-  and `logs` command are pending)
+- Release happy-path e2e gate — **Done** (Linux/macOS/Windows WSL coverage for
+  Chinook/Sakila scenarios, with Btrfs included in matrix validation)
 
 **Optional (nice-to-have)**:
 
@@ -147,14 +171,14 @@ gantt
 - A warm start reuses cached state and is significantly faster
 - Migrations are deterministic and reproducible
 
-**Status**: In progress (core local runtime and CLI exist; Liquibase basic flow
-is implemented; parity/hardening remains).
+**Status**: Done (MVP baseline). Ongoing hardening continues via cache capacity
+controls and observability improvements.
 
 ---
 
-### M2. Drop-in Replacement (Developer Experience)
+### M2. Developer Experience (Post-MVP Local)
 
-**Purpose**: make adoption nearly effortless.
+**Purpose**: reduce local onboarding friction and improve reproducibility tooling.
 
 **Target use cases**:
 
@@ -162,9 +186,6 @@ is implemented; parity/hardening remains).
 
 **Deliverables**:
 
-- Connection drop-in strategy (choose one for MVP):
-  - Local proxy that exposes `localhost:<port>` as Postgres/MySQL, or
-  - Driver/URL adapter (for selected stacks)
 - Config conventions:
   - discover migrations from repo layout
   - profiles (dev/test) and secrets handling
@@ -176,7 +197,8 @@ is implemented; parity/hardening remains).
 
 **Exit criteria**:
 
-- A developer can run tests with a single env var change (or one config line)
+- A developer can run common workflows with minimal config and clear cache
+  provenance diagnostics.
 
 ---
 
@@ -207,6 +229,9 @@ is implemented; parity/hardening remains).
   - organisation/team scopes
 - CI templates:
   - GitHub Actions / GitLab CI examples
+- Drop-in connection strategy (team deployment profile):
+  - Proxy/adapter compatible with shared orchestrator networking and policy
+  - Includes connection detection/visibility for ephemeral instances
 - Autoscaling controller (instances + cache workers):
   - HPA/VPA profiles using backlog/cache metrics
   - Warm pool for fast start; graceful drain on scale-in

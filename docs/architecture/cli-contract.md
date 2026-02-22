@@ -16,7 +16,7 @@ The goal is to:
 1. **Canonical CLI name**: `sqlrs`
 2. **Subcommand-based interface** (git/docker style)
 3. **Explicit state over implicit magic**
-4. **Composable commands** (plan → apply → run → inspect)
+4. **Composable commands** (plan → prepare → run → inspect)
 5. **Machine-friendly output by default** (JSON where applicable)
 6. **Human-friendly summaries** when run interactively
 
@@ -32,7 +32,7 @@ From the user’s point of view, `sqlrs` manages:
 - **runs**: executions of plans, scripts, or commands
 
 ```text
-state  --(materialize)-->  instance  --(run/apply)-->  new state
+state  --(materialize)-->  instance  --(run)-->  new state
 ```
 
 ---
