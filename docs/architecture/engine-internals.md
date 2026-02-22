@@ -332,8 +332,8 @@ errors are treated as requirement-level behavior. They are not "optional interna
 
 - Deletion runtime-stop helpers must treat docker-daemon-unavailable as non-fatal
   during destructive cleanup.
-- Runtime directory cleanup helpers must try StateFS removal first and fallback to
-  filesystem removal.
+- Runtime directory cleanup helpers must try StateFS removal first and fallback
+  to filesystem removal.
 - Run argument guards must reject conflicting connection flags in `run:psql` and
   `run:pgbench`.
 
@@ -341,4 +341,3 @@ errors are treated as requirement-level behavior. They are not "optional interna
 
 - Prepare events stream helpers must provide ordered NDJSON delivery, wait for new
   events when the stream is not terminal, and stop once terminal status is reached.
-

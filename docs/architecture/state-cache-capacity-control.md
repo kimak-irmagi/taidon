@@ -109,7 +109,8 @@ logic is limited to storage accounting and deletion primitives.
 ### 7.1 Storage usage measurement
 
 - `copy` / `overlayfs`: recursive filesystem size walk.
-- `btrfs`: prefer `btrfs filesystem du`-based estimation; fallback to recursive walk.
+- `btrfs`: prefer `btrfs filesystem du`-based estimation; fallback to recursive
+  walk.
 - future `zfs`: use dataset-native used-space metrics.
 
 The evictor additionally measures:
