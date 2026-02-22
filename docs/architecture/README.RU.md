@@ -15,6 +15,8 @@
   snapshot/backends (OverlayFS/копирование/etc).
 - [`state-cache-design.RU.md`](state-cache-design.RU.md) - cache keys, триггеры,
   retention, локальный layout.
+- [`state-cache-capacity-control.RU.md`](state-cache-capacity-control.RU.md) -
+  bounded cache-политика (лимиты емкости, watermark-ы, семантика eviction).
 - [`sql-runner-api.RU.md`](sql-runner-api.RU.md) - поверхность API runner,
   таймауты, отмена, стриминг.
 - [`liquibase-integration.RU.md`](liquibase-integration.RU.md) - стратегия

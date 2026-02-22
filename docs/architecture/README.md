@@ -14,6 +14,8 @@ Entry points for Taidon architecture and service design.
   snapshot/backends (OverlayFS/copy/etc).
 - [`state-cache-design.md`](state-cache-design.md) — cache keys, triggers,
   retention, local store layout.
+- [`state-cache-capacity-control.md`](state-cache-capacity-control.md) -
+  bounded cache policy (capacity limits, watermarks, eviction semantics).
 - [`sql-runner-api.md`](sql-runner-api.md) — runner API surface, timeouts,
   cancel, streaming.
 - [`liquibase-integration.md`](liquibase-integration.md) - Liquibase provider
