@@ -243,23 +243,25 @@ func probeLocalDeps(ctx context.Context, opts LocalDepsOptions) (LocalDepsStatus
 
 const defaultWSLStateDir = "~/.local/state/sqlrs/store"
 
+// checkDocker verifies that a container runtime (Docker or Podman) is available and responsive.
+// The engine uses whichever is found (docker first, then podman) via resolveContainerRuntimeBinary.
 func checkDocker(ctx context.Context, verbose bool) (bool, string) {
-	if _, err := execLookPathFn("docker"); err != nil {
+	for _, name := range []string{"docker", "podman"} {
+		if _, err := execLookPathFn(name); err != nil {
+			continue
+		}
+		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		cmd := execCommandContextFn(checkCtx, name, "info")
+		err := cmd.Run()
+		cancel()
+		if err == nil {
+			return true, ""
+		}
 		if verbose {
 			return false, fmt.Sprintf("docker not ready: %v", err)
 		}
-		return false, "docker not ready"
 	}
-	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	cmd := execCommandContextFn(checkCtx, "docker", "info")
-	if err := cmd.Run(); err != nil {
-		if verbose {
-			return false, fmt.Sprintf("docker not ready: %v", err)
-		}
-		return false, "docker not ready"
-	}
-	return true, ""
+	return false, "docker not ready"
 }
 
 func checkWSL(ctx context.Context, verbose bool) (bool, string) {

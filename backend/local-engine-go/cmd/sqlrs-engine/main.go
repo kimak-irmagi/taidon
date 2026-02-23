@@ -95,6 +95,61 @@ func (r *statusRecorderFlusher) Flush() {
 	}
 }
 
+// resolveContainerRuntimeBinary returns the executable name or path for the container runtime
+// (docker/podman). Prefers SQLRS_CONTAINER_RUNTIME env; otherwise tries "docker", then "podman".
+// When using podman on macOS, ensures CONTAINER_HOST is set from the default connection so
+// the runtime can reach the podman machine.
+func resolveContainerRuntimeBinary() string {
+	if name := strings.TrimSpace(os.Getenv("SQLRS_CONTAINER_RUNTIME")); name != "" {
+		if filepath.IsAbs(name) {
+			return name
+		}
+		if path, err := exec.LookPath(name); err == nil {
+			return path
+		}
+		return name
+	}
+	var binary string
+	for _, name := range []string{"docker", "podman"} {
+		if path, err := exec.LookPath(name); err == nil {
+			binary = path
+			break
+		}
+	}
+	if binary == "" {
+		return "docker"
+	}
+	if os.Getenv("CONTAINER_HOST") != "" {
+		return binary
+	}
+	if strings.Contains(strings.ToLower(filepath.Base(binary)), "podman") {
+		if uri := podmanDefaultConnectionURI(binary); uri != "" {
+			os.Setenv("CONTAINER_HOST", uri)
+		}
+	}
+	return binary
+}
+
+// podmanDefaultConnectionURI runs `podman system connection list` and returns the URI of the default connection.
+// Used on macOS so child podman invocations can reach the podman machine.
+func podmanDefaultConnectionURI(podmanPath string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, podmanPath, "system", "connection", "list", "--format", "{{.URI}}")
+	cmd.Env = os.Environ()
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		uri := strings.TrimSpace(line)
+		if uri != "" {
+			return uri
+		}
+	}
+	return ""
+}
+
 func snapshotBackendFromConfig(cfg config.Store) string {
 	value, err := cfg.Get("snapshot.backend", true)
 	if err != nil {
@@ -283,7 +338,8 @@ func run(args []string) (int, error) {
 	activity := newActivityTracker()
 	activity.Touch()
 	reg := registry.New(store)
-	rt := engineRuntime.NewDocker(engineRuntime.Options{})
+	containerBinary := resolveContainerRuntimeBinary()
+	rt := engineRuntime.NewDocker(engineRuntime.Options{Binary: containerBinary})
 	configMgr, err := config.NewManager(config.Options{StateStoreRoot: stateStoreRoot})
 	if err != nil {
 		return 1, fmt.Errorf("config manager: %v", err)
