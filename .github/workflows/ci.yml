@@ -139,6 +139,52 @@ jobs:
           name: coverage-cli-${{ matrix.runner }}
           path: coverage-cli-${{ matrix.runner }}.out
 
+  e2e-podman-macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: frontend/cli-go/go.mod
+
+      - name: Install Podman
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v podman >/dev/null 2>&1; then
+            brew install podman
+          fi
+          podman --version
+
+      - name: Start Podman machine
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! podman machine inspect >/dev/null 2>&1; then
+            podman machine init --cpus 2 --memory 4096 --disk-size 20
+          fi
+          podman machine start
+          podman info
+
+      - name: Run macOS e2e probe with podman runtime
+        working-directory: frontend/cli-go
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SQLRS_RUN_DOCKER_TESTS=1
+          export SQLRS_RUN_PODMAN_TESTS=1
+          go test ./internal/integration -run TestCLIPrepareRunWithLocalEnginePodmanConfig -count=1 -v
+
+      - name: Stop Podman machine
+        if: always()
+        shell: bash
+        run: |
+          podman machine stop || true
+
   coverage-merge:
     runs-on: ubuntu-latest
     needs:

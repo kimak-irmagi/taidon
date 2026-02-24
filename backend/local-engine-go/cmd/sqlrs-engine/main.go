@@ -95,39 +95,83 @@ func (r *statusRecorderFlusher) Flush() {
 	}
 }
 
+// containerRuntimeFromConfig resolves container.runtime from engine config.
+// Allowed values: auto, docker, podman. Invalid or missing values fall back to auto.
+func containerRuntimeFromConfig(cfg config.Store) string {
+	if cfg == nil {
+		return "auto"
+	}
+	value, err := cfg.Get("container.runtime", true)
+	if err != nil {
+		return "auto"
+	}
+	mode, ok := value.(string)
+	if !ok {
+		return "auto"
+	}
+	return normalizeContainerRuntimeMode(mode)
+}
+
+func normalizeContainerRuntimeMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "docker":
+		return "docker"
+	case "podman":
+		return "podman"
+	default:
+		return "auto"
+	}
+}
+
 // resolveContainerRuntimeBinary returns the executable name or path for the container runtime
-// (docker/podman). Prefers SQLRS_CONTAINER_RUNTIME env; otherwise tries "docker", then "podman".
+// (docker/podman). Prefers config-based mode selection, with SQLRS_CONTAINER_RUNTIME as an
+// operational override. In auto mode, tries docker then podman.
 // When using podman on macOS, ensures CONTAINER_HOST is set from the default connection so
 // the runtime can reach the podman machine.
-func resolveContainerRuntimeBinary() string {
+func resolveContainerRuntimeBinary(mode string) string {
 	if name := strings.TrimSpace(os.Getenv("SQLRS_CONTAINER_RUNTIME")); name != "" {
-		if filepath.IsAbs(name) {
-			return name
+		return resolveConfiguredRuntimeBinary(name)
+	}
+	switch normalizeContainerRuntimeMode(mode) {
+	case "docker":
+		return resolveConfiguredRuntimeBinary("docker")
+	case "podman":
+		return resolveConfiguredRuntimeBinary("podman")
+	}
+
+	for _, name := range []string{"docker", "podman"} {
+		if path, err := execLookPathFn(name); err == nil {
+			return resolveConfiguredRuntimeBinary(path)
 		}
-		if path, err := exec.LookPath(name); err == nil {
-			return path
-		}
+	}
+	return "docker"
+}
+
+func resolveConfiguredRuntimeBinary(name string) string {
+	binary := resolveRuntimeBinary(name)
+	ensurePodmanContainerHost(binary)
+	return binary
+}
+
+func resolveRuntimeBinary(name string) string {
+	if filepath.IsAbs(name) {
 		return name
 	}
-	var binary string
-	for _, name := range []string{"docker", "podman"} {
-		if path, err := exec.LookPath(name); err == nil {
-			binary = path
-			break
-		}
+	if path, err := execLookPathFn(name); err == nil {
+		return path
 	}
-	if binary == "" {
-		return "docker"
-	}
+	return name
+}
+
+func ensurePodmanContainerHost(binary string) {
 	if os.Getenv("CONTAINER_HOST") != "" {
-		return binary
+		return
 	}
 	if strings.Contains(strings.ToLower(filepath.Base(binary)), "podman") {
 		if uri := podmanDefaultConnectionURI(binary); uri != "" {
-			os.Setenv("CONTAINER_HOST", uri)
+			_ = osSetenvFn("CONTAINER_HOST", uri)
 		}
 	}
-	return binary
 }
 
 // podmanDefaultConnectionURI runs `podman system connection list` and returns the URI of the default connection.
@@ -135,16 +179,18 @@ func resolveContainerRuntimeBinary() string {
 func podmanDefaultConnectionURI(podmanPath string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, podmanPath, "system", "connection", "list", "--format", "{{.URI}}")
-	cmd.Env = os.Environ()
-	out, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		uri := strings.TrimSpace(line)
-		if uri != "" {
-			return uri
+	for _, format := range []string{"{{if .Default}}{{.URI}}{{end}}", "{{.URI}}"} {
+		cmd := execCommandContextFn(ctx, podmanPath, "system", "connection", "list", "--format", format)
+		cmd.Env = os.Environ()
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(out), "\n") {
+			uri := strings.TrimSpace(line)
+			if uri != "" {
+				return uri
+			}
 		}
 	}
 	return ""
@@ -216,6 +262,9 @@ var serveHTTP = func(server *http.Server, listener net.Listener) error {
 
 var exitFn = os.Exit
 var randReader = rand.Reader
+var execLookPathFn = exec.LookPath
+var execCommandContextFn = exec.CommandContext
+var osSetenvFn = os.Setenv
 var writeFileFn = os.WriteFile
 var renameFn = os.Rename
 var idleTickerEvery = time.Second
@@ -337,13 +386,14 @@ func run(args []string) (int, error) {
 
 	activity := newActivityTracker()
 	activity.Touch()
-	reg := registry.New(store)
-	containerBinary := resolveContainerRuntimeBinary()
-	rt := engineRuntime.NewDocker(engineRuntime.Options{Binary: containerBinary})
 	configMgr, err := config.NewManager(config.Options{StateStoreRoot: stateStoreRoot})
 	if err != nil {
 		return 1, fmt.Errorf("config manager: %v", err)
 	}
+	reg := registry.New(store)
+	containerMode := containerRuntimeFromConfig(configMgr)
+	containerBinary := resolveContainerRuntimeBinary(containerMode)
+	rt := engineRuntime.NewDocker(engineRuntime.Options{Binary: containerBinary})
 	stateFS := statefs.NewManager(statefs.Options{
 		Backend:        snapshotBackendFromConfig(configMgr),
 		StateStoreRoot: stateStoreRoot,

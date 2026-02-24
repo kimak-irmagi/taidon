@@ -268,6 +268,334 @@ func TestLogLevelFromConfig(t *testing.T) {
 	}
 }
 
+func TestContainerRuntimeFromConfig(t *testing.T) {
+	if mode := containerRuntimeFromConfig(nil); mode != "auto" {
+		t.Fatalf("expected auto for nil config, got %q", mode)
+	}
+	if mode := containerRuntimeFromConfig(fakeConfigStore{err: errors.New("boom")}); mode != "auto" {
+		t.Fatalf("expected auto on config error, got %q", mode)
+	}
+	if mode := containerRuntimeFromConfig(fakeConfigStore{value: 1}); mode != "auto" {
+		t.Fatalf("expected auto for non-string value, got %q", mode)
+	}
+	if mode := containerRuntimeFromConfig(fakeConfigStore{value: "docker"}); mode != "docker" {
+		t.Fatalf("expected docker mode, got %q", mode)
+	}
+	if mode := containerRuntimeFromConfig(fakeConfigStore{value: "podman"}); mode != "podman" {
+		t.Fatalf("expected podman mode, got %q", mode)
+	}
+	if mode := containerRuntimeFromConfig(fakeConfigStore{value: "bad"}); mode != "auto" {
+		t.Fatalf("expected auto for invalid value, got %q", mode)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryDefaultsToDocker(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(string) (string, error) {
+		return "", errors.New("missing")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		t.Fatalf("unexpected command call: %s %v", name, args)
+		return testCommandExit(ctx, 1)
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
+	t.Setenv("CONTAINER_HOST", "")
+	if got := resolveContainerRuntimeBinary("auto"); got != "docker" {
+		t.Fatalf("expected docker fallback, got %q", got)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryPrefersDocker(t *testing.T) {
+	dockerPath := "/usr/bin/docker"
+	podmanPath := "/usr/bin/podman"
+	if runtime.GOOS == "windows" {
+		dockerPath = `C:\Program Files\Docker\docker.exe`
+		podmanPath = `C:\Program Files\RedHat\Podman\podman.exe`
+	}
+
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "docker" {
+			return dockerPath, nil
+		}
+		if name == dockerPath {
+			return dockerPath, nil
+		}
+		if name == "podman" {
+			return podmanPath, nil
+		}
+		if name == podmanPath {
+			return podmanPath, nil
+		}
+		return "", errors.New("missing")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		t.Fatalf("unexpected command call: %s %v", name, args)
+		return testCommandExit(ctx, 1)
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
+	t.Setenv("CONTAINER_HOST", "")
+	if got := resolveContainerRuntimeBinary("auto"); got != dockerPath {
+		t.Fatalf("expected docker path, got %q", got)
+	}
+	if host := os.Getenv("CONTAINER_HOST"); host != "" {
+		t.Fatalf("expected empty CONTAINER_HOST, got %q", host)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryFallsBackToPodmanAndSetsContainerHost(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "docker" {
+			return "", errors.New("missing")
+		}
+		if name == "podman" {
+			return "/usr/local/bin/podman", nil
+		}
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "/usr/local/bin/podman" {
+			t.Fatalf("expected podman binary, got %s", name)
+		}
+		if len(args) < 5 || args[0] != "system" || args[1] != "connection" || args[2] != "list" || args[3] != "--format" {
+			t.Fatalf("unexpected args: %v", args)
+		}
+		if args[4] != "{{if .Default}}{{.URI}}{{end}}" {
+			t.Fatalf("expected default format, got %q", args[4])
+		}
+		return testCommandOutput(ctx, "\nunix:///tmp/podman.sock\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
+	t.Setenv("CONTAINER_HOST", "")
+	if got := resolveContainerRuntimeBinary("auto"); got != "/usr/local/bin/podman" {
+		t.Fatalf("expected podman path, got %q", got)
+	}
+	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///tmp/podman.sock" {
+		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryEnvPodmanSetsContainerHost(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "podman" {
+			return "/opt/homebrew/bin/podman", nil
+		}
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "/opt/homebrew/bin/podman" {
+			t.Fatalf("expected podman binary, got %s", name)
+		}
+		return testCommandOutput(ctx, "unix:///Users/runner/.local/share/containers/podman.sock\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "podman")
+	t.Setenv("CONTAINER_HOST", "")
+	if got := resolveContainerRuntimeBinary("docker"); got != "/opt/homebrew/bin/podman" {
+		t.Fatalf("expected env override to win over config mode, got %q", got)
+	}
+	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///Users/runner/.local/share/containers/podman.sock" {
+		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryDockerModeDoesNotFallbackToPodman(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "docker" {
+			return "", errors.New("missing")
+		}
+		if name == "podman" {
+			t.Fatalf("unexpected podman lookup in docker mode")
+		}
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		t.Fatalf("unexpected command call: %s %v", name, args)
+		return testCommandExit(ctx, 1)
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
+	t.Setenv("CONTAINER_HOST", "")
+	if got := resolveContainerRuntimeBinary("docker"); got != "docker" {
+		t.Fatalf("expected docker binary in docker mode, got %q", got)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryPodmanModeUsesPodman(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "podman" {
+			return "/opt/homebrew/bin/podman", nil
+		}
+		if name == "docker" {
+			t.Fatalf("unexpected docker lookup in podman mode")
+		}
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "/opt/homebrew/bin/podman" {
+			t.Fatalf("expected podman binary, got %q", name)
+		}
+		return testCommandOutput(ctx, "unix:///Users/runner/.local/share/containers/podman.sock\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
+	t.Setenv("CONTAINER_HOST", "")
+	if got := resolveContainerRuntimeBinary("podman"); got != "/opt/homebrew/bin/podman" {
+		t.Fatalf("expected resolved podman path, got %q", got)
+	}
+	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///Users/runner/.local/share/containers/podman.sock" {
+		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryEnvAbsolutePodmanPath(t *testing.T) {
+	absPodman := "/opt/podman/bin/podman"
+	if runtime.GOOS == "windows" {
+		absPodman = `C:\podman\podman.exe`
+	}
+
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		t.Fatalf("unexpected lookpath call for %q", name)
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != absPodman {
+			t.Fatalf("expected absolute podman path, got %s", name)
+		}
+		return testCommandOutput(ctx, "unix:///tmp/abs-podman.sock\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", absPodman)
+	t.Setenv("CONTAINER_HOST", "")
+	if got := resolveContainerRuntimeBinary("auto"); got != absPodman {
+		t.Fatalf("expected absolute podman path, got %q", got)
+	}
+	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///tmp/abs-podman.sock" {
+		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryKeepsExistingContainerHost(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	calls := 0
+	execLookPathFn = func(name string) (string, error) {
+		if name == "docker" {
+			return "", errors.New("missing")
+		}
+		return "/usr/local/bin/podman", nil
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		calls++
+		return testCommandOutput(ctx, "unix:///tmp/podman.sock\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
+	t.Setenv("CONTAINER_HOST", "unix:///already/set.sock")
+	if got := resolveContainerRuntimeBinary("auto"); got != "/usr/local/bin/podman" {
+		t.Fatalf("expected podman path, got %q", got)
+	}
+	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///already/set.sock" {
+		t.Fatalf("expected CONTAINER_HOST to remain unchanged, got %q", host)
+	}
+	if calls != 0 {
+		t.Fatalf("expected no podman connection probe, got %d calls", calls)
+	}
+}
+
+func TestPodmanDefaultConnectionURIFallsBackToURIListFormat(t *testing.T) {
+	prevCmd := execCommandContextFn
+	calls := 0
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		calls++
+		if len(args) < 5 || args[3] != "--format" {
+			t.Fatalf("unexpected args: %v", args)
+		}
+		switch args[4] {
+		case "{{if .Default}}{{.URI}}{{end}}":
+			return testCommandOutput(ctx, "\n")
+		case "{{.URI}}":
+			return testCommandOutput(ctx, "unix:///fallback.sock\n")
+		default:
+			t.Fatalf("unexpected format: %q", args[4])
+		}
+		return testCommandExit(ctx, 1)
+	}
+	t.Cleanup(func() { execCommandContextFn = prevCmd })
+
+	got := podmanDefaultConnectionURI("/usr/local/bin/podman")
+	if got != "unix:///fallback.sock" {
+		t.Fatalf("expected fallback URI, got %q", got)
+	}
+	if calls != 2 {
+		t.Fatalf("expected two podman calls, got %d", calls)
+	}
+}
+
+func TestPodmanDefaultConnectionURIReturnsEmptyOnCommandError(t *testing.T) {
+	prevCmd := execCommandContextFn
+	calls := 0
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		calls++
+		return testCommandExit(ctx, 1)
+	}
+	t.Cleanup(func() { execCommandContextFn = prevCmd })
+
+	if got := podmanDefaultConnectionURI("/usr/local/bin/podman"); got != "" {
+		t.Fatalf("expected empty URI, got %q", got)
+	}
+	if calls != 2 {
+		t.Fatalf("expected two failed attempts, got %d", calls)
+	}
+}
+
 func TestBuildSummaryNotEmpty(t *testing.T) {
 	if summary := buildSummary(); summary == "" {
 		t.Fatalf("expected non-empty summary")
@@ -1139,4 +1467,29 @@ func (w *flushWriter) WriteHeader(status int) {
 
 func (w *flushWriter) Flush() {
 	w.flushed = true
+}
+
+func testCommandOutput(ctx context.Context, output string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		lines := strings.Split(strings.TrimRight(output, "\n"), "\n")
+		parts := make([]string, 0, len(lines))
+		for _, line := range lines {
+			line = strings.TrimRight(line, "\r")
+			if line == "" {
+				parts = append(parts, "echo.")
+				continue
+			}
+			parts = append(parts, "echo "+line)
+		}
+		return exec.CommandContext(ctx, "cmd", "/c", strings.Join(parts, " & "))
+	}
+	escaped := strings.ReplaceAll(output, `"`, `\"`)
+	return exec.CommandContext(ctx, "sh", "-c", "printf \"%s\" \""+escaped+"\"")
+}
+
+func testCommandExit(ctx context.Context, code int) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.CommandContext(ctx, "cmd", "/c", "exit "+strconv.Itoa(code))
+	}
+	return exec.CommandContext(ctx, "sh", "-c", "exit "+strconv.Itoa(code))
 }

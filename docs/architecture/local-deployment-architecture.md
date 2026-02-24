@@ -6,7 +6,7 @@ It focuses on:
 
 - thin CLI design
 - ephemeral engine process
-- interaction with Docker and psql
+- interaction with the container runtime and psql
 
 This document intentionally avoids repeating script-runner details; Liquibase integration
 is planned and covered in [`liquibase-integration.md`](liquibase-integration.md).
@@ -57,13 +57,13 @@ flowchart LR
 - Communicate with engine via HTTP over loopback or Unix socket
 - Execute `run` commands locally against a prepared instance/instance
 - Exit immediately after command completion
-- Optional: pre-flight checks (Docker reachable, state store writable), show engine endpoint/version for diagnostics
+- Optional: pre-flight checks (container runtime reachable, state store writable), show engine endpoint/version for diagnostics
 
 The CLI is intentionally **thin** and stateless.
 
 ### 3.2 Non-Responsibilities
 
-- No Docker orchestration logic
+- No container runtime orchestration logic
 - No snapshotting logic
 - No direct script execution
 
@@ -80,7 +80,7 @@ The CLI is intentionally **thin** and stateless.
 
 ### 4.2 Responsibilities
 
-- Docker container orchestration
+- Container runtime orchestration
 - Snapshotting and state management
 - Cache rewind and eviction
 - Script execution via container `psql`
@@ -138,7 +138,7 @@ Key engine endpoints (logical):
 
 ## 6. Interaction with psql
 
-The engine executes `psql` inside the DB container via `docker exec`.
+The engine executes `psql` inside the DB container via runtime `exec`.
 When file inputs are present, it bind-mounts the scripts root read-only and
 rewrites file arguments to the container path.
 
@@ -147,12 +147,16 @@ Liquibase integration is planned; provider selection details live in
 
 ---
 
-## 6. Interaction with Docker
+## 6. Interaction with Container Runtime
 
-- Docker is required in MVP
-- Engine controls DB containers and executes `psql` via `docker exec`
+- The local engine supports Docker and Podman CLIs.
+- Runtime mode is configured via engine config `container.runtime` with values `auto|docker|podman`.
+- `SQLRS_CONTAINER_RUNTIME` is an operational override for CI/debug sessions.
+- In `auto` mode, runtime probe order is `docker`, then `podman`.
+- For Podman on macOS, when `CONTAINER_HOST` is unset, the engine reads the default Podman connection and exports it for child runtime commands.
+- Engine controls DB containers and executes `psql` via runtime `exec`
 - All persistent data directories are mounted from host-managed storage
-- Engine validates Docker availability on start; CLI surfaces actionable errors if missing/denied
+- Engine validates runtime availability on start; CLI surfaces actionable errors if missing/denied
 
 On Windows (when btrfs is selected):
 

@@ -101,8 +101,8 @@ func TestPrintStatusIncludesDeps(t *testing.T) {
 	var buf bytes.Buffer
 	PrintStatus(&buf, result)
 	out := buf.String()
-	if !strings.Contains(out, "docker: ok") {
-		t.Fatalf("expected docker status, got %q", out)
+	if !strings.Contains(out, "container-runtime: ok") {
+		t.Fatalf("expected container runtime status, got %q", out)
 	}
 	if !strings.Contains(out, "wsl: missing") || !strings.Contains(out, "btrfs: missing") {
 		t.Fatalf("expected wsl/btrfs status, got %q", out)

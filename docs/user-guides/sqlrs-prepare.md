@@ -44,7 +44,7 @@ Where:
 
 ## Base Image Selection (Common)
 
-The base Docker image id is resolved in this order:
+The base container image id is resolved in this order:
 
 1. `--image <image-id>` command-line flag
 2. Workspace config (`.sqlrs/config.yaml`, `dbms.image`)
@@ -72,7 +72,11 @@ When `-v/--verbose` is set, sqlrs prints the resolved image id and its source.
 
 For local profiles, the engine performs real execution:
 
-- Requires Docker running locally; the selected tool runs inside a container.
+- Requires a local container runtime (`docker` or `podman`); the selected tool runs inside a container.
+- Runtime mode is configured via engine config key `container.runtime` (`auto|docker|podman`).
+- `SQLRS_CONTAINER_RUNTIME` is an operational override (for CI/debug scenarios).
+- In `auto` mode, probe order is `docker`, then `podman`.
+- On macOS with Podman, if `CONTAINER_HOST` is unset, the engine reads it from the default Podman connection.
 - State data is stored under `<StateDir>/state-store` (outside containers).
 - Each task snapshots the DB state; the engine prefers OverlayFS on Linux, can use
   btrfs subvolume snapshots when configured, and falls back to full copy.

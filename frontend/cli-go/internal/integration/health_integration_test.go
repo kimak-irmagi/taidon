@@ -13,6 +13,41 @@ import (
 )
 
 func TestCLIStatusWithLocalEngine(t *testing.T) {
+	setupCLIIntegration(t)
+	if err := app.Run([]string{"status"}); err != nil {
+		t.Fatalf("sqlrs status failed: %v", err)
+	}
+}
+
+func TestCLIPrepareRunWithLocalEngine(t *testing.T) {
+	setupCLIIntegration(t)
+	runPrepareRunProbe(t)
+}
+
+func TestCLIPrepareRunWithLocalEnginePodmanConfig(t *testing.T) {
+	setupCLIIntegration(t)
+	if os.Getenv("SQLRS_RUN_PODMAN_TESTS") != "1" {
+		t.Skip("podman config test disabled (set SQLRS_RUN_PODMAN_TESTS=1 to enable)")
+	}
+	if err := app.Run([]string{"config", "set", "container.runtime", "podman"}); err != nil {
+		t.Fatalf("sqlrs config set container.runtime=podman failed: %v", err)
+	}
+	cleanupEngineProcess(t)
+	runPrepareRunProbe(t)
+}
+
+func runPrepareRunProbe(t *testing.T) {
+	t.Helper()
+	if err := app.Run([]string{
+		"prepare:psql", "--", "-c", "create table if not exists podman_probe(id int); insert into podman_probe values (1);",
+		"run:psql", "--", "-t", "-A", "-c", "select count(*) from podman_probe;",
+	}); err != nil {
+		t.Fatalf("sqlrs prepare/run failed: %v", err)
+	}
+}
+
+func setupCLIIntegration(t *testing.T) {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -54,13 +89,14 @@ func TestCLIStatusWithLocalEngine(t *testing.T) {
 		t.Fatalf("chdir temp: %v", err)
 	}
 
-	if err := app.Run([]string{"status"}); err != nil {
-		t.Fatalf("sqlrs status failed: %v", err)
-	}
+	t.Cleanup(func() { cleanupEngineProcess(t) })
+}
 
+func cleanupEngineProcess(t *testing.T) {
+	t.Helper()
 	dirs, err := paths.Resolve()
 	if err != nil {
-		t.Fatalf("resolve dirs: %v", err)
+		return
 	}
 
 	statePath := filepath.Join(dirs.StateDir, "engine.json")
