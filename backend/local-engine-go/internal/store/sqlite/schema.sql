@@ -9,6 +9,11 @@ CREATE TABLE IF NOT EXISTS states (
   prepare_args_normalized TEXT NOT NULL,
   created_at TEXT NOT NULL,
   size_bytes INTEGER,
+  last_used_at TEXT,
+  use_count INTEGER,
+  min_retention_until TEXT,
+  evicted_at TEXT,
+  eviction_reason TEXT,
   status TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_states_fingerprint ON states(state_fingerprint);

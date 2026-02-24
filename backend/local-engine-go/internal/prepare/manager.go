@@ -173,6 +173,9 @@ func NewPrepareService(opts Options) (*PrepareService, error) {
 }
 
 func (m *PrepareService) Recover(ctx context.Context) error {
+	if errResp := m.ensureCacheCapacity(ctx, "", "startup_recovery"); errResp != nil {
+		m.logJob("", "startup cache check failed code=%s message=%s details=%s", errResp.Code, errResp.Message, summarizeLogDetails(errResp.Details))
+	}
 	jobs, err := m.queue.ListJobsByStatus(ctx, []string{StatusQueued, StatusRunning})
 	if err != nil {
 		return err

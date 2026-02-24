@@ -191,6 +191,7 @@ func (s *Store) ListStates(ctx context.Context, filters store.StateFilters) ([]s
 	query := strings.Builder{}
 	query.WriteString(`
 SELECT s.state_id, s.parent_state_id, s.image_id, s.prepare_kind, s.prepare_args_normalized, s.created_at, s.size_bytes,
+       s.last_used_at, s.use_count, s.min_retention_until,
        (SELECT COUNT(1) FROM instances i WHERE i.state_id = s.state_id) as refcount
 FROM states s
 WHERE 1=1`)
@@ -209,11 +210,35 @@ WHERE 1=1`)
 	for rows.Next() {
 		var entry store.StateEntry
 		var parent sql.NullString
-		if err := rows.Scan(&entry.StateID, &parent, &entry.ImageID, &entry.PrepareKind, &entry.PrepareArgs, &entry.CreatedAt, &entry.SizeBytes, &entry.RefCount); err != nil {
+		var lastUsedAt sql.NullString
+		var useCount sql.NullInt64
+		var minRetentionUntil sql.NullString
+		if err := rows.Scan(
+			&entry.StateID,
+			&parent,
+			&entry.ImageID,
+			&entry.PrepareKind,
+			&entry.PrepareArgs,
+			&entry.CreatedAt,
+			&entry.SizeBytes,
+			&lastUsedAt,
+			&useCount,
+			&minRetentionUntil,
+			&entry.RefCount,
+		); err != nil {
 			return nil, err
 		}
 		if parent.Valid && strings.TrimSpace(parent.String) != "" {
 			entry.ParentStateID = strPtr(parent.String)
+		}
+		if lastUsedAt.Valid && strings.TrimSpace(lastUsedAt.String) != "" {
+			entry.LastUsedAt = strPtr(lastUsedAt.String)
+		}
+		if useCount.Valid {
+			entry.UseCount = int64Ptr(useCount.Int64)
+		}
+		if minRetentionUntil.Valid && strings.TrimSpace(minRetentionUntil.String) != "" {
+			entry.MinRetentionUntil = strPtr(minRetentionUntil.String)
 		}
 		out = append(out, entry)
 	}
@@ -226,13 +251,29 @@ WHERE 1=1`)
 func (s *Store) GetState(ctx context.Context, stateID string) (store.StateEntry, bool, error) {
 	query := `
 SELECT s.state_id, s.parent_state_id, s.image_id, s.prepare_kind, s.prepare_args_normalized, s.created_at, s.size_bytes,
+       s.last_used_at, s.use_count, s.min_retention_until,
        (SELECT COUNT(1) FROM instances i WHERE i.state_id = s.state_id) as refcount
 FROM states s
 WHERE s.state_id = ?`
 	row := s.db.QueryRowContext(ctx, query, stateID)
 	var entry store.StateEntry
 	var parent sql.NullString
-	if err := row.Scan(&entry.StateID, &parent, &entry.ImageID, &entry.PrepareKind, &entry.PrepareArgs, &entry.CreatedAt, &entry.SizeBytes, &entry.RefCount); err != nil {
+	var lastUsedAt sql.NullString
+	var useCount sql.NullInt64
+	var minRetentionUntil sql.NullString
+	if err := row.Scan(
+		&entry.StateID,
+		&parent,
+		&entry.ImageID,
+		&entry.PrepareKind,
+		&entry.PrepareArgs,
+		&entry.CreatedAt,
+		&entry.SizeBytes,
+		&lastUsedAt,
+		&useCount,
+		&minRetentionUntil,
+		&entry.RefCount,
+	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return store.StateEntry{}, false, nil
 		}
@@ -241,13 +282,25 @@ WHERE s.state_id = ?`
 	if parent.Valid && strings.TrimSpace(parent.String) != "" {
 		entry.ParentStateID = strPtr(parent.String)
 	}
+	if lastUsedAt.Valid && strings.TrimSpace(lastUsedAt.String) != "" {
+		entry.LastUsedAt = strPtr(lastUsedAt.String)
+	}
+	if useCount.Valid {
+		entry.UseCount = int64Ptr(useCount.Int64)
+	}
+	if minRetentionUntil.Valid && strings.TrimSpace(minRetentionUntil.String) != "" {
+		entry.MinRetentionUntil = strPtr(minRetentionUntil.String)
+	}
 	return entry, true, nil
 }
 
 func (s *Store) CreateState(ctx context.Context, entry store.StateCreate) error {
 	query := `
-INSERT OR IGNORE INTO states (state_id, parent_state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT OR IGNORE INTO states (
+	state_id, parent_state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at,
+	size_bytes, last_used_at, use_count, status
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, query,
 		entry.StateID,
 		entry.ParentStateID,
@@ -257,16 +310,22 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		entry.PrepareArgsNormalized,
 		entry.CreatedAt,
 		entry.SizeBytes,
+		entry.CreatedAt,
+		0,
 		entry.Status,
 	)
 	return err
 }
 
 func (s *Store) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
-	query := `
+	insertQuery := `
 INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, runtime_id, runtime_dir, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, query,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, insertQuery,
 		entry.InstanceID,
 		entry.StateID,
 		entry.ImageID,
@@ -275,8 +334,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 		entry.RuntimeID,
 		entry.RuntimeDir,
 		entry.Status,
-	)
-	return err
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE states
+		 SET last_used_at = ?, use_count = COALESCE(use_count, 0) + 1
+		 WHERE state_id = ?`,
+		entry.CreatedAt,
+		entry.StateID,
+	); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) DeleteInstance(ctx context.Context, instanceID string) error {
@@ -316,6 +388,21 @@ func initDB(db *sql.DB) error {
 	if err := ensureRuntimeDirColumn(db); err != nil {
 		return err
 	}
+	if err := ensureStateLastUsedAtColumn(db); err != nil {
+		return err
+	}
+	if err := ensureStateUseCountColumn(db); err != nil {
+		return err
+	}
+	if err := ensureStateMinRetentionUntilColumn(db); err != nil {
+		return err
+	}
+	if err := ensureStateEvictedAtColumn(db); err != nil {
+		return err
+	}
+	if err := ensureStateEvictionReasonColumn(db); err != nil {
+		return err
+	}
 	_, err := db.Exec(SchemaSQL())
 	return err
 }
@@ -350,6 +437,71 @@ func ensureRuntimeIDColumn(db *sql.DB) error {
 
 func ensureRuntimeDirColumn(db *sql.DB) error {
 	if _, err := db.Exec("ALTER TABLE instances ADD COLUMN runtime_dir TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureStateLastUsedAtColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE states ADD COLUMN last_used_at TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureStateUseCountColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE states ADD COLUMN use_count INTEGER"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureStateMinRetentionUntilColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE states ADD COLUMN min_retention_until TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureStateEvictedAtColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE states ADD COLUMN evicted_at TEXT"); err != nil {
+		if strings.Contains(err.Error(), "duplicate column name") {
+			return nil
+		} else if strings.Contains(err.Error(), "no such table") {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureStateEvictionReasonColumn(db *sql.DB) error {
+	if _, err := db.Exec("ALTER TABLE states ADD COLUMN eviction_reason TEXT"); err != nil {
 		if strings.Contains(err.Error(), "duplicate column name") {
 			return nil
 		} else if strings.Contains(err.Error(), "no such table") {
@@ -483,5 +635,9 @@ func parseTime(value string) (time.Time, bool) {
 }
 
 func strPtr(value string) *string {
+	return &value
+}
+
+func int64Ptr(value int64) *int64 {
 	return &value
 }

@@ -1,8 +1,11 @@
 package prepare
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -101,5 +104,78 @@ func TestEnsureLiquibaseContentLockError(t *testing.T) {
 	_, errResp := ensureLiquibaseContentLock(prepared, "")
 	if errResp == nil {
 		t.Fatalf("expected lock error response")
+	}
+}
+
+func TestLockLiquibaseInputsSkipsRemoteAndDirectories(t *testing.T) {
+	prevLock := lockFileSharedFn
+	prevUnlock := unlockFileSharedFn
+	lockFileSharedFn = func(*os.File) error { return nil }
+	unlockFileSharedFn = func(*os.File) error { return nil }
+	t.Cleanup(func() {
+		lockFileSharedFn = prevLock
+		unlockFileSharedFn = prevUnlock
+	})
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "a.sql")
+	if err := os.WriteFile(filePath, []byte("sql"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	lock, err := lockLiquibaseInputs(preparedRequest{
+		liquibaseLockPaths: []string{
+			filePath,
+			"classpath:db/changelog.xml",
+			dir,
+			filepath.Join(dir, "missing.sql"),
+		},
+	}, "classpath:db/next.xml")
+	if err != nil {
+		t.Fatalf("lockLiquibaseInputs: %v", err)
+	}
+	if lock == nil {
+		t.Fatalf("expected lock")
+	}
+	if len(lock.files) != 1 {
+		t.Fatalf("expected one locked file, got %d", len(lock.files))
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatalf("lock close: %v", err)
+	}
+}
+
+func TestResolveLiquibaseChangesetPathAdditionalBranches(t *testing.T) {
+	absLike := `\\server\share\abs-change.xml`
+	if got := resolveLiquibaseChangesetPath(absLike, preparedRequest{}); got != filepath.Clean(absLike) {
+		t.Fatalf("expected cleaned absolute-like path, got %q", got)
+	}
+
+	prepared := preparedRequest{liquibaseSearchPaths: []string{" ", t.TempDir()}}
+	if got := resolveLiquibaseChangesetPath("not-found.xml", prepared); got != "" {
+		t.Fatalf("expected empty result for missing changeset, got %q", got)
+	}
+}
+
+func TestNormalizeLockPathAdditionalBranches(t *testing.T) {
+	prevExec := execCommand
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if runtime.GOOS == "windows" {
+			return exec.CommandContext(ctx, "cmd", "/c", "echo /mnt/c/work/changelog.xml")
+		}
+		return exec.CommandContext(ctx, "sh", "-c", "echo /mnt/c/work/changelog.xml")
+	}
+	t.Cleanup(func() { execCommand = prevExec })
+	setWSLForTest(t, true)
+
+	if got := normalizeLockPath(`C:\work\changelog.xml`); got != "/mnt/c/work/changelog.xml" {
+		t.Fatalf("expected WSL-mapped lock path, got %q", got)
+	}
+
+	absLike := string(filepath.Separator) + filepath.Join("tmp", "local", "file.sql")
+	if got := normalizeLockPath(absLike); got != filepath.Clean(absLike) {
+		t.Fatalf("expected cleaned absolute-like lock path, got %q", got)
+	}
+	if got := normalizeLockPath("relative/path.sql"); got != "relative/path.sql" {
+		t.Fatalf("expected relative lock path unchanged, got %q", got)
 	}
 }

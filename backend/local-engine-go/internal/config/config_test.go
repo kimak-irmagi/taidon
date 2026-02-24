@@ -409,6 +409,49 @@ func TestConfigDefaultSnapshotBackend(t *testing.T) {
 	}
 }
 
+func TestConfigDefaultCacheCapacity(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Options{
+		StateStoreRoot: dir,
+		Defaults:       testDefaults(),
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+
+	maxBytes, err := mgr.Get("cache.capacity.maxBytes", true)
+	if err != nil {
+		t.Fatalf("Get cache maxBytes effective: %v", err)
+	}
+	if got, ok := asInt(maxBytes); !ok || got != 0 {
+		t.Fatalf("expected default maxBytes=0, got %#v", maxBytes)
+	}
+
+	high, err := mgr.Get("cache.capacity.highWatermark", true)
+	if err != nil {
+		t.Fatalf("Get cache highWatermark effective: %v", err)
+	}
+	if got, ok := asFloat(high); !ok || got != 0.90 {
+		t.Fatalf("expected default highWatermark=0.90, got %#v", high)
+	}
+
+	low, err := mgr.Get("cache.capacity.lowWatermark", true)
+	if err != nil {
+		t.Fatalf("Get cache lowWatermark effective: %v", err)
+	}
+	if got, ok := asFloat(low); !ok || got != 0.80 {
+		t.Fatalf("expected default lowWatermark=0.80, got %#v", low)
+	}
+
+	age, err := mgr.Get("cache.capacity.minStateAge", true)
+	if err != nil {
+		t.Fatalf("Get cache minStateAge effective: %v", err)
+	}
+	if age != "10m" {
+		t.Fatalf("expected default minStateAge=10m, got %#v", age)
+	}
+}
+
 func TestConfigSchemaValidationRejects(t *testing.T) {
 	dir := t.TempDir()
 	mgr, err := NewManager(Options{
@@ -423,6 +466,41 @@ func TestConfigSchemaValidationRejects(t *testing.T) {
 	}
 	if _, err := mgr.Set("snapshot.backend", "bad"); err == nil {
 		t.Fatalf("expected validation error for snapshot backend")
+	}
+	if _, err := mgr.Set("cache.capacity.maxBytes", -1); err == nil {
+		t.Fatalf("expected validation error for negative cache maxBytes")
+	}
+	if _, err := mgr.Set("cache.capacity.reserveBytes", -1); err == nil {
+		t.Fatalf("expected validation error for negative cache reserveBytes")
+	}
+	if _, err := mgr.Set("cache.capacity.highWatermark", 0.9); err != nil {
+		t.Fatalf("expected cache highWatermark=0.9 to be valid, got %v", err)
+	}
+	if _, err := mgr.Set("cache.capacity.lowWatermark", 0.9); err == nil {
+		t.Fatalf("expected validation error for lowWatermark >= highWatermark")
+	}
+	if _, err := mgr.Set("cache.capacity.lowWatermark", 0.7); err != nil {
+		t.Fatalf("expected cache lowWatermark=0.7 to be valid, got %v", err)
+	}
+	if _, err := mgr.Set("cache.capacity.minStateAge", "bad"); err == nil {
+		t.Fatalf("expected validation error for bad minStateAge")
+	}
+}
+
+func TestConfigSchemaValidationRejectsHighWatermarkBelowLow(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Options{
+		StateStoreRoot: dir,
+		Defaults:       testDefaults(),
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if _, err := mgr.Set("cache.capacity.lowWatermark", 0.85); err != nil {
+		t.Fatalf("expected lowWatermark=0.85 to be valid, got %v", err)
+	}
+	if _, err := mgr.Set("cache.capacity.highWatermark", 0.80); err == nil {
+		t.Fatalf("expected validation error for highWatermark <= lowWatermark")
 	}
 }
 
@@ -460,8 +538,62 @@ func TestValidateValueVariants(t *testing.T) {
 	if err := validateValue("snapshot.backend", 1); err == nil {
 		t.Fatalf("expected non-string snapshot backend to be rejected")
 	}
+	if err := validateValue("cache.capacity.maxBytes", int64(0)); err != nil {
+		t.Fatalf("expected maxBytes=0 to be valid")
+	}
+	if err := validateValue("cache.capacity.maxBytes", -1); err == nil {
+		t.Fatalf("expected negative maxBytes to be rejected")
+	}
+	if err := validateValue("cache.capacity.reserveBytes", int64(1024)); err != nil {
+		t.Fatalf("expected reserveBytes int to be valid")
+	}
+	if err := validateValue("cache.capacity.reserveBytes", -1); err == nil {
+		t.Fatalf("expected negative reserveBytes to be rejected")
+	}
+	if err := validateValue("cache.capacity.highWatermark", 0.9); err != nil {
+		t.Fatalf("expected highWatermark=0.9 to be valid")
+	}
+	if err := validateValue("cache.capacity.lowWatermark", 0.8); err != nil {
+		t.Fatalf("expected lowWatermark=0.8 to be valid")
+	}
+	if err := validateValue("cache.capacity.lowWatermark", 0.95); err != nil {
+		t.Fatalf("expected lowWatermark numeric range check to pass")
+	}
+	if err := validateValue("cache.capacity.minStateAge", "10m"); err != nil {
+		t.Fatalf("expected minStateAge=10m to be valid")
+	}
+	if err := validateValue("cache.capacity.minStateAge", "bad"); err == nil {
+		t.Fatalf("expected invalid minStateAge to be rejected")
+	}
 	if err := validateValue("features.other", "ok"); err != nil {
 		t.Fatalf("expected other path to pass")
+	}
+}
+
+func TestAsFloatVariants(t *testing.T) {
+	cases := []struct {
+		name   string
+		value  any
+		want   float64
+		wantOK bool
+	}{
+		{name: "float32", value: float32(0.75), want: 0.75, wantOK: true},
+		{name: "float64", value: 0.5, want: 0.5, wantOK: true},
+		{name: "int", value: 1, want: 1, wantOK: true},
+		{name: "int32", value: int32(2), want: 2, wantOK: true},
+		{name: "int64", value: int64(3), want: 3, wantOK: true},
+		{name: "json-number", value: json.Number("0.9"), want: 0.9, wantOK: true},
+		{name: "bad-json-number", value: json.Number("bad"), wantOK: false},
+		{name: "bad-type", value: "nope", wantOK: false},
+	}
+	for _, tc := range cases {
+		got, ok := asFloat(tc.value)
+		if ok != tc.wantOK {
+			t.Fatalf("%s: asFloat(%#v) ok=%v want=%v", tc.name, tc.value, ok, tc.wantOK)
+		}
+		if ok && got != tc.want {
+			t.Fatalf("%s: asFloat(%#v) got=%f want=%f", tc.name, tc.value, got, tc.want)
+		}
 	}
 }
 
@@ -925,9 +1057,9 @@ func TestSyncDirIgnoresSyncError(t *testing.T) {
 
 func TestAsIntConversions(t *testing.T) {
 	cases := []struct {
-		value   any
-		want    int64
-		wantOK  bool
+		value  any
+		want   int64
+		wantOK bool
 	}{
 		{value: int(5), want: 5, wantOK: true},
 		{value: int32(6), want: 6, wantOK: true},
@@ -1038,6 +1170,15 @@ func writeConfigFile(t *testing.T, path string, value map[string]any) {
 
 func testDefaults() map[string]any {
 	return map[string]any{
+		"cache": map[string]any{
+			"capacity": map[string]any{
+				"maxBytes":      0,
+				"reserveBytes":  nil,
+				"highWatermark": 0.90,
+				"lowWatermark":  0.80,
+				"minStateAge":   "10m",
+			},
+		},
 		"snapshot": map[string]any{
 			"backend": "auto",
 		},
