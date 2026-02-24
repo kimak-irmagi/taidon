@@ -164,11 +164,65 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! podman machine inspect >/dev/null 2>&1; then
-            podman machine init --cpus 2 --memory 4096 --disk-size 20
+          machine_name="podman-machine-default"
+
+          start_existing() {
+            if podman machine inspect "$machine_name" >/dev/null 2>&1; then
+              podman machine start "$machine_name" || return 1
+              return 0
+            fi
+            return 1
+          }
+
+          init_and_start() {
+            local provider="${1:-}"
+            local args=(--cpus 2 --memory 4096 --disk-size 20)
+            if [[ -n "$provider" ]]; then
+              args+=(--provider "$provider")
+            fi
+            podman machine init "${args[@]}" "$machine_name" || return 1
+            podman machine start "$machine_name" || return 1
+          }
+
+          recreate_and_retry() {
+            podman machine stop "$machine_name" || true
+            podman machine rm -f "$machine_name" || true
+
+            if ! init_and_start ""; then
+              echo "Default machine provider failed; trying qemu provider (if supported)."
+              podman machine rm -f "$machine_name" || true
+              if podman machine init --help | grep -q -- "--provider"; then
+                init_and_start "qemu"
+              else
+                echo "Podman machine init does not support --provider on this runner."
+                return 1
+              fi
+            fi
+          }
+
+          if ! start_existing; then
+            if ! init_and_start ""; then
+              recreate_and_retry
+            fi
           fi
-          podman machine start
+
+          if ! podman info >/dev/null 2>&1; then
+            echo "Podman machine is not healthy after initial start; recreating."
+            recreate_and_retry
+          fi
+
           podman info
+
+      - name: Debug Podman machine on failure
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          podman --version || true
+          podman machine list || true
+          podman machine inspect podman-machine-default || true
+          ls -la ~/.local/share/containers/podman/machine || true
+          find ~/.local/share/containers/podman/machine -maxdepth 3 -type f -name "*.log" -print -exec tail -n 200 {} \; || true
 
       - name: Run macOS e2e probe with podman runtime
         working-directory: frontend/cli-go
@@ -183,7 +237,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          podman machine stop || true
+          podman machine stop podman-machine-default || true
 
   coverage-merge:
     runs-on: ubuntu-latest
