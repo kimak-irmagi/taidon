@@ -1,6 +1,7 @@
 # sqlrs Engine Internals (Local Profile)
 
-Scope: internal structure of the local `sqlrs-engine` process. This document describes the current package-level design and request flows implemented in `backend/local-engine-go`.
+Scope: internal structure of the local `sqlrs-engine` process. This document
+describes the current package-level design and request flows implemented in `backend/local-engine-go`.
 
 ## 1. Component Model
 
@@ -91,7 +92,8 @@ There is no separate `internal/executor` package in the current implementation.
 - validates run kind (`psql`, `pgbench`) and arguments
 - resolves instance by id/name via registry
 - executes command via runtime
-- on missing container, recreates it from `runtime_dir` (if present), updates `runtime_id`, and emits recovery log events.
+- on missing container, recreates it from `runtime_dir` (if present),
+  updates `runtime_id`, and emits recovery log events.
 
 ### 1.5 StateFS and snapshot backends
 
@@ -113,7 +115,8 @@ There is no separate `internal/executor` package in the current implementation.
 ### 1.7 Deletion and connection tracking
 
 - `internal/deletion` builds and executes delete trees for instances/states.
-- `internal/conntrack` is pluggable; current local wiring in `cmd/sqlrs-engine` uses `conntrack.Noop`.
+- `internal/conntrack` is pluggable; current local wiring in `cmd/sqlrs-engine`
+  uses `conntrack.Noop`.
 
 ### 1.8 Registry and metadata store
 
@@ -124,8 +127,8 @@ There is no separate `internal/executor` package in the current implementation.
 ### 1.9 Config and discovery
 
 - runtime config is stored in `<state-store-root>/config.json` and exposed via `/v1/config*`.
-- runtime config includes `container.runtime` (`auto|docker|podman`) used to select the local container runtime mode.
-- engine discovery for CLI uses `engine.json` written by `cmd/sqlrs-engine` (endpoint, pid, auth token, version, instance id).
+- engine discovery for CLI uses `engine.json` written by `cmd/sqlrs-engine`
+  (endpoint, pid, auth token, version, instance id).
 
 ## 2. Flows (Local)
 
@@ -247,13 +250,16 @@ sequenceDiagram
 
 ## 5. Error handling
 
-- Long operations return a prepare job; terminal failures are reported via job status and event stream.
+- Long operations return a prepare job; terminal failures are reported via job
+  status and event stream.
 - Validation failures return `400` with structured error payload.
 - Runtime availability failures (Docker/Podman) are surfaced as actionable API errors.
-- If cached state is detected as dirty/incomplete, prepare invalidates and rebuilds it.
+- If cached state is detected as dirty/incomplete, prepare invalidates and
+  rebuilds it.
 
 ## 6. Evolution hooks
 
-- Keep runtime adapter replaceable (Docker/Podman and future OCI runtimes) without changing API contracts.
+- Keep runtime adapter replaceable (Docker/Podman and future OCI runtimes) without
+  changing API contracts.
 - Swap/extend StateFS backends while keeping `statefs.StateFS` stable.
 - Replace `conntrack.Noop` with active DB connection tracking in local/shared profiles.
