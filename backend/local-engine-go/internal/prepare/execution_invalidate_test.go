@@ -116,6 +116,29 @@ func TestInvalidateDirtyCachedStateDirtyPIDDeleteError(t *testing.T) {
 	}
 }
 
+func TestInvalidateDirtyCachedStateDirtyPIDRemoveError(t *testing.T) {
+	store := &fakeStore{statesByID: map[string]store.StateEntry{
+		"state-1": {StateID: "state-1", ImageID: "image-1"},
+	}}
+	mgr := newManagerWithStoreAndStateFS(t, store, &fakeStateFS{removeErr: errors.New("boom")})
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "postmaster.pid"), []byte("1"), 0o600); err != nil {
+		t.Fatalf("write pid: %v", err)
+	}
+
+	_, errResp := mgr.invalidateDirtyCachedState(context.Background(), "job-1", preparedRequest{}, "state-1")
+	if errResp == nil || !strings.Contains(errResp.Message, "cannot remove dirty cached state dir") {
+		t.Fatalf("expected remove error, got %+v", errResp)
+	}
+}
+
 func TestInvalidateDirtyCachedStateMissingPGVersion(t *testing.T) {
 	store := &fakeStore{statesByID: map[string]store.StateEntry{
 		"state-1": {StateID: "state-1", ImageID: "image-1"},
@@ -136,9 +159,52 @@ func TestInvalidateDirtyCachedStateMissingPGVersion(t *testing.T) {
 	}
 }
 
-func newManagerWithStoreAndStateFS(t *testing.T, st store.Store, fs statefs.StateFS) *Manager {
+func TestInvalidateDirtyCachedStateMissingPGVersionRemoveError(t *testing.T) {
+	store := &fakeStore{statesByID: map[string]store.StateEntry{
+		"state-1": {StateID: "state-1", ImageID: "image-1"},
+	}}
+	mgr := newManagerWithStateFS(t, store, &fakeStateFS{removeErr: errors.New("boom")})
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	_, errResp := mgr.invalidateDirtyCachedState(context.Background(), "job-1", preparedRequest{}, "state-1")
+	if errResp == nil || !strings.Contains(errResp.Message, "cannot remove cached state dir missing PG_VERSION") {
+		t.Fatalf("expected remove error, got %+v", errResp)
+	}
+}
+
+func TestInvalidateDirtyCachedStateMissingPGVersionDeleteError(t *testing.T) {
+	store := &errorStore{
+		fakeStore: fakeStore{statesByID: map[string]store.StateEntry{
+			"state-1": {StateID: "state-1", ImageID: "image-1"},
+		}},
+		deleteErr: errors.New("boom"),
+	}
+	mgr := newManagerWithStoreAndStateFS(t, store, &fakeStateFS{})
+
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	_, errResp := mgr.invalidateDirtyCachedState(context.Background(), "job-1", preparedRequest{}, "state-1")
+	if errResp == nil || !strings.Contains(errResp.Message, "cannot delete cached state missing PG_VERSION") {
+		t.Fatalf("expected delete error, got %+v", errResp)
+	}
+}
+
+func newManagerWithStoreAndStateFS(t *testing.T, st store.Store, fs statefs.StateFS) *PrepareService {
 	t.Helper()
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          st,
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},

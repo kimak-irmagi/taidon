@@ -455,13 +455,13 @@ func (f *faultQueueStore) Close() error {
 
 func TestNewManagerRequiresStore(t *testing.T) {
 	queueStore := newQueueStore(t)
-	if _, err := NewManager(Options{Queue: queueStore}); err == nil {
+	if _, err := NewPrepareService(Options{Queue: queueStore}); err == nil {
 		t.Fatalf("expected error when store is nil")
 	}
 }
 
 func TestNewManagerRequiresQueue(t *testing.T) {
-	if _, err := NewManager(Options{Store: &fakeStore{}}); err == nil {
+	if _, err := NewPrepareService(Options{Store: &fakeStore{}}); err == nil {
 		t.Fatalf("expected error when queue is nil")
 	}
 }
@@ -469,7 +469,7 @@ func TestNewManagerRequiresQueue(t *testing.T) {
 func TestNewManagerRequiresRuntime(t *testing.T) {
 	queueStore := newQueueStore(t)
 	stateRoot := filepath.Join(t.TempDir(), "state-store")
-	if _, err := NewManager(Options{
+	if _, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		StateFS:        &fakeStateFS{},
@@ -483,7 +483,7 @@ func TestNewManagerRequiresRuntime(t *testing.T) {
 func TestNewManagerRequiresStateFS(t *testing.T) {
 	queueStore := newQueueStore(t)
 	stateRoot := filepath.Join(t.TempDir(), "state-store")
-	if _, err := NewManager(Options{
+	if _, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -497,7 +497,7 @@ func TestNewManagerRequiresStateFS(t *testing.T) {
 func TestNewManagerRequiresDBMS(t *testing.T) {
 	queueStore := newQueueStore(t)
 	stateRoot := filepath.Join(t.TempDir(), "state-store")
-	if _, err := NewManager(Options{
+	if _, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -510,7 +510,7 @@ func TestNewManagerRequiresDBMS(t *testing.T) {
 
 func TestNewManagerRequiresStateStoreRoot(t *testing.T) {
 	queueStore := newQueueStore(t)
-	if _, err := NewManager(Options{
+	if _, err := NewPrepareService(Options{
 		Store:   &fakeStore{},
 		Queue:   queueStore,
 		Runtime: &fakeRuntime{},
@@ -545,7 +545,7 @@ func TestSubmitRejectsMissingImageID(t *testing.T) {
 
 func TestSubmitIDGenFails(t *testing.T) {
 	queueStore := newQueueStore(t)
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -2440,6 +2440,74 @@ func TestStartRuntimeFromImageSuccess(t *testing.T) {
 	}
 }
 
+func TestStartRuntimeRejectsRuntimeDirNestedInStateDir(t *testing.T) {
+	stateRoot := t.TempDir()
+	store := &fakeStore{
+		statesByID: map[string]store.StateEntry{
+			"state-1": {StateID: "state-1", ImageID: "image-1"},
+		},
+	}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{stateRoot: stateRoot})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	paths, err := resolveStatePaths(stateRoot, "image-1", "state-1", mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
+	}
+
+	jobID := filepath.Join("..", "engines", "image-1", "latest", "states", "state-1", "nested")
+	_, errResp := mgr.startRuntime(context.Background(), jobID, prepared, &TaskInput{Kind: "state", ID: "state-1"})
+	if errResp == nil || !strings.Contains(errResp.Message, "runtime dir is nested inside state dir") {
+		t.Fatalf("expected nested runtime dir error, got %+v", errResp)
+	}
+}
+
+func TestExecuteStateTaskLiquibaseRequiresPendingChangesets(t *testing.T) {
+	store := &fakeStore{}
+	liquibase := &fakeLiquibaseRunner{output: ""}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{
+		runtime:   &fakeRuntime{},
+		liquibase: liquibase,
+	})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1",
+		LiquibaseArgs: []string{"update"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: "state-1",
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+		Status: StatusQueued,
+	}
+
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || !strings.Contains(errResp.Message, "no pending changesets") {
+		t.Fatalf("expected no pending changesets error, got %+v", errResp)
+	}
+	if len(liquibase.runs) == 0 {
+		t.Fatalf("expected liquibase planning call")
+	}
+}
+
 func TestEnsureRuntimeRequiresRunner(t *testing.T) {
 	store := &fakeStore{}
 	mgr := newManager(t, store)
@@ -2772,7 +2840,7 @@ func TestWaitForEventCancel(t *testing.T) {
 
 func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 	queueStore := newQueueStore(t)
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -2832,7 +2900,7 @@ func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 
 func TestHeartbeatRepeatsLogEvent(t *testing.T) {
 	queueStore := newQueueStore(t)
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -2888,7 +2956,7 @@ func TestHeartbeatRepeatsLogEvent(t *testing.T) {
 
 func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 	queueStore := newQueueStore(t)
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -2964,6 +3032,45 @@ func TestHeartbeatStopsAfterTaskComplete(t *testing.T) {
 	}
 }
 
+func TestUpdateTaskStatusIncludesErrorEventPayload(t *testing.T) {
+	queueStore := newQueueStore(t)
+	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
+	req := Request{PrepareKind: "psql", ImageID: "image-1"}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", []queue.TaskRecord{
+		{JobID: "job-1", TaskID: "execute-0", Position: 0, Type: "state_execute", Status: StatusQueued},
+	}); err != nil {
+		t.Fatalf("ReplaceTasks: %v", err)
+	}
+
+	finishedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	errResp := errorResponse("internal_error", "psql execution failed", "exit status 3")
+	if err := mgr.updateTaskStatus(context.Background(), "job-1", "execute-0", StatusFailed, nil, &finishedAt, errResp); err != nil {
+		t.Fatalf("updateTaskStatus: %v", err)
+	}
+
+	events, ok, _, err := mgr.EventsSince("job-1", 0)
+	if err != nil || !ok {
+		t.Fatalf("EventsSince: ok=%v err=%v", ok, err)
+	}
+	var failedTask *Event
+	for i := range events {
+		if events[i].Type == "task" && events[i].TaskID == "execute-0" && events[i].Status == StatusFailed {
+			failedTask = &events[i]
+			break
+		}
+	}
+	if failedTask == nil {
+		t.Fatalf("expected failed task event, got %+v", events)
+	}
+	if failedTask.Message != "psql execution failed" {
+		t.Fatalf("expected task message, got %+v", failedTask)
+	}
+	if failedTask.Error == nil || failedTask.Error.Details != "exit status 3" {
+		t.Fatalf("expected task error payload, got %+v", failedTask)
+	}
+}
+
 func TestAppendLogIgnoresEmpty(t *testing.T) {
 	queueStore := newQueueStore(t)
 	mgr := newManagerWithQueue(t, &fakeStore{}, queueStore)
@@ -3026,9 +3133,23 @@ func TestNormalizeHeartbeat(t *testing.T) {
 	}
 }
 
+func TestSummarizeLogDetails(t *testing.T) {
+	if got := summarizeLogDetails(""); got != "" {
+		t.Fatalf("expected empty summary, got %q", got)
+	}
+	if got := summarizeLogDetails("line1\nline2"); got != "line1 | line2" {
+		t.Fatalf("unexpected newline summary: %q", got)
+	}
+	long := strings.Repeat("x", 600)
+	got := summarizeLogDetails(long)
+	if !strings.Contains(got, "(truncated)") {
+		t.Fatalf("expected truncation marker, got %q", got)
+	}
+}
+
 func TestHeartbeatStopsOnStatusEvent(t *testing.T) {
 	queueStore := newQueueStore(t)
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -3094,7 +3215,7 @@ func TestStartHeartbeatNoopWhenCancelSet(t *testing.T) {
 }
 
 func TestStartHeartbeatNoEvent(t *testing.T) {
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},
@@ -3280,7 +3401,7 @@ func (errorReader) Read([]byte) (int, error) {
 
 func TestNewManagerDefaultIDGen(t *testing.T) {
 	queueStore := newQueueStore(t)
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          queueStore,
 		Runtime:        &fakeRuntime{},
@@ -4089,17 +4210,17 @@ func (s *signatureQueueStore) DeleteJob(ctx context.Context, jobID string) error
 	return s.Store.DeleteJob(ctx, jobID)
 }
 
-func newManager(t *testing.T, store store.Store) *Manager {
+func newManager(t *testing.T, store store.Store) *PrepareService {
 	t.Helper()
 	return newManagerWithQueue(t, store, newQueueStore(t))
 }
 
-func newManagerWithQueue(t *testing.T, store store.Store, queueStore queue.Store) *Manager {
+func newManagerWithQueue(t *testing.T, store store.Store, queueStore queue.Store) *PrepareService {
 	t.Helper()
 	return newManagerWithDeps(t, store, queueStore, nil)
 }
 
-func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store, deps *testDeps) *Manager {
+func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store, deps *testDeps) *PrepareService {
 	t.Helper()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	if deps == nil {
@@ -4127,7 +4248,7 @@ func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store,
 	if stateRoot == "" {
 		stateRoot = filepath.Join(t.TempDir(), "state-store")
 	}
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          store,
 		Queue:          queueStore,
 		Runtime:        deps.runtime,
@@ -4224,11 +4345,7 @@ func TestConfigValueToInt(t *testing.T) {
 }
 
 func TestRemoveJobDirNoopAndDelete(t *testing.T) {
-	var nilMgr *Manager
-	if err := nilMgr.removeJobDir("job-1"); err != nil {
-		t.Fatalf("expected nil receiver to be ignored: %v", err)
-	}
-	mgr := &Manager{}
+	mgr := &PrepareService{}
 	if err := mgr.removeJobDir("job-1"); err != nil {
 		t.Fatalf("expected empty state store root to be ignored: %v", err)
 	}
@@ -4250,7 +4367,7 @@ func TestRemoveJobDirNoopAndDelete(t *testing.T) {
 
 func TestRemoveJobDirBtrfsRuntimeSubvolume(t *testing.T) {
 	snap := &fakeStateFS{kind: "btrfs"}
-	mgr := &Manager{
+	mgr := &PrepareService{
 		stateStoreRoot: t.TempDir(),
 		statefs:        snap,
 	}
@@ -4437,7 +4554,7 @@ func TestManagerLogHelpers(t *testing.T) {
 	log.SetOutput(io.Discard)
 	t.Cleanup(func() { log.SetOutput(prev) })
 
-	mgr := &Manager{}
+	mgr := &PrepareService{}
 	mgr.logJob("job-1", "created")
 	mgr.logJob("", "created")
 	mgr.logTask("job-1", "task-1", "status=%s", StatusQueued)

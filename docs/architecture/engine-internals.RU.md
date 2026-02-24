@@ -7,7 +7,10 @@
 ```mermaid
 flowchart LR
   API["HTTP API (internal/httpapi)"]
-  PREP["Prepare Manager (internal/prepare)"]
+  PREP["Prepare Service Facade (internal/prepare)"]
+  COORD["prepare.jobCoordinator (internal)"]
+  EXEC["prepare.taskExecutor (internal)"]
+  SNAP_ORCH["prepare.snapshotOrchestrator (internal)"]
   QUEUE["Prepare Queue Store (internal/prepare/queue)"]
   RUN["Run Manager (internal/run)"]
   DEL["Deletion Manager (internal/deletion)"]
@@ -30,12 +33,23 @@ flowchart LR
   API --> CFG
   API --> STREAM
 
-  PREP --> QUEUE
-  PREP --> STORE
-  PREP --> STATEFS
-  PREP --> RT
-  PREP --> DBMS
-  PREP --> CFG
+  PREP --> COORD
+  PREP --> EXEC
+  PREP --> SNAP_ORCH
+
+  COORD --> QUEUE
+  COORD --> STORE
+  COORD --> CFG
+  COORD --> EXEC
+
+  EXEC --> STORE
+  EXEC --> STATEFS
+  EXEC --> RT
+  EXEC --> DBMS
+  EXEC --> SNAP_ORCH
+
+  SNAP_ORCH --> STORE
+  SNAP_ORCH --> STATEFS
 
   RUN --> REG
   RUN --> RT
@@ -61,20 +75,23 @@ flowchart LR
   - удаление instance/state/job.
 - Стримит prepare- и run-события в формате NDJSON.
 
-### 1.2 Prepare manager (planner + executor)
+### 1.2 Prepare facade и внутренние компоненты
 
-`internal/prepare` владеет полным жизненным циклом prepare:
+`internal/prepare` по-прежнему владеет полным жизненным циклом prepare, но теперь имеет явные внутренние роли:
 
-- валидирует запрос (`prepare_kind`, args, image)
-- нормализует входы `psql`/`lb`
-- при необходимости резолвит image digest (`resolve_image` task)
-- строит план задач (`plan`, `state_execute`, `prepare_instance`)
-- выполняет задачи и делает snapshot состояний
-- пишет job/task/events в queue store
-- поддерживает `plan_only` (возврат tasks без создания instance)
-- поддерживает удаление job (`force`, `dry_run`) и retention trimming.
+- `prepare.PrepareService` (facade)
+  - публичные entrypoint-ы submit/status/events/delete для `httpapi`.
+- `jobCoordinator` (internal)
+  - нормализация/валидация запроса, planning, переходы queue/job/task/event, retention logic.
+- `taskExecutor` (internal)
+  - runtime/task execution и создание instance.
+- `snapshotOrchestrator` (internal)
+  - guard-логика инициализации base state, invalidation грязного cached state, snapshot/cache hygiene helpers.
+- Примечание по реализации:
+  - тяжёлые тела методов теперь живут непосредственно в методах компонентов;
+    переходная цепочка вызовов `Manager -> component -> Manager.*Impl` удалена.
 
-Отдельного пакета `internal/executor` в текущей реализации нет.
+Граница пакета не изменилась: всё остаётся в `internal/prepare`; это внутренние роли компонентов, а не отдельные пакеты.
 
 ### 1.3 Queue store
 
@@ -133,7 +150,10 @@ flowchart LR
 sequenceDiagram
   participant CLI as CLI
   participant API as Engine API
-  participant PREP as Prepare Manager
+  participant PREP as Prepare Facade
+  participant COORD as JobCoordinator
+  participant EXEC as TaskExecutor
+  participant SNAP as SnapshotOrchestrator
   participant QUEUE as Queue Store
   participant RT as Runtime
   participant DBMS as DBMS hooks
@@ -142,24 +162,28 @@ sequenceDiagram
 
   CLI->>API: POST /v1/prepare-jobs
   API->>PREP: Submit(request)
-  PREP->>QUEUE: create job + queued event
+  PREP->>COORD: submit + start orchestration
+  COORD->>QUEUE: create job + queued event
   API-->>CLI: 201 (job_id, events_url, status_url)
 
-  PREP->>PREP: validate + normalize args
-  PREP->>PREP: build plan tasks
-  PREP->>QUEUE: persist tasks + running/task events
+  COORD->>COORD: validate + normalize args
+  COORD->>COORD: build plan tasks
+  COORD->>QUEUE: persist tasks + running/task events
 
   loop for each uncached state_execute task
-    PREP->>RT: start/ensure runtime container
-    PREP->>PREP: execute psql/lb step
-    PREP->>DBMS: prepare snapshot
-    PREP->>STATEFS: snapshot state
-    PREP->>DBMS: resume snapshot
-    PREP->>STORE: create state metadata
+    COORD->>EXEC: execute state/task step
+    EXEC->>RT: start/ensure runtime container
+    EXEC->>EXEC: execute psql/lb step
+    EXEC->>SNAP: snapshot orchestration
+    SNAP->>DBMS: prepare snapshot
+    SNAP->>STATEFS: snapshot state
+    SNAP->>DBMS: resume snapshot
+    EXEC->>STORE: create state metadata
   end
 
-  PREP->>STORE: create instance metadata
-  PREP->>QUEUE: mark succeeded + result event
+  COORD->>EXEC: create prepared instance
+  EXEC->>STORE: create instance metadata
+  COORD->>QUEUE: mark succeeded + result event
   API-->>CLI: stream events + terminal status
 ```
 
@@ -169,13 +193,15 @@ sequenceDiagram
 sequenceDiagram
   participant CLI as CLI
   participant API as Engine API
-  participant PREP as Prepare Manager
+  participant PREP as Prepare Facade
+  participant COORD as JobCoordinator
   participant QUEUE as Queue Store
 
   CLI->>API: POST /v1/prepare-jobs (plan_only=true)
   API->>PREP: Submit(request)
-  PREP->>PREP: validate + normalize + build plan
-  PREP->>QUEUE: persist tasks and mark succeeded
+  PREP->>COORD: submit plan-only job
+  COORD->>COORD: validate + normalize + build plan
+  COORD->>QUEUE: persist tasks and mark succeeded
   API-->>CLI: terminal status with tasks
 ```
 
@@ -255,3 +281,54 @@ sequenceDiagram
 - Runtime adapter остается заменяемым (Docker/Podman и будущие OCI runtime) без изменения API contract.
 - Замена/расширение StateFS backend-ов при сохранении интерфейса `statefs.StateFS`.
 - Замена `conntrack.Noop` на активный DB connection tracking для local/shared профилей.
+
+## 7. Контракты helper-функций (нормативные)
+
+Helper-функции, влияющие на orchestration, safety, path mapping и API-видимые
+ошибки, считаются поведением уровня требований, а не "необязательной внутренней детализацией".
+
+### 7.1 Контракты helper-функций prepare
+
+- Lock-helper-ы (`withInitLock`, `withStateBuildLock`) должны обеспечивать
+  эксклюзивное выполнение build на target, ожидание активного владельца lock и
+  корректную отмену через context.
+- Marker-helper-ы (`.init.ok`, `.build.ok`) должны завершать ожидание
+  конкурирующих worker-ов, когда валидный результат init/build уже наблюдаем.
+- Helper-ы гигиены state (`postmasterPIDPath`, `hasPGVersion`,
+  `invalidateDirtyCachedState`) должны классифицировать dirty/incomplete cached
+  state и удалять и FS-артефакты, и metadata rows до повторного использования.
+- Helper-ы безопасности runtime directory должны отклонять runtime-директории,
+  вложенные в immutable state directory.
+
+### 7.2 Контракты helper-функций Liquibase
+
+- Helper-ы фильтрации аргументов должны отклонять user-provided connection/runtime flags,
+  которые нарушают детерминированное engine-controlled выполнение.
+- Path-helper-ы должны нормализовать/маппить `--changelog-file`,
+  `--defaults-file`, `--searchPath` в соответствии с выбранной средой выполнения.
+- Helper-ы трансформации команды должны сохранять parity planning/execution:
+  planning использует `updateSQL`, execution использует `update-count --count=1`.
+- Helper-ы host execution должны соблюдать `exec_mode` (`native` vs `windows-bat`),
+  сохранять семантику `work_dir`/env и стримить логи команды построчно.
+
+### 7.3 Контракты helper-функций runtime
+
+- Helper-ы классификации Docker-ошибок должны преобразовывать
+  daemon-unavailable сбои в actionable user-facing diagnostics.
+- Helper-ы host auth должны идемпотентно обеспечивать обязательные записи в `pg_hba.conf`.
+- Helper-ы парсинга порта должны fail closed при некорректном выводе `docker port`.
+
+### 7.4 Контракты helper-функций deletion и run
+
+- Helper-ы остановки runtime в deletion должны считать docker-daemon-unavailable
+  нефатальным случаем во время destructive cleanup.
+- Helper-ы очистки runtime directory должны сначала пытаться удаление через
+  StateFS, затем fallback на файловое удаление.
+- Guard-helper-ы аргументов run должны отклонять конфликтующие connection flags
+  в `run:psql` и `run:pgbench`.
+
+### 7.5 Контракты helper-функций HTTP stream
+
+- Helper-ы стрима prepare events должны обеспечивать упорядоченную доставку NDJSON,
+  ожидание новых событий до terminal-состояния и завершение при terminal status.
+

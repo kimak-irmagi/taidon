@@ -176,6 +176,139 @@ func TestHostLiquibaseRunnerNativeModeUsesWorkDirEnv(t *testing.T) {
 	}
 }
 
+func TestHostLiquibaseRunnerWindowsModeWithoutWorkDir(t *testing.T) {
+	prev := execCommand
+	t.Cleanup(func() { execCommand = prev })
+	var capturedName string
+	var capturedArgs []string
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		capturedName = name
+		capturedArgs = append([]string{}, args...)
+		return helperCommand(ctx, "", "", 0)
+	}
+
+	runner := hostLiquibaseRunner{}
+	_, err := runner.Run(context.Background(), LiquibaseRunRequest{
+		ExecPath: "C:\\Tools\\liquibase.bat",
+		ExecMode: "windows-bat",
+		Args:     []string{"update"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if capturedName != "cmd.exe" {
+		t.Fatalf("expected cmd.exe, got %q", capturedName)
+	}
+	if len(capturedArgs) < 4 || capturedArgs[0] != "/c" || capturedArgs[1] != "call" {
+		t.Fatalf("unexpected args: %v", capturedArgs)
+	}
+}
+
+func TestHostLiquibaseRunnerWindowsModeWithoutWorkDirLogsPreview(t *testing.T) {
+	prev := execCommand
+	t.Cleanup(func() { execCommand = prev })
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return helperCommand(ctx, "", "", 0)
+	}
+
+	var logs []string
+	ctx := engineRuntime.WithLogSink(context.Background(), func(line string) { logs = append(logs, line) })
+	runner := hostLiquibaseRunner{}
+	_, err := runner.Run(ctx, LiquibaseRunRequest{
+		ExecPath: "C:\\Tools\\liquibase.bat",
+		ExecMode: "windows-bat",
+		Args:     []string{"update"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !containsLine(logs, "exec: cmd.exe /c call") {
+		t.Fatalf("expected no-workdir windows preview log, got %v", logs)
+	}
+}
+
+func TestHostLiquibaseRunnerDefaultsExecPathAndLogsEmptyArgs(t *testing.T) {
+	prev := execCommand
+	t.Cleanup(func() { execCommand = prev })
+	var capturedName string
+	var capturedArgs []string
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		capturedName = name
+		capturedArgs = append([]string{}, args...)
+		return helperCommand(ctx, "", "", 0)
+	}
+
+	var logs []string
+	ctx := engineRuntime.WithLogSink(context.Background(), func(line string) { logs = append(logs, line) })
+
+	runner := hostLiquibaseRunner{}
+	_, err := runner.Run(ctx, LiquibaseRunRequest{
+		ExecPath: "",
+		ExecMode: "native",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if capturedName != "liquibase" {
+		t.Fatalf("expected default liquibase exec path, got %q", capturedName)
+	}
+	if len(capturedArgs) != 0 {
+		t.Fatalf("expected no args, got %v", capturedArgs)
+	}
+	found := false
+	for _, line := range logs {
+		if line == "exec: raw args=<empty>" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected empty-args log line, got %v", logs)
+	}
+}
+
+func TestHostLiquibaseRunnerWindowsModeLogsWithArgs(t *testing.T) {
+	prev := execCommand
+	t.Cleanup(func() { execCommand = prev })
+	execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		return helperCommand(ctx, "", "", 0)
+	}
+
+	var logs []string
+	ctx := engineRuntime.WithLogSink(context.Background(), func(line string) { logs = append(logs, line) })
+	runner := hostLiquibaseRunner{}
+	_, err := runner.Run(ctx, LiquibaseRunRequest{
+		ExecPath: "C:\\Tools\\liquibase.bat",
+		ExecMode: "windows-bat",
+		Args:     []string{"update"},
+		WorkDir:  "C:\\work",
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(logs) == 0 {
+		t.Fatalf("expected log lines")
+	}
+	if !containsLine(logs, "exec: raw args=") {
+		t.Fatalf("expected raw args log line, got %v", logs)
+	}
+	if !containsLine(logs, "exec: cmd.exe /c cd /d") {
+		t.Fatalf("expected windows command preview log line, got %v", logs)
+	}
+}
+
+func TestRunCommandWithSinkStartError(t *testing.T) {
+	ctx := engineRuntime.WithLogSink(context.Background(), func(line string) {})
+	cmd := exec.CommandContext(ctx, "definitely-missing-command-for-test")
+	out, err := runCommandWithSink(ctx, cmd)
+	if err == nil {
+		t.Fatalf("expected start error")
+	}
+	if out != "" {
+		t.Fatalf("expected empty output on start error, got %q", out)
+	}
+}
+
 func helperCommand(ctx context.Context, stdout string, stderr string, exitCode int) *exec.Cmd {
 	args := []string{"-test.run=TestHelperProcess", "--", stdout, stderr, strconv.Itoa(exitCode)}
 	cmd := exec.CommandContext(ctx, os.Args[0], args...)
@@ -209,4 +342,13 @@ func TestHelperProcess(t *testing.T) {
 		fmt.Fprint(os.Stderr, stderr)
 	}
 	os.Exit(code)
+}
+
+func containsLine(lines []string, prefix string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, prefix) {
+			return true
+		}
+	}
+	return false
 }

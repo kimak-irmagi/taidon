@@ -14,7 +14,7 @@ type stringerVal struct{}
 func (stringerVal) String() string { return "INFO" }
 
 func TestNewManagerDefaults(t *testing.T) {
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},
@@ -44,7 +44,7 @@ func TestRecoverQueueError(t *testing.T) {
 }
 
 func TestSubmitIDGenError(t *testing.T) {
-	mgr, err := NewManager(Options{
+	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
 		Queue:          newQueueStore(t),
 		Runtime:        &fakeRuntime{},

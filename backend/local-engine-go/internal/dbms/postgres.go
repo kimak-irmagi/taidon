@@ -53,6 +53,9 @@ func (c *PostgresConnector) PrepareSnapshot(ctx context.Context, instance runtim
 			}
 			return verifyErr
 		}
+		if chmodErr := c.relaxHostSnapshotAccess(ctx, instance); chmodErr != nil {
+			return chmodErr
+		}
 	}
 	return err
 }
@@ -63,6 +66,9 @@ func (c *PostgresConnector) ResumeSnapshot(ctx context.Context, instance runtime
 	}
 	if c.logInfoEnabled() {
 		log.Printf("pg_ctl start start instance=%s", instance.ID)
+	}
+	if err := c.hardenDataDirPermissions(ctx, instance); err != nil {
+		return err
 	}
 	output, err := c.Runtime.Exec(ctx, instance.ID, runtime.ExecRequest{
 		User: "postgres",
@@ -76,6 +82,28 @@ func (c *PostgresConnector) ResumeSnapshot(ctx context.Context, instance runtime
 		log.Printf("pg_ctl start result instance=%s err=%v output=%q", instance.ID, err, strings.TrimSpace(output))
 	}
 	return err
+}
+
+func (c *PostgresConnector) relaxHostSnapshotAccess(ctx context.Context, instance runtime.Instance) error {
+	_, err := c.Runtime.Exec(ctx, instance.ID, runtime.ExecRequest{
+		User: "postgres",
+		Args: []string{"chmod", "-R", "a+rX", runtime.PostgresDataDir},
+	})
+	if err != nil {
+		return fmt.Errorf("cannot relax postgres data permissions: %w", err)
+	}
+	return nil
+}
+
+func (c *PostgresConnector) hardenDataDirPermissions(ctx context.Context, instance runtime.Instance) error {
+	_, err := c.Runtime.Exec(ctx, instance.ID, runtime.ExecRequest{
+		User: "postgres",
+		Args: []string{"chmod", "-R", "0700", runtime.PostgresDataDir},
+	})
+	if err != nil {
+		return fmt.Errorf("cannot harden postgres data permissions: %w", err)
+	}
+	return nil
 }
 
 func (c *PostgresConnector) verifyStopped(ctx context.Context, instance runtime.Instance) error {

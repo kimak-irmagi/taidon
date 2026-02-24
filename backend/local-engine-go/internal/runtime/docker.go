@@ -29,6 +29,8 @@ var (
 
 const (
 	defaultDockerBinary = "docker"
+	dockerHostPathStyleEnv = "SQLRS_DOCKER_HOST_PATH_STYLE"
+	dockerHostPathLinux   = "linux"
 )
 
 type Options struct {
@@ -159,12 +161,15 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 	if ok, err := r.pgVersionReady(ctx, imageID, dataDir); err != nil {
 		return err
 	} else if ok {
+		if err := r.ensureHostReadableDataDir(ctx, imageID, dataDir); err != nil {
+			return err
+		}
 		return ensureHostAuth(dataDir)
 	}
 	args := []string{
 		"run", "--rm",
 		"-u", "postgres",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"initdb",
 		"--username=sqlrs",
@@ -187,6 +192,9 @@ func (r *DockerRuntime) InitBase(ctx context.Context, imageID string, dataDir st
 		return fmt.Errorf("initdb failed: %w", err)
 	}
 	if ok, checkErr := r.pgVersionReady(ctx, imageID, dataDir); checkErr == nil && ok {
+		if err := r.ensureHostReadableDataDir(ctx, imageID, dataDir); err != nil {
+			return err
+		}
 		return ensureHostAuth(dataDir)
 	} else if checkErr != nil {
 		return checkErr
@@ -204,7 +212,7 @@ func (r *DockerRuntime) pgVersionReady(ctx context.Context, imageID string, data
 func (r *DockerRuntime) hasPGVersionInContainer(ctx context.Context, imageID string, dataDir string) (bool, error) {
 	args := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"test", "-f", filepath.ToSlash(filepath.Join(PostgresDataDirRoot, "pgdata", "PG_VERSION")),
 	}
@@ -248,6 +256,11 @@ func ensureHostAuth(dataDir string) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
+		if errors.Is(err, os.ErrPermission) {
+			// Some runtimes initialize pgdata with container-only ownership (e.g. uid 999, mode 0700).
+			// In that case host-side patching is not possible, but initdb host auth settings still apply.
+			return nil
+		}
 		return err
 	}
 	existing := string(content)
@@ -268,10 +281,16 @@ func ensureHostAuth(dataDir string) error {
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil
+		}
 		return err
 	}
 	defer f.Close()
 	if _, err := f.WriteString(b.String()); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil
+		}
 		return err
 	}
 	return nil
@@ -334,9 +353,10 @@ func (r *DockerRuntime) inspectImageDigest(ctx context.Context, imageID string) 
 }
 
 func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, dataDir string) error {
+	ensureHostDataDirAccess(dataDir)
 	args := []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
 		"mkdir", "-p", PostgresDataDir,
 	}
@@ -345,23 +365,51 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 	}
 	args = []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
-		"chown", "-R", "postgres:postgres", PostgresDataDirRoot,
+		"chown", "-R", "postgres:postgres", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
 	}
 	args = []string{
 		"run", "--rm",
-		"-v", fmt.Sprintf("%s:%s", dataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
 		imageID,
-		"chmod", "-R", "0700", PostgresDataDirRoot,
+		"chmod", "-R", "0700", PostgresDataDir,
 	}
 	if err := r.runPermissionCommand(ctx, args); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (r *DockerRuntime) ensureHostReadableDataDir(ctx context.Context, imageID string, dataDir string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	args := []string{
+		"run", "--rm",
+		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
+		imageID,
+		"chmod", "-R", "a+rX", PostgresDataDir,
+	}
+	if err := r.runPermissionCommand(ctx, args); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureHostDataDirAccess(dataDir string) {
+	if runtime.GOOS != "linux" {
+		return
+	}
+	info, err := os.Stat(dataDir)
+	if err != nil || !info.IsDir() {
+		return
+	}
+	// Best effort: allow container postgres user to traverse mounted base dir.
+	_ = os.Chmod(dataDir, 0o755)
 }
 
 func (r *DockerRuntime) runPermissionCommand(ctx context.Context, args []string) error {
@@ -391,7 +439,7 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 	args := []string{
 		"run", "-d", "--rm",
 		"-p", "0:5432",
-		"-v", fmt.Sprintf("%s:%s", req.DataDir, PostgresDataDirRoot),
+		"-v", dockerBindSpec(req.DataDir, PostgresDataDirRoot, false),
 		"-e", "PGDATA=" + PostgresDataDir,
 		"-e", "POSTGRES_HOST_AUTH_METHOD=trust",
 	}
@@ -399,11 +447,7 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 		if strings.TrimSpace(mount.HostPath) == "" || strings.TrimSpace(mount.ContainerPath) == "" {
 			continue
 		}
-		spec := fmt.Sprintf("%s:%s", mount.HostPath, mount.ContainerPath)
-		if mount.ReadOnly {
-			spec += ":ro"
-		}
-		args = append(args, "-v", spec)
+		args = append(args, "-v", dockerBindSpec(mount.HostPath, mount.ContainerPath, mount.ReadOnly))
 	}
 	if strings.TrimSpace(req.Name) != "" {
 		args = append(args, "--name", req.Name)
@@ -644,11 +688,7 @@ func (r *DockerRuntime) RunContainer(ctx context.Context, req RunRequest) (strin
 		if strings.TrimSpace(mount.HostPath) == "" || strings.TrimSpace(mount.ContainerPath) == "" {
 			continue
 		}
-		spec := fmt.Sprintf("%s:%s", mount.HostPath, mount.ContainerPath)
-		if mount.ReadOnly {
-			spec += ":ro"
-		}
-		args = append(args, "-v", spec)
+		args = append(args, "-v", dockerBindSpec(mount.HostPath, mount.ContainerPath, mount.ReadOnly))
 	}
 	args = append(args, imageID)
 	if len(req.Args) > 0 {
@@ -676,9 +716,6 @@ func parseHostPort(value string) (int, error) {
 			continue
 		}
 		parts := strings.Split(line, ":")
-		if len(parts) == 0 {
-			continue
-		}
 		portStr := parts[len(parts)-1]
 		port, err := strconv.Atoi(strings.TrimSpace(portStr))
 		if err != nil {
@@ -687,6 +724,75 @@ func parseHostPort(value string) (int, error) {
 		return port, nil
 	}
 	return 0, fmt.Errorf("cannot parse docker port output: %q", value)
+}
+
+func dockerBindSpec(hostPath, containerPath string, readOnly bool) string {
+	spec := fmt.Sprintf("%s:%s", normalizeDockerHostPath(hostPath), containerPath)
+	if readOnly {
+		spec += ":ro"
+	}
+	return spec
+}
+
+func normalizeDockerHostPath(hostPath string) string {
+	hostPath = strings.TrimSpace(hostPath)
+	if hostPath == "" || !useLinuxMountPathStyle() {
+		return hostPath
+	}
+	if converted, ok := windowsWSLUNCPathToLinux(hostPath); ok {
+		return converted
+	}
+	if converted, ok := windowsDrivePathToLinux(hostPath); ok {
+		return converted
+	}
+	return hostPath
+}
+
+func useLinuxMountPathStyle() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(dockerHostPathStyleEnv)), dockerHostPathLinux)
+}
+
+func windowsDrivePathToLinux(hostPath string) (string, bool) {
+	if len(hostPath) < 2 || hostPath[1] != ':' {
+		return "", false
+	}
+	drive := hostPath[0]
+	if !((drive >= 'a' && drive <= 'z') || (drive >= 'A' && drive <= 'Z')) {
+		return "", false
+	}
+	rest := strings.TrimLeft(hostPath[2:], `\/`)
+	rest = strings.ReplaceAll(rest, `\`, "/")
+	prefix := "/mnt/" + strings.ToLower(string(drive))
+	if rest == "" {
+		return prefix, true
+	}
+	return prefix + "/" + rest, true
+}
+
+func windowsWSLUNCPathToLinux(hostPath string) (string, bool) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(hostPath), "/", `\`)
+	lower := strings.ToLower(normalized)
+	prefixes := []string{`\\wsl$\`, `\\wsl.localhost\`}
+	for _, prefix := range prefixes {
+		if !strings.HasPrefix(lower, prefix) {
+			continue
+		}
+		rest := normalized[len(prefix):]
+		parts := strings.SplitN(rest, `\`, 2)
+		if len(parts) < 2 || strings.TrimSpace(parts[0]) == "" {
+			return "", false
+		}
+		subPath := strings.TrimLeft(parts[1], `\`)
+		if subPath == "" {
+			return "/", true
+		}
+		subPath = strings.ReplaceAll(subPath, `\`, "/")
+		return "/" + strings.TrimLeft(subPath, "/"), true
+	}
+	return "", false
 }
 
 func wrapDockerError(err error, output string) error {
@@ -724,7 +830,11 @@ func isDockerUnavailableOutput(output string, err error) bool {
 	if err == nil && strings.TrimSpace(output) == "" {
 		return false
 	}
-	combined := strings.ToLower(strings.TrimSpace(output + " " + err.Error()))
+	combined := strings.TrimSpace(output)
+	if err != nil {
+		combined = strings.TrimSpace(combined + " " + err.Error())
+	}
+	combined = strings.ToLower(combined)
 	if combined == "" {
 		return false
 	}

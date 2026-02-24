@@ -34,6 +34,7 @@ type StatusOptions struct {
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
+	IdleTimeout     time.Duration
 	StartupTimeout  time.Duration
 	Verbose         bool
 }
@@ -104,6 +105,7 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
+				IdleTimeout:     opts.IdleTimeout,
 				StartupTimeout:  opts.StartupTimeout,
 				ClientTimeout:   opts.Timeout,
 				Verbose:         opts.Verbose,

@@ -47,7 +47,7 @@ type Options struct {
 	HeartbeatEvery time.Duration
 }
 
-type Manager struct {
+type PrepareService struct {
 	store          store.Store
 	queue          queue.Store
 	runtime        runtime.Runtime
@@ -68,6 +68,10 @@ type Manager struct {
 	running map[string]*jobRunner
 	events  *eventBus
 	beats   map[string]*heartbeatState
+
+	coordinator jobCoordinatorAPI
+	executor    taskExecutorAPI
+	snapshot    snapshotOrchestratorAPI
 }
 
 type jobRunner struct {
@@ -99,7 +103,7 @@ type preparedRequest struct {
 	liquibaseWorkDir     string
 }
 
-func NewManager(opts Options) (*Manager, error) {
+func NewPrepareService(opts Options) (*PrepareService, error) {
 	if opts.Store == nil {
 		return nil, fmt.Errorf("store is required")
 	}
@@ -142,7 +146,7 @@ func NewManager(opts Options) (*Manager, error) {
 			return opts.StateFS.Validate(root)
 		}
 	}
-	return &Manager{
+	m := &PrepareService{
 		store:          opts.Store,
 		queue:          opts.Queue,
 		runtime:        opts.Runtime,
@@ -161,10 +165,14 @@ func NewManager(opts Options) (*Manager, error) {
 		running:        map[string]*jobRunner{},
 		events:         newEventBus(),
 		beats:          map[string]*heartbeatState{},
-	}, nil
+	}
+	m.snapshot = &snapshotOrchestrator{m: m}
+	m.executor = &taskExecutor{m: m, snapshot: m.snapshot}
+	m.coordinator = &jobCoordinator{m: m, executor: m.executor}
+	return m, nil
 }
 
-func (m *Manager) Recover(ctx context.Context) error {
+func (m *PrepareService) Recover(ctx context.Context) error {
 	jobs, err := m.queue.ListJobsByStatus(ctx, []string{StatusQueued, StatusRunning})
 	if err != nil {
 		return err
@@ -186,7 +194,7 @@ func (m *Manager) Recover(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) Submit(ctx context.Context, req Request) (Accepted, error) {
+func (m *PrepareService) Submit(ctx context.Context, req Request) (Accepted, error) {
 	prepared, err := m.prepareRequest(req)
 	if err != nil {
 		return Accepted{}, err
@@ -238,7 +246,7 @@ func (m *Manager) Submit(ctx context.Context, req Request) (Accepted, error) {
 	}, nil
 }
 
-func (m *Manager) Get(jobID string) (Status, bool) {
+func (m *PrepareService) Get(jobID string) (Status, bool) {
 	job, ok, err := m.queue.GetJob(context.Background(), jobID)
 	if err != nil {
 		m.logJob(jobID, "lookup failed error=%v", err)
@@ -280,7 +288,7 @@ func (m *Manager) Get(jobID string) (Status, bool) {
 	return status, true
 }
 
-func (m *Manager) ListJobs(jobID string) []JobEntry {
+func (m *PrepareService) ListJobs(jobID string) []JobEntry {
 	jobs, err := m.queue.ListJobs(context.Background(), jobID)
 	if err != nil {
 		return []JobEntry{}
@@ -302,7 +310,7 @@ func (m *Manager) ListJobs(jobID string) []JobEntry {
 	return entries
 }
 
-func (m *Manager) ListTasks(jobID string) []TaskEntry {
+func (m *PrepareService) ListTasks(jobID string) []TaskEntry {
 	tasks, err := m.queue.ListTasks(context.Background(), jobID)
 	if err != nil || len(tasks) == 0 {
 		return []TaskEntry{}
@@ -314,7 +322,7 @@ func (m *Manager) ListTasks(jobID string) []TaskEntry {
 	return entries
 }
 
-func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.DeleteResult, bool) {
+func (m *PrepareService) Delete(jobID string, opts deletion.DeleteOptions) (deletion.DeleteResult, bool) {
 	_, ok, err := m.queue.GetJob(context.Background(), jobID)
 	if err != nil || !ok {
 		return deletion.DeleteResult{}, false
@@ -369,7 +377,7 @@ func (m *Manager) Delete(jobID string, opts deletion.DeleteOptions) (deletion.De
 	return result, true
 }
 
-func (m *Manager) EventsSince(jobID string, index int) ([]Event, bool, bool, error) {
+func (m *PrepareService) EventsSince(jobID string, index int) ([]Event, bool, bool, error) {
 	job, ok, err := m.queue.GetJob(context.Background(), jobID)
 	if err != nil {
 		return nil, false, false, err
@@ -389,7 +397,7 @@ func (m *Manager) EventsSince(jobID string, index int) ([]Event, bool, bool, err
 	return out, true, done, nil
 }
 
-func (m *Manager) WaitForEvent(ctx context.Context, jobID string, index int) error {
+func (m *PrepareService) WaitForEvent(ctx context.Context, jobID string, index int) error {
 	ch := m.events.subscribe(jobID)
 	defer m.events.unsubscribe(jobID, ch)
 	for {
@@ -418,7 +426,7 @@ func (m *Manager) WaitForEvent(ctx context.Context, jobID string, index int) err
 	}
 }
 
-func (m *Manager) prepareFromJob(job queue.JobRecord) (preparedRequest, error) {
+func (m *PrepareService) prepareFromJob(job queue.JobRecord) (preparedRequest, error) {
 	if job.RequestJSON == nil {
 		return preparedRequest{}, fmt.Errorf("request_json is empty")
 	}
@@ -429,7 +437,8 @@ func (m *Manager) prepareFromJob(job queue.JobRecord) (preparedRequest, error) {
 	return m.prepareRequest(req)
 }
 
-func (m *Manager) runJob(prepared preparedRequest, jobID string) {
+func (c *jobCoordinator) runJob(prepared preparedRequest, jobID string) {
+	m := c.m
 	ctx, cancel := context.WithCancel(context.Background())
 	runner := m.registerRunner(jobID, cancel)
 	jobSucceeded := false
@@ -462,7 +471,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		return
 	}
 
-	tasks, stateID, errResp := m.loadOrPlanTasks(ctx, jobID, prepared)
+	tasks, stateID, errResp := c.loadOrPlanTasks(ctx, jobID, prepared)
 	if errResp != nil {
 		_ = m.failJob(jobID, errResp)
 		return
@@ -507,7 +516,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 				return
 			}
 		case "state_execute":
-			outputID, errResp := m.executeStateTask(ctx, jobID, prepared, task)
+			outputID, errResp := c.executor.executeStateTask(ctx, jobID, prepared, task)
 			if errResp != nil {
 				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
 				_ = m.failJob(jobID, errResp)
@@ -515,7 +524,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 			}
 			stateID = outputID
 		case "prepare_instance":
-			result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
+			result, errResp := c.executor.createInstance(ctx, jobID, prepared, stateID)
 			if errResp != nil {
 				_ = m.updateTaskStatus(ctx, jobID, task.TaskID, StatusFailed, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), errResp)
 				_ = m.failJob(jobID, errResp)
@@ -540,7 +549,7 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 		_ = m.failJob(jobID, errorResponse("internal_error", "missing output state", ""))
 		return
 	}
-	result, errResp := m.createInstance(ctx, jobID, prepared, stateID)
+	result, errResp := c.executor.createInstance(ctx, jobID, prepared, stateID)
 	if errResp != nil {
 		_ = m.failJob(jobID, errResp)
 		return
@@ -550,7 +559,8 @@ func (m *Manager) runJob(prepared preparedRequest, jobID string) {
 	}
 }
 
-func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) {
+func (c *jobCoordinator) loadOrPlanTasks(ctx context.Context, jobID string, prepared preparedRequest) ([]taskState, string, *ErrorResponse) {
+	m := c.m
 	taskRecords, err := m.queue.ListTasks(ctx, jobID)
 	if err != nil {
 		return nil, "", errorResponse("internal_error", "cannot load tasks", err.Error())
@@ -564,7 +574,7 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 				return nil, "", errResp
 			}
 		}
-		tasks, stateID, errResp := m.buildPlan(ctx, jobID, prepared)
+		tasks, stateID, errResp := c.buildPlan(ctx, jobID, prepared)
 		if errResp != nil {
 			return nil, "", errResp
 		}
@@ -603,7 +613,7 @@ func (m *Manager) loadOrPlanTasks(ctx context.Context, jobID string, prepared pr
 	return states, stateID, nil
 }
 
-func (m *Manager) updateJobSignature(ctx context.Context, jobID string, prepared preparedRequest) *ErrorResponse {
+func (m *PrepareService) updateJobSignature(ctx context.Context, jobID string, prepared preparedRequest) *ErrorResponse {
 	signature, errResp := m.computeJobSignature(prepared)
 	if errResp != nil {
 		return errResp
@@ -614,7 +624,7 @@ func (m *Manager) updateJobSignature(ctx context.Context, jobID string, prepared
 	return nil
 }
 
-func (m *Manager) updateJobSignatureFromPlan(ctx context.Context, jobID string, prepared preparedRequest, tasks []PlanTask) *ErrorResponse {
+func (m *PrepareService) updateJobSignatureFromPlan(ctx context.Context, jobID string, prepared preparedRequest, tasks []PlanTask) *ErrorResponse {
 	signature, errResp := m.computeJobSignatureFromPlan(prepared, tasks)
 	if errResp != nil {
 		return errResp
@@ -625,7 +635,7 @@ func (m *Manager) updateJobSignatureFromPlan(ctx context.Context, jobID string, 
 	return nil
 }
 
-func (m *Manager) computeJobSignature(prepared preparedRequest) (string, *ErrorResponse) {
+func (m *PrepareService) computeJobSignature(prepared preparedRequest) (string, *ErrorResponse) {
 	taskHash, errResp := m.computeTaskHash(prepared)
 	if errResp != nil {
 		return "", errResp
@@ -645,7 +655,7 @@ func (m *Manager) computeJobSignature(prepared preparedRequest) (string, *ErrorR
 	return signature, nil
 }
 
-func (m *Manager) computeJobSignatureFromPlan(prepared preparedRequest, tasks []PlanTask) (string, *ErrorResponse) {
+func (m *PrepareService) computeJobSignatureFromPlan(prepared preparedRequest, tasks []PlanTask) (string, *ErrorResponse) {
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
 		return "", errorResponse("internal_error", "resolved image id is required", "")
@@ -680,7 +690,7 @@ func (m *Manager) computeJobSignatureFromPlan(prepared preparedRequest, tasks []
 	return signature, nil
 }
 
-func (m *Manager) trimCompletedJobs(ctx context.Context, prepared preparedRequest) {
+func (m *PrepareService) trimCompletedJobs(ctx context.Context, prepared preparedRequest) {
 	limit := maxIdenticalJobs(m.config)
 	if limit <= 0 {
 		return
@@ -693,7 +703,7 @@ func (m *Manager) trimCompletedJobs(ctx context.Context, prepared preparedReques
 	m.trimCompletedJobsBySignature(ctx, signature)
 }
 
-func (m *Manager) trimCompletedJobsForJob(ctx context.Context, jobID string) {
+func (m *PrepareService) trimCompletedJobsForJob(ctx context.Context, jobID string) {
 	if strings.TrimSpace(jobID) == "" {
 		return
 	}
@@ -712,7 +722,7 @@ func (m *Manager) trimCompletedJobsForJob(ctx context.Context, jobID string) {
 	m.trimCompletedJobsBySignature(ctx, signature)
 }
 
-func (m *Manager) trimCompletedJobsBySignature(ctx context.Context, signature string) {
+func (m *PrepareService) trimCompletedJobsBySignature(ctx context.Context, signature string) {
 	limit := maxIdenticalJobs(m.config)
 	if limit <= 0 {
 		return
@@ -741,7 +751,7 @@ func (m *Manager) trimCompletedJobsBySignature(ctx context.Context, signature st
 	}
 }
 
-func (m *Manager) prepareRequest(req Request) (preparedRequest, error) {
+func (m *PrepareService) prepareRequest(req Request) (preparedRequest, error) {
 	kind := strings.TrimSpace(req.PrepareKind)
 	if kind == "" {
 		return preparedRequest{}, ValidationError{Code: "invalid_argument", Message: "prepare_kind is required"}
@@ -808,18 +818,19 @@ func usesContainerLiquibaseRunner(r liquibaseRunner) bool {
 	}
 }
 
-func (m *Manager) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (c *jobCoordinator) buildPlan(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	switch prepared.request.PrepareKind {
 	case "psql":
-		return m.buildPlanPsql(prepared)
+		return c.buildPlanPsql(prepared)
 	case "lb":
-		return m.buildPlanLiquibase(ctx, jobID, prepared)
+		return c.buildPlanLiquibase(ctx, jobID, prepared)
 	default:
 		return nil, "", errorResponse("internal_error", "unsupported prepare kind", prepared.request.PrepareKind)
 	}
 }
 
-func (m *Manager) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (c *jobCoordinator) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+	m := c.m
 	taskHash, errResp := m.computeTaskHash(prepared)
 	if errResp != nil {
 		return nil, "", errResp
@@ -877,12 +888,13 @@ func (m *Manager) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *
 	return tasks, stateID, nil
 }
 
-func (m *Manager) buildPlanLiquibase(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+func (c *jobCoordinator) buildPlanLiquibase(ctx context.Context, jobID string, prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
+	m := c.m
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
 		return nil, "", errorResponse("internal_error", "resolved image id is required", "")
 	}
-	changesets, errResp := m.planLiquibaseChangesets(ctx, jobID, prepared)
+	changesets, errResp := c.planLiquibaseChangesets(ctx, jobID, prepared)
 	if errResp != nil {
 		return nil, "", errResp
 	}
@@ -978,7 +990,8 @@ func (m *Manager) buildPlanLiquibase(ctx context.Context, jobID string, prepared
 	return tasks, stateID, nil
 }
 
-func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, prepared preparedRequest) ([]LiquibaseChangeset, *ErrorResponse) {
+func (c *jobCoordinator) planLiquibaseChangesets(ctx context.Context, jobID string, prepared preparedRequest) ([]LiquibaseChangeset, *ErrorResponse) {
+	m := c.m
 	if m.liquibase == nil {
 		return nil, errorResponse("internal_error", "liquibase runner is required", "")
 	}
@@ -990,14 +1003,14 @@ func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, pre
 	var rt *jobRuntime
 	runner := m.getRunner(jobID)
 	if !prepared.request.PlanOnly && runner != nil {
-		planned, errResp := m.ensureRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID}, runner)
+		planned, errResp := c.executor.ensureRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID}, runner)
 		if errResp != nil {
 			return nil, errResp
 		}
 		rt = planned
 	} else {
 		temp := &jobRunner{}
-		planned, errResp := m.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID})
+		planned, errResp := c.executor.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "image", ID: imageID})
 		if errResp != nil {
 			return nil, errResp
 		}
@@ -1010,10 +1023,11 @@ func (m *Manager) planLiquibaseChangesets(ctx context.Context, jobID string, pre
 		return nil, errResp
 	}
 	defer lock.Close()
-	return m.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
+	return c.executor.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
 }
 
-func (m *Manager) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse) {
+func (e *taskExecutor) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse) {
+	m := e.m
 	if m.liquibase == nil {
 		return nil, errorResponse("internal_error", "liquibase runner is required", "")
 	}
@@ -1090,7 +1104,7 @@ func (m *Manager) runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepa
 	return changesets, nil
 }
 
-func (m *Manager) computeTaskHash(prepared preparedRequest) (string, *ErrorResponse) {
+func (m *PrepareService) computeTaskHash(prepared preparedRequest) (string, *ErrorResponse) {
 	if prepared.request.PrepareKind == "psql" {
 		digest, err := computePsqlContentDigest(prepared.psqlInputs, prepared.psqlWorkDir)
 		if err != nil {
@@ -1123,7 +1137,7 @@ func psqlTaskHash(kind string, contentHash string, engineVersion string) string 
 	return hasher.sum()
 }
 
-func (m *Manager) computeOutputStateID(inputKind, inputID, taskHash string) (string, *ErrorResponse) {
+func (m *PrepareService) computeOutputStateID(inputKind, inputID, taskHash string) (string, *ErrorResponse) {
 	hasher := newStateHasher()
 	hasher.write("input_kind", inputKind)
 	hasher.write("input_id", inputID)
@@ -1135,7 +1149,7 @@ func (m *Manager) computeOutputStateID(inputKind, inputID, taskHash string) (str
 	return stateID, nil
 }
 
-func (m *Manager) isStateCached(stateID string) (bool, error) {
+func (m *PrepareService) isStateCached(stateID string) (bool, error) {
 	if strings.TrimSpace(stateID) == "" {
 		return false, nil
 	}
@@ -1146,7 +1160,7 @@ func (m *Manager) isStateCached(stateID string) (bool, error) {
 	return ok, nil
 }
 
-func (m *Manager) markTasksSucceeded(ctx context.Context, jobID string, tasks []taskState) error {
+func (m *PrepareService) markTasksSucceeded(ctx context.Context, jobID string, tasks []taskState) error {
 	for _, task := range tasks {
 		if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil); err != nil {
 			return err
@@ -1155,7 +1169,7 @@ func (m *Manager) markTasksSucceeded(ctx context.Context, jobID string, tasks []
 	return nil
 }
 
-func (m *Manager) updateTaskStatus(ctx context.Context, jobID string, taskID string, status string, startedAt *string, finishedAt *string, errResp *ErrorResponse) error {
+func (m *PrepareService) updateTaskStatus(ctx context.Context, jobID string, taskID string, status string, startedAt *string, finishedAt *string, errResp *ErrorResponse) error {
 	var errJSON *string
 	if errResp != nil {
 		payload, err := json.Marshal(errResp)
@@ -1180,10 +1194,14 @@ func (m *Manager) updateTaskStatus(ctx context.Context, jobID string, taskID str
 		Status: status,
 		TaskID: taskID,
 	}
+	if errResp != nil {
+		event.Message = errResp.Message
+		event.Error = errResp
+	}
 	return m.appendEvent(jobID, event)
 }
 
-func (m *Manager) succeed(jobID string, result Result) error {
+func (m *PrepareService) succeed(jobID string, result Result) error {
 	now := m.now().UTC().Format(time.RFC3339Nano)
 	payload, err := json.Marshal(result)
 	if err != nil {
@@ -1215,7 +1233,7 @@ func (m *Manager) succeed(jobID string, result Result) error {
 	return nil
 }
 
-func (m *Manager) succeedPlan(jobID string) error {
+func (m *PrepareService) succeedPlan(jobID string) error {
 	now := m.now().UTC().Format(time.RFC3339Nano)
 	if err := m.queue.UpdateJob(context.Background(), jobID, queue.JobUpdate{
 		Status:     strPtr(StatusSucceeded),
@@ -1235,7 +1253,7 @@ func (m *Manager) succeedPlan(jobID string) error {
 	return nil
 }
 
-func (m *Manager) failJob(jobID string, errResp *ErrorResponse) error {
+func (m *PrepareService) failJob(jobID string, errResp *ErrorResponse) error {
 	now := m.now().UTC().Format(time.RFC3339Nano)
 	payload, err := json.Marshal(errResp)
 	if err != nil {
@@ -1256,7 +1274,11 @@ func (m *Manager) failJob(jobID string, errResp *ErrorResponse) error {
 		return err
 	}
 	if errResp != nil {
-		m.logJob(jobID, "failed code=%s message=%s", errResp.Code, errResp.Message)
+		if details := summarizeLogDetails(errResp.Details); details != "" {
+			m.logJob(jobID, "failed code=%s message=%s details=%s", errResp.Code, errResp.Message, details)
+		} else {
+			m.logJob(jobID, "failed code=%s message=%s", errResp.Code, errResp.Message)
+		}
 	} else {
 		m.logJob(jobID, "failed")
 	}
@@ -1271,7 +1293,7 @@ func (m *Manager) failJob(jobID string, errResp *ErrorResponse) error {
 	return nil
 }
 
-func (m *Manager) appendEvent(jobID string, event Event) error {
+func (m *PrepareService) appendEvent(jobID string, event Event) error {
 	record := eventRecordFromEvent(jobID, event)
 	if _, err := m.queue.AppendEvent(context.Background(), record); err != nil {
 		return err
@@ -1281,7 +1303,7 @@ func (m *Manager) appendEvent(jobID string, event Event) error {
 	return nil
 }
 
-func (m *Manager) registerRunner(jobID string, cancel context.CancelFunc) *jobRunner {
+func (m *PrepareService) registerRunner(jobID string, cancel context.CancelFunc) *jobRunner {
 	runner := &jobRunner{
 		cancel: cancel,
 		done:   make(chan struct{}),
@@ -1292,13 +1314,13 @@ func (m *Manager) registerRunner(jobID string, cancel context.CancelFunc) *jobRu
 	return runner
 }
 
-func (m *Manager) unregisterRunner(jobID string) {
+func (m *PrepareService) unregisterRunner(jobID string) {
 	m.mu.Lock()
 	delete(m.running, jobID)
 	m.mu.Unlock()
 }
 
-func (m *Manager) getRunner(jobID string) *jobRunner {
+func (m *PrepareService) getRunner(jobID string) *jobRunner {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.running[jobID]
@@ -1316,7 +1338,7 @@ func (r *jobRunner) getRuntime() *jobRuntime {
 	return r.rt
 }
 
-func (m *Manager) logJob(jobID string, format string, args ...any) {
+func (m *PrepareService) logJob(jobID string, format string, args ...any) {
 	if strings.TrimSpace(jobID) == "" {
 		log.Printf("prepare "+format, args...)
 		return
@@ -1325,7 +1347,7 @@ func (m *Manager) logJob(jobID string, format string, args ...any) {
 	log.Printf("prepare job=%s "+format, args...)
 }
 
-func (m *Manager) logTask(jobID string, taskID string, format string, args ...any) {
+func (m *PrepareService) logTask(jobID string, taskID string, format string, args ...any) {
 	if strings.TrimSpace(jobID) == "" || strings.TrimSpace(taskID) == "" {
 		log.Printf("prepare task "+format, args...)
 		return
@@ -1334,14 +1356,14 @@ func (m *Manager) logTask(jobID string, taskID string, format string, args ...an
 	log.Printf("prepare job=%s task=%s "+format, args...)
 }
 
-func (m *Manager) logInfoJob(jobID string, format string, args ...any) {
+func (m *PrepareService) logInfoJob(jobID string, format string, args ...any) {
 	if !logLevelAllowsInfo(logLevelFromConfig(m.config)) {
 		return
 	}
 	m.logJob(jobID, format, args...)
 }
 
-func (m *Manager) appendLog(jobID string, message string) {
+func (m *PrepareService) appendLog(jobID string, message string) {
 	if strings.TrimSpace(jobID) == "" || strings.TrimSpace(message) == "" {
 		return
 	}
@@ -1352,7 +1374,7 @@ func (m *Manager) appendLog(jobID string, message string) {
 	})
 }
 
-func (m *Manager) appendLogLines(jobID string, prefix string, content string) {
+func (m *PrepareService) appendLogLines(jobID string, prefix string, content string) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return
@@ -1390,7 +1412,7 @@ type heartbeatState struct {
 	cancel      context.CancelFunc
 }
 
-func (m *Manager) updateHeartbeat(jobID string, event Event) {
+func (m *PrepareService) updateHeartbeat(jobID string, event Event) {
 	if strings.TrimSpace(jobID) == "" {
 		return
 	}
@@ -1441,7 +1463,7 @@ func (m *Manager) updateHeartbeat(jobID string, event Event) {
 	}
 }
 
-func (m *Manager) startHeartbeat(jobID string) {
+func (m *PrepareService) startHeartbeat(jobID string) {
 	m.mu.Lock()
 	state := m.beats[jobID]
 	if state == nil || state.cancel != nil {
@@ -1689,6 +1711,19 @@ func nullableString(value string) *string {
 	return &value
 }
 
+func summarizeLogDetails(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, "\r\n", "\n")
+	trimmed = strings.ReplaceAll(trimmed, "\n", " | ")
+	if len(trimmed) <= 512 {
+		return trimmed
+	}
+	return trimmed[:512] + "... (truncated)"
+}
+
 const defaultMaxIdenticalJobs = 2
 
 func maxIdenticalJobs(cfg config.Store) int {
@@ -1781,10 +1816,7 @@ func logLevelAllowsInfo(level string) bool {
 	}
 }
 
-func (m *Manager) removeJobDir(jobID string) error {
-	if m == nil {
-		return nil
-	}
+func (m *PrepareService) removeJobDir(jobID string) error {
 	if strings.TrimSpace(m.stateStoreRoot) == "" {
 		return nil
 	}
@@ -1823,7 +1855,7 @@ func needsImageResolve(imageID string) bool {
 	return !hasImageDigest(imageID)
 }
 
-func (m *Manager) ensureResolvedImageID(ctx context.Context, jobID string, prepared *preparedRequest, tasks []queue.TaskRecord) *ErrorResponse {
+func (m *PrepareService) ensureResolvedImageID(ctx context.Context, jobID string, prepared *preparedRequest, tasks []queue.TaskRecord) *ErrorResponse {
 	if prepared == nil {
 		return errorResponse("internal_error", "prepared request is required", "")
 	}

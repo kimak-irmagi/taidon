@@ -5,12 +5,13 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildDaemonCommand(t *testing.T) {
 	runDir := filepath.Join("C:\\", "sqlrs", "run")
 	statePath := filepath.Join("C:\\", "sqlrs", "engine.json")
-	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "", "", "", "")
+	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "", "", "", 0, "")
 	if err != nil {
 		t.Fatalf("buildDaemonCommand: %v", err)
 	}
@@ -25,7 +26,7 @@ func TestBuildDaemonCommand(t *testing.T) {
 func TestBuildDaemonCommandWSL(t *testing.T) {
 	runDir := "/var/lib/sqlrs/run"
 	statePath := "/mnt/c/sqlrs/engine.json"
-	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "/var/lib/sqlrs/store", "sqlrs-state-store.mount", "btrfs", filepath.Join("C:\\", "sqlrs", "logs", "engine.log"))
+	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "/var/lib/sqlrs/store", "sqlrs-state-store.mount", "btrfs", 0, filepath.Join("C:\\", "sqlrs", "logs", "engine.log"))
 	if err != nil {
 		t.Fatalf("buildDaemonCommand: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestBuildDaemonCommandWSL(t *testing.T) {
 func TestBuildDaemonCommandEnvVars(t *testing.T) {
 	runDir := filepath.Join("C:\\", "sqlrs", "run")
 	statePath := filepath.Join("C:\\", "sqlrs", "engine.json")
-	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "C:\\store", "unit.mount", "btrfs", "")
+	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "C:\\store", "unit.mount", "btrfs", 0, "")
 	if err != nil {
 		t.Fatalf("buildDaemonCommand: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestBuildDaemonCommandEnvVars(t *testing.T) {
 func TestBuildDaemonCommandWSLNoEnv(t *testing.T) {
 	runDir := "/var/lib/sqlrs/run"
 	statePath := "/mnt/c/sqlrs/engine.json"
-	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "", "", "", "")
+	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "", "", "", 0, "")
 	if err != nil {
 		t.Fatalf("buildDaemonCommand: %v", err)
 	}
@@ -91,6 +92,21 @@ func TestBuildDaemonCommandWSLNoEnv(t *testing.T) {
 func TestQuotePowerShell(t *testing.T) {
 	if got := quotePowerShell("O'Reilly"); got != "'O''Reilly'" {
 		t.Fatalf("unexpected powershell quote: %s", got)
+	}
+}
+
+func TestBuildDaemonCommandWithIdleTimeout(t *testing.T) {
+	runDir := filepath.Join("C:\\", "sqlrs", "run")
+	statePath := filepath.Join("C:\\", "sqlrs", "engine.json")
+	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "", "", "", 2*time.Minute, "")
+	if err != nil {
+		t.Fatalf("buildDaemonCommand: %v", err)
+	}
+	if !containsArg(cmd.Args, "--idle-timeout") {
+		t.Fatalf("expected --idle-timeout flag in args, got %+v", cmd.Args)
+	}
+	if !containsArg(cmd.Args, "2m0s") {
+		t.Fatalf("expected idle timeout value in args, got %+v", cmd.Args)
 	}
 }
 

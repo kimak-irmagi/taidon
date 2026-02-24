@@ -57,5 +57,28 @@ When working on this project, follow these rules:
 3. Once the tests are approved, start bulding the tests.
 4. Once the tests are ready, write the code to pass those tests.
    Do not skip tests or alter them unless explicitly requested by user.
-5. Once the code is written, run the tests, fix any issues, and measure the code
+5. Use in-line and doc-comments where appropriate to describe each
+   function/class/type/member purpose and behavior (requrements on the input
+   parameters, return values, invariants maintained, etc). Make sure to reference
+   the architecture documents from which these requirements are derived.  
+6. Once the code is written, run the tests, fix any issues, and measure the code
    coverage. Target value is 100% coverage, with the acceptable minimum is 95%.
+   The coverage deficiencies should be addressed as follows:
+   - Obtain the detailed per-line coverage report
+   - Start with the files with the highest count of the uncovered lines.
+     Move on to the next file with the highest count of the uncovered lines if
+     the overall target is not met, and so on.
+   - Trace the uncovered lines back to the code requirements:
+     - if there are some additional requirements implied by the implementation,
+       but not explicitly documented - plan documenting those requirements
+       and adding the tests that test these requirements (not the undocumented
+       implementation details!)
+     - if there are no actual requirements, consider the uncovered lines to be
+       a dead code and plan it for removal 
+   - The resulting plan for the test coverage increase should be approved by the
+     user
+   - once approved, proceed with the plan.
+   - once changes are applied, re-measure the coverage. 
+   - if the coverage is still below target, ask the user for a permission to
+     perform one more iteration
+   

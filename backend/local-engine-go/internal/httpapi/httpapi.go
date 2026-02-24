@@ -26,7 +26,7 @@ type Options struct {
 	InstanceID string
 	AuthToken  string
 	Registry   *registry.Registry
-	Prepare    *prepare.Manager
+	Prepare    *prepare.PrepareService
 	Deletion   *deletion.Manager
 	Run        *run.Manager
 	Config     config.Store
@@ -640,7 +640,7 @@ func normalizeIDPrefix(value string) (string, error) {
 	return strings.ToLower(value), nil
 }
 
-func streamPrepareEvents(w http.ResponseWriter, r *http.Request, mgr *prepare.Manager, jobID string) {
+func streamPrepareEvents(w http.ResponseWriter, r *http.Request, mgr *prepare.PrepareService, jobID string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		w.WriteHeader(http.StatusInternalServerError)

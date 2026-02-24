@@ -51,9 +51,9 @@ var runWSLCommandAllowFailureFn = runWSLCommandAllowFailure
 var runWSLCommandWithInputFn = runWSLCommandWithInput
 var runHostCommandFn = runHostCommand
 var isElevatedFn = isElevated
+var isTerminalWriterFn = isTerminalWriter
 var isWindows = runtime.GOOS == "windows"
 
-const defaultStoreSizeGB = 100
 const defaultVHDXName = "btrfs.vhdx"
 
 func initWSL(opts wslInitOptions) (wslInitResult, error) {
@@ -127,7 +127,7 @@ func initWSL(opts wslInitOptions) (wslInitResult, error) {
 
 	sizeGB := opts.StoreSizeGB
 	if sizeGB <= 0 {
-		sizeGB = defaultStoreSizeGB
+		sizeGB = defaultBtrfsStoreSizeGB
 	}
 
 	ctx := context.Background()
@@ -1239,7 +1239,7 @@ func startSpinner(label string, verbose bool) func() {
 	if verbose {
 		return func() {}
 	}
-	if !isTerminalWriter(os.Stderr) {
+	if !isTerminalWriterFn(os.Stderr) {
 		return func() {}
 	}
 

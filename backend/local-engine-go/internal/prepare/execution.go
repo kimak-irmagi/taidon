@@ -164,7 +164,8 @@ func normalizeEnvKey(key string) string {
 	return key
 }
 
-func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) (string, *ErrorResponse) {
+func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) (string, *ErrorResponse) {
+	m := e.m
 	if ctx.Err() != nil {
 		return "", errorResponse("cancelled", "task cancelled", "")
 	}
@@ -197,7 +198,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 	}
 
 	if prepared.request.PrepareKind == "lb" {
-		planned, errResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+		planned, errResp := e.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
 		if errResp != nil {
 			return "", errResp
 		}
@@ -207,7 +208,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 			return "", errResp
 		}
 		contentLocker = lock
-		changesets, errResp := m.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
+		changesets, errResp := e.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
 		if errResp != nil {
 			_ = lock.Close()
 			return "", errResp
@@ -246,7 +247,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		cached,
 	)
 	if cached {
-		invalidated, errResp := m.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
+		invalidated, errResp := e.snapshot.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
 		if errResp != nil {
 			return "", errResp
 		}
@@ -273,7 +274,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 				m.cleanupRuntime(context.Background(), runner)
 				m.logInfoJob(jobID, "cached runtime released state=%s", outputStateID)
 			}
-			planned, errResp := m.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: outputStateID})
+			planned, errResp := e.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: outputStateID})
 			if errResp == nil {
 				runner.setRuntime(planned)
 				m.logInfoJob(jobID, "cached runtime started state=%s", outputStateID)
@@ -285,7 +286,7 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 				strings.Contains(errResp.Message, "PG_VERSION") ||
 				strings.Contains(errResp.Details, "not initialized") ||
 				strings.Contains(errResp.Message, "not initialized") {
-				invalidated, invalidateResp := m.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
+				invalidated, invalidateResp := e.snapshot.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
 				if invalidateResp != nil {
 					return "", invalidateResp
 				}
@@ -350,14 +351,14 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 		}
 
 		if rt == nil {
-			planned, innerResp := m.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+			planned, innerResp := e.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
 			if innerResp != nil {
 				errResp = innerResp
 				return errStateBuildFailed
 			}
 			rt = planned
 		}
-		if execErr := m.executePrepareStep(ctx, jobID, prepared, rt, task); execErr != nil {
+		if execErr := e.executePrepareStep(ctx, jobID, prepared, rt, task); execErr != nil {
 			errResp = execErr
 			return errStateBuildFailed
 		}
@@ -434,18 +435,19 @@ func (m *Manager) executeStateTask(ctx context.Context, jobID string, prepared p
 	return outputStateID, nil
 }
 
-func (m *Manager) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+func (e *taskExecutor) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	switch prepared.request.PrepareKind {
 	case "psql":
-		return m.executePsqlStep(ctx, jobID, prepared, rt)
+		return e.executePsqlStep(ctx, jobID, prepared, rt)
 	case "lb":
-		return m.executeLiquibaseStep(ctx, jobID, prepared, rt, task)
+		return e.executeLiquibaseStep(ctx, jobID, prepared, rt, task)
 	default:
 		return errorResponse("internal_error", "unsupported prepare kind", prepared.request.PrepareKind)
 	}
 }
 
-func (m *Manager) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
+func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
+	m := e.m
 	psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
 	if err != nil {
 		return errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
@@ -484,7 +486,8 @@ func (m *Manager) executePsqlStep(ctx context.Context, jobID string, prepared pr
 	return nil
 }
 
-func (m *Manager) executeLiquibaseStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+func (e *taskExecutor) executeLiquibaseStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+	m := e.m
 	if m.liquibase == nil {
 		return errorResponse("internal_error", "liquibase runner is required", "")
 	}
@@ -646,7 +649,8 @@ func windowsPathDir(path string) string {
 	return path[:sep]
 }
 
-func (m *Manager) createInstance(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (*Result, *ErrorResponse) {
+func (e *taskExecutor) createInstance(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (*Result, *ErrorResponse) {
+	m := e.m
 	if ctx.Err() != nil {
 		return nil, errorResponse("cancelled", "job cancelled", "")
 	}
@@ -665,7 +669,7 @@ func (m *Manager) createInstance(ctx context.Context, jobID string, prepared pre
 	rt := runner.getRuntime()
 	if rt == nil {
 		var errResp *ErrorResponse
-		rt, errResp = m.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: stateID})
+		rt, errResp = e.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: stateID})
 		if errResp != nil {
 			return nil, errResp
 		}
@@ -719,14 +723,14 @@ func (m *Manager) createInstance(ctx context.Context, jobID string, prepared pre
 	return &result, nil
 }
 
-func (m *Manager) ensureRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput, runner *jobRunner) (*jobRuntime, *ErrorResponse) {
+func (e *taskExecutor) ensureRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput, runner *jobRunner) (*jobRuntime, *ErrorResponse) {
 	if runner == nil {
 		return nil, errorResponse("internal_error", "job runner missing", "")
 	}
 	if rt := runner.getRuntime(); rt != nil {
 		return rt, nil
 	}
-	rt, errResp := m.startRuntime(ctx, jobID, prepared, input)
+	rt, errResp := e.startRuntime(ctx, jobID, prepared, input)
 	if errResp != nil {
 		return nil, errResp
 	}
@@ -734,7 +738,8 @@ func (m *Manager) ensureRuntime(ctx context.Context, jobID string, prepared prep
 	return rt, nil
 }
 
-func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput) (*jobRuntime, *ErrorResponse) {
+func (e *taskExecutor) startRuntime(ctx context.Context, jobID string, prepared preparedRequest, input *TaskInput) (*jobRuntime, *ErrorResponse) {
+	m := e.m
 	if ctx.Err() != nil {
 		return nil, errorResponse("cancelled", "job cancelled", "")
 	}
@@ -760,7 +765,7 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 		if err != nil {
 			return nil, errorResponse("internal_error", "cannot resolve state paths", err.Error())
 		}
-		if err := m.ensureBaseState(ctx, imageID, paths.baseDir); err != nil {
+		if err := e.snapshot.ensureBaseState(ctx, imageID, paths.baseDir); err != nil {
 			if ctx.Err() != nil {
 				return nil, errorResponse("cancelled", "job cancelled", "")
 			}
@@ -876,7 +881,8 @@ func (m *Manager) startRuntime(ctx context.Context, jobID string, prepared prepa
 	}, nil
 }
 
-func (m *Manager) ensureBaseState(ctx context.Context, imageID string, baseDir string) error {
+func (s *snapshotOrchestrator) ensureBaseState(ctx context.Context, imageID string, baseDir string) error {
+	m := s.m
 	if strings.TrimSpace(baseDir) == "" {
 		return fmt.Errorf("base dir is required")
 	}
@@ -978,7 +984,8 @@ func postmasterPIDPath(stateDir string) string {
 	return ""
 }
 
-func (m *Manager) invalidateDirtyCachedState(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (bool, *ErrorResponse) {
+func (s *snapshotOrchestrator) invalidateDirtyCachedState(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (bool, *ErrorResponse) {
+	m := s.m
 	if strings.TrimSpace(stateID) == "" {
 		return false, nil
 	}
@@ -1070,7 +1077,7 @@ func withInitLock(ctx context.Context, baseDir string, fn func() error) error {
 			defer os.Remove(lockPath)
 			return fn()
 		}
-		if errors.Is(err, os.ErrExist) || isLockBusyError(err, lockPath) {
+		if shouldRetryLockAcquire(err, lockPath) {
 			if initMarkerExists(baseDir) {
 				_ = os.Remove(lockPath)
 				return nil
@@ -1150,7 +1157,7 @@ func withStateBuildLock(ctx context.Context, stateDir string, lockPath string, k
 			defer os.Remove(lockPath)
 			return fn()
 		}
-		if errors.Is(err, os.ErrExist) || isLockBusyError(err, lockPath) {
+		if shouldRetryLockAcquire(err, lockPath) {
 			if stateBuildMarkerExists(stateDir, kind) {
 				_ = os.Remove(lockPath)
 				return nil
@@ -1162,13 +1169,38 @@ func withStateBuildLock(ctx context.Context, stateDir string, lockPath string, k
 	}
 }
 
+func shouldRetryLockAcquire(err error, lockPath string) bool {
+	if isLockBusyError(err, lockPath) {
+		return true
+	}
+	if !os.IsExist(err) && !errors.Is(err, os.ErrExist) {
+		return false
+	}
+	info, statErr := os.Stat(lockPath)
+	if statErr == nil {
+		return info.Mode().IsRegular()
+	}
+	if errors.Is(statErr, os.ErrNotExist) {
+		// Another process may have released the lock between OpenFile and Stat.
+		// Retry instead of surfacing a transient "file exists" error.
+		return true
+	}
+	if runtime.GOOS == "windows" && isPermissionError(statErr) {
+		return true
+	}
+	return false
+}
+
 func isLockBusyError(err error, lockPath string) bool {
 	if err == nil || !isPermissionError(err) {
 		return false
 	}
-	_, statErr := os.Stat(lockPath)
+	info, statErr := os.Stat(lockPath)
 	if statErr == nil {
-		return true
+		// Lock paths are expected to be plain files created with O_EXCL.
+		// If the path exists but is not a regular file (for example, a directory),
+		// treat it as an invalid path error instead of a transient busy lock.
+		return info.Mode().IsRegular()
 	}
 	if runtime.GOOS == "windows" && isPermissionError(statErr) {
 		return true
@@ -1197,7 +1229,7 @@ func resetStateDir(ctx context.Context, fs statefs.StateFS, stateDir string) err
 	return fs.EnsureStateDir(ctx, stateDir)
 }
 
-func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) {
+func (m *PrepareService) cleanupRuntime(ctx context.Context, runner *jobRunner) {
 	if runner == nil {
 		return
 	}
@@ -1216,7 +1248,7 @@ func (m *Manager) cleanupRuntime(ctx context.Context, runner *jobRunner) {
 	}
 }
 
-func (m *Manager) runnerForJob(jobID string) (*jobRunner, bool) {
+func (m *PrepareService) runnerForJob(jobID string) (*jobRunner, bool) {
 	if strings.TrimSpace(jobID) != "" {
 		if runner := m.getRunner(jobID); runner != nil {
 			return runner, false

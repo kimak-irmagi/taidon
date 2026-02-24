@@ -48,7 +48,8 @@ type EngineState struct {
 }
 
 type activityTracker struct {
-	last int64
+	last     int64
+	inflight int64
 }
 
 func newActivityTracker() *activityTracker {
@@ -57,6 +58,30 @@ func newActivityTracker() *activityTracker {
 
 func (a *activityTracker) Touch() {
 	atomic.StoreInt64(&a.last, time.Now().UnixNano())
+}
+
+func (a *activityTracker) StartRequest() {
+	atomic.AddInt64(&a.inflight, 1)
+}
+
+func (a *activityTracker) FinishRequest() {
+	for {
+		current := atomic.LoadInt64(&a.inflight)
+		if current <= 0 {
+			return
+		}
+		next := current - 1
+		if atomic.CompareAndSwapInt64(&a.inflight, current, next) {
+			if next == 0 {
+				a.Touch()
+			}
+			return
+		}
+	}
+}
+
+func (a *activityTracker) HasInflightRequests() bool {
+	return atomic.LoadInt64(&a.inflight) > 0
 }
 
 func (a *activityTracker) IdleFor() time.Duration {
@@ -280,8 +305,8 @@ var openDBFn = func(path string) (*sql.DB, error) {
 }
 var newStoreFn = sqlite.New
 var newQueueFn = queue.New
-var newPrepareManagerFn = prepare.NewManager
-var prepareRecoverFn = func(mgr *prepare.Manager) error {
+var newPrepareServiceFn = prepare.NewPrepareService
+var prepareRecoverFn = func(mgr *prepare.PrepareService) error {
 	return mgr.Recover(context.Background())
 }
 var newDeletionManagerFn = deletion.NewManager
@@ -401,7 +426,7 @@ func run(args []string) (int, error) {
 	connector := dbms.NewPostgres(rt, dbms.WithLogLevel(func() string {
 		return logLevelFromConfig(configMgr)
 	}))
-	prepareMgr, err := newPrepareManagerFn(prepare.Options{
+	prepareSvc, err := newPrepareServiceFn(prepare.Options{
 		Store:          store,
 		Queue:          queueStore,
 		Runtime:        rt,
@@ -413,9 +438,9 @@ func run(args []string) (int, error) {
 		Async:          true,
 	})
 	if err != nil {
-		return 1, fmt.Errorf("prepare manager: %v", err)
+		return 1, fmt.Errorf("prepare service: %v", err)
 	}
-	if err := prepareRecoverFn(prepareMgr); err != nil {
+	if err := prepareRecoverFn(prepareSvc); err != nil {
 		return 1, fmt.Errorf("prepare recovery: %v", err)
 	}
 
@@ -443,7 +468,7 @@ func run(args []string) (int, error) {
 		InstanceID: instanceID,
 		AuthToken:  authToken,
 		Registry:   reg,
-		Prepare:    prepareMgr,
+		Prepare:    prepareSvc,
 		Deletion:   deleteMgr,
 		Run:        runMgr,
 		Config:     configMgr,
@@ -451,7 +476,8 @@ func run(args []string) (int, error) {
 
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			activity.Touch()
+			activity.StartRequest()
+			defer activity.FinishRequest()
 			start := time.Now()
 			rec := &statusRecorder{ResponseWriter: w}
 			writer := http.ResponseWriter(rec)
@@ -491,7 +517,7 @@ func run(args []string) (int, error) {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if activity.IdleFor() >= *idleTimeout {
+					if !activity.HasInflightRequests() && activity.IdleFor() >= *idleTimeout {
 						shutdown("idle timeout")
 						return
 					}

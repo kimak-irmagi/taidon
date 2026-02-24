@@ -1,7 +1,8 @@
 # sqlrs CLI Contract (Draft)
 
 This document defines a **preliminary user-facing CLI contract** for `sqlrs`.
-It is intentionally incomplete and iterative, similar in spirit to early `git` or `docker` CLI designs.
+It is intentionally incomplete and iterative, similar in spirit to early `git`
+or `docker` CLI designs.
 
 The goal is to:
 
@@ -16,7 +17,7 @@ The goal is to:
 1. **Canonical CLI name**: `sqlrs`
 2. **Subcommand-based interface** (git/docker style)
 3. **Explicit state over implicit magic**
-4. **Composable commands** (plan → apply → run → inspect)
+4. **Composable commands** (plan → prepare → run → inspect)
 5. **Machine-friendly output by default** (JSON where applicable)
 6. **Human-friendly summaries** when run interactively
 
@@ -26,13 +27,14 @@ The goal is to:
 
 From the user’s point of view, `sqlrs` manages:
 
-- **states**: immutable database states produced by a deterministic preparation process
+- **states**: immutable database states produced by a deterministic preparation
+  process
 - **instances**: mutable copies of states; all database modifications happen here
 - **plans**: ordered sets of changes to apply (e.g., Liquibase changesets)
 - **runs**: executions of plans, scripts, or commands
 
 ```text
-state  --(materialize)-->  instance  --(run/apply)-->  new state
+state  --(materialize)-->  instance  --(run)-->  new state
 ```
 
 ---
@@ -48,7 +50,8 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 - `<verb>` is the main command (`prepare`, `run`, `ls`, ...).
 - `:<kind>` is an optional executor/adaptor selector (e.g., `prepare:psql`, `run:pgbench`).
 - `subject` is optional and verb-specific (e.g., an instance id, a name, etc.).
-- `-- <command>...` appears only for verbs that execute an external command (primarily `run`) and is optional for `run` kinds with default commands.
+- `-- <command>...` appears only for verbs that execute an external command (primarily
+  `run`) and is optional for `run` kinds with default commands.
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
@@ -114,9 +117,11 @@ See the user guide for the authoritative, up-to-date command semantics:
 ID prefix support (implemented):
 
 - Full ids are hex strings (instances: 32 chars, states: 64 chars).
-- Any state/instance id argument accepts 8+ hex characters as a case-insensitive prefix.
+- Any state/instance id argument accepts 8+ hex characters as a case-insensitive
+  prefix.
 - Job ids must be specified in full (no prefix matching).
-- If multiple matches are found within a kind, the command fails with an ambiguity error.
+- If multiple matches are found within a kind, the command fails with an ambiguity
+  error.
 - If a job id matches and a state/instance prefix matches, the command fails with
   a cross-kind ambiguity error.
 - Human output shortens ids to 12 characters by default; `--long` prints full ids.

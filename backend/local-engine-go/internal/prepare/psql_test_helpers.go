@@ -2,7 +2,7 @@ package prepare
 
 import "testing"
 
-func psqlOutputStateID(t *testing.T, mgr *Manager, prepared preparedRequest, input TaskInput) string {
+func psqlOutputStateID(t *testing.T, mgr *PrepareService, prepared preparedRequest, input TaskInput) string {
 	t.Helper()
 	digest, err := computePsqlContentDigest(prepared.psqlInputs, prepared.psqlWorkDir)
 	if err != nil {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -38,6 +39,13 @@ func withIsElevatedStub(t *testing.T, fn func(bool) (bool, error)) {
 	prev := isElevatedFn
 	isElevatedFn = fn
 	t.Cleanup(func() { isElevatedFn = prev })
+}
+
+func withIsTerminalWriterStub(t *testing.T, fn func(*os.File) bool) {
+	t.Helper()
+	prev := isTerminalWriterFn
+	isTerminalWriterFn = fn
+	t.Cleanup(func() { isTerminalWriterFn = prev })
 }
 
 func containsArgs(args []string, flag string, value string) bool {

@@ -29,6 +29,7 @@ type RmOptions struct {
 	WSLMountFSType  string
 	WSLDistro       string
 	Timeout         time.Duration
+	IdleTimeout     time.Duration
 	StartupTimeout  time.Duration
 	Verbose         bool
 
@@ -81,6 +82,7 @@ func RunRm(ctx context.Context, opts RmOptions) (RmResult, error) {
 				WSLMountUnit:    opts.WSLMountUnit,
 				WSLMountFSType:  opts.WSLMountFSType,
 				WSLDistro:       opts.WSLDistro,
+				IdleTimeout:     opts.IdleTimeout,
 				StartupTimeout:  opts.StartupTimeout,
 				ClientTimeout:   opts.Timeout,
 				Verbose:         opts.Verbose,

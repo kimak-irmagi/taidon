@@ -20,18 +20,30 @@ type errorStateFS struct {
 	stateErr  error
 }
 
-func (e *errorStateFS) Kind() string                                    { return "err" }
-func (e *errorStateFS) Capabilities() statefs.Capabilities             { return statefs.Capabilities{} }
-func (e *errorStateFS) Validate(root string) error                      { return nil }
-func (e *errorStateFS) BaseDir(root, imageID string) (string, error)    { if e.baseErr != nil { return "", e.baseErr }; return filepath.Join(root, "base"), nil }
-func (e *errorStateFS) StatesDir(root, imageID string) (string, error)  { if e.statesErr != nil { return "", e.statesErr }; return filepath.Join(root, "states"), nil }
+func (e *errorStateFS) Kind() string                       { return "err" }
+func (e *errorStateFS) Capabilities() statefs.Capabilities { return statefs.Capabilities{} }
+func (e *errorStateFS) Validate(root string) error         { return nil }
+func (e *errorStateFS) BaseDir(root, imageID string) (string, error) {
+	if e.baseErr != nil {
+		return "", e.baseErr
+	}
+	return filepath.Join(root, "base"), nil
+}
+func (e *errorStateFS) StatesDir(root, imageID string) (string, error) {
+	if e.statesErr != nil {
+		return "", e.statesErr
+	}
+	return filepath.Join(root, "states"), nil
+}
 func (e *errorStateFS) StateDir(root, imageID, stateID string) (string, error) {
 	if e.stateErr != nil {
 		return "", e.stateErr
 	}
 	return filepath.Join(root, "states", stateID), nil
 }
-func (e *errorStateFS) JobRuntimeDir(root, jobID string) (string, error) { return filepath.Join(root, "jobs", jobID), nil }
+func (e *errorStateFS) JobRuntimeDir(root, jobID string) (string, error) {
+	return filepath.Join(root, "jobs", jobID), nil
+}
 func (e *errorStateFS) EnsureBaseDir(ctx context.Context, baseDir string) error {
 	return nil
 }
@@ -331,7 +343,7 @@ func TestParentStateID(t *testing.T) {
 }
 
 func TestExecutePrepareStepUnsupported(t *testing.T) {
-	mgr := &Manager{}
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{})
 	prepared := preparedRequest{request: Request{PrepareKind: "unknown"}}
 	if errResp := mgr.executePrepareStep(context.Background(), "job-1", prepared, nil, taskState{}); errResp == nil {
 		t.Fatalf("expected unsupported prepare kind error")
@@ -624,7 +636,7 @@ func TestFormatExecLineDefaultPath(t *testing.T) {
 }
 
 func TestEnsureBaseDirNilRunnerForJob(t *testing.T) {
-	var mgr *Manager
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{})
 	if _, errResp := mgr.ensureRuntime(context.Background(), "job-1", preparedRequest{}, &TaskInput{}, nil); errResp == nil {
 		t.Fatalf("expected error for nil runner")
 	}
@@ -648,6 +660,66 @@ func TestWithInitLockSuccess(t *testing.T) {
 	}
 	if !called {
 		t.Fatalf("expected callback")
+	}
+}
+
+func TestWithInitLockOpenFileError(t *testing.T) {
+	baseFile := filepath.Join(t.TempDir(), "base-file")
+	if err := os.WriteFile(baseFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write base file: %v", err)
+	}
+	if err := withInitLock(context.Background(), baseFile, func() error { return nil }); err == nil {
+		t.Fatalf("expected open file error for invalid base dir")
+	}
+}
+
+func TestWithStateBuildLockPathErrors(t *testing.T) {
+	rootFile := filepath.Join(t.TempDir(), "root-file")
+	if err := os.WriteFile(rootFile, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write root file: %v", err)
+	}
+	lockPathWithInvalidParent := filepath.Join(rootFile, "sub", "lock")
+	if err := withStateBuildLock(context.Background(), t.TempDir(), lockPathWithInvalidParent, "", func() error { return nil }); err == nil {
+		t.Fatalf("expected mkdir error when lock path parent is invalid")
+	}
+
+	lockDir := filepath.Join(t.TempDir(), "lock-dir")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatalf("mkdir lock dir: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := withStateBuildLock(ctx, t.TempDir(), lockDir, "", func() error { return nil })
+	if err == nil {
+		t.Fatalf("expected open file error when lock path points to directory")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("withStateBuildLock stuck in retry loop for directory lock path: %v", err)
+	}
+}
+
+func TestWithInitLockPathErrors(t *testing.T) {
+	baseDir := t.TempDir()
+	lockDir := filepath.Join(baseDir, baseInitLockName)
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatalf("mkdir lock dir: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := withInitLock(ctx, baseDir, func() error { return nil })
+	if err == nil {
+		t.Fatalf("expected open file error when init lock path points to directory")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("withInitLock stuck in retry loop for directory lock path: %v", err)
+	}
+}
+
+func TestShouldRetryLockAcquireOnTransientExistRace(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), baseInitLockName)
+	err := &os.PathError{Op: "open", Path: lockPath, Err: os.ErrExist}
+	if !shouldRetryLockAcquire(err, lockPath) {
+		t.Fatalf("expected retry for transient exist error when lock file disappeared")
 	}
 }
 

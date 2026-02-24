@@ -111,10 +111,7 @@ func TestInitUpdatePreservesDBMSConfig(t *testing.T) {
 	if err := os.WriteFile(configPath, original, 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-
-	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
-		return wslInitResult{UseWSL: true, Distro: "Ubuntu", StateDir: "/var/lib/sqlrs"}, nil
-	})
+	stubBtrfsInitForTests(t)
 
 	var out bytes.Buffer
 	if err := runInit(&out, workspace, "", []string{"local", "--update", "--snapshot", "btrfs"}, false); err != nil {
@@ -152,10 +149,7 @@ custom:
 	if err := os.WriteFile(configPath, append(original, '\n'), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-
-	withInitWSLStub(t, func(opts wslInitOptions) (wslInitResult, error) {
-		return wslInitResult{UseWSL: true, Distro: "Ubuntu", StateDir: "/var/lib/sqlrs"}, nil
-	})
+	stubBtrfsInitForTests(t)
 
 	var out bytes.Buffer
 	if err := runInit(&out, workspace, "", []string{"local", "--update", "--snapshot", "btrfs"}, false); err != nil {

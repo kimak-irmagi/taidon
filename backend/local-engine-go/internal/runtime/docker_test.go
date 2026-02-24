@@ -158,8 +158,14 @@ func TestDockerRuntimeInitBaseSuccess(t *testing.T) {
 	if !containsArg(runner.calls[1].args, "chown", "-R") {
 		t.Fatalf("expected chown call, got %+v", runner.calls[1].args)
 	}
+	if !containsFlag(runner.calls[1].args, PostgresDataDir) {
+		t.Fatalf("expected chown target %q, got %+v", PostgresDataDir, runner.calls[1].args)
+	}
 	if !(containsFlag(runner.calls[2].args, "chmod") && containsFlag(runner.calls[2].args, "0700")) {
 		t.Fatalf("expected chmod call, got %+v", runner.calls[2].args)
+	}
+	if !containsFlag(runner.calls[2].args, PostgresDataDir) {
+		t.Fatalf("expected chmod target %q, got %+v", PostgresDataDir, runner.calls[2].args)
 	}
 	if !containsArg(runner.calls[4].args, "initdb", "--username=sqlrs") {
 		found := false
@@ -189,7 +195,11 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExists(t *testing.T) {
 	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) != 3 {
+	expectedCalls := 3
+	if runtime.GOOS == "linux" {
+		expectedCalls = 4
+	}
+	if len(runner.calls) != expectedCalls {
 		t.Fatalf("expected only permission calls, got %+v", runner.calls)
 	}
 	for _, call := range runner.calls {
@@ -222,10 +232,78 @@ func TestEnsureHostAuthAddsEntries(t *testing.T) {
 	}
 }
 
+func TestEnsureHostAuthAddsNewlineBeforeAppendedEntries(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.WriteFile(path, []byte("local all all trust"), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("ensureHostAuth: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pg_hba: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "trust\nhost all all 0.0.0.0/0 trust") {
+		t.Fatalf("expected newline before appended host entries, got %q", text)
+	}
+}
+
 func TestEnsureHostAuthSkipsWhenMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	if err := ensureHostAuth(dir); err != nil {
 		t.Fatalf("expected missing pg_hba to be ignored, got %v", err)
+	}
+}
+
+func TestEnsureHostAuthReturnsReadError(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatalf("mkdir pg_hba as dir: %v", err)
+	}
+	if err := ensureHostAuth(dir); err == nil {
+		t.Fatalf("expected read error for directory path")
+	}
+}
+
+func TestEnsureHostAuthSkipsPermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows does not enforce unix permission bits")
+	}
+
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	if err := os.WriteFile(path, []byte("local all all trust\n"), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatalf("chmod pg_hba: %v", err)
+	}
+	defer func() { _ = os.Chmod(path, 0o600) }()
+
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("expected permission denied to be ignored, got %v", err)
+	}
+}
+
+func TestEnsureHostAuthRequiresDataDir(t *testing.T) {
+	if err := ensureHostAuth(""); err == nil {
+		t.Fatalf("expected error for empty data dir")
 	}
 }
 
@@ -252,6 +330,33 @@ func TestEnsureHostAuthIdempotent(t *testing.T) {
 	}
 }
 
+func TestEnsureHostAuthAddsOnlyMissingAddressFamily(t *testing.T) {
+	dir := t.TempDir()
+	pgdata := filepath.Join(dir, "pgdata")
+	if err := os.MkdirAll(pgdata, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(pgdata, "pg_hba.conf")
+	initial := "host all all 0.0.0.0/0 trust\n"
+	if err := os.WriteFile(path, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write pg_hba: %v", err)
+	}
+	if err := ensureHostAuth(dir); err != nil {
+		t.Fatalf("ensureHostAuth: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pg_hba: %v", err)
+	}
+	text := string(content)
+	if strings.Count(text, "0.0.0.0/0") != 1 {
+		t.Fatalf("expected ipv4 entry to stay single, got %q", text)
+	}
+	if strings.Count(text, "::/0") != 1 {
+		t.Fatalf("expected exactly one appended ipv6 entry, got %q", text)
+	}
+}
+
 func TestPgDataHostDir(t *testing.T) {
 	dir := t.TempDir()
 	expected := filepath.Join(dir, "pgdata")
@@ -267,7 +372,11 @@ func TestDockerRuntimeInitBaseSkipsWhenPGVersionExistsInContainer(t *testing.T) 
 	if err := rt.InitBase(context.Background(), "image", dir); err != nil {
 		t.Fatalf("InitBase: %v", err)
 	}
-	if len(runner.calls) != 4 {
+	expectedCalls := 4
+	if runtime.GOOS == "linux" {
+		expectedCalls = 5
+	}
+	if len(runner.calls) != expectedCalls {
 		t.Fatalf("expected permission calls + pgversion check, got %+v", runner.calls)
 	}
 	if containsArg(runner.calls[len(runner.calls)-1].args, "initdb", "--username=sqlrs") {
@@ -497,6 +606,86 @@ func TestDockerRuntimeRunContainerBuildsArgs(t *testing.T) {
 	}
 }
 
+func TestWindowsDrivePathToLinux(t *testing.T) {
+	got, ok := windowsDrivePathToLinux(`D:\a\temp\store`)
+	if !ok {
+		t.Fatalf("expected conversion to succeed")
+	}
+	if got != "/mnt/d/a/temp/store" {
+		t.Fatalf("unexpected converted path: %s", got)
+	}
+	root, ok := windowsDrivePathToLinux(`C:\`)
+	if !ok || root != "/mnt/c" {
+		t.Fatalf("unexpected root conversion: ok=%v path=%s", ok, root)
+	}
+	if _, ok := windowsDrivePathToLinux(`/var/tmp/store`); ok {
+		t.Fatalf("expected non-drive path to skip conversion")
+	}
+}
+
+func TestWindowsWSLUNCPathToLinux(t *testing.T) {
+	got, ok := windowsWSLUNCPathToLinux(`\\wsl$\Ubuntu-24.04\tmp\sqlrs\store`)
+	if !ok {
+		t.Fatalf("expected UNC conversion to succeed")
+	}
+	if got != "/tmp/sqlrs/store" {
+		t.Fatalf("unexpected UNC conversion: %s", got)
+	}
+	got, ok = windowsWSLUNCPathToLinux(`\\wsl.localhost\Ubuntu\var\lib\sqlrs`)
+	if !ok {
+		t.Fatalf("expected localhost UNC conversion to succeed")
+	}
+	if got != "/var/lib/sqlrs" {
+		t.Fatalf("unexpected localhost UNC conversion: %s", got)
+	}
+	if _, ok := windowsWSLUNCPathToLinux(`\\server\share\path`); ok {
+		t.Fatalf("expected non-WSL UNC path to skip conversion")
+	}
+}
+
+func TestDockerBindSpecUsesLinuxPathStyleOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path normalization")
+	}
+	t.Setenv(dockerHostPathStyleEnv, dockerHostPathLinux)
+	spec := dockerBindSpec(`D:\a\temp\store`, PostgresDataDirRoot, false)
+	if spec != "/mnt/d/a/temp/store:"+PostgresDataDirRoot {
+		t.Fatalf("unexpected bind spec: %s", spec)
+	}
+	readOnly := dockerBindSpec(`C:\workspace`, "/work", true)
+	if readOnly != "/mnt/c/workspace:/work:ro" {
+		t.Fatalf("unexpected readonly bind spec: %s", readOnly)
+	}
+	unc := dockerBindSpec(`\\wsl$\Ubuntu-24.04\tmp\sqlrs\store`, PostgresDataDirRoot, false)
+	if unc != "/tmp/sqlrs/store:"+PostgresDataDirRoot {
+		t.Fatalf("unexpected UNC bind spec: %s", unc)
+	}
+}
+
+func TestDockerRuntimeRunContainerConvertsMountsForLinuxPathStyleOnWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path normalization")
+	}
+	t.Setenv(dockerHostPathStyleEnv, dockerHostPathLinux)
+	runner := &fakeRunner{responses: []runResponse{{output: "ok\n"}}}
+	rt := NewDocker(Options{Binary: "docker", Runner: runner})
+	_, err := rt.RunContainer(context.Background(), RunRequest{
+		ImageID: "liquibase:latest",
+		Mounts: []Mount{
+			{HostPath: `D:\work\project`, ContainerPath: "/work", ReadOnly: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunContainer: %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected one docker call, got %d", len(runner.calls))
+	}
+	if !containsArg(runner.calls[0].args, "-v", "/mnt/d/work/project:/work:ro") {
+		t.Fatalf("expected converted mount path, got %+v", runner.calls[0].args)
+	}
+}
+
 func TestDockerRuntimeRunContainerDockerUnavailable(t *testing.T) {
 	runner := &fakeRunner{responses: []runResponse{{err: DockerUnavailableError{Message: "daemon unavailable"}}}}
 	rt := NewDocker(Options{Binary: "docker", Runner: runner})
@@ -694,6 +883,14 @@ func TestParseHostPort(t *testing.T) {
 	if err != nil || port != 5433 {
 		t.Fatalf("unexpected parse result: port=%d err=%v", port, err)
 	}
+	port, err = parseHostPort("\n \n0.0.0.0:5434\n")
+	if err != nil || port != 5434 {
+		t.Fatalf("unexpected parse result with empty lines: port=%d err=%v", port, err)
+	}
+	port, err = parseHostPort("invalid\n \n0.0.0.0:5435\n")
+	if err != nil || port != 5435 {
+		t.Fatalf("unexpected parse result with middle blank line: port=%d err=%v", port, err)
+	}
 	if _, err := parseHostPort(""); err == nil {
 		t.Fatalf("expected error for empty output")
 	}
@@ -721,6 +918,15 @@ func TestIsDockerUnavailableOutput(t *testing.T) {
 	if !isDockerUnavailableOutput("Is the docker daemon running?", errors.New("fail")) {
 		t.Fatalf("expected unavailable for daemon running hint")
 	}
+	if !isDockerUnavailableOutput("Cannot connect to the Docker daemon", nil) {
+		t.Fatalf("expected unavailable for daemon string even without wrapped error")
+	}
+	if !isDockerUnavailableOutput("", errors.New("npipe docker pipe")) {
+		t.Fatalf("expected unavailable for npipe+docker+pipe pattern")
+	}
+	if isDockerUnavailableOutput("   ", emptyErr{}) {
+		t.Fatalf("expected unavailable false for effectively empty combined value")
+	}
 }
 
 func TestIsDockerNotFoundOutput(t *testing.T) {
@@ -737,6 +943,10 @@ func TestIsDockerNotFoundOutput(t *testing.T) {
 		t.Fatalf("expected empty output to be false")
 	}
 }
+
+type emptyErr struct{}
+
+func (emptyErr) Error() string { return "" }
 
 func TestDockerUnavailableErrorMessage(t *testing.T) {
 	if (DockerUnavailableError{}).Error() != "docker daemon unavailable" {

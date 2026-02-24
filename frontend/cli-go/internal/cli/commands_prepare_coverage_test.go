@@ -38,6 +38,11 @@ func TestFormatPrepareEventVariants(t *testing.T) {
 			want:  "prepare task: queued",
 		},
 		{
+			name:  "task with embedded error details",
+			event: client.PrepareJobEvent{Type: "task", TaskID: "execute-0", Status: "failed", Error: &client.ErrorResponse{Message: "psql execution failed", Details: "exit status 3"}},
+			want:  "prepare task execute-0: failed - psql execution failed: exit status 3",
+		},
+		{
 			name:  "result",
 			event: client.PrepareJobEvent{Type: "result"},
 			want:  "prepare result: ready",
