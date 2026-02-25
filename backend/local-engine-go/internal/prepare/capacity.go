@@ -505,6 +505,9 @@ func removeStaleEvictLock(lockPath string, staleAfter time.Duration) (bool, erro
 		}
 		return false, err
 	}
+	if info.IsDir() {
+		return false, fmt.Errorf("eviction lock path is a directory")
+	}
 	if time.Since(info.ModTime()) < staleAfter {
 		return false, nil
 	}
