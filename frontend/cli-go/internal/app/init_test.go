@@ -236,6 +236,20 @@ func TestParseInitFlagsInvalidArgs(t *testing.T) {
 	}
 }
 
+func TestParseInitFlagsUnicodeDashHint(t *testing.T) {
+	_, _, err := parseInitFlags([]string{"local", "—engine", "bin/sqlrs-engine"}, "")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 64 {
+		t.Fatalf("expected ExitError code 64, got %v", err)
+	}
+	if !strings.Contains(exitErr.Error(), "Unicode dash") {
+		t.Fatalf("expected unicode dash hint, got %v", exitErr)
+	}
+	if !strings.Contains(exitErr.Error(), "--engine") {
+		t.Fatalf("expected suggested normalized flag, got %v", exitErr)
+	}
+}
+
 func TestParseInitFlagsStoreSizeRequiresImage(t *testing.T) {
 	_, _, err := parseInitFlags([]string{"local", "--snapshot", "btrfs", "--store-size", "100GB"}, "")
 	var exitErr *ExitError

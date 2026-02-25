@@ -19,6 +19,9 @@ type runArgs struct {
 
 func parseRunArgs(args []string) (runArgs, bool, error) {
 	var opts runArgs
+	if err := validateNoUnicodeDashFlags(args, 2); err != nil {
+		return opts, false, err
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {

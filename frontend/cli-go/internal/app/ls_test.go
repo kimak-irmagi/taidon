@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,23 @@ func TestParseLsInvalidArgs(t *testing.T) {
 	}
 	if exitErr.Code != 2 {
 		t.Fatalf("expected exit code 2, got %d", exitErr.Code)
+	}
+}
+
+func TestParseLsUnicodeDashHint(t *testing.T) {
+	_, _, err := parseLsFlags([]string{"—states"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != 2 {
+		t.Fatalf("expected exit code 2, got %d", exitErr.Code)
+	}
+	if !strings.Contains(exitErr.Error(), "Unicode dash") {
+		t.Fatalf("expected unicode dash hint, got %v", exitErr)
+	}
+	if !strings.Contains(exitErr.Error(), "--states") {
+		t.Fatalf("expected normalized suggestion, got %v", exitErr)
 	}
 }
 

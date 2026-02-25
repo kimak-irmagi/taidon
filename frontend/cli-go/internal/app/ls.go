@@ -31,6 +31,9 @@ type lsOptions struct {
 
 func parseLsFlags(args []string) (lsOptions, bool, error) {
 	var opts lsOptions
+	if err := validateNoUnicodeDashFlags(args, 2); err != nil {
+		return opts, false, err
+	}
 
 	fs := flag.NewFlagSet("sqlrs ls", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

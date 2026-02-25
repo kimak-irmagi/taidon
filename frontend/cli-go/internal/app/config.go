@@ -19,6 +19,9 @@ type configCommand struct {
 
 func parseConfigArgs(args []string) (configCommand, bool, error) {
 	var cmd configCommand
+	if err := validateNoUnicodeDashFlags(args, 2); err != nil {
+		return cmd, false, err
+	}
 	if len(args) == 0 {
 		return cmd, false, ExitErrorf(2, "Missing config command")
 	}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,20 @@ func TestParseRmUnknownFlag(t *testing.T) {
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+}
+
+func TestParseRmUnicodeDashHint(t *testing.T) {
+	_, _, err := parseRmFlags([]string{"—force", "abc"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+	if !strings.Contains(exitErr.Error(), "Unicode dash") {
+		t.Fatalf("expected unicode dash hint, got %v", exitErr)
+	}
+	if !strings.Contains(exitErr.Error(), "--force") {
+		t.Fatalf("expected normalized suggestion, got %v", exitErr)
 	}
 }
 
