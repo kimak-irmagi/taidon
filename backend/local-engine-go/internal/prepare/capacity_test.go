@@ -1152,6 +1152,31 @@ func TestWithEvictLockAdditionalBranches(t *testing.T) {
 			t.Fatalf("expected callback call after lock release")
 		}
 	})
+
+	t.Run("removes stale lock before waiting", func(t *testing.T) {
+		root := t.TempDir()
+		lockPath := filepath.Join(root, evictLockFileName)
+		if err := os.WriteFile(lockPath, []byte("stale"), 0o600); err != nil {
+			t.Fatalf("write lock: %v", err)
+		}
+		old := time.Now().Add(-2 * evictLockStaleAfter)
+		if err := os.Chtimes(lockPath, old, old); err != nil {
+			t.Fatalf("set stale modtime: %v", err)
+		}
+
+		called := false
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := withEvictLock(ctx, root, func() error {
+			called = true
+			return nil
+		}); err != nil {
+			t.Fatalf("withEvictLock: %v", err)
+		}
+		if !called {
+			t.Fatalf("expected callback call after stale lock cleanup")
+		}
+	})
 }
 
 func TestObservedMinStateBytesSkipsEmptySizes(t *testing.T) {

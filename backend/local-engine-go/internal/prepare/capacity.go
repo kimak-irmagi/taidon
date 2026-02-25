@@ -22,6 +22,7 @@ const (
 	defaultCapacityMinStateAge   = 10 * time.Minute
 	defaultReserveMinBytes       = int64(10 << 30) // 10 GiB
 	evictLockFileName            = ".evict.lock"
+	evictLockStaleAfter          = 5 * time.Minute
 )
 
 type capacitySettings struct {
@@ -482,8 +483,38 @@ func withEvictLock(ctx context.Context, stateStoreRoot string, fn func() error) 
 		if !os.IsExist(err) && !errors.Is(err, os.ErrExist) {
 			return err
 		}
+		removed, cleanupErr := removeStaleEvictLock(lockPath, evictLockStaleAfter)
+		if cleanupErr != nil {
+			return cleanupErr
+		}
+		if removed {
+			continue
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+func removeStaleEvictLock(lockPath string, staleAfter time.Duration) (bool, error) {
+	if staleAfter <= 0 {
+		return false, nil
+	}
+	info, err := os.Stat(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	if time.Since(info.ModTime()) < staleAfter {
+		return false, nil
+	}
+	if err := os.Remove(lockPath); err != nil {
+		if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func capacityError(code string, message string, details map[string]any) *ErrorResponse {
