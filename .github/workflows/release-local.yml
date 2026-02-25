@@ -721,6 +721,222 @@ jobs:
           include-hidden-files: true
           path: ${{ runner.temp }}/e2e/windows/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}
 
+  e2e-podman-macos:
+    if: contains(github.event.inputs.version || github.ref_name, '-rc.')
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    needs: [build-rc]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve release versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${{ env.RELEASE_VERSION }}"
+          base="${raw%-rc.*}"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Download darwin rc artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sqlrs_darwin_*
+          merge-multiple: true
+          path: rc-artifacts
+
+      - name: Extract darwin bundle
+        id: bundle-darwin
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find rc-artifacts -name "sqlrs_${{ steps.version.outputs.base }}_darwin_amd64.tar.gz" -print -quit)"
+          if [[ -z "$archive" ]]; then
+            echo "darwin amd64 release archive not found" >&2
+            exit 1
+          fi
+          mkdir -p bundle
+          tar -xzf "$archive" -C bundle
+          bundle_dir="$(find bundle -maxdepth 1 -type d -name "sqlrs_*_darwin_amd64" -print -quit)"
+          if [[ -z "$bundle_dir" ]]; then
+            echo "extracted darwin amd64 bundle directory not found" >&2
+            exit 1
+          fi
+          echo "bundle_dir=$bundle_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Install Podman
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v podman >/dev/null 2>&1; then
+            brew install podman
+          fi
+          podman --version
+
+      - name: Start Podman machine
+        id: podman_machine
+        shell: bash
+        run: |
+          set -euo pipefail
+          machine_name="podman-machine-default"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "socket_path=" >> "$GITHUB_OUTPUT"
+
+          try_provider() {
+            local provider="${1:-}"
+            local label="${provider:-default}"
+            echo "Trying podman provider: ${label}"
+
+            podman machine stop "$machine_name" || true
+            podman machine rm -f "$machine_name" || true
+
+            if [[ -n "$provider" ]]; then
+              export CONTAINERS_MACHINE_PROVIDER="$provider"
+            else
+              unset CONTAINERS_MACHINE_PROVIDER || true
+            fi
+
+            if ! podman machine init --cpus 2 --memory 4096 --disk-size 20 "$machine_name" >"podman-machine-init-${label}.log" 2>&1; then
+              echo "init failed for ${label}"
+              tail -n 200 "podman-machine-init-${label}.log" || true
+              return 1
+            fi
+
+            if ! podman --log-level=debug machine start "$machine_name" >"podman-machine-start-${label}.log" 2>&1; then
+              echo "start failed for ${label}"
+              tail -n 200 "podman-machine-start-${label}.log" || true
+              return 1
+            fi
+
+            if ! podman info >"podman-info-${label}.log" 2>&1; then
+              echo "podman info failed for ${label}"
+              tail -n 200 "podman-info-${label}.log" || true
+              return 1
+            fi
+
+            socket_path="$(podman machine inspect "$machine_name" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true)"
+            echo "socket_path=${socket_path}" >> "$GITHUB_OUTPUT"
+            echo "provider ${label} works"
+            return 0
+          }
+
+          if try_provider ""; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if try_provider "libkrun"; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if try_provider "applehv"; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Podman machine could not be started on this macOS runner." >&2
+          exit 1
+
+      - name: Debug Podman machine on failure
+        if: failure() && steps.podman_machine.outputs.ready != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          podman --version || true
+          podman machine list || true
+          podman machine inspect podman-machine-default || true
+          ls -la ~/.local/share/containers/podman/machine || true
+          find ~/.local/share/containers/podman/machine -maxdepth 3 -type f -name "*.log" -print -exec tail -n 200 {} \; || true
+
+      - name: Run macOS release e2e with podman runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          machine_name="podman-machine-default"
+          out_dir="${RUNNER_TEMP}/e2e/darwin/hp-psql-chinook-copy-podman"
+          export XDG_CONFIG_HOME="${out_dir}/xdg-config"
+          export XDG_STATE_HOME="${out_dir}/xdg-state"
+          export XDG_CACHE_HOME="${out_dir}/xdg-cache"
+          mkdir -p "${XDG_CONFIG_HOME}" "${XDG_STATE_HOME}" "${XDG_CACHE_HOME}"
+
+          podman machine start "$machine_name" >/tmp/podman-machine-restart.log 2>&1 || true
+          socket_path="${{ steps.podman_machine.outputs.socket_path }}"
+          if [[ -z "${socket_path}" ]]; then
+            socket_path="$(podman machine inspect "$machine_name" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true)"
+          fi
+          if [[ -n "${socket_path}" ]]; then
+            export CONTAINER_HOST="unix://${socket_path}"
+            export DOCKER_HOST="${CONTAINER_HOST}"
+          fi
+
+          podman system connection list || true
+          podman machine list || true
+          podman info
+
+          node scripts/e2e-release/run-scenario.mjs \
+            --scenario "hp-psql-chinook" \
+            --snapshot-backend "copy" \
+            --container-runtime "podman" \
+            --flow-runs "2" \
+            --scenarios "test/e2e/release/scenarios.json" \
+            --sqlrs "${{ steps.bundle-darwin.outputs.bundle_dir }}/sqlrs" \
+            --engine "${{ steps.bundle-darwin.outputs.bundle_dir }}/sqlrs-engine" \
+            --timeout "25m" \
+            --out-dir "$out_dir"
+
+          node scripts/e2e-release/normalize-output.mjs \
+            --scenario "hp-psql-chinook" \
+            --scenarios "test/e2e/release/scenarios.json" \
+            --input "$out_dir/raw-stdout.log" \
+            --output "$out_dir/normalized-stdout.log"
+
+          node scripts/e2e-release/compare-golden.mjs \
+            --expected "test/e2e/release/hp-psql-chinook/golden.txt" \
+            --actual "$out_dir/normalized-stdout.log" \
+            --diff "$out_dir/diff.log"
+
+      - name: Debug Podman machine after probe failure
+        if: failure() && steps.podman_machine.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          machine_name="podman-machine-default"
+          podman --version || true
+          podman system connection list || true
+          podman machine list || true
+          podman machine inspect "$machine_name" || true
+          podman info || true
+          socket_path="${{ steps.podman_machine.outputs.socket_path }}"
+          if [[ -n "${socket_path}" ]]; then
+            ls -la "$(dirname "${socket_path}")" || true
+          fi
+          ls -la ~/.config/containers/podman/machine || true
+          ls -la ~/.local/share/containers/podman/machine || true
+          find ~/.local/share/containers/podman/machine -maxdepth 4 -type f -name "*.log" -print -exec tail -n 200 {} \; || true
+
+      - name: Upload macOS podman release e2e diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-darwin-hp-psql-chinook-copy-podman
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/e2e/darwin/hp-psql-chinook-copy-podman/**
+            podman-machine-init-*.log
+            podman-machine-start-*.log
+            podman-info-*.log
+
+      - name: Stop Podman machine
+        if: always()
+        shell: bash
+        run: |
+          podman machine stop podman-machine-default || true
+
   e2e-smoke:
     if: contains(github.event.inputs.version || github.ref_name, '-rc.')
     runs-on: ${{ matrix.runner }}
@@ -800,7 +1016,7 @@ jobs:
   publish-rc:
     if: contains(github.event.inputs.version || github.ref_name, '-rc.')
     runs-on: ubuntu-latest
-    needs: [assemble-release-manifest, e2e-happy, e2e-smoke]
+    needs: [assemble-release-manifest, e2e-happy, e2e-podman-macos, e2e-smoke]
     permissions:
       contents: write
     steps:

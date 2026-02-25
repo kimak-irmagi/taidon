@@ -79,6 +79,9 @@ Scenario metadata is declared in:
    - Linux: `hp-psql-chinook`/`hp-psql-sakila` with `copy` and `btrfs`.
    - Windows: `hp-psql-chinook` with `copy` (host engine) and `btrfs`
      (host `sqlrs.exe` + WSL runtime).
+   - macOS podman probe: `hp-psql-chinook` with `copy`, runtime forced by
+     `container.runtime=podman`, with double `prepare+run` pass in one workspace.
+     Podman machine startup in this cell is release-blocking.
 5. Each scenario run normalizes output and compares against golden snapshots.
 6. `publish_rc` creates/updates pre-release and attaches validated artifacts if
    all required E2E jobs passed.
@@ -169,7 +172,8 @@ Current blocking profile:
   - Linux: scenarios `hp-psql-chinook`, `hp-psql-sakila`; backends `copy`, `btrfs`.
   - Windows: scenario `hp-psql-chinook`; backends `copy`, `btrfs`
     (`copy` uses host engine, `btrfs` uses WSL-backed runtime).
-- macOS runs bundle + command smoke checks.
+- macOS runs bundle + command smoke checks, and an additional podman probe
+  (`hp-psql-chinook`, `copy`, two consecutive `prepare+run` executions).
 
 Target state:
 

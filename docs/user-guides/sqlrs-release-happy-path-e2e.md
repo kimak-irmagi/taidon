@@ -86,6 +86,14 @@ Linux runner matrix adds one more runtime axis in workflow configuration:
 
 The same `scenarios.json` catalog is reused for both backends.
 
+Release workflow also includes a macOS podman probe cell:
+
+- runner: `macos-15-intel`;
+- scenario: `hp-psql-chinook` with `snapshot_backend=copy`;
+- runtime mode set via `sqlrs config set container.runtime podman`;
+- `prepare+run` flow is executed twice in the same initialized workspace.
+- this cell is release-blocking: podman machine startup failure fails RC gating.
+
 ---
 
 ## Linux CoW Matrix Contract
