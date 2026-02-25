@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildInitCommand,
+  resolveFlowRuns,
   resolveSnapshotBackend,
   resolveStorePlan
 } from "./run-scenario.mjs";
@@ -46,6 +47,21 @@ run("default snapshot backend is copy", () => {
 
 run("unknown snapshot backend is rejected", () => {
   assert.throws(() => resolveSnapshotBackend("zfs"), /Invalid --snapshot-backend: zfs/);
+});
+
+run("default flow runs is 1", () => {
+  assert.equal(resolveFlowRuns(undefined), 1);
+  assert.equal(resolveFlowRuns(""), 1);
+});
+
+run("flow runs parses positive integer", () => {
+  assert.equal(resolveFlowRuns("2"), 2);
+});
+
+run("invalid flow runs is rejected", () => {
+  assert.throws(() => resolveFlowRuns("0"), /Invalid --flow-runs: 0/);
+  assert.throws(() => resolveFlowRuns("-1"), /Invalid --flow-runs: -1/);
+  assert.throws(() => resolveFlowRuns("abc"), /Invalid --flow-runs: abc/);
 });
 
 run("btrfs backend uses dedicated loopback btrfs store plan", () => {

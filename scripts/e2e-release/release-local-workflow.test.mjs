@@ -52,6 +52,7 @@ run("linux e2e cell passes snapshot backend to run-scenario", () => {
   const runStep = (job.steps || []).find((step) => step.name === "Run happy-path scenario (linux)");
   assert.ok(runStep, "missing run step");
   assert.match(String(runStep.run || ""), /--snapshot-backend "\$\{\{ matrix\.snapshot_backend \}\}"/);
+  assert.match(String(runStep.run || ""), /--flow-runs "2"/);
 });
 
 run("e2e diagnostics artifacts are backend and platform specific", () => {
@@ -90,6 +91,8 @@ run("windows e2e cell provisions WSL and docker prerequisites", () => {
   assert.match(String(runStep.run || ""), /\$isBtrfs/);
   assert.match(String(runStep.run || ""), /"--store", "dir", \$storeRoot/);
   assert.match(String(runStep.run || ""), /"--store", "image", \$storeImage/);
+  assert.match(String(runStep.run || ""), /raw-stdout-run2\.log/);
+  assert.match(String(runStep.run || ""), /second pass failed/);
 });
 
 run("publish RC waits for unified e2e-happy job", () => {

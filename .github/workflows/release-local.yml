@@ -550,6 +550,7 @@ jobs:
             --scenarios "test/e2e/release/scenarios.json" \
             --sqlrs "${{ steps.bundle-linux.outputs.bundle_dir }}/sqlrs" \
             --engine "${{ steps.bundle-linux.outputs.bundle_dir }}/sqlrs-engine" \
+            --flow-runs "2" \
             --timeout "$scenario_timeout" \
             --out-dir "$out_dir"
           node scripts/e2e-release/normalize-output.mjs \
@@ -653,6 +654,11 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               throw "prepare/run flow failed with exit code $LASTEXITCODE"
             }
+
+            & $sqlrs @flowArgs 1> (Join-Path $outDir "raw-stdout-run2.log") 2> (Join-Path $outDir "raw-stderr-run2.log")
+            if ($LASTEXITCODE -ne 0) {
+              throw "prepare/run flow second pass failed with exit code $LASTEXITCODE"
+            }
           } finally {
             Pop-Location
           }
@@ -692,11 +698,11 @@ jobs:
           if-no-files-found: warn
           path: |
             ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/command-init.txt
-            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/command-flow.txt
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/command-flow*.txt
             ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/init-stdout.log
             ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/init-stderr.log
-            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/raw-stdout.log
-            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/raw-stderr.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/raw-stdout*.log
+            ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/raw-stderr*.log
             ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/normalized-stdout.log
             ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/diff.log
             ${{ runner.temp }}/e2e/linux/${{ matrix.scenario }}-${{ matrix.snapshot_backend }}/result.json

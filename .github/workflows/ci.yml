@@ -167,6 +167,7 @@ jobs:
           set -euo pipefail
           machine_name="podman-machine-default"
           echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "socket_path=" >> "$GITHUB_OUTPUT"
 
           try_provider() {
             local provider="${1:-}"
@@ -200,6 +201,8 @@ jobs:
               return 1
             fi
 
+            socket_path="$(podman machine inspect "$machine_name" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true)"
+            echo "socket_path=${socket_path}" >> "$GITHUB_OUTPUT"
             echo "provider ${label} works"
             return 0
           }
@@ -236,9 +239,44 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          machine_name="podman-machine-default"
+          podman machine start "$machine_name" >/tmp/podman-machine-restart.log 2>&1 || true
+
+          socket_path="${{ steps.podman_machine.outputs.socket_path }}"
+          if [[ -z "${socket_path}" ]]; then
+            socket_path="$(podman machine inspect "$machine_name" --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || true)"
+          fi
+          if [[ -n "${socket_path}" ]]; then
+            export CONTAINER_HOST="unix://${socket_path}"
+            export DOCKER_HOST="${CONTAINER_HOST}"
+          fi
+
+          podman system connection list || true
+          podman machine list || true
+          podman info
+
           export SQLRS_RUN_DOCKER_TESTS=1
           export SQLRS_RUN_PODMAN_TESTS=1
           go test ./internal/integration -run TestCLIPrepareRunWithLocalEnginePodmanConfig -count=1 -v
+
+      - name: Debug Podman machine after probe failure
+        if: failure() && steps.podman_machine.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          machine_name="podman-machine-default"
+          podman --version || true
+          podman system connection list || true
+          podman machine list || true
+          podman machine inspect "$machine_name" || true
+          podman info || true
+          socket_path="${{ steps.podman_machine.outputs.socket_path }}"
+          if [[ -n "${socket_path}" ]]; then
+            ls -la "$(dirname "${socket_path}")" || true
+          fi
+          ls -la ~/.config/containers/podman/machine || true
+          ls -la ~/.local/share/containers/podman/machine || true
+          find ~/.local/share/containers/podman/machine -maxdepth 4 -type f -name "*.log" -print -exec tail -n 200 {} \; || true
 
       - name: Skip note (Podman unavailable)
         if: steps.podman_machine.outputs.ready != 'true'

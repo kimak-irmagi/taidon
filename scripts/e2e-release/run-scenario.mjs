@@ -156,6 +156,18 @@ export function resolveSnapshotBackend(raw) {
   return value;
 }
 
+export function resolveFlowRuns(raw) {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (value === "") {
+    return 1;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid --flow-runs: ${value}`);
+  }
+  return parsed;
+}
+
 export function buildInitCommand({ sqlrsPath, workspaceDir, enginePath, storeDir, snapshotBackend }) {
   return [
     sqlrsPath,
@@ -242,6 +254,7 @@ async function main() {
   const outDir = path.resolve(args["out-dir"] || path.join(repoRoot, "artifacts", "e2e", scenarioId || "unknown"));
   const runTimeout = typeof args.timeout === "string" && args.timeout.trim() !== "" ? args.timeout.trim() : "15m";
   const snapshotBackend = resolveSnapshotBackend(args["snapshot-backend"]);
+  const flowRuns = resolveFlowRuns(args["flow-runs"]);
 
   if (!scenarioId) {
     throw new Error("Missing --scenario");
@@ -328,23 +341,28 @@ async function main() {
       throw new Error(`Init command failed for ${scenarioId}`);
     }
 
-    const flowExit = await runCommand({
-      cmd: flowCmd,
-      cwd: workspaceDir,
-      env: baseEnv,
-      stdoutPath: path.join(outDir, "raw-stdout.log"),
-      stderrPath: path.join(outDir, "raw-stderr.log")
-    });
+    for (let run = 1; run <= flowRuns; run += 1) {
+      const suffix = run === 1 ? "" : `-run${run}`;
+      const flowExit = await runCommand({
+        cmd: flowCmd,
+        cwd: workspaceDir,
+        env: baseEnv,
+        stdoutPath: path.join(outDir, `raw-stdout${suffix}.log`),
+        stderrPath: path.join(outDir, `raw-stderr${suffix}.log`)
+      });
 
-    writeJSON(path.join(outDir, "result.json"), {
-      scenario: scenarioId,
-      stage: "prepare+run",
-      exitCode: flowExit,
-      workspaceDir
-    });
+      writeJSON(path.join(outDir, "result.json"), {
+        scenario: scenarioId,
+        stage: "prepare+run",
+        flowRun: run,
+        flowRuns,
+        exitCode: flowExit,
+        workspaceDir
+      });
 
-    if (flowExit !== 0) {
-      throw new Error(`Scenario failed: ${scenarioId}`);
+      if (flowExit !== 0) {
+        throw new Error(`Scenario failed on flow run ${run}/${flowRuns}: ${scenarioId}`);
+      }
     }
   } finally {
     cleanupStore();
