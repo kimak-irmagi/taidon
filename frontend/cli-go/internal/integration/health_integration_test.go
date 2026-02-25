@@ -39,7 +39,7 @@ func TestCLIPrepareRunWithLocalEnginePodmanConfig(t *testing.T) {
 func runPrepareRunProbe(t *testing.T) {
 	t.Helper()
 	if err := app.Run([]string{
-		"prepare:psql", "--", "-c", "create table if not exists podman_probe(id int); insert into podman_probe values (1);",
+		"prepare:psql", "--image", "postgres:16", "--", "-c", "create table if not exists podman_probe(id int); insert into podman_probe values (1);",
 		"run:psql", "--", "-t", "-A", "-c", "select count(*) from podman_probe;",
 	}); err != nil {
 		t.Fatalf("sqlrs prepare/run failed: %v", err)
