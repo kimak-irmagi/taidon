@@ -28,9 +28,9 @@ var (
 )
 
 const (
-	defaultDockerBinary = "docker"
+	defaultDockerBinary    = "docker"
 	dockerHostPathStyleEnv = "SQLRS_DOCKER_HOST_PATH_STYLE"
-	dockerHostPathLinux   = "linux"
+	dockerHostPathLinux    = "linux"
 )
 
 type Options struct {
@@ -438,7 +438,7 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 	}
 	args := []string{
 		"run", "-d", "--rm",
-		"-p", "0:5432",
+		"-p", "5432",
 		"-v", dockerBindSpec(req.DataDir, PostgresDataDirRoot, false),
 		"-e", "PGDATA=" + PostgresDataDir,
 		"-e", "POSTGRES_HOST_AUTH_METHOD=trust",

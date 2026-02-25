@@ -85,6 +85,32 @@ sqlrs config set snapshot.backend "copy"
 
 ---
 
+## Container runtime selection
+
+The local engine can select the container runtime via configuration.
+
+Path: `container.runtime`
+
+Allowed values:
+
+- `"auto"` (default) - probe `docker` first, then `podman`.
+- `"docker"` - use Docker only.
+- `"podman"` - use Podman only.
+
+Operational override:
+
+- `SQLRS_CONTAINER_RUNTIME` can override the configured mode for CI/debug runs.
+
+Example:
+
+```text
+sqlrs config set container.runtime "auto"
+sqlrs config set container.runtime "docker"
+sqlrs config set container.runtime "podman"
+```
+
+---
+
 ## Commands
 
 ### 1) `get`

@@ -122,7 +122,7 @@ flowchart LR
 
 ### 1.6 Runtime и DBMS hooks
 
-- `internal/runtime` - Docker adapter (`docker` CLI): init base, start/stop container, exec, run one-shot container.
+- `internal/runtime` - адаптер container runtime (Docker/Podman CLI): init base, start/stop container, exec, run one-shot container.
 - `internal/dbms` - Postgres snapshot hooks (`PrepareSnapshot`, `ResumeSnapshot`) вокруг snapshot-операций.
 
 ### 1.7 Deletion и connection tracking
@@ -139,6 +139,7 @@ flowchart LR
 ### 1.9 Config и discovery
 
 - runtime config хранится в `<state-store-root>/config.json` и доступен через `/v1/config*`.
+- runtime config включает `container.runtime` (`auto|docker|podman`) для выбора режима локального container runtime.
 - discovery для CLI - файл `engine.json`, который пишет `cmd/sqlrs-engine` (endpoint, pid, auth token, version, instance id).
 
 ## 2. Потоки (local)
@@ -272,12 +273,12 @@ sequenceDiagram
 
 - Долгие операции возвращают prepare job; terminal failures отдаются через status и event stream.
 - Validation failures возвращают `400` со структурированной ошибкой.
-- Ошибки runtime/docker availability отдаются как actionable API ошибки.
+- Ошибки доступности runtime (Docker/Podman) отдаются как actionable API ошибки.
 - Если кэшированное state помечено как dirty/incomplete, prepare инвалидирует его и пересобирает.
 
 ## 6. Точки эволюции
 
-- Замена Docker runtime adapter без изменения API contract.
+- Runtime adapter остается заменяемым (Docker/Podman и будущие OCI runtime) без изменения API contract.
 - Замена/расширение StateFS backend-ов при сохранении интерфейса `statefs.StateFS`.
 - Замена `conntrack.Noop` на активный DB connection tracking для local/shared профилей.
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -39,15 +40,17 @@ type StatusOptions struct {
 }
 
 type StatusResult struct {
-	OK          bool     `json:"ok"`
-	Endpoint    string   `json:"endpoint"`
-	Profile     string   `json:"profile"`
-	Mode        string   `json:"mode"`
-	Client      string   `json:"clientVersion,omitempty"`
-	Workspace   string   `json:"workspace,omitempty"`
-	Version     string   `json:"version,omitempty"`
-	InstanceID  string   `json:"instanceId,omitempty"`
-	PID         int      `json:"pid,omitempty"`
+	OK         bool   `json:"ok"`
+	Endpoint   string `json:"endpoint"`
+	Profile    string `json:"profile"`
+	Mode       string `json:"mode"`
+	Client     string `json:"clientVersion,omitempty"`
+	Workspace  string `json:"workspace,omitempty"`
+	Version    string `json:"version,omitempty"`
+	InstanceID string `json:"instanceId,omitempty"`
+	PID        int    `json:"pid,omitempty"`
+	// DockerReady is kept for backward-compatible JSON shape.
+	// It reports container runtime readiness (docker or podman).
 	DockerReady bool     `json:"dockerReady,omitempty"`
 	WSLReady    bool     `json:"wslReady,omitempty"`
 	BtrfsReady  bool     `json:"btrfsReady,omitempty"`
@@ -60,9 +63,11 @@ type LocalDepsOptions struct {
 	WSLStateDir    string
 	WSLMountUnit   string
 	WSLMountFSType string
+	RuntimeMode    string
 }
 
 type LocalDepsStatus struct {
+	// DockerReady reports container runtime readiness (docker or podman).
 	DockerReady bool
 	WSLReady    bool
 	BtrfsReady  bool
@@ -134,12 +139,14 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 
 	var deps LocalDepsStatus
 	if mode == "local" {
+		runtimeMode := runtimeModeFromEngineConfig(ctx, cliClient, opts.Verbose)
 		deps, err = probeLocalDepsFn(ctx, LocalDepsOptions{
 			Verbose:        opts.Verbose,
 			WSLDistro:      opts.WSLDistro,
 			WSLStateDir:    opts.EngineStoreDir,
 			WSLMountUnit:   opts.WSLMountUnit,
 			WSLMountFSType: opts.WSLMountFSType,
+			RuntimeMode:    runtimeMode,
 		})
 		if err != nil {
 			return StatusResult{Endpoint: endpoint, Profile: opts.ProfileName, Mode: mode}, err
@@ -195,7 +202,7 @@ func PrintStatus(w io.Writer, result StatusResult) {
 		fmt.Fprintf(w, "pid: %d\n", result.PID)
 	}
 	if result.Mode == "local" {
-		fmt.Fprintf(w, "docker: %s\n", readinessLabel(result.DockerReady))
+		fmt.Fprintf(w, "container-runtime: %s\n", readinessLabel(result.DockerReady))
 		fmt.Fprintf(w, "wsl: %s\n", readinessLabel(result.WSLReady))
 		fmt.Fprintf(w, "btrfs: %s\n", readinessLabel(result.BtrfsReady))
 	}
@@ -218,10 +225,10 @@ func probeLocalDeps(ctx context.Context, opts LocalDepsOptions) (LocalDepsStatus
 	status := LocalDepsStatus{}
 	var warnings []string
 
-	dockerReady, dockerWarning := checkDocker(ctx, opts.Verbose)
-	status.DockerReady = dockerReady
-	if dockerWarning != "" {
-		warnings = append(warnings, dockerWarning)
+	containerReady, containerWarning := checkContainerRuntime(ctx, opts.RuntimeMode, opts.Verbose)
+	status.DockerReady = containerReady
+	if containerWarning != "" {
+		warnings = append(warnings, containerWarning)
 	}
 
 	if runtime.GOOS == "windows" {
@@ -245,23 +252,107 @@ func probeLocalDeps(ctx context.Context, opts LocalDepsOptions) (LocalDepsStatus
 
 const defaultWSLStateDir = "~/.local/state/sqlrs/store"
 
-func checkDocker(ctx context.Context, verbose bool) (bool, string) {
-	if _, err := execLookPathFn("docker"); err != nil {
-		if verbose {
-			return false, fmt.Sprintf("docker not ready: %v", err)
+type runtimeProbe struct {
+	name string
+	path string
+	err  error
+}
+
+// checkContainerRuntime verifies that a supported container runtime is available and responsive.
+// Runtime check order matches the engine runtime selection:
+// - SQLRS_CONTAINER_RUNTIME override, if set
+// - otherwise container.runtime mode (docker|podman|auto)
+// - auto probes docker then podman
+func checkContainerRuntime(ctx context.Context, mode string, verbose bool) (bool, string) {
+	candidates, source := runtimeProbeCandidates(mode)
+	probes := make([]runtimeProbe, 0, 2)
+	for _, name := range candidates {
+		path, err := execLookPathFn(name)
+		if err != nil {
+			probes = append(probes, runtimeProbe{name: name, err: fmt.Errorf("not found: %w", err)})
+			continue
 		}
-		return false, "docker not ready"
-	}
-	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	cmd := execCommandContextFn(checkCtx, "docker", "info")
-	if err := cmd.Run(); err != nil {
-		if verbose {
-			return false, fmt.Sprintf("docker not ready: %v", err)
+		checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		cmd := execCommandContextFn(checkCtx, path, "info")
+		err = cmd.Run()
+		cancel()
+		if err == nil {
+			return true, ""
 		}
-		return false, "docker not ready"
+		probes = append(probes, runtimeProbe{name: name, path: path, err: fmt.Errorf("info failed: %w", err)})
 	}
-	return true, ""
+	if verbose {
+		return false, formatContainerRuntimeProbeWarning(source, candidates, probes)
+	}
+	return false, "container runtime not ready (docker/podman)"
+}
+
+func formatContainerRuntimeProbeWarning(source string, candidates []string, probes []runtimeProbe) string {
+	if len(probes) == 0 {
+		return fmt.Sprintf("container runtime not ready: source=%s; checked=%s; no probe results", source, strings.Join(candidates, " -> "))
+	}
+	details := make([]string, 0, len(probes))
+	for _, probe := range probes {
+		target := probe.name
+		if probe.path != "" && probe.path != probe.name {
+			target = fmt.Sprintf("%s (%s)", probe.name, probe.path)
+		}
+		if probe.err == nil {
+			details = append(details, target+": ready")
+			continue
+		}
+		details = append(details, fmt.Sprintf("%s: %v", target, probe.err))
+	}
+	return fmt.Sprintf("container runtime not ready: source=%s; checked=%s; %s", source, strings.Join(candidates, " -> "), strings.Join(details, "; "))
+}
+
+func runtimeProbeCandidates(mode string) ([]string, string) {
+	if override := strings.TrimSpace(os.Getenv("SQLRS_CONTAINER_RUNTIME")); override != "" {
+		name := strings.TrimSpace(override)
+		if filepath.Base(name) != "." {
+			name = filepath.Base(name)
+		}
+		return []string{override}, "env SQLRS_CONTAINER_RUNTIME=" + name
+	}
+	mode = normalizeContainerRuntimeMode(mode)
+	switch mode {
+	case "docker":
+		return []string{"docker"}, "config container.runtime=docker"
+	case "podman":
+		return []string{"podman"}, "config container.runtime=podman"
+	default:
+		return []string{"docker", "podman"}, "config container.runtime=auto"
+	}
+}
+
+func runtimeModeFromEngineConfig(ctx context.Context, cliClient *client.Client, verbose bool) string {
+	value, err := cliClient.GetConfig(ctx, "container.runtime", true)
+	if err != nil {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "container runtime mode probe failed: %v\n", err)
+		}
+		return "auto"
+	}
+	entry, ok := value.(client.ConfigValue)
+	if !ok {
+		return "auto"
+	}
+	mode, ok := entry.Value.(string)
+	if !ok {
+		return "auto"
+	}
+	return normalizeContainerRuntimeMode(mode)
+}
+
+func normalizeContainerRuntimeMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "docker":
+		return "docker"
+	case "podman":
+		return "podman"
+	default:
+		return "auto"
+	}
 }
 
 func checkWSL(ctx context.Context, verbose bool) (bool, string) {

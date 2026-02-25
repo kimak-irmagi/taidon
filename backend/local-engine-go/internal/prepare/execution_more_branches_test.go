@@ -194,6 +194,12 @@ func TestExecuteStateTaskCachedStatePGVersionRuntimeFailureRebuildsWithoutInvali
 	if len(st.deletedStates) != 0 {
 		t.Fatalf("expected no cached state invalidation, got %+v", st.deletedStates)
 	}
+	if len(fs.snapshotCalls) != 1 {
+		t.Fatalf("expected forced rebuild snapshot, got %+v", fs.snapshotCalls)
+	}
+	if len(st.states) != 1 {
+		t.Fatalf("expected rebuilt state to be stored, got %+v", st.states)
+	}
 }
 
 func TestExecuteStateTaskCachedStateNonRecoverableStartErrorReturnsOriginal(t *testing.T) {

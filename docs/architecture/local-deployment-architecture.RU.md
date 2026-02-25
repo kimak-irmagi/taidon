@@ -6,7 +6,7 @@
 
 - тонкий CLI
 - эфемерный процесс engine
-- взаимодействие с Docker и psql
+- взаимодействие с container runtime и psql
 
 Этот документ намеренно не повторяет детали запуска скриптов; интеграция Liquibase планируется
 и описана в [`liquibase-integration.RU.md`](liquibase-integration.RU.md).
@@ -57,13 +57,13 @@ flowchart LR
 - Общаться с engine по HTTP через loopback или Unix socket
 - Выполнять `run` команды локально против подготовленного экземпляра
 - Завершаться сразу после выполнения команды
-- Опционально: pre-flight проверки (Docker доступен, state store доступен для записи), вывод endpoint/version для диагностики
+- Опционально: pre-flight проверки (container runtime доступен, state store доступен для записи), вывод endpoint/version для диагностики
 
 CLI намеренно **тонкий** и без состояния.
 
 ### 3.2 Не-ответственности
 
-- Нет логики оркестрации Docker
+- Нет логики оркестрации container runtime
 - Нет логики snapshotting
 - Нет прямого выполнения скриптов
 
@@ -80,7 +80,7 @@ CLI намеренно **тонкий** и без состояния.
 
 ### 4.2 Ответственности
 
-- Оркестрация Docker-контейнеров
+- Оркестрация контейнеров через container runtime
 - Snapshotting и управление состояниями
 - Cache rewind и eviction
 - Выполнение скриптов через `psql` внутри контейнера
@@ -138,7 +138,7 @@ CLI намеренно **тонкий** и без состояния.
 
 ## 6. Взаимодействие с psql
 
-Engine выполняет `psql` внутри DB-контейнера через `docker exec`.
+Engine выполняет `psql` внутри DB-контейнера через runtime `exec`.
 При наличии файловых входов он монтирует корень скриптов read-only и
 переписывает `-f` аргументы на путь внутри контейнера.
 
@@ -147,12 +147,16 @@ Engine выполняет `psql` внутри DB-контейнера через
 
 ---
 
-## 6. Взаимодействие с Docker
+## 6. Взаимодействие с Container Runtime
 
-- Docker обязателен в MVP
-- Engine управляет DB-контейнерами и выполняет `psql` через `docker exec`
+- Локальный engine поддерживает Docker и Podman CLI.
+- Режим runtime задается через engine config `container.runtime` со значениями `auto|docker|podman`.
+- `SQLRS_CONTAINER_RUNTIME` используется как operational override для CI/debug-сценариев.
+- В режиме `auto` порядок проб: `docker`, затем `podman`.
+- Для Podman на macOS при пустом `CONTAINER_HOST` engine читает default Podman connection и экспортирует её для дочерних runtime-команд.
+- Engine управляет DB-контейнерами и выполняет `psql` через runtime `exec`
 - Все persistent data directories монтируются из host-managed хранилища
-- Engine проверяет доступность Docker на старте; CLI выводит понятные ошибки, если Docker недоступен
+- Engine проверяет доступность runtime на старте; CLI выводит понятные ошибки, если runtime недоступен
 
 На Windows (когда выбран btrfs):
 

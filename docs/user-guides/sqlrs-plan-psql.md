@@ -14,7 +14,7 @@ sqlrs plan:psql [--image <image-id>] [--] [psql-args...]
 
 Where:
 
-- `--image <image-id>` overrides the base Docker image.
+- `--image <image-id>` overrides the base container image.
 - `psql-args` are passed to `psql` and fully describe how the state is produced.
 
 If `--` is omitted, all remaining arguments are treated as `psql-args`.

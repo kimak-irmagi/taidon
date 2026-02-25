@@ -153,7 +153,7 @@ These behaviors are **implementation-specific** and not guaranteed by `run`.
 ## Instance Recovery (Missing Container)
 
 If an instance exists in the registry but its container is missing (for example,
-Docker was restarted or the container was removed externally), `run` attempts to
+the runtime was restarted or the container was removed externally), `run` attempts to
 recreate the container **using the instance runtime data directory**.
 
 Rules:

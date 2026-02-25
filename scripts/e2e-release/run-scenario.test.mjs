@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  buildRuntimeConfigCommand,
   buildInitCommand,
+  resolveContainerRuntime,
+  resolveFlowRuns,
   resolveSnapshotBackend,
   resolveStorePlan
 } from "./run-scenario.mjs";
@@ -46,6 +49,60 @@ run("default snapshot backend is copy", () => {
 
 run("unknown snapshot backend is rejected", () => {
   assert.throws(() => resolveSnapshotBackend("zfs"), /Invalid --snapshot-backend: zfs/);
+});
+
+run("default flow runs is 1", () => {
+  assert.equal(resolveFlowRuns(undefined), 1);
+  assert.equal(resolveFlowRuns(""), 1);
+});
+
+run("flow runs parses positive integer", () => {
+  assert.equal(resolveFlowRuns("2"), 2);
+});
+
+run("invalid flow runs is rejected", () => {
+  assert.throws(() => resolveFlowRuns("0"), /Invalid --flow-runs: 0/);
+  assert.throws(() => resolveFlowRuns("-1"), /Invalid --flow-runs: -1/);
+  assert.throws(() => resolveFlowRuns("abc"), /Invalid --flow-runs: abc/);
+});
+
+run("container runtime parser accepts podman and empty", () => {
+  assert.equal(resolveContainerRuntime(""), "");
+  assert.equal(resolveContainerRuntime(undefined), "");
+  assert.equal(resolveContainerRuntime("podman"), "podman");
+  assert.equal(resolveContainerRuntime("Docker"), "docker");
+});
+
+run("invalid container runtime is rejected", () => {
+  assert.throws(() => resolveContainerRuntime("nerdctl"), /Invalid --container-runtime: nerdctl/);
+});
+
+run("runtime config command sets container.runtime", () => {
+  const cmd = buildRuntimeConfigCommand({
+    sqlrsPath: "/tmp/sqlrs",
+    workspaceDir: "/tmp/workspace",
+    containerRuntime: "podman"
+  });
+  assert.deepEqual(cmd, [
+    "/tmp/sqlrs",
+    "--workspace",
+    "/tmp/workspace",
+    "config",
+    "set",
+    "container.runtime",
+    "podman"
+  ]);
+});
+
+run("runtime config command is omitted when runtime not requested", () => {
+  assert.equal(
+    buildRuntimeConfigCommand({
+      sqlrsPath: "/tmp/sqlrs",
+      workspaceDir: "/tmp/workspace",
+      containerRuntime: ""
+    }),
+    null
+  );
 });
 
 run("btrfs backend uses dedicated loopback btrfs store plan", () => {

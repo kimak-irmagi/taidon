@@ -41,8 +41,8 @@ run("happy e2e excludes unsupported windows scenario cells", () => {
     "missing windows/sakila exclusion"
   );
   assert.ok(
-    !excluded.some((entry) => entry.platform === "windows" && entry.snapshot_backend === "copy"),
-    "windows/copy should be enabled"
+    excluded.some((entry) => entry.platform === "windows" && entry.snapshot_backend === "copy"),
+    "missing windows/copy exclusion"
   );
 });
 
@@ -52,6 +52,7 @@ run("linux e2e cell passes snapshot backend to run-scenario", () => {
   const runStep = (job.steps || []).find((step) => step.name === "Run happy-path scenario (linux)");
   assert.ok(runStep, "missing run step");
   assert.match(String(runStep.run || ""), /--snapshot-backend "\$\{\{ matrix\.snapshot_backend \}\}"/);
+  assert.match(String(runStep.run || ""), /--flow-runs "2"/);
 });
 
 run("e2e diagnostics artifacts are backend and platform specific", () => {
@@ -90,6 +91,8 @@ run("windows e2e cell provisions WSL and docker prerequisites", () => {
   assert.match(String(runStep.run || ""), /\$isBtrfs/);
   assert.match(String(runStep.run || ""), /"--store", "dir", \$storeRoot/);
   assert.match(String(runStep.run || ""), /"--store", "image", \$storeImage/);
+  assert.match(String(runStep.run || ""), /raw-stdout-run2\.log/);
+  assert.match(String(runStep.run || ""), /second pass failed/);
 });
 
 run("publish RC waits for unified e2e-happy job", () => {
@@ -98,6 +101,7 @@ run("publish RC waits for unified e2e-happy job", () => {
   assert.ok(job, "missing publish-rc job");
   assert.ok(Array.isArray(job.needs), "publish-rc needs must be an array");
   assert.ok(job.needs.includes("e2e-happy"), "publish-rc must depend on e2e-happy");
+  assert.ok(job.needs.includes("e2e-podman-macos"), "publish-rc must depend on e2e-podman-macos");
 });
 
 run("smoke matrix keeps darwin-only cells after windows happy-path integration", () => {
@@ -107,4 +111,21 @@ run("smoke matrix keeps darwin-only cells after windows happy-path integration",
   const include = job.strategy?.matrix?.include || [];
   assert.equal(include.length, 1);
   assert.equal(include[0]?.os_family, "darwin");
+});
+
+run("release workflow includes macos podman probe with double flow run", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["e2e-podman-macos"];
+  assert.ok(job, "missing e2e-podman-macos job");
+  assert.equal(job["runs-on"], "macos-15-intel");
+  const startStep = (job.steps || []).find((step) => step.name === "Start Podman machine");
+  const skipStep = (job.steps || []).find((step) => step.name === "Skip note (Podman unavailable)");
+  const runStep = (job.steps || []).find((step) => step.name === "Run macOS release e2e with podman runtime");
+  assert.ok(startStep, "missing podman machine startup step");
+  assert.equal(skipStep, undefined, "skip step must be removed: podman probe is release-blocking");
+  assert.match(String(startStep.run || ""), /exit 1/);
+  assert.ok(runStep, "missing podman release e2e run step");
+  assert.match(String(runStep.run || ""), /--container-runtime "podman"/);
+  assert.match(String(runStep.run || ""), /--flow-runs "2"/);
+  assert.match(String(runStep.run || ""), /hp-psql-chinook/);
 });

@@ -13,6 +13,10 @@ This document defines the current internal component layout of the local `sqlrs-
 - `cmd/sqlrs-engine`
   - Parses flags and wires dependencies.
   - Opens SQLite state DB, config manager, runtime, statefs, prepare/run/delete managers.
+  - Resolves runtime mode from engine config: `container.runtime` (`auto|docker|podman`).
+  - Allows operational override via `SQLRS_CONTAINER_RUNTIME`.
+  - In `auto` mode, probes `docker` then `podman`.
+  - For Podman, can set `CONTAINER_HOST` from the default podman connection when not already set.
   - Starts HTTP server and writes/removes `engine.json`.
 - `internal/httpapi`
   - HTTP routing for `/v1/*` endpoints.
@@ -47,7 +51,7 @@ This document defines the current internal component layout of the local `sqlrs-
 - `internal/snapshot`
   - Snapshot backend implementations and selection (`auto`, `overlay`, `btrfs`, `copy`).
 - `internal/runtime`
-  - Docker runtime adapter (init base, start/stop, exec, run container).
+  - Container runtime adapter (Docker/Podman CLI; init base, start/stop, exec, run container).
 - `internal/dbms`
   - DBMS-specific snapshot hooks (Postgres stop/resume with `pg_ctl`).
 - `internal/conntrack`

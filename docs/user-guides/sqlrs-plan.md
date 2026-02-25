@@ -21,7 +21,7 @@ sqlrs plan:<kind> [--image <image-id>] [--] [tool-args...]
 Where:
 
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
-- `--image <image-id>` overrides the base Docker image.
+- `--image <image-id>` overrides the base container image.
 - `tool-args` are forwarded to the underlying tool for the selected kind.
 
 If `--` is omitted, all remaining arguments are treated as `tool-args`.
@@ -39,7 +39,7 @@ use `--` explicitly.
 
 ## Base Image Selection (Common)
 
-The base Docker image id is resolved in this order:
+The base container image id is resolved in this order:
 
 1. `--image <image-id>` command-line flag
 2. Workspace config (`.sqlrs/config.yaml`, `dbms.image`)
