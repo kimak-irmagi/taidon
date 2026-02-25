@@ -81,6 +81,10 @@ Release-blocking сценарии для MVP:
    - Linux: `hp-psql-chinook`/`hp-psql-sakila` с `copy` и `btrfs`.
    - Windows: `hp-psql-chinook` с `copy` (host engine) и `btrfs`
      (host `sqlrs.exe` + WSL runtime).
+   - macOS podman probe: `hp-psql-chinook` с `copy`, runtime принудительно
+     задается через `container.runtime=podman`, `prepare+run` выполняется дважды
+     в одном workspace.
+     Старт podman machine в этой ячейке является release-blocking.
 5. Каждый прогон нормализует вывод и сравнивает с golden snapshots.
 6. `publish_rc` создает/обновляет pre-release и прикладывает валидированные
    артефакты, если обязательные E2E прошли.
@@ -170,7 +174,8 @@ Data ownership:
   - Linux: сценарии `hp-psql-chinook`, `hp-psql-sakila`; backend-ы `copy`, `btrfs`.
   - Windows: сценарий `hp-psql-chinook`; backend-ы `copy`, `btrfs`
     (`copy` использует host engine, `btrfs` использует WSL-backed runtime).
-- macOS выполняет проверку бандла и smoke команд.
+- macOS выполняет проверку бандла и smoke команд, а также podman probe
+  (`hp-psql-chinook`, `copy`, два последовательных `prepare+run`).
 
 Целевое состояние:
 

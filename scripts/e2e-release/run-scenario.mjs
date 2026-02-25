@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRootDefault = path.resolve(__dirname, "..", "..");
 const allowedSnapshotBackends = new Set(["auto", "btrfs", "overlay", "copy"]);
+const allowedContainerRuntimes = new Set(["auto", "docker", "podman"]);
 
 function parseArgs(argv) {
   const out = {};
@@ -156,6 +157,29 @@ export function resolveSnapshotBackend(raw) {
   return value;
 }
 
+export function resolveFlowRuns(raw) {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (value === "") {
+    return 1;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Invalid --flow-runs: ${value}`);
+  }
+  return parsed;
+}
+
+export function resolveContainerRuntime(raw) {
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (value === "") {
+    return "";
+  }
+  if (!allowedContainerRuntimes.has(value)) {
+    throw new Error(`Invalid --container-runtime: ${value}`);
+  }
+  return value;
+}
+
 export function buildInitCommand({ sqlrsPath, workspaceDir, enginePath, storeDir, snapshotBackend }) {
   return [
     sqlrsPath,
@@ -172,6 +196,13 @@ export function buildInitCommand({ sqlrsPath, workspaceDir, enginePath, storeDir
     storeDir,
     "--no-start"
   ];
+}
+
+export function buildRuntimeConfigCommand({ sqlrsPath, workspaceDir, containerRuntime }) {
+  if (typeof containerRuntime !== "string" || containerRuntime.trim() === "") {
+    return null;
+  }
+  return [sqlrsPath, "--workspace", workspaceDir, "config", "set", "container.runtime", containerRuntime];
 }
 
 export function resolveStorePlan(snapshotBackend, outDir) {
@@ -242,6 +273,8 @@ async function main() {
   const outDir = path.resolve(args["out-dir"] || path.join(repoRoot, "artifacts", "e2e", scenarioId || "unknown"));
   const runTimeout = typeof args.timeout === "string" && args.timeout.trim() !== "" ? args.timeout.trim() : "15m";
   const snapshotBackend = resolveSnapshotBackend(args["snapshot-backend"]);
+  const flowRuns = resolveFlowRuns(args["flow-runs"]);
+  const containerRuntime = resolveContainerRuntime(args["container-runtime"]);
 
   if (!scenarioId) {
     throw new Error("Missing --scenario");
@@ -284,6 +317,11 @@ async function main() {
     storeDir: storePlan.storeDir,
     snapshotBackend
   });
+  const runtimeConfigCmd = buildRuntimeConfigCommand({
+    sqlrsPath,
+    workspaceDir,
+    containerRuntime
+  });
 
   const prepareArgs = Array.isArray(scenario.prepareArgs) ? scenario.prepareArgs : ["-f", "prepare.sql"];
   const runArgs = Array.isArray(scenario.runArgs) ? scenario.runArgs : ["-At", "-f", ".e2e-query.sql"];
@@ -306,6 +344,9 @@ async function main() {
   ];
 
   fs.writeFileSync(path.join(outDir, "command-init.txt"), `${commandToString(initCmd)}\n`, "utf8");
+  if (runtimeConfigCmd) {
+    fs.writeFileSync(path.join(outDir, "command-config.txt"), `${commandToString(runtimeConfigCmd)}\n`, "utf8");
+  }
   fs.writeFileSync(path.join(outDir, "command-flow.txt"), `${commandToString(flowCmd)}\n`, "utf8");
   writeJSON(path.join(outDir, "scenario.json"), scenario);
 
@@ -328,23 +369,47 @@ async function main() {
       throw new Error(`Init command failed for ${scenarioId}`);
     }
 
-    const flowExit = await runCommand({
-      cmd: flowCmd,
-      cwd: workspaceDir,
-      env: baseEnv,
-      stdoutPath: path.join(outDir, "raw-stdout.log"),
-      stderrPath: path.join(outDir, "raw-stderr.log")
-    });
+    if (runtimeConfigCmd) {
+      const configExit = await runCommand({
+        cmd: runtimeConfigCmd,
+        cwd: workspaceDir,
+        env: baseEnv,
+        stdoutPath: path.join(outDir, "config-stdout.log"),
+        stderrPath: path.join(outDir, "config-stderr.log")
+      });
+      if (configExit !== 0) {
+        writeJSON(path.join(outDir, "result.json"), {
+          scenario: scenarioId,
+          stage: "config",
+          exitCode: configExit,
+          workspaceDir
+        });
+        throw new Error(`Runtime config command failed for ${scenarioId}`);
+      }
+    }
 
-    writeJSON(path.join(outDir, "result.json"), {
-      scenario: scenarioId,
-      stage: "prepare+run",
-      exitCode: flowExit,
-      workspaceDir
-    });
+    for (let run = 1; run <= flowRuns; run += 1) {
+      const suffix = run === 1 ? "" : `-run${run}`;
+      const flowExit = await runCommand({
+        cmd: flowCmd,
+        cwd: workspaceDir,
+        env: baseEnv,
+        stdoutPath: path.join(outDir, `raw-stdout${suffix}.log`),
+        stderrPath: path.join(outDir, `raw-stderr${suffix}.log`)
+      });
 
-    if (flowExit !== 0) {
-      throw new Error(`Scenario failed: ${scenarioId}`);
+      writeJSON(path.join(outDir, "result.json"), {
+        scenario: scenarioId,
+        stage: "prepare+run",
+        flowRun: run,
+        flowRuns,
+        exitCode: flowExit,
+        workspaceDir
+      });
+
+      if (flowExit !== 0) {
+        throw new Error(`Scenario failed on flow run ${run}/${flowRuns}: ${scenarioId}`);
+      }
     }
   } finally {
     cleanupStore();

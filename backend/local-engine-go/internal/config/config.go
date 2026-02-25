@@ -101,6 +101,9 @@ func DefaultConfig() map[string]any {
 				"lowWatermark":  0.80,
 				"minStateAge":   "10m",
 			},
+    },
+		"container": map[string]any{
+			"runtime": "auto",
 		},
 		"snapshot": map[string]any{
 			"backend": "auto",
@@ -157,6 +160,15 @@ func DefaultSchema() map[string]any {
 							},
 						},
 						"additionalProperties": true,
+          },
+        },
+      },
+			"container": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"runtime": map[string]any{
+						"type": []any{"string", "null"},
+						"enum": []any{"auto", "docker", "podman", nil},
 					},
 				},
 				"additionalProperties": true,
@@ -361,6 +373,21 @@ func validateValue(path string, value any) error {
 		}
 		switch str {
 		case "auto", "overlay", "btrfs", "copy":
+			return nil
+		default:
+			return ErrInvalidValue
+		}
+	}
+	if path == "container.runtime" {
+		if value == nil {
+			return nil
+		}
+		str, ok := value.(string)
+		if !ok {
+			return ErrInvalidValue
+		}
+		switch str {
+		case "auto", "docker", "podman":
 			return nil
 		default:
 			return ErrInvalidValue

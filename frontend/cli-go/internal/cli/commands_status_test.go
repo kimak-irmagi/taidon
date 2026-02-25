@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/daemon"
 )
 
@@ -163,6 +165,37 @@ func TestRunStatusRemoteVerbose(t *testing.T) {
 	}
 }
 
+func TestRuntimeModeFromEngineConfig(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/config" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"path":"container.runtime","value":"podman"}`))
+	}))
+	defer server.Close()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	mode := runtimeModeFromEngineConfig(context.Background(), cliClient, false)
+	if mode != "podman" {
+		t.Fatalf("expected podman mode, got %q", mode)
+	}
+}
+
+func TestRuntimeModeFromEngineConfigFallbackOnError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	mode := runtimeModeFromEngineConfig(context.Background(), cliClient, false)
+	if mode != "auto" {
+		t.Fatalf("expected auto mode, got %q", mode)
+	}
+}
+
 func TestPrintStatus(t *testing.T) {
 	result := StatusResult{
 		OK:       true,
@@ -211,15 +244,18 @@ func TestPrintStatusIncludesOptionalFields(t *testing.T) {
 	}
 }
 
-func TestCheckDockerMissingBinary(t *testing.T) {
+func TestCheckContainerRuntimeMissingBinary(t *testing.T) {
 	t.Setenv("PATH", "")
-	ok, warning := checkDocker(context.Background(), false)
-	if ok || warning != "docker not ready" {
-		t.Fatalf("expected docker not ready, got ok=%v warning=%q", ok, warning)
+	ok, warning := checkContainerRuntime(context.Background(), "auto", false)
+	if ok || warning != "container runtime not ready (docker/podman)" {
+		t.Fatalf("expected container runtime not ready, got ok=%v warning=%q", ok, warning)
 	}
-	ok, warning = checkDocker(context.Background(), true)
-	if ok || !strings.Contains(warning, "docker not ready") {
-		t.Fatalf("expected verbose docker warning, got ok=%v warning=%q", ok, warning)
+	ok, warning = checkContainerRuntime(context.Background(), "auto", true)
+	if ok || !strings.Contains(warning, "container runtime not ready: source=config container.runtime=auto; checked=docker -> podman") {
+		t.Fatalf("expected verbose runtime warning, got ok=%v warning=%q", ok, warning)
+	}
+	if !strings.Contains(warning, "docker: not found") || !strings.Contains(warning, "podman: not found") {
+		t.Fatalf("expected docker/podman details in warning, got %q", warning)
 	}
 }
 
@@ -332,20 +368,138 @@ func TestCheckWSLBtrfsOk(t *testing.T) {
 	}
 }
 
-func TestCheckDockerCommandFailure(t *testing.T) {
+func TestCheckContainerRuntimeCommandFailure(t *testing.T) {
 	withExecStubs(t, func(name string) (string, error) {
-		return "docker", nil
+		if name == "docker" {
+			return "docker", nil
+		}
+		if name == "podman" {
+			return "podman", nil
+		}
+		return "", errors.New("not found")
 	}, func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		return commandExit(ctx, 1)
 	})
 
-	ok, warning := checkDocker(context.Background(), false)
-	if ok || warning != "docker not ready" {
-		t.Fatalf("expected docker not ready, got ok=%v warning=%q", ok, warning)
+	ok, warning := checkContainerRuntime(context.Background(), "auto", false)
+	if ok || warning != "container runtime not ready (docker/podman)" {
+		t.Fatalf("expected runtime not ready, got ok=%v warning=%q", ok, warning)
 	}
-	ok, warning = checkDocker(context.Background(), true)
-	if ok || !strings.Contains(warning, "docker not ready") {
+	ok, warning = checkContainerRuntime(context.Background(), "auto", true)
+	if ok || !strings.Contains(warning, "container runtime not ready: source=config container.runtime=auto; checked=docker -> podman") {
 		t.Fatalf("expected verbose warning, got ok=%v warning=%q", ok, warning)
+	}
+	if !strings.Contains(warning, "docker: info failed") || !strings.Contains(warning, "podman: info failed") {
+		t.Fatalf("expected per-runtime errors, got %q", warning)
+	}
+}
+
+func TestCheckContainerRuntimeFallsBackToPodmanWhenDockerMissing(t *testing.T) {
+	withExecStubs(t, func(name string) (string, error) {
+		if name == "docker" {
+			return "", errors.New("docker not found")
+		}
+		if name == "podman" {
+			return "podman", nil
+		}
+		return "", errors.New("not found")
+	}, func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "podman" {
+			return commandExit(ctx, 0)
+		}
+		return commandExit(ctx, 1)
+	})
+
+	ok, warning := checkContainerRuntime(context.Background(), "auto", false)
+	if !ok || warning != "" {
+		t.Fatalf("expected podman fallback success, got ok=%v warning=%q", ok, warning)
+	}
+	ok, warning = checkContainerRuntime(context.Background(), "auto", true)
+	if !ok || warning != "" {
+		t.Fatalf("expected verbose podman fallback success, got ok=%v warning=%q", ok, warning)
+	}
+}
+
+func TestCheckContainerRuntimeFallsBackToPodmanWhenDockerUnhealthy(t *testing.T) {
+	withExecStubs(t, func(name string) (string, error) {
+		if name == "docker" {
+			return "docker", nil
+		}
+		if name == "podman" {
+			return "podman", nil
+		}
+		return "", errors.New("not found")
+	}, func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name == "docker" {
+			return commandExit(ctx, 1)
+		}
+		if name == "podman" {
+			return commandExit(ctx, 0)
+		}
+		return commandExit(ctx, 1)
+	})
+
+	ok, warning := checkContainerRuntime(context.Background(), "auto", true)
+	if !ok || warning != "" {
+		t.Fatalf("expected podman fallback success in verbose mode, got ok=%v warning=%q", ok, warning)
+	}
+}
+
+func TestCheckContainerRuntimeDockerModeDoesNotProbePodman(t *testing.T) {
+	withExecStubs(t, func(name string) (string, error) {
+		if name == "docker" {
+			return "", errors.New("docker missing")
+		}
+		if name == "podman" {
+			t.Fatalf("unexpected podman lookup in docker mode")
+		}
+		return "", errors.New("not found")
+	}, nil)
+
+	ok, warning := checkContainerRuntime(context.Background(), "docker", true)
+	if ok {
+		t.Fatalf("expected runtime not ready")
+	}
+	if !strings.Contains(warning, "source=config container.runtime=docker; checked=docker") {
+		t.Fatalf("expected docker-only probe warning, got %q", warning)
+	}
+}
+
+func TestCheckContainerRuntimePodmanModeDoesNotProbeDocker(t *testing.T) {
+	withExecStubs(t, func(name string) (string, error) {
+		if name == "podman" {
+			return "", errors.New("podman missing")
+		}
+		if name == "docker" {
+			t.Fatalf("unexpected docker lookup in podman mode")
+		}
+		return "", errors.New("not found")
+	}, nil)
+
+	ok, warning := checkContainerRuntime(context.Background(), "podman", true)
+	if ok {
+		t.Fatalf("expected runtime not ready")
+	}
+	if !strings.Contains(warning, "source=config container.runtime=podman; checked=podman") {
+		t.Fatalf("expected podman-only probe warning, got %q", warning)
+	}
+}
+
+func TestCheckContainerRuntimeEnvOverrideHasPriority(t *testing.T) {
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "podman")
+	withExecStubs(t, func(name string) (string, error) {
+		if name != "podman" {
+			t.Fatalf("expected env override candidate, got %q", name)
+		}
+		return "", errors.New("podman missing")
+	}, nil)
+
+	ok, warning := checkContainerRuntime(context.Background(), "docker", true)
+	if ok {
+		t.Fatalf("expected runtime not ready")
+	}
+	if !strings.Contains(warning, "source=env SQLRS_CONTAINER_RUNTIME=podman; checked=podman") {
+		t.Fatalf("expected env-override warning, got %q", warning)
 	}
 }
 

@@ -238,6 +238,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	if err != nil {
 		return "", errorResponse("internal_error", "cannot check state cache", err.Error())
 	}
+	forceRebuild := false
 	m.logInfoJob(jobID, "state cache decision task=%s input_kind=%s input_id=%s task_hash=%s output_state=%s cached=%t",
 		task.TaskID,
 		task.Input.Kind,
@@ -293,6 +294,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 				if !invalidated {
 					m.logInfoJob(jobID, "cached runtime start failed; rebuilding state=%s", outputStateID)
 				}
+				forceRebuild = true
 				cached = false
 				cachedFlag = false
 				if outputStateID != task.OutputStateID || task.TaskHash != taskHash || (task.Cached == nil || *task.Cached != cachedFlag) {
@@ -343,16 +345,18 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	kind := snapshotKind(m.statefs)
 	lockPath := stateBuildLockPath(paths.stateDir, kind)
 	lockErr := withStateBuildLock(ctx, paths.stateDir, lockPath, kind, func() error {
-		cached, err := m.isStateCached(outputStateID)
-		if err != nil {
-			errResp = errorResponse("internal_error", "cannot check state cache", err.Error())
-			return errStateBuildFailed
+		if !forceRebuild {
+			cached, err := m.isStateCached(outputStateID)
+			if err != nil {
+				errResp = errorResponse("internal_error", "cannot check state cache", err.Error())
+				return errStateBuildFailed
+			}
+			if cached {
+				m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
+				return nil
+			}
 		}
-		if cached {
-			m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
-			return nil
-		}
-		if kind == "btrfs" || stateBuildMarkerExists(paths.stateDir, kind) {
+		if forceRebuild || kind == "btrfs" || stateBuildMarkerExists(paths.stateDir, kind) {
 			if err := resetStateDir(ctx, m.statefs, paths.stateDir); err != nil {
 				errResp = errorResponse("internal_error", "cannot reset state dir", err.Error())
 				return errStateBuildFailed

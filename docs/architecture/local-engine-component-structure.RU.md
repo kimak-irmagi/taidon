@@ -13,6 +13,10 @@
 - `cmd/sqlrs-engine`
   - Парсит флаги и связывает зависимости.
   - Открывает SQLite state DB, config manager, runtime, statefs, prepare/run/delete managers.
+  - Определяет режим runtime из engine config: `container.runtime` (`auto|docker|podman`).
+  - Поддерживает operational override через `SQLRS_CONTAINER_RUNTIME`.
+  - В режиме `auto` пробует `docker`, затем `podman`.
+  - Для Podman может выставлять `CONTAINER_HOST` из default podman connection, если переменная не задана.
   - Запускает HTTP сервер и пишет/удаляет `engine.json`.
 - `internal/httpapi`
   - HTTP роутинг для `/v1/*`.
@@ -47,7 +51,7 @@
 - `internal/snapshot`
   - Реализации и выбор backend-а (`auto`, `overlay`, `btrfs`, `copy`).
 - `internal/runtime`
-  - Docker runtime adapter (init base, start/stop, exec, run container).
+  - Адаптер container runtime (Docker/Podman CLI; init base, start/stop, exec, run container).
 - `internal/dbms`
   - DBMS-специфичные snapshot hooks (Postgres stop/resume через `pg_ctl`).
 - `internal/conntrack`

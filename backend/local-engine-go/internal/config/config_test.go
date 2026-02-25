@@ -410,15 +410,6 @@ func TestConfigDefaultSnapshotBackend(t *testing.T) {
 }
 
 func TestConfigDefaultCacheCapacity(t *testing.T) {
-	dir := t.TempDir()
-	mgr, err := NewManager(Options{
-		StateStoreRoot: dir,
-		Defaults:       testDefaults(),
-	})
-	if err != nil {
-		t.Fatalf("NewManager: %v", err)
-	}
-
 	maxBytes, err := mgr.Get("cache.capacity.maxBytes", true)
 	if err != nil {
 		t.Fatalf("Get cache maxBytes effective: %v", err)
@@ -449,6 +440,24 @@ func TestConfigDefaultCacheCapacity(t *testing.T) {
 	}
 	if age != "10m" {
 		t.Fatalf("expected default minStateAge=10m, got %#v", age)
+  }
+}
+
+func TestConfigDefaultContainerRuntime(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(Options{
+		StateStoreRoot: dir,
+		Defaults:       testDefaults(),
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	value, err := mgr.Get("container.runtime", true)
+	if err != nil {
+		t.Fatalf("Get effective: %v", err)
+	}
+	if value != "auto" {
+		t.Fatalf("expected default container runtime auto, got %#v", value)
 	}
 }
 
@@ -485,6 +494,9 @@ func TestConfigSchemaValidationRejects(t *testing.T) {
 	if _, err := mgr.Set("cache.capacity.minStateAge", "bad"); err == nil {
 		t.Fatalf("expected validation error for bad minStateAge")
 	}
+	if _, err := mgr.Set("container.runtime", "bad"); err == nil {
+		t.Fatalf("expected validation error for container runtime")
+  }
 }
 
 func TestConfigSchemaValidationRejectsHighWatermarkBelowLow(t *testing.T) {
@@ -564,6 +576,23 @@ func TestValidateValueVariants(t *testing.T) {
 	}
 	if err := validateValue("cache.capacity.minStateAge", "bad"); err == nil {
 		t.Fatalf("expected invalid minStateAge to be rejected")
+	if err := validateValue("container.runtime", nil); err != nil {
+		t.Fatalf("expected nil container runtime to be allowed")
+	}
+	if err := validateValue("container.runtime", "auto"); err != nil {
+		t.Fatalf("expected container runtime auto to be valid")
+	}
+	if err := validateValue("container.runtime", "docker"); err != nil {
+		t.Fatalf("expected container runtime docker to be valid")
+	}
+	if err := validateValue("container.runtime", "podman"); err != nil {
+		t.Fatalf("expected container runtime podman to be valid")
+	}
+	if err := validateValue("container.runtime", "bad"); err == nil {
+		t.Fatalf("expected invalid container runtime to be rejected")
+	}
+	if err := validateValue("container.runtime", 1); err == nil {
+		t.Fatalf("expected non-string container runtime to be rejected")
 	}
 	if err := validateValue("features.other", "ok"); err != nil {
 		t.Fatalf("expected other path to pass")
@@ -1178,6 +1207,9 @@ func testDefaults() map[string]any {
 				"lowWatermark":  0.80,
 				"minStateAge":   "10m",
 			},
+    },
+		"container": map[string]any{
+			"runtime": "auto",
 		},
 		"snapshot": map[string]any{
 			"backend": "auto",

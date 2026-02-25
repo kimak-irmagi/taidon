@@ -53,7 +53,7 @@ func TestPrintStatusSkipsEmptyWarnings(t *testing.T) {
 	}
 }
 
-func TestCheckDockerReady(t *testing.T) {
+func TestCheckContainerRuntimeReady(t *testing.T) {
 	withExecStubs(t, func(name string) (string, error) {
 		if name == "docker" {
 			return "docker", nil
@@ -63,7 +63,7 @@ func TestCheckDockerReady(t *testing.T) {
 		return commandExit(ctx, 0)
 	})
 
-	ok, warn := checkDocker(context.Background(), false)
+	ok, warn := checkContainerRuntime(context.Background(), "docker", false)
 	if !ok || warn != "" {
 		t.Fatalf("expected docker ready, got ok=%v warn=%q", ok, warn)
 	}

@@ -113,8 +113,8 @@ not separate packages.
 - validates run kind (`psql`, `pgbench`) and arguments
 - resolves instance by id/name via registry
 - executes command via runtime
-- on missing container, recreates it from `runtime_dir` (if present), updates
-`runtime_id`, and emits recovery log events.
+- on missing container, recreates it from `runtime_dir` (if present),
+  updates `runtime_id`, and emits recovery log events.
 
 ### 1.5 StateFS and snapshot backends
 
@@ -128,8 +128,8 @@ not separate packages.
 
 ### 1.6 Runtime and DBMS hooks
 
-- `internal/runtime` is a Docker-based adapter (`docker` CLI): init base, start/stop
-containers, exec commands, run one-shot containers.
+- `internal/runtime` is a container runtime adapter (Docker/Podman CLI): init
+  base, start/stop containers, exec commands, run one-shot containers.
 - `internal/dbms` provides Postgres snapshot hooks (`PrepareSnapshot`,
   `ResumeSnapshot`) around snapshot operations.
 
@@ -283,13 +283,14 @@ sequenceDiagram
 - Long operations return a prepare job; terminal failures are reported via job
   status and event stream.
 - Validation failures return `400` with structured error payload.
-- Runtime/docker availability failures are surfaced as actionable API errors.
+- Runtime availability failures (Docker/Podman) are surfaced as actionable API errors.
 - If cached state is detected as dirty/incomplete, prepare invalidates and
   rebuilds it.
 
 ## 6. Evolution hooks
 
-- Replace Docker runtime adapter without changing API contracts.
+- Keep runtime adapter replaceable (Docker/Podman and future OCI runtimes) without
+  changing API contracts.
 - Swap/extend StateFS backends while keeping `statefs.StateFS` stable.
 - Replace `conntrack.Noop` with active DB connection tracking in local/shared profiles.
 
