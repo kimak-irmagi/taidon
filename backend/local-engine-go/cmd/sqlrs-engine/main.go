@@ -193,18 +193,41 @@ func ensurePodmanContainerHost(binary string) {
 		return
 	}
 	if strings.Contains(strings.ToLower(filepath.Base(binary)), "podman") {
-		if uri := podmanDefaultConnectionURI(binary); uri != "" {
-			_ = osSetenvFn("CONTAINER_HOST", uri)
+		conn := podmanDefaultConnection(binary)
+		if conn.URI != "" {
+			_ = osSetenvFn("CONTAINER_HOST", conn.URI)
+			if strings.HasPrefix(strings.ToLower(conn.URI), "ssh://") && os.Getenv("CONTAINER_SSHKEY") == "" {
+				identity := strings.TrimSpace(conn.Identity)
+				if identity != "" && !strings.EqualFold(identity, "<none>") {
+					_ = osSetenvFn("CONTAINER_SSHKEY", identity)
+				}
+			}
 		}
 	}
+}
+
+type podmanConnection struct {
+	URI      string
+	Identity string
 }
 
 // podmanDefaultConnectionURI runs `podman system connection list` and returns the URI of the default connection.
 // Used on macOS so child podman invocations can reach the podman machine.
 func podmanDefaultConnectionURI(podmanPath string) string {
+	return podmanDefaultConnection(podmanPath).URI
+}
+
+// podmanDefaultConnection runs `podman system connection list` and returns the default connection
+// URI and identity file path.
+func podmanDefaultConnection(podmanPath string) podmanConnection {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	for _, format := range []string{"{{if .Default}}{{.URI}}{{end}}", "{{.URI}}"} {
+	for _, format := range []string{
+		"{{if .Default}}{{.URI}}\t{{.Identity}}{{end}}",
+		"{{.URI}}\t{{.Identity}}",
+		"{{if .Default}}{{.URI}}{{end}}",
+		"{{.URI}}",
+	} {
 		cmd := execCommandContextFn(ctx, podmanPath, "system", "connection", "list", "--format", format)
 		cmd.Env = os.Environ()
 		out, err := cmd.Output()
@@ -212,13 +235,36 @@ func podmanDefaultConnectionURI(podmanPath string) string {
 			continue
 		}
 		for _, line := range strings.Split(string(out), "\n") {
-			uri := strings.TrimSpace(line)
-			if uri != "" {
-				return uri
+			conn := parsePodmanConnectionLine(line)
+			if conn.URI != "" {
+				return conn
 			}
 		}
 	}
-	return ""
+	return podmanConnection{}
+}
+
+func parsePodmanConnectionLine(line string) podmanConnection {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return podmanConnection{}
+	}
+	parts := strings.SplitN(line, "\t", 2)
+	uri := strings.TrimSpace(parts[0])
+	if uri == "" {
+		return podmanConnection{}
+	}
+	identity := ""
+	if len(parts) > 1 {
+		identity = strings.TrimSpace(parts[1])
+	}
+	if strings.EqualFold(identity, "<none>") {
+		identity = ""
+	}
+	return podmanConnection{
+		URI:      uri,
+		Identity: identity,
+	}
 }
 
 func snapshotBackendFromConfig(cfg config.Store) string {
