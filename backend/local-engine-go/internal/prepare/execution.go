@@ -1249,6 +1249,17 @@ func shouldRetryLockAcquire(err error, lockPath string) bool {
 	if isLockBusyError(err, lockPath) {
 		return true
 	}
+	if isPermissionError(err) {
+		_, statErr := os.Stat(lockPath)
+		if errors.Is(statErr, os.ErrNotExist) {
+			// Lock file may disappear between failed open and stat while another
+			// worker releases it; retry instead of surfacing transient EACCES.
+			return true
+		}
+		if isPermissionError(statErr) {
+			return true
+		}
+	}
 	if !os.IsExist(err) && !errors.Is(err, os.ErrExist) {
 		return false
 	}
