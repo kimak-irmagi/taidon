@@ -100,6 +100,9 @@ func TestDockerRuntimeStart(t *testing.T) {
 	if !containsArg(runner.calls[3].args, "--name", "sqlrs-test") {
 		t.Fatalf("expected container name in args: %v", runner.calls[3].args)
 	}
+	if !containsArg(runner.calls[3].args, "-p", "5432") {
+		t.Fatalf("expected auto host port publish syntax, got %v", runner.calls[3].args)
+	}
 	foundMkdir := false
 	foundChown := false
 	foundChmod := false
