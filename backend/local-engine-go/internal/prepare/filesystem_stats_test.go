@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -56,6 +57,9 @@ func TestFilesystemStatsEmptyPathError(t *testing.T) {
 }
 
 func findMissingVolumePath() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
 	for letter := 'Z'; letter >= 'A'; letter-- {
 		root := fmt.Sprintf("%c:\\", letter)
 		if _, err := os.Stat(root); err != nil && errors.Is(err, os.ErrNotExist) {
