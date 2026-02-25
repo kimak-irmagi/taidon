@@ -408,6 +408,75 @@ func TestExecuteStateTaskSnapshotPhaseCapacityCheckFailure(t *testing.T) {
 	}
 }
 
+func TestExecuteStateTaskMetadataCapacityDoesNotEvictFreshOutputState(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManagerWithDeps(t, store, newQueueStore(t), &testDeps{
+		config: &fakeConfigStore{
+			values: map[string]any{
+				"cache.capacity.maxBytes":      int64(0),
+				"cache.capacity.reserveBytes":  int64(0),
+				"cache.capacity.highWatermark": 0.90,
+				"cache.capacity.lowWatermark":  0.80,
+				"cache.capacity.minStateAge":   "0s",
+			},
+		},
+	})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			OutputStateID: outputID,
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+
+	rootUsageCalls := 0
+	overrideCapacitySignals(t,
+		func(string) (int64, int64, error) { return 1000, 1000, nil },
+		func(path string) (int64, error) {
+			if strings.Contains(path, outputID) {
+				return 850, nil
+			}
+			if strings.Contains(path, "state-store") {
+				rootUsageCalls++
+				if rootUsageCalls <= 2 {
+					return 0, nil
+				}
+				return 950, nil
+			}
+			return 0, nil
+		},
+	)
+
+	gotOutput, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil && gotOutput != outputID {
+		t.Fatalf("unexpected output id: %q", gotOutput)
+	}
+	if containsString(store.deletedStates, outputID) {
+		t.Fatalf("fresh output state must not be evicted, deleted=%+v", store.deletedStates)
+	}
+	if _, ok := store.statesByID[outputID]; !ok {
+		t.Fatalf("expected output state metadata to remain present")
+	}
+}
+
+func containsString(items []string, needle string) bool {
+	for _, item := range items {
+		if item == needle {
+			return true
+		}
+	}
+	return false
+}
+
 type nthGetStateErrStore struct {
 	fakeStore
 	errOn int

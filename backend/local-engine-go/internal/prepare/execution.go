@@ -462,7 +462,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 			}
 			return errStateBuildFailed
 		}
-		if capErr := m.ensureCacheCapacity(ctx, jobID, "metadata_commit"); capErr != nil {
+		if capErr := m.ensureCacheCapacity(ctx, jobID, "metadata_commit", outputStateID); capErr != nil {
 			errResp = capErr
 			return errStateBuildFailed
 		}

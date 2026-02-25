@@ -50,7 +50,7 @@ var (
 
 // ensureCacheCapacity applies strict cache budget enforcement before/after snapshot
 // phases as defined in docs/architecture/state-cache-capacity-control.md.
-func (m *PrepareService) ensureCacheCapacity(ctx context.Context, jobID string, phase string) *ErrorResponse {
+func (m *PrepareService) ensureCacheCapacity(ctx context.Context, jobID string, phase string, protectedStateIDs ...string) *ErrorResponse {
 	if m == nil || m.config == nil || strings.TrimSpace(m.stateStoreRoot) == "" {
 		return nil
 	}
@@ -93,7 +93,7 @@ func (m *PrepareService) ensureCacheCapacity(ctx context.Context, jobID string, 
 
 	eviction := evictionSummary{}
 	lockErr := withEvictLock(ctx, m.stateStoreRoot, func() error {
-		summary, runErr := m.runEviction(ctx, settings, usageBytes, freeBytes)
+		summary, runErr := m.runEviction(ctx, settings, usageBytes, freeBytes, protectedStateIDs...)
 		eviction = summary
 		return runErr
 	})
@@ -303,9 +303,9 @@ type evictionSummary struct {
 	ReclaimableBytes int64
 }
 
-func (m *PrepareService) runEviction(ctx context.Context, settings capacitySettings, usageBytes int64, freeBytes int64) (evictionSummary, error) {
+func (m *PrepareService) runEviction(ctx context.Context, settings capacitySettings, usageBytes int64, freeBytes int64, protectedStateIDs ...string) (evictionSummary, error) {
 	summary := evictionSummary{}
-	candidates, blocked, reclaimable, err := m.listEvictionCandidates(ctx, settings)
+	candidates, blocked, reclaimable, err := m.listEvictionCandidates(ctx, settings, protectedStateIDs...)
 	if err != nil {
 		return summary, err
 	}
@@ -339,16 +339,28 @@ func (m *PrepareService) runEviction(ctx context.Context, settings capacitySetti
 	return summary, nil
 }
 
-func (m *PrepareService) listEvictionCandidates(ctx context.Context, settings capacitySettings) ([]evictCandidate, int, int64, error) {
+func (m *PrepareService) listEvictionCandidates(ctx context.Context, settings capacitySettings, protectedStateIDs ...string) ([]evictCandidate, int, int64, error) {
 	entries, err := m.store.ListStates(ctx, store.StateFilters{})
 	if err != nil {
 		return nil, 0, 0, err
+	}
+	protected := map[string]struct{}{}
+	for _, stateID := range protectedStateIDs {
+		trimmed := strings.TrimSpace(stateID)
+		if trimmed == "" {
+			continue
+		}
+		protected[trimmed] = struct{}{}
 	}
 	now := nowUTCFn()
 	blocked := 0
 	reclaimable := int64(0)
 	out := make([]evictCandidate, 0, len(entries))
 	for _, entry := range entries {
+		if _, skip := protected[entry.StateID]; skip {
+			blocked++
+			continue
+		}
 		if entry.RefCount > 0 {
 			blocked++
 			continue

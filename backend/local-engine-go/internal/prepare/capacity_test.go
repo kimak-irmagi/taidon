@@ -212,6 +212,44 @@ func TestListEvictionCandidatesBlocksMinRetentionUntil(t *testing.T) {
 	}
 }
 
+func TestListEvictionCandidatesSkipsProtectedStateIDs(t *testing.T) {
+	created := "2026-02-22T10:00:00Z"
+	st := &fakeStore{
+		listStates: []store.StateEntry{
+			{
+				StateID:     "state-protected",
+				ImageID:     "image-1",
+				PrepareKind: "psql",
+				CreatedAt:   created,
+				SizeBytes:   int64Ptr(500),
+			},
+			{
+				StateID:     "state-evictable",
+				ImageID:     "image-1",
+				PrepareKind: "psql",
+				CreatedAt:   created,
+				SizeBytes:   int64Ptr(300),
+			},
+		},
+	}
+	mgr := newManagerWithDeps(t, st, newQueueStore(t), nil)
+	candidates, blocked, reclaimable, err := mgr.listEvictionCandidates(context.Background(), capacitySettings{
+		MinStateAge: 0,
+	}, "state-protected")
+	if err != nil {
+		t.Fatalf("listEvictionCandidates: %v", err)
+	}
+	if blocked != 1 {
+		t.Fatalf("expected blocked=1, got %d", blocked)
+	}
+	if len(candidates) != 1 || candidates[0].StateID != "state-evictable" {
+		t.Fatalf("unexpected candidates: %+v", candidates)
+	}
+	if reclaimable != 300 {
+		t.Fatalf("expected reclaimable=300, got %d", reclaimable)
+	}
+}
+
 func TestEnsureCacheCapacityReturnsUnreclaimableUnderPressure(t *testing.T) {
 	st := &fakeStore{
 		listStates: []store.StateEntry{
