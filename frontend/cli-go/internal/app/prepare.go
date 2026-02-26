@@ -26,6 +26,9 @@ type stdoutAndErr struct {
 
 func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 	var opts prepareArgs
+	if err := validateNoUnicodeDashFlags(args, 2); err != nil {
+		return opts, false, err
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--" {

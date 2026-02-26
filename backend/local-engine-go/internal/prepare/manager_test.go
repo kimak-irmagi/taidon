@@ -24,7 +24,9 @@ type fakeStore struct {
 	createStateErr    error
 	createInstanceErr error
 	getStateErr       error
+	listStatesErr     error
 	statesByID        map[string]store.StateEntry
+	listStates        []store.StateEntry
 	states            []store.StateCreate
 	instances         []store.InstanceCreate
 	deletedStates     []string
@@ -47,7 +49,38 @@ func (f *fakeStore) GetInstance(ctx context.Context, instanceID string) (store.I
 }
 
 func (f *fakeStore) ListStates(ctx context.Context, filters store.StateFilters) ([]store.StateEntry, error) {
-	return nil, nil
+	if f.listStatesErr != nil {
+		return nil, f.listStatesErr
+	}
+	source := f.listStates
+	if len(source) == 0 && len(f.statesByID) > 0 {
+		source = make([]store.StateEntry, 0, len(f.statesByID))
+		for _, entry := range f.statesByID {
+			source = append(source, entry)
+		}
+	}
+	if len(source) == 0 {
+		return nil, nil
+	}
+	out := make([]store.StateEntry, 0, len(source))
+	for _, entry := range source {
+		if filters.Kind != "" && entry.PrepareKind != filters.Kind {
+			continue
+		}
+		if filters.ImageID != "" && entry.ImageID != filters.ImageID {
+			continue
+		}
+		if filters.ParentID != "" {
+			if entry.ParentStateID == nil || *entry.ParentStateID != filters.ParentID {
+				continue
+			}
+		}
+		if filters.IDPrefix != "" && !strings.HasPrefix(strings.ToLower(entry.StateID), strings.ToLower(filters.IDPrefix)) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out, nil
 }
 
 func (f *fakeStore) GetState(ctx context.Context, stateID string) (store.StateEntry, bool, error) {
@@ -1596,30 +1629,11 @@ func TestDeleteJobForceCancels(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		tasks, err := queueStore.ListTasks(context.Background(), "job-1")
-		if err != nil {
-			if time.Now().After(deadline) {
-				t.Fatalf("timeout waiting for execute-0 running: %v", err)
-			}
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		foundRunning := false
-		for _, task := range tasks {
-			if task.TaskID == "execute-0" && task.Status == StatusRunning {
-				foundRunning = true
-				break
-			}
-		}
-		if foundRunning {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for execute-0 running, tasks=%+v", tasks)
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-blocker.started:
+	case <-time.After(20 * time.Second):
+		tasks, _ := queueStore.ListTasks(context.Background(), "job-1")
+		t.Fatalf("timeout waiting for execute runtime start, tasks=%+v", tasks)
 	}
 
 	result, ok := mgr.Delete("job-1", deletion.DeleteOptions{Force: true})
@@ -4167,15 +4181,28 @@ type testDeps struct {
 }
 
 type fakeConfigStore struct {
-	value any
-	err   error
+	value  any
+	values map[string]any
+	err    error
 }
 
 func (f *fakeConfigStore) Get(path string, effective bool) (any, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
-	return f.value, nil
+	if f.values != nil {
+		value, ok := f.values[path]
+		if !ok {
+			return nil, errors.New("missing value")
+		}
+		return value, nil
+	}
+	switch path {
+	case "orchestrator.jobs.maxIdentical", "log.level":
+		return f.value, nil
+	default:
+		return nil, errors.New("missing value")
+	}
 }
 
 func (f *fakeConfigStore) Set(path string, value any) (any, error) {
@@ -4242,7 +4269,17 @@ func newManagerWithDeps(t *testing.T, store store.Store, queueStore queue.Store,
 		deps.liquibase = &fakeLiquibaseRunner{}
 	}
 	if deps.config == nil {
-		deps.config = &fakeConfigStore{value: 2}
+		deps.config = &fakeConfigStore{
+			values: map[string]any{
+				"orchestrator.jobs.maxIdentical": 2,
+				"log.level":                      "debug",
+				"cache.capacity.maxBytes":        int64(0),
+				"cache.capacity.reserveBytes":    int64(0),
+				"cache.capacity.highWatermark":   0.90,
+				"cache.capacity.lowWatermark":    0.80,
+				"cache.capacity.minStateAge":     "10m",
+			},
+		}
 	}
 	stateRoot := deps.stateRoot
 	if stateRoot == "" {

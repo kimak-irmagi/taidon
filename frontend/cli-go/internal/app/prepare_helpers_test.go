@@ -35,6 +35,20 @@ func TestParsePrepareArgsHelp(t *testing.T) {
 	}
 }
 
+func TestParsePrepareArgsUnicodeDashHint(t *testing.T) {
+	_, _, err := parsePrepareArgs([]string{"—image", "img"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+	if !strings.Contains(exitErr.Error(), "Unicode dash") {
+		t.Fatalf("expected unicode dash hint, got %v", exitErr)
+	}
+	if !strings.Contains(exitErr.Error(), "--image") {
+		t.Fatalf("expected normalized suggestion, got %v", exitErr)
+	}
+}
+
 func TestParsePrepareArgsImageEquals(t *testing.T) {
 	opts, showHelp, err := parsePrepareArgs([]string{"--image=img", "-c", "select 1"})
 	if err != nil || showHelp {

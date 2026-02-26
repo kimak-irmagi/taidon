@@ -260,6 +260,16 @@ func TestParseRunArgsMissingInstanceValueWhitespace(t *testing.T) {
 	}
 }
 
+func TestParseRunArgsUnicodeDashHint(t *testing.T) {
+	_, _, err := parseRunArgs([]string{"—instance", "dev"})
+	if err == nil || !strings.Contains(err.Error(), "Unicode dash") {
+		t.Fatalf("expected unicode dash hint, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "--instance") {
+		t.Fatalf("expected normalized suggestion, got %v", err)
+	}
+}
+
 func TestParseRunArgsLeadingDashCommand(t *testing.T) {
 	parsed, showHelp, err := parseRunArgs([]string{"-c", "select 1"})
 	if err != nil {

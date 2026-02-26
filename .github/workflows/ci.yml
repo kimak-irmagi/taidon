@@ -78,6 +78,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test_log=../../engine-test-output-${{ matrix.runner }}-${{ matrix.group }}.log
           if [[ "${{ matrix.group }}" == "slow" ]]; then
             pkgs=(
               ./internal/httpapi
@@ -95,10 +96,19 @@ jobs:
           fi
           if [[ "${{ matrix.runner }}" == "windows-latest" ]]; then
             go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out -json \
-              | tee ../../test-timing-engine-windows-${{ matrix.group }}.json
+              | tee ../../test-timing-engine-windows-${{ matrix.group }}.json "$test_log"
           else
-            go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out
+            go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out \
+              | tee "$test_log"
           fi
+
+      - name: Upload engine test output (${{ matrix.group }})
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-test-output-${{ matrix.runner }}-${{ matrix.group }}
+          path: engine-test-output-${{ matrix.runner }}-${{ matrix.group }}.log
+          if-no-files-found: ignore
 
       - name: Upload engine coverage artifacts
         uses: actions/upload-artifact@v4
@@ -107,11 +117,12 @@ jobs:
           path: coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out
 
       - name: Upload windows timing artifacts (${{ matrix.group }})
-        if: matrix.runner == 'windows-latest'
+        if: always() && matrix.runner == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: test-timing-windows-${{ matrix.group }}
           path: test-timing-engine-windows-${{ matrix.group }}.json
+          if-no-files-found: ignore
 
   coverage-cli:
     runs-on: ${{ matrix.runner }}

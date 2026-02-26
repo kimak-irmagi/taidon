@@ -72,6 +72,19 @@ func TestParseArgsUnknownFlag(t *testing.T) {
 	}
 }
 
+func TestParseArgsUnicodeDashHint(t *testing.T) {
+	_, _, err := ParseArgs([]string{"—workspace", "/tmp", "status"})
+	if err == nil {
+		t.Fatalf("expected parse error")
+	}
+	if !strings.Contains(err.Error(), "Unicode dash") {
+		t.Fatalf("expected unicode dash hint, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "--workspace") {
+		t.Fatalf("expected suggested normalized flag, got %v", err)
+	}
+}
+
 func TestParseArgsMultipleCommands(t *testing.T) {
 	_, cmds, err := ParseArgs([]string{
 		"prepare:psql", "--", "-c", "select 1",

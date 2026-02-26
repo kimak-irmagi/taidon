@@ -35,14 +35,17 @@ type InstanceEntry struct {
 }
 
 type StateEntry struct {
-	StateID       string  `json:"state_id"`
-	ParentStateID *string `json:"parent_state_id,omitempty"`
-	ImageID       string  `json:"image_id"`
-	PrepareKind   string  `json:"prepare_kind"`
-	PrepareArgs   string  `json:"prepare_args_normalized"`
-	CreatedAt     string  `json:"created_at"`
-	SizeBytes     *int64  `json:"size_bytes,omitempty"`
-	RefCount      int     `json:"refcount"`
+	StateID           string  `json:"state_id"`
+	ParentStateID     *string `json:"parent_state_id,omitempty"`
+	ImageID           string  `json:"image_id"`
+	PrepareKind       string  `json:"prepare_kind"`
+	PrepareArgs       string  `json:"prepare_args_normalized"`
+	CreatedAt         string  `json:"created_at"`
+	SizeBytes         *int64  `json:"size_bytes,omitempty"`
+	LastUsedAt        *string `json:"last_used_at,omitempty"`
+	UseCount          *int64  `json:"use_count,omitempty"`
+	MinRetentionUntil *string `json:"min_retention_until,omitempty"`
+	RefCount          int     `json:"refcount"`
 }
 
 type StateCreate struct {

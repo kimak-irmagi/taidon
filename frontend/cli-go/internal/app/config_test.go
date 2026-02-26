@@ -193,6 +193,9 @@ func TestParseConfigArgsErrors(t *testing.T) {
 	if _, _, err := parseConfigArgs([]string{"rm"}); err == nil {
 		t.Fatalf("expected error for missing path")
 	}
+	if _, _, err := parseConfigArgs([]string{"get", "—effective", "features.flag"}); err == nil || !strings.Contains(err.Error(), "Unicode dash") {
+		t.Fatalf("expected unicode dash hint, got %v", err)
+	}
 }
 
 func TestParseConfigArgsHelp(t *testing.T) {

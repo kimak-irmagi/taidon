@@ -303,6 +303,9 @@ func detectBinaryFormat(pathValue string) (string, error) {
 
 func parseInitFlags(args []string, globalWorkspace string) (initOptions, bool, error) {
 	var opts initOptions
+	if err := validateNoUnicodeDashFlags(args, 64); err != nil {
+		return opts, false, err
+	}
 
 	mode, rest, err := splitInitMode(args)
 	if err != nil {

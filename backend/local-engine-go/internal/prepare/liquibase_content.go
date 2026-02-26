@@ -36,6 +36,9 @@ func resolveLiquibaseChangesetPath(path string, prepared preparedRequest) string
 	if path == "" || looksLikeRemoteRef(path) {
 		return ""
 	}
+	if looksLikeWindowsUNCPath(path) {
+		return filepath.Clean(path)
+	}
 	if looksLikeWindowsPath(path) {
 		return path
 	}
@@ -64,6 +67,9 @@ func normalizeLockPath(path string) string {
 	if path == "" {
 		return ""
 	}
+	if looksLikeWindowsUNCPath(path) {
+		return filepath.Clean(path)
+	}
 	if isWSL() && looksLikeWindowsPath(path) {
 		mapped, err := wslPathConvert("-u", path)
 		if err == nil {
@@ -77,6 +83,10 @@ func normalizeLockPath(path string) string {
 		return filepath.Clean(path)
 	}
 	return path
+}
+
+func looksLikeWindowsUNCPath(value string) bool {
+	return strings.HasPrefix(value, `\\`) || strings.HasPrefix(value, `//`)
 }
 
 func ensureLiquibaseContentLock(prepared preparedRequest, changesetPath string) (*contentLock, *ErrorResponse) {

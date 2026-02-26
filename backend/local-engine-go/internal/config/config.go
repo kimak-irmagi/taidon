@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -92,6 +93,15 @@ func DefaultConfig() map[string]any {
 		"log": map[string]any{
 			"level": "debug",
 		},
+		"cache": map[string]any{
+			"capacity": map[string]any{
+				"maxBytes":      0,
+				"reserveBytes":  nil,
+				"highWatermark": 0.90,
+				"lowWatermark":  0.80,
+				"minStateAge":   "10m",
+			},
+    },
 		"container": map[string]any{
 			"runtime": "auto",
 		},
@@ -121,6 +131,38 @@ func DefaultSchema() map[string]any {
 				},
 				"additionalProperties": true,
 			},
+			"cache": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"capacity": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"maxBytes": map[string]any{
+								"type":    []any{"integer", "null"},
+								"minimum": 0,
+							},
+							"reserveBytes": map[string]any{
+								"type":    []any{"integer", "null"},
+								"minimum": 0,
+							},
+							"highWatermark": map[string]any{
+								"type":    []any{"number", "null"},
+								"minimum": 0,
+								"maximum": 1,
+							},
+							"lowWatermark": map[string]any{
+								"type":    []any{"number", "null"},
+								"minimum": 0,
+								"maximum": 1,
+							},
+							"minStateAge": map[string]any{
+								"type": []any{"string", "null"},
+							},
+						},
+						"additionalProperties": true,
+          },
+        },
+      },
 			"container": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -203,6 +245,9 @@ func (m *Manager) Set(path string, value any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateCacheConstraintsForPath(path, m.defaults, updated); err != nil {
+		return nil, err
+	}
 	data, err := json.MarshalIndent(updated, "", "  ")
 	if err != nil {
 		return nil, err
@@ -279,6 +324,44 @@ func validateValue(path string, value any) error {
 			return nil
 		}
 		return ErrInvalidValue
+	}
+	if path == "cache.capacity.maxBytes" || path == "cache.capacity.reserveBytes" {
+		if value == nil {
+			return nil
+		}
+		if num, ok := asInt(value); ok {
+			if num < 0 {
+				return ErrInvalidValue
+			}
+			return nil
+		}
+		return ErrInvalidValue
+	}
+	if path == "cache.capacity.highWatermark" || path == "cache.capacity.lowWatermark" {
+		if value == nil {
+			return nil
+		}
+		next, ok := asFloat(value)
+		if !ok {
+			return ErrInvalidValue
+		}
+		if next <= 0 || next > 1 {
+			return ErrInvalidValue
+		}
+		return nil
+	}
+	if path == "cache.capacity.minStateAge" {
+		if value == nil {
+			return nil
+		}
+		str, ok := value.(string)
+		if !ok {
+			return ErrInvalidValue
+		}
+		if _, err := time.ParseDuration(strings.TrimSpace(str)); err != nil {
+			return ErrInvalidValue
+		}
+		return nil
 	}
 	if path == "snapshot.backend" {
 		if value == nil {
@@ -358,6 +441,57 @@ func asInt(value any) (int64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func asFloat(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float32:
+		return float64(v), true
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		parsed, err := v.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
+func validateCacheConstraintsForPath(path string, defaults map[string]any, overrides map[string]any) error {
+	if path != "cache.capacity.lowWatermark" && path != "cache.capacity.highWatermark" {
+		return nil
+	}
+	const (
+		defaultCacheHighWatermark = 0.90
+	)
+	effective := mergeMaps(cloneMap(defaults), overrides)
+	high := defaultCacheHighWatermark
+	if value, ok := getPathValue(effective, []pathSegment{{key: "cache"}, {key: "capacity"}, {key: "highWatermark"}}); ok && value != nil {
+		parsed, ok := asFloat(value)
+		if !ok || parsed <= 0 || parsed > 1 {
+			return ErrInvalidValue
+		}
+		high = parsed
+	}
+	if value, ok := getPathValue(effective, []pathSegment{{key: "cache"}, {key: "capacity"}, {key: "lowWatermark"}}); ok && value != nil {
+		parsed, ok := asFloat(value)
+		if !ok || parsed <= 0 || parsed > 1 {
+			return ErrInvalidValue
+		}
+		if parsed >= high {
+			return ErrInvalidValue
+		}
+	}
+	return nil
 }
 
 type pathSegment struct {

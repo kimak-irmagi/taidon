@@ -21,6 +21,9 @@ type rmOptions struct {
 
 func parseRmFlags(args []string) (rmOptions, bool, error) {
 	var opts rmOptions
+	if err := validateNoUnicodeDashFlags(args, 2); err != nil {
+		return opts, false, err
+	}
 
 	fs := flag.NewFlagSet("sqlrs rm", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

@@ -28,6 +28,9 @@ type Command struct {
 
 func ParseArgs(args []string) (GlobalOptions, []Command, error) {
 	var opts GlobalOptions
+	if hint := UnicodeDashFlagMessage(args); hint != "" {
+		return opts, nil, fmt.Errorf("invalid arguments: %s", hint)
+	}
 
 	fs := flag.NewFlagSet("sqlrs", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

@@ -29,6 +29,14 @@ func TestIsLockBusyError(t *testing.T) {
 	}
 }
 
+func TestShouldRetryLockAcquirePermissionWhenLockDisappeared(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "lock")
+	lockErr := &os.PathError{Op: "open", Path: lockPath, Err: os.ErrPermission}
+	if !shouldRetryLockAcquire(lockErr, lockPath) {
+		t.Fatalf("expected retry for transient permission error when lock file disappeared")
+	}
+}
+
 func TestIsLockBusyErrorDirectoryPath(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), "lock-dir")
 	if err := os.MkdirAll(lockPath, 0o700); err != nil {

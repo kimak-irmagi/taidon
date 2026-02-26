@@ -316,6 +316,9 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 			return outputStateID, nil
 		}
 	}
+	if capErr := m.ensureCacheCapacity(ctx, jobID, "prepare_step"); capErr != nil {
+		return "", capErr
+	}
 
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
@@ -326,9 +329,15 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 		return "", errorResponse("internal_error", "cannot resolve state paths", err.Error())
 	}
 	if err := os.MkdirAll(paths.statesDir, 0o700); err != nil {
+		if noSpaceResp := noSpaceErrorResponse("insufficient storage before state execution", "prepare_step", err); noSpaceResp != nil {
+			return "", noSpaceResp
+		}
 		return "", errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
 	if err := m.statefs.EnsureStateDir(ctx, paths.stateDir); err != nil {
+		if noSpaceResp := noSpaceErrorResponse("insufficient storage before state execution", "prepare_step", err); noSpaceResp != nil {
+			return "", noSpaceResp
+		}
 		return "", errorResponse("internal_error", "cannot create state dir", err.Error())
 	}
 
@@ -363,7 +372,15 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 			rt = planned
 		}
 		if execErr := e.executePrepareStep(ctx, jobID, prepared, rt, task); execErr != nil {
-			errResp = execErr
+			if noSpaceResp := noSpaceFromErrorResponse("prepare step failed due to insufficient storage", "prepare_step", execErr); noSpaceResp != nil {
+				errResp = noSpaceResp
+			} else {
+				errResp = execErr
+			}
+			return errStateBuildFailed
+		}
+		if capErr := m.ensureCacheCapacity(ctx, jobID, "snapshot"); capErr != nil {
+			errResp = capErr
 			return errStateBuildFailed
 		}
 
@@ -372,7 +389,11 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 			m.appendLog(jobID, "pg_ctl: "+line)
 		})
 		if err := m.dbms.PrepareSnapshot(pgCtx, rt.instance); err != nil {
-			errResp = errorResponse("internal_error", "snapshot prepare failed", err.Error())
+			if noSpaceResp := noSpaceErrorResponse("insufficient storage during snapshot", "snapshot", err); noSpaceResp != nil {
+				errResp = noSpaceResp
+			} else {
+				errResp = errorResponse("internal_error", "snapshot prepare failed", err.Error())
+			}
 			return errStateBuildFailed
 		}
 		resumed := false
@@ -386,7 +407,11 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 		m.appendLog(jobID, "snapshot: start")
 		m.logInfoJob(jobID, "snapshot start dir=%s", paths.stateDir)
 		if err := m.statefs.Snapshot(ctx, rt.dataDir, paths.stateDir); err != nil {
-			errResp = errorResponse("internal_error", "snapshot failed", err.Error())
+			if noSpaceResp := noSpaceErrorResponse("insufficient storage during snapshot", "snapshot", err); noSpaceResp != nil {
+				errResp = noSpaceResp
+			} else {
+				errResp = errorResponse("internal_error", "snapshot failed", err.Error())
+			}
 			return errStateBuildFailed
 		}
 		m.appendLog(jobID, "snapshot: complete")
@@ -396,7 +421,11 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 			m.appendLog(jobID, "pg_ctl: "+line)
 		})
 		if err := m.dbms.ResumeSnapshot(pgResumeCtx, rt.instance); err != nil {
-			errResp = errorResponse("internal_error", "snapshot resume failed", err.Error())
+			if noSpaceResp := noSpaceErrorResponse("insufficient storage during snapshot", "snapshot", err); noSpaceResp != nil {
+				errResp = noSpaceResp
+			} else {
+				errResp = errorResponse("internal_error", "snapshot resume failed", err.Error())
+			}
 			return errStateBuildFailed
 		}
 		resumed = true
@@ -418,11 +447,23 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 				return errStateBuildFailed
 			}
 			_ = m.statefs.RemovePath(context.Background(), paths.stateDir)
-			errResp = errorResponse("internal_error", "cannot store state", err.Error())
+			if noSpaceResp := noSpaceErrorResponse("insufficient storage during metadata commit", "metadata_commit", err); noSpaceResp != nil {
+				errResp = noSpaceResp
+			} else {
+				errResp = errorResponse("internal_error", "cannot store state", err.Error())
+			}
 			return errStateBuildFailed
 		}
 		if err := writeStateBuildMarker(paths.stateDir, kind); err != nil {
-			errResp = errorResponse("internal_error", "cannot write state marker", err.Error())
+			if noSpaceResp := noSpaceErrorResponse("insufficient storage during metadata commit", "metadata_commit", err); noSpaceResp != nil {
+				errResp = noSpaceResp
+			} else {
+				errResp = errorResponse("internal_error", "cannot write state marker", err.Error())
+			}
+			return errStateBuildFailed
+		}
+		if capErr := m.ensureCacheCapacity(ctx, jobID, "metadata_commit", outputStateID); capErr != nil {
+			errResp = capErr
 			return errStateBuildFailed
 		}
 		return nil
@@ -448,6 +489,19 @@ func (e *taskExecutor) executePrepareStep(ctx context.Context, jobID string, pre
 	default:
 		return errorResponse("internal_error", "unsupported prepare kind", prepared.request.PrepareKind)
 	}
+}
+
+func noSpaceFromErrorResponse(message string, phase string, errResp *ErrorResponse) *ErrorResponse {
+	if errResp == nil {
+		return nil
+	}
+	if errResp.Code != "internal_error" {
+		return nil
+	}
+	if noSpaceResp := noSpaceErrorResponse(message, phase, errors.New(errResp.Details)); noSpaceResp != nil {
+		return noSpaceResp
+	}
+	return noSpaceErrorResponse(message, phase, errors.New(errResp.Message))
 }
 
 func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
@@ -481,6 +535,12 @@ func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepar
 		details := strings.TrimSpace(output)
 		if details == "" {
 			details = err.Error()
+		}
+		if noSpaceResp := noSpaceErrorResponse("prepare step failed due to insufficient storage", "prepare_step", errors.New(details)); noSpaceResp != nil {
+			return noSpaceResp
+		}
+		if noSpaceResp := noSpaceErrorResponse("prepare step failed due to insufficient storage", "prepare_step", err); noSpaceResp != nil {
+			return noSpaceResp
 		}
 		return errorResponse("internal_error", "psql execution failed", details)
 	}
@@ -559,6 +619,12 @@ func (e *taskExecutor) executeLiquibaseStep(ctx context.Context, jobID string, p
 		details := strings.TrimSpace(output)
 		if details == "" {
 			details = err.Error()
+		}
+		if noSpaceResp := noSpaceErrorResponse("prepare step failed due to insufficient storage", "prepare_step", errors.New(details)); noSpaceResp != nil {
+			return noSpaceResp
+		}
+		if noSpaceResp := noSpaceErrorResponse("prepare step failed due to insufficient storage", "prepare_step", err); noSpaceResp != nil {
+			return noSpaceResp
 		}
 		return errorResponse("internal_error", "liquibase execution failed", details)
 	}
@@ -821,10 +887,16 @@ func (e *taskExecutor) startRuntime(ctx context.Context, jobID string, prepared 
 	}
 	_ = os.RemoveAll(runtimeDir)
 	if err := os.MkdirAll(filepath.Dir(runtimeDir), 0o700); err != nil {
+		if noSpaceResp := noSpaceErrorResponse("insufficient storage before state execution", "prepare_step", err); noSpaceResp != nil {
+			return nil, noSpaceResp
+		}
 		return nil, errorResponse("internal_error", "cannot create runtime dir", err.Error())
 	}
 	clone, err := m.statefs.Clone(ctx, srcDir, runtimeDir)
 	if err != nil {
+		if noSpaceResp := noSpaceErrorResponse("insufficient storage before state execution", "prepare_step", err); noSpaceResp != nil {
+			return nil, noSpaceResp
+		}
 		return nil, errorResponse("internal_error", "cannot clone state", err.Error())
 	}
 	if dirtyPath := postmasterPIDPath(clone.MountDir); dirtyPath != "" {
@@ -1176,6 +1248,17 @@ func withStateBuildLock(ctx context.Context, stateDir string, lockPath string, k
 func shouldRetryLockAcquire(err error, lockPath string) bool {
 	if isLockBusyError(err, lockPath) {
 		return true
+	}
+	if isPermissionError(err) {
+		_, statErr := os.Stat(lockPath)
+		if errors.Is(statErr, os.ErrNotExist) {
+			// Lock file may disappear between failed open and stat while another
+			// worker releases it; retry instead of surfacing transient EACCES.
+			return true
+		}
+		if isPermissionError(statErr) {
+			return true
+		}
 	}
 	if !os.IsExist(err) && !errors.Is(err, os.ErrExist) {
 		return false

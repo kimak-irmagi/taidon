@@ -404,10 +404,10 @@ func TestResolveContainerRuntimeBinaryFallsBackToPodmanAndSetsContainerHost(t *t
 		if len(args) < 5 || args[0] != "system" || args[1] != "connection" || args[2] != "list" || args[3] != "--format" {
 			t.Fatalf("unexpected args: %v", args)
 		}
-		if args[4] != "{{if .Default}}{{.URI}}{{end}}" {
+		if args[4] != "{{if .Default}}{{.URI}}\t{{.Identity}}{{end}}" {
 			t.Fatalf("expected default format, got %q", args[4])
 		}
-		return testCommandOutput(ctx, "\nunix:///tmp/podman.sock\n")
+		return testCommandOutput(ctx, "\nunix:///tmp/podman.sock\t/tmp/podman.identity\n")
 	}
 	t.Cleanup(func() {
 		execLookPathFn = prevLook
@@ -416,11 +416,15 @@ func TestResolveContainerRuntimeBinaryFallsBackToPodmanAndSetsContainerHost(t *t
 
 	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
 	t.Setenv("CONTAINER_HOST", "")
+	t.Setenv("CONTAINER_SSHKEY", "")
 	if got := resolveContainerRuntimeBinary("auto"); got != "/usr/local/bin/podman" {
 		t.Fatalf("expected podman path, got %q", got)
 	}
 	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///tmp/podman.sock" {
 		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+	if sshKey := os.Getenv("CONTAINER_SSHKEY"); sshKey != "" {
+		t.Fatalf("expected empty CONTAINER_SSHKEY for unix socket, got %q", sshKey)
 	}
 }
 
@@ -437,7 +441,7 @@ func TestResolveContainerRuntimeBinaryEnvPodmanSetsContainerHost(t *testing.T) {
 		if name != "/opt/homebrew/bin/podman" {
 			t.Fatalf("expected podman binary, got %s", name)
 		}
-		return testCommandOutput(ctx, "unix:///Users/runner/.local/share/containers/podman.sock\n")
+		return testCommandOutput(ctx, "unix:///Users/runner/.local/share/containers/podman.sock\t/Users/runner/.local/share/containers/podman/machine/machine\n")
 	}
 	t.Cleanup(func() {
 		execLookPathFn = prevLook
@@ -446,11 +450,15 @@ func TestResolveContainerRuntimeBinaryEnvPodmanSetsContainerHost(t *testing.T) {
 
 	t.Setenv("SQLRS_CONTAINER_RUNTIME", "podman")
 	t.Setenv("CONTAINER_HOST", "")
+	t.Setenv("CONTAINER_SSHKEY", "")
 	if got := resolveContainerRuntimeBinary("docker"); got != "/opt/homebrew/bin/podman" {
 		t.Fatalf("expected env override to win over config mode, got %q", got)
 	}
 	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///Users/runner/.local/share/containers/podman.sock" {
 		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+	if sshKey := os.Getenv("CONTAINER_SSHKEY"); sshKey != "" {
+		t.Fatalf("expected empty CONTAINER_SSHKEY for unix socket, got %q", sshKey)
 	}
 }
 
@@ -498,7 +506,7 @@ func TestResolveContainerRuntimeBinaryPodmanModeUsesPodman(t *testing.T) {
 		if name != "/opt/homebrew/bin/podman" {
 			t.Fatalf("expected podman binary, got %q", name)
 		}
-		return testCommandOutput(ctx, "unix:///Users/runner/.local/share/containers/podman.sock\n")
+		return testCommandOutput(ctx, "unix:///Users/runner/.local/share/containers/podman.sock\t/Users/runner/.local/share/containers/podman/machine/machine\n")
 	}
 	t.Cleanup(func() {
 		execLookPathFn = prevLook
@@ -507,11 +515,15 @@ func TestResolveContainerRuntimeBinaryPodmanModeUsesPodman(t *testing.T) {
 
 	t.Setenv("SQLRS_CONTAINER_RUNTIME", "")
 	t.Setenv("CONTAINER_HOST", "")
+	t.Setenv("CONTAINER_SSHKEY", "")
 	if got := resolveContainerRuntimeBinary("podman"); got != "/opt/homebrew/bin/podman" {
 		t.Fatalf("expected resolved podman path, got %q", got)
 	}
 	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///Users/runner/.local/share/containers/podman.sock" {
 		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+	if sshKey := os.Getenv("CONTAINER_SSHKEY"); sshKey != "" {
+		t.Fatalf("expected empty CONTAINER_SSHKEY for unix socket, got %q", sshKey)
 	}
 }
 
@@ -531,7 +543,7 @@ func TestResolveContainerRuntimeBinaryEnvAbsolutePodmanPath(t *testing.T) {
 		if name != absPodman {
 			t.Fatalf("expected absolute podman path, got %s", name)
 		}
-		return testCommandOutput(ctx, "unix:///tmp/abs-podman.sock\n")
+		return testCommandOutput(ctx, "unix:///tmp/abs-podman.sock\t/tmp/abs-podman.identity\n")
 	}
 	t.Cleanup(func() {
 		execLookPathFn = prevLook
@@ -540,11 +552,15 @@ func TestResolveContainerRuntimeBinaryEnvAbsolutePodmanPath(t *testing.T) {
 
 	t.Setenv("SQLRS_CONTAINER_RUNTIME", absPodman)
 	t.Setenv("CONTAINER_HOST", "")
+	t.Setenv("CONTAINER_SSHKEY", "")
 	if got := resolveContainerRuntimeBinary("auto"); got != absPodman {
 		t.Fatalf("expected absolute podman path, got %q", got)
 	}
 	if host := os.Getenv("CONTAINER_HOST"); host != "unix:///tmp/abs-podman.sock" {
 		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+	if sshKey := os.Getenv("CONTAINER_SSHKEY"); sshKey != "" {
+		t.Fatalf("expected empty CONTAINER_SSHKEY for unix socket, got %q", sshKey)
 	}
 }
 
@@ -589,6 +605,10 @@ func TestPodmanDefaultConnectionURIFallsBackToURIListFormat(t *testing.T) {
 			t.Fatalf("unexpected args: %v", args)
 		}
 		switch args[4] {
+		case "{{if .Default}}{{.URI}}\t{{.Identity}}{{end}}":
+			return testCommandOutput(ctx, "\n")
+		case "{{.URI}}\t{{.Identity}}":
+			return testCommandOutput(ctx, "\n")
 		case "{{if .Default}}{{.URI}}{{end}}":
 			return testCommandOutput(ctx, "\n")
 		case "{{.URI}}":
@@ -604,8 +624,8 @@ func TestPodmanDefaultConnectionURIFallsBackToURIListFormat(t *testing.T) {
 	if got != "unix:///fallback.sock" {
 		t.Fatalf("expected fallback URI, got %q", got)
 	}
-	if calls != 2 {
-		t.Fatalf("expected two podman calls, got %d", calls)
+	if calls != 4 {
+		t.Fatalf("expected four podman calls, got %d", calls)
 	}
 }
 
@@ -621,8 +641,104 @@ func TestPodmanDefaultConnectionURIReturnsEmptyOnCommandError(t *testing.T) {
 	if got := podmanDefaultConnectionURI("/usr/local/bin/podman"); got != "" {
 		t.Fatalf("expected empty URI, got %q", got)
 	}
-	if calls != 2 {
-		t.Fatalf("expected two failed attempts, got %d", calls)
+	if calls != 4 {
+		t.Fatalf("expected four failed attempts, got %d", calls)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryPodmanSSHConnectionSetsContainerSSHKey(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "podman" {
+			return "/opt/homebrew/bin/podman", nil
+		}
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "/opt/homebrew/bin/podman" {
+			t.Fatalf("expected podman binary, got %q", name)
+		}
+		return testCommandOutput(ctx, "ssh://core@127.0.0.1:52830/run/user/501/podman/podman.sock\t/Users/test/.local/share/containers/podman/machine/machine\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "podman")
+	t.Setenv("CONTAINER_HOST", "")
+	t.Setenv("CONTAINER_SSHKEY", "")
+	if got := resolveContainerRuntimeBinary("auto"); got != "/opt/homebrew/bin/podman" {
+		t.Fatalf("expected resolved podman path, got %q", got)
+	}
+	if host := os.Getenv("CONTAINER_HOST"); host != "ssh://core@127.0.0.1:52830/run/user/501/podman/podman.sock" {
+		t.Fatalf("expected podman CONTAINER_HOST, got %q", host)
+	}
+	if sshKey := os.Getenv("CONTAINER_SSHKEY"); sshKey != "/Users/test/.local/share/containers/podman/machine/machine" {
+		t.Fatalf("expected CONTAINER_SSHKEY from podman identity, got %q", sshKey)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryPodmanSSHConnectionKeepsExistingContainerSSHKey(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "podman" {
+			return "/opt/homebrew/bin/podman", nil
+		}
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "/opt/homebrew/bin/podman" {
+			t.Fatalf("expected podman binary, got %q", name)
+		}
+		return testCommandOutput(ctx, "ssh://core@127.0.0.1:52830/run/user/501/podman/podman.sock\t/Users/test/.local/share/containers/podman/machine/machine\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "podman")
+	t.Setenv("CONTAINER_HOST", "")
+	t.Setenv("CONTAINER_SSHKEY", "/Users/test/.ssh/existing")
+	if got := resolveContainerRuntimeBinary("auto"); got != "/opt/homebrew/bin/podman" {
+		t.Fatalf("expected resolved podman path, got %q", got)
+	}
+	if sshKey := os.Getenv("CONTAINER_SSHKEY"); sshKey != "/Users/test/.ssh/existing" {
+		t.Fatalf("expected existing CONTAINER_SSHKEY to remain unchanged, got %q", sshKey)
+	}
+}
+
+func TestResolveContainerRuntimeBinaryPodmanSSHConnectionWithoutIdentityDoesNotSetContainerSSHKey(t *testing.T) {
+	prevLook := execLookPathFn
+	prevCmd := execCommandContextFn
+	execLookPathFn = func(name string) (string, error) {
+		if name == "podman" {
+			return "/opt/homebrew/bin/podman", nil
+		}
+		return "", errors.New("unexpected")
+	}
+	execCommandContextFn = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		if name != "/opt/homebrew/bin/podman" {
+			t.Fatalf("expected podman binary, got %q", name)
+		}
+		return testCommandOutput(ctx, "ssh://core@127.0.0.1:52830/run/user/501/podman/podman.sock\n")
+	}
+	t.Cleanup(func() {
+		execLookPathFn = prevLook
+		execCommandContextFn = prevCmd
+	})
+
+	t.Setenv("SQLRS_CONTAINER_RUNTIME", "podman")
+	t.Setenv("CONTAINER_HOST", "")
+	t.Setenv("CONTAINER_SSHKEY", "")
+	if got := resolveContainerRuntimeBinary("auto"); got != "/opt/homebrew/bin/podman" {
+		t.Fatalf("expected resolved podman path, got %q", got)
+	}
+	if sshKey := os.Getenv("CONTAINER_SSHKEY"); sshKey != "" {
+		t.Fatalf("expected empty CONTAINER_SSHKEY when podman identity is missing, got %q", sshKey)
 	}
 }
 

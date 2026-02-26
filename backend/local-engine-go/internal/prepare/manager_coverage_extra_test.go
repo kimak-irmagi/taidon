@@ -43,6 +43,37 @@ func TestRecoverQueueError(t *testing.T) {
 	}
 }
 
+func TestRecoverRunsStartupCacheCheck(t *testing.T) {
+	mgr := newManagerWithQueue(t, &fakeStore{}, newQueueStore(t))
+	fsCalls := 0
+	overrideCapacitySignals(t,
+		func(string) (int64, int64, error) {
+			fsCalls++
+			return 1000, 1000, nil
+		},
+		func(string) (int64, error) { return 100, nil },
+	)
+
+	if err := mgr.Recover(context.Background()); err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+	if fsCalls == 0 {
+		t.Fatalf("expected startup cache check to run")
+	}
+}
+
+func TestRecoverIgnoresStartupCacheCheckFailure(t *testing.T) {
+	mgr := newManagerWithQueue(t, &fakeStore{}, newQueueStore(t))
+	overrideCapacitySignals(t,
+		func(string) (int64, int64, error) { return 0, 0, errors.New("boom") },
+		func(string) (int64, error) { return 0, nil },
+	)
+
+	if err := mgr.Recover(context.Background()); err != nil {
+		t.Fatalf("Recover should ignore startup cache check failure, got %v", err)
+	}
+}
+
 func TestSubmitIDGenError(t *testing.T) {
 	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},

@@ -2,8 +2,11 @@ package prepare
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +29,12 @@ func (b *blockingSnapshot) Snapshot(ctx context.Context, srcDir string, destDir 
 	}
 	<-b.proceed
 	return b.fakeStateFS.Snapshot(ctx, srcDir, destDir)
+}
+
+type executeTaskResult struct {
+	outputID string
+	errResp  *ErrorResponse
+	elapsed  time.Duration
 }
 
 func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
@@ -55,10 +64,22 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 		},
 	}
 
-	firstDone := make(chan *ErrorResponse, 1)
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, outputID, mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	lockPath := stateBuildLockPath(paths.stateDir, snapshotKind(mgr.statefs))
+	markerPath := stateBuildMarkerPath(paths.stateDir, snapshotKind(mgr.statefs))
+
+	firstDone := make(chan executeTaskResult, 1)
 	go func() {
-		_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
-		firstDone <- errResp
+		start := time.Now()
+		gotOutput, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+		firstDone <- executeTaskResult{
+			outputID: gotOutput,
+			errResp:  errResp,
+			elapsed:  time.Since(start),
+		}
 	}()
 
 	select {
@@ -67,15 +88,30 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 		t.Fatalf("snapshot did not start")
 	}
 
-	secondDone := make(chan *ErrorResponse, 1)
+	secondDone := make(chan executeTaskResult, 1)
 	go func() {
-		_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
-		secondDone <- errResp
+		start := time.Now()
+		gotOutput, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+		secondDone <- executeTaskResult{
+			outputID: gotOutput,
+			errResp:  errResp,
+			elapsed:  time.Since(start),
+		}
 	}()
 
 	select {
-	case <-secondDone:
-		t.Fatalf("expected second task to wait")
+	case result := <-secondDone:
+		t.Fatalf(
+			"expected second task to wait, got early return output=%q err=%+v elapsed=%s lock=%s marker=%s state_dir=%s states=%d deleted=%v",
+			result.outputID,
+			result.errResp,
+			result.elapsed,
+			describePath(lockPath),
+			describePath(markerPath),
+			describeDir(paths.stateDir),
+			len(store.states),
+			store.deletedStates,
+		)
 	case <-time.After(100 * time.Millisecond):
 	}
 	if snap.calls != 1 {
@@ -84,11 +120,33 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 
 	close(snap.proceed)
 
-	if errResp := <-firstDone; errResp != nil {
-		t.Fatalf("first executeStateTask: %+v", errResp)
+	first := <-firstDone
+	if first.errResp != nil {
+		t.Fatalf(
+			"first executeStateTask output=%q err=%+v elapsed=%s lock=%s marker=%s state_dir=%s states=%d deleted=%v",
+			first.outputID,
+			first.errResp,
+			first.elapsed,
+			describePath(lockPath),
+			describePath(markerPath),
+			describeDir(paths.stateDir),
+			len(store.states),
+			store.deletedStates,
+		)
 	}
-	if errResp := <-secondDone; errResp != nil {
-		t.Fatalf("second executeStateTask: %+v", errResp)
+	second := <-secondDone
+	if second.errResp != nil {
+		t.Fatalf(
+			"second executeStateTask output=%q err=%+v elapsed=%s lock=%s marker=%s state_dir=%s states=%d deleted=%v",
+			second.outputID,
+			second.errResp,
+			second.elapsed,
+			describePath(lockPath),
+			describePath(markerPath),
+			describeDir(paths.stateDir),
+			len(store.states),
+			store.deletedStates,
+		)
 	}
 	if snap.calls != 1 {
 		t.Fatalf("expected single snapshot call, got %d", snap.calls)
@@ -97,10 +155,6 @@ func TestExecuteStateTaskWaitsForStateBuild(t *testing.T) {
 		t.Fatalf("expected single state, got %+v", store.states)
 	}
 
-	paths, err := resolveStatePaths(mgr.stateStoreRoot, prepared.request.ImageID, outputID, mgr.statefs)
-	if err != nil {
-		t.Fatalf("resolveStatePaths: %v", err)
-	}
 	if !stateBuildMarkerExists(paths.stateDir, snapshotKind(mgr.statefs)) {
 		t.Fatalf("expected build marker")
 	}
@@ -213,6 +267,34 @@ func newManagerWithStateFS(t *testing.T, store *fakeStore, fs statefs.StateFS) *
 
 type btrfsSnapshot struct {
 	fakeStateFS
+}
+
+func describePath(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Sprintf("%s (err=%v)", path, err)
+	}
+	return fmt.Sprintf("%s (mode=%s size=%d mod=%s)", path, info.Mode().String(), info.Size(), info.ModTime().UTC().Format(time.RFC3339Nano))
+}
+
+func describeDir(path string) string {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return fmt.Sprintf("%s (err=%v)", path, err)
+	}
+	if len(entries) == 0 {
+		return fmt.Sprintf("%s (empty)", path)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return fmt.Sprintf("%s [%s]", path, strings.Join(names, ", "))
 }
 
 func (b *btrfsSnapshot) Kind() string {
