@@ -79,15 +79,18 @@ func TestEnsureCacheCapacityReturnsTooSmallWhenEffectiveMaxZero(t *testing.T) {
 func overrideCapacitySignals(t *testing.T, fsFn func(path string) (int64, int64, error), usageFn func(path string) (int64, error)) {
 	t.Helper()
 	oldFS := filesystemStatsFn
+	oldCacheUsage := cacheUsageFn
 	oldUsage := storeUsageFn
 	if fsFn != nil {
 		filesystemStatsFn = fsFn
 	}
 	if usageFn != nil {
+		cacheUsageFn = usageFn
 		storeUsageFn = usageFn
 	}
 	t.Cleanup(func() {
 		filesystemStatsFn = oldFS
+		cacheUsageFn = oldCacheUsage
 		storeUsageFn = oldUsage
 	})
 }
@@ -990,41 +993,92 @@ func TestMeasureStoreUsageMissingPath(t *testing.T) {
 	}
 }
 
-func TestMeasureStoreUsageSkipsPermissionDeniedDir(t *testing.T) {
+func TestMeasureCacheUsageIgnoresJobsRuntimeTree(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits are not reliable on windows")
 	}
 
 	root := t.TempDir()
-	readableFile := filepath.Join(root, "readable.sql")
-	if err := os.WriteFile(readableFile, []byte("abcd"), 0o600); err != nil {
-		t.Fatalf("WriteFile readable: %v", err)
+	stateFile := filepath.Join(root, "engines", "image-1", "latest", "states", "state-1", "PG_VERSION")
+	if err := os.MkdirAll(filepath.Dir(stateFile), 0o700); err != nil {
+		t.Fatalf("MkdirAll states: %v", err)
+	}
+	if err := os.WriteFile(stateFile, []byte("15"), 0o600); err != nil {
+		t.Fatalf("WriteFile state file: %v", err)
 	}
 
-	blockedDir := filepath.Join(root, "blocked")
-	if err := os.MkdirAll(blockedDir, 0o700); err != nil {
-		t.Fatalf("MkdirAll blocked: %v", err)
+	runtimePgdata := filepath.Join(root, "jobs", "job-1", "runtime", "pgdata")
+	if err := os.MkdirAll(runtimePgdata, 0o700); err != nil {
+		t.Fatalf("MkdirAll runtime: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(blockedDir, "secret.sql"), []byte("0123456789"), 0o600); err != nil {
-		t.Fatalf("WriteFile blocked: %v", err)
+	if err := os.WriteFile(filepath.Join(runtimePgdata, "big.bin"), []byte("1234567890"), 0o600); err != nil {
+		t.Fatalf("WriteFile runtime file: %v", err)
 	}
-	if err := os.Chmod(blockedDir, 0); err != nil {
+	if err := os.Chmod(runtimePgdata, 0); err != nil {
 		t.Skipf("cannot make directory unreadable: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = os.Chmod(blockedDir, 0o700)
+		_ = os.Chmod(runtimePgdata, 0o700)
 	})
 
-	if _, err := os.ReadDir(blockedDir); err == nil {
+	if _, err := os.ReadDir(runtimePgdata); err == nil {
 		t.Skip("cannot reproduce permission denied in this environment")
 	}
 
-	size, err := measureStoreUsage(root)
+	size, err := measureCacheUsage(root)
 	if err != nil {
-		t.Fatalf("measureStoreUsage: %v", err)
+		t.Fatalf("measureCacheUsage: %v", err)
 	}
-	if size != 4 {
-		t.Fatalf("expected only readable file to be counted, got %d", size)
+	if size != 2 {
+		t.Fatalf("expected only states tree bytes to be counted, got %d", size)
+	}
+}
+
+func TestEnsureCacheCapacityUsesStatesTreeForUsage(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are not reliable on windows")
+	}
+
+	root := t.TempDir()
+	stateFile := filepath.Join(root, "engines", "image-1", "latest", "states", "state-1", "PG_VERSION")
+	if err := os.MkdirAll(filepath.Dir(stateFile), 0o700); err != nil {
+		t.Fatalf("MkdirAll states: %v", err)
+	}
+	if err := os.WriteFile(stateFile, []byte("15"), 0o600); err != nil {
+		t.Fatalf("WriteFile states: %v", err)
+	}
+	runtimePgdata := filepath.Join(root, "jobs", "job-1", "runtime", "pgdata")
+	if err := os.MkdirAll(runtimePgdata, 0o700); err != nil {
+		t.Fatalf("MkdirAll runtime: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimePgdata, "big.bin"), []byte(strings.Repeat("x", 1024*1024)), 0o600); err != nil {
+		t.Fatalf("WriteFile runtime: %v", err)
+	}
+	if err := os.Chmod(runtimePgdata, 0); err != nil {
+		t.Skipf("cannot make directory unreadable: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(runtimePgdata, 0o700)
+	})
+
+	cfg := &fakeConfigStore{
+		values: map[string]any{
+			"cache.capacity.maxBytes":      int64(10),
+			"cache.capacity.reserveBytes":  int64(0),
+			"cache.capacity.highWatermark": 0.90,
+			"cache.capacity.lowWatermark":  0.80,
+			"cache.capacity.minStateAge":   "0s",
+		},
+	}
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{config: cfg})
+	mgr.stateStoreRoot = root
+
+	overrideCapacitySignals(t, func(path string) (int64, int64, error) {
+		return 1024 * 1024 * 1024, 512 * 1024 * 1024, nil
+	}, nil)
+
+	if errResp := mgr.ensureCacheCapacity(context.Background(), "job-1", "prepare_step"); errResp != nil {
+		t.Fatalf("expected no capacity error when cache states fit limit, got %+v", errResp)
 	}
 }
 

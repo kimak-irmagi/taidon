@@ -492,6 +492,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: coverage-cli.out
           format: golang
+          fail-on-error: false
           debug: true
           base-path: /frontend/cli-go
           coverage-reporter-version: v0.6.14
@@ -505,6 +506,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: coverage-engine.out
           format: golang
+          fail-on-error: false
           debug: true
           base-path: /backend/local-engine-go
           coverage-reporter-version: v0.6.14

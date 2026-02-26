@@ -108,7 +108,9 @@ logic is limited to storage accounting and deletion primitives.
 
 ### 7.1 Storage usage measurement
 
-- `copy` / `overlayfs`: recursive filesystem size walk.
+- `copy` / `overlayfs`: recursive filesystem size walk for cached states only
+  (`<state_store_root>/engines/*/*/states`), excluding transient job runtime
+  trees (`<state_store_root>/jobs/*/runtime`).
 - `btrfs`: prefer `btrfs filesystem du`-based estimation; fallback to recursive
   walk.
 - future `zfs`: use dataset-native used-space metrics.
