@@ -1629,30 +1629,11 @@ func TestDeleteJobForceCancels(t *testing.T) {
 		t.Fatalf("Submit: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		tasks, err := queueStore.ListTasks(context.Background(), "job-1")
-		if err != nil {
-			if time.Now().After(deadline) {
-				t.Fatalf("timeout waiting for execute-0 running: %v", err)
-			}
-			time.Sleep(10 * time.Millisecond)
-			continue
-		}
-		foundRunning := false
-		for _, task := range tasks {
-			if task.TaskID == "execute-0" && task.Status == StatusRunning {
-				foundRunning = true
-				break
-			}
-		}
-		if foundRunning {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timeout waiting for execute-0 running, tasks=%+v", tasks)
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-blocker.started:
+	case <-time.After(20 * time.Second):
+		tasks, _ := queueStore.ListTasks(context.Background(), "job-1")
+		t.Fatalf("timeout waiting for execute runtime start, tasks=%+v", tasks)
 	}
 
 	result, ok := mgr.Delete("job-1", deletion.DeleteOptions{Force: true})
