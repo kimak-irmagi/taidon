@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -986,6 +987,44 @@ func TestMeasureStoreUsageMissingPath(t *testing.T) {
 	size, err := measureStoreUsage(path)
 	if err != nil || size != 0 {
 		t.Fatalf("expected missing path to be treated as zero usage, got size=%d err=%v", size, err)
+	}
+}
+
+func TestMeasureStoreUsageSkipsPermissionDeniedDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are not reliable on windows")
+	}
+
+	root := t.TempDir()
+	readableFile := filepath.Join(root, "readable.sql")
+	if err := os.WriteFile(readableFile, []byte("abcd"), 0o600); err != nil {
+		t.Fatalf("WriteFile readable: %v", err)
+	}
+
+	blockedDir := filepath.Join(root, "blocked")
+	if err := os.MkdirAll(blockedDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll blocked: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(blockedDir, "secret.sql"), []byte("0123456789"), 0o600); err != nil {
+		t.Fatalf("WriteFile blocked: %v", err)
+	}
+	if err := os.Chmod(blockedDir, 0); err != nil {
+		t.Skipf("cannot make directory unreadable: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(blockedDir, 0o700)
+	})
+
+	if _, err := os.ReadDir(blockedDir); err == nil {
+		t.Skip("cannot reproduce permission denied in this environment")
+	}
+
+	size, err := measureStoreUsage(root)
+	if err != nil {
+		t.Fatalf("measureStoreUsage: %v", err)
+	}
+	if size != 4 {
+		t.Fatalf("expected only readable file to be counted, got %d", size)
 	}
 }
 

@@ -735,6 +735,21 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Fetch Chinook SQL asset (locked)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dst="${GITHUB_WORKSPACE}/examples/chinook/Chinook_PostgreSql.sql"
+          url="https://raw.githubusercontent.com/lerocha/chinook-database/master/ChinookDatabase/DataSources/Chinook_PostgreSql.sql"
+          expected="e3fde5c1a5b51a2a91429a702c9ca6e69ba56e6c7f5e112724d70c3d03db695e"
+          mkdir -p "$(dirname "$dst")"
+          curl -fsSL "$url" -o "$dst"
+          actual="$(shasum -a 256 "$dst" | awk '{print $1}')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Chinook SQL sha256 mismatch: expected=$expected actual=$actual" >&2
+            exit 1
+          fi
+
       - name: Resolve release versions
         id: version
         shell: bash

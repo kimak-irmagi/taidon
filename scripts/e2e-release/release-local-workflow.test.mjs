@@ -118,9 +118,13 @@ run("release workflow includes macos podman probe with double flow run", () => {
   const job = workflow.jobs?.["e2e-podman-macos"];
   assert.ok(job, "missing e2e-podman-macos job");
   assert.equal(job["runs-on"], "macos-15-intel");
+  const fetchStep = (job.steps || []).find((step) => step.name === "Fetch Chinook SQL asset (locked)");
   const startStep = (job.steps || []).find((step) => step.name === "Start Podman machine");
   const skipStep = (job.steps || []).find((step) => step.name === "Skip note (Podman unavailable)");
   const runStep = (job.steps || []).find((step) => step.name === "Run macOS release e2e with podman runtime");
+  assert.ok(fetchStep, "missing chinook asset fetch step for macos podman probe");
+  assert.match(String(fetchStep.run || ""), /Chinook_PostgreSql\.sql/);
+  assert.match(String(fetchStep.run || ""), /e3fde5c1a5b51a2a91429a702c9ca6e69ba56e6c7f5e112724d70c3d03db695e/);
   assert.ok(startStep, "missing podman machine startup step");
   assert.equal(skipStep, undefined, "skip step must be removed: podman probe is release-blocking");
   assert.match(String(startStep.run || ""), /exit 1/);

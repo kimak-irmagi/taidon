@@ -235,7 +235,7 @@ function setupStorePlan(plan) {
   let mounted = false;
   try {
     ensureDir(plan.mountDir);
-    runCheckedSync({ cmd: ["truncate", "-s", "8G", plan.imagePath] });
+    runCheckedSync({ cmd: ["truncate", "-s", "16G", plan.imagePath] });
     runCheckedSync({ cmd: ["sudo", "mkfs.btrfs", "-f", plan.imagePath] });
     runCheckedSync({ cmd: ["sudo", "mount", "-o", "loop", plan.imagePath, plan.mountDir] });
     mounted = true;

@@ -592,6 +592,12 @@ func measureStoreUsage(path string) (int64, error) {
 			if errors.Is(walkErr, os.ErrNotExist) {
 				return nil
 			}
+			if errors.Is(walkErr, os.ErrPermission) {
+				if entry != nil && entry.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
 			return walkErr
 		}
 		if entry.IsDir() {
@@ -602,12 +608,15 @@ func measureStoreUsage(path string) (int64, error) {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil
 			}
+			if errors.Is(err, os.ErrPermission) {
+				return nil
+			}
 			return err
 		}
 		total += info.Size()
 		return nil
 	})
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) {
 		return 0, nil
 	}
 	return total, err
