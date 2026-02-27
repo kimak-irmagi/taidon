@@ -48,6 +48,10 @@ sqlrs config set cache.capacity.maxBytes 0
 4. Eligible states are unreferenced leaf states older than `minStateAge`.
 5. If enough space cannot be reclaimed, prepare fails with a structured error.
 
+`usage` is measured from cached state trees under
+`<state_store_root>/engines/*/*/states`. Transient runtime job directories under
+`<state_store_root>/jobs/*/runtime` are excluded from this usage signal.
+
 `effectiveMax` is coupled to store capacity:
 
 ```text

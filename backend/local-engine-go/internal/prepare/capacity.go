@@ -45,6 +45,7 @@ type evictCandidate struct {
 
 var (
 	filesystemStatsFn = filesystemStats
+	cacheUsageFn      = measureCacheUsage
 	storeUsageFn      = measureStoreUsage
 	nowUTCFn          = func() time.Time { return time.Now().UTC() }
 )
@@ -81,7 +82,7 @@ func (m *PrepareService) ensureCacheCapacity(ctx context.Context, jobID string, 
 		})
 	}
 
-	usageBytes, err := storeUsageFn(m.stateStoreRoot)
+	usageBytes, err := cacheUsageFn(m.stateStoreRoot)
 	if err != nil {
 		return capacityError("cache_enforcement_unavailable", "cannot measure cache usage", map[string]any{
 			"phase": phase,
@@ -105,7 +106,7 @@ func (m *PrepareService) ensureCacheCapacity(ctx context.Context, jobID string, 
 		})
 	}
 
-	usageAfter, usageErr := storeUsageFn(m.stateStoreRoot)
+	usageAfter, usageErr := cacheUsageFn(m.stateStoreRoot)
 	if usageErr != nil {
 		return capacityError("cache_enforcement_unavailable", "cannot measure cache usage after eviction", map[string]any{
 			"phase": phase,
@@ -326,7 +327,7 @@ func (m *PrepareService) runEviction(ctx context.Context, settings capacitySetti
 		}
 		summary.EvictedCount++
 		summary.FreedBytes += candidate.SizeBytes
-		updatedUsage, usageErr := storeUsageFn(m.stateStoreRoot)
+		updatedUsage, usageErr := cacheUsageFn(m.stateStoreRoot)
 		if usageErr != nil {
 			return summary, usageErr
 		}
@@ -592,12 +593,6 @@ func measureStoreUsage(path string) (int64, error) {
 			if errors.Is(walkErr, os.ErrNotExist) {
 				return nil
 			}
-			if errors.Is(walkErr, os.ErrPermission) {
-				if entry != nil && entry.IsDir() {
-					return fs.SkipDir
-				}
-				return nil
-			}
 			return walkErr
 		}
 		if entry.IsDir() {
@@ -608,18 +603,60 @@ func measureStoreUsage(path string) (int64, error) {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil
 			}
-			if errors.Is(err, os.ErrPermission) {
-				return nil
-			}
 			return err
 		}
 		total += info.Size()
 		return nil
 	})
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) {
+	if errors.Is(err, os.ErrNotExist) {
 		return 0, nil
 	}
 	return total, err
+}
+
+func measureCacheUsage(stateStoreRoot string) (int64, error) {
+	stateStoreRoot = strings.TrimSpace(stateStoreRoot)
+	if stateStoreRoot == "" {
+		return 0, nil
+	}
+	enginesDir := filepath.Join(stateStoreRoot, "engines")
+	engines, err := os.ReadDir(enginesDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	var total int64
+	for _, engine := range engines {
+		if !engine.IsDir() {
+			continue
+		}
+		engineDir := filepath.Join(enginesDir, engine.Name())
+		versions, versionErr := os.ReadDir(engineDir)
+		if versionErr != nil {
+			if errors.Is(versionErr, os.ErrNotExist) {
+				continue
+			}
+			return 0, versionErr
+		}
+		for _, version := range versions {
+			if !version.IsDir() {
+				continue
+			}
+			statesDir := filepath.Join(engineDir, version.Name(), "states")
+			usage, usageErr := storeUsageFn(statesDir)
+			if usageErr != nil {
+				if errors.Is(usageErr, os.ErrNotExist) {
+					continue
+				}
+				return 0, usageErr
+			}
+			total += usage
+		}
+	}
+	return total, nil
 }
 
 func isNoSpaceError(err error) bool {

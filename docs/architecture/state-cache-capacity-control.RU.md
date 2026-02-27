@@ -109,7 +109,9 @@ Eviction запускается по триггерам:
 
 ### 7.1 Измерение usage
 
-- `copy` / `overlayfs`: рекурсивный подсчет размера директории.
+- `copy` / `overlayfs`: рекурсивный подсчет размера только для деревьев
+  cache-state (`<state_store_root>/engines/*/*/states`), исключая временные
+  runtime-деревья job (`<state_store_root>/jobs/*/runtime`).
 - `btrfs`: предпочтительно оценка через `btrfs filesystem du`; fallback на
   рекурсивный подсчет.
 - будущий `zfs`: нативные метрики used-space на уровне dataset.
