@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { runCapture } from "../lib/proc.mjs";
 
 const ZFS_POOL = "tank";
-const ZFS_ROOT = `${ZFS_POOL}/workspaces`;
+const ZFS_ROOT = "/home/kislosladky/diploma/taidon-workspaces";
 const ZFS_BASE = `${ZFS_ROOT}/base`;
 const ZFS_BASE_SNAPSHOT = "clean"; // base@clean
 
@@ -94,7 +94,7 @@ export const zfsBackend = {
         }
 
         // 2️⃣ создаём каталог состояния ТОЛЬКО для метаданных
-        const stateDir = path.join(workspace, "states", stateId);
+        const stateDir = path.join(ZFS_ROOT, "states", stateId);
         if (fs.existsSync(stateDir)) {
             throw new Error(`State already exists: ${stateDir}`);
         }
@@ -132,6 +132,6 @@ async function ensureDataset(dataset) {
     try {
         await zfs(["list", dataset]);
     } catch {
-        await zfs(["create", "-p", dataset]);
+        await zfs(["create", "-p", "canmount=on", dataset]);
     }
 }
