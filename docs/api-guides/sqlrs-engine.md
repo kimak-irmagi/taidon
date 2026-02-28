@@ -1044,6 +1044,221 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
+## cancelPrepareJob
+
+<a id="opIdcancelPrepareJob"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X POST http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+POST http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel',
+{
+  method: 'POST',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.post 'http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.post('http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('POST','http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("POST");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("POST", "http://127.0.0.1:{port}/v1/prepare-jobs/{jobId}/cancel", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`POST /v1/prepare-jobs/{jobId}/cancel`
+
+*Cancel a prepare job*
+
+Requests cancellation for a queued or running prepare job.
+The operation is idempotent:
+- `202 Accepted` when cancellation is requested for `queued` or `running`.
+- `200 OK` when the job is already terminal (`succeeded`, `failed`, `cancelled`).
+
+<h3 id="cancelpreparejob-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|jobId|path|string|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "job_id": "string",
+  "status": "queued",
+  "prepare_kind": "string",
+  "image_id": "string",
+  "plan_only": true,
+  "prepare_args_normalized": "string",
+  "created_at": "2019-08-24T14:15:22Z",
+  "started_at": "2019-08-24T14:15:22Z",
+  "finished_at": "2019-08-24T14:15:22Z",
+  "tasks": [
+    {
+      "task_id": "string",
+      "type": "plan",
+      "planner_kind": "string"
+    }
+  ],
+  "result": {
+    "dsn": "string",
+    "instance_id": "string",
+    "state_id": "string",
+    "image_id": "string",
+    "prepare_kind": "string",
+    "prepare_args_normalized": "string"
+  },
+  "error": {
+    "code": "string",
+    "message": "string",
+    "details": "string"
+  }
+}
+```
+
+<h3 id="cancelpreparejob-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Already terminal|[PrepareJobStatus](#schemapreparejobstatus)|
+|202|[Accepted](https://tools.ietf.org/html/rfc7231#section-6.3.3)|Cancellation requested|[PrepareJobStatus](#schemapreparejobstatus)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 ## streamPrepareJobEvents
 
 <a id="opIdstreamPrepareJobEvents"></a>
@@ -1282,6 +1497,7 @@ Status Code **200**
 |status|running|
 |status|succeeded|
 |status|failed|
+|status|cancelled|
 
 Status Code **206**
 
@@ -1320,6 +1536,7 @@ Status Code **206**
 |status|running|
 |status|succeeded|
 |status|failed|
+|status|cancelled|
 
 ### Response Headers
 
@@ -4658,6 +4875,7 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
+|status|cancelled|
 
 <h2 id="tocS_PrepareJobEntry">PrepareJobEntry</h2>
 <!-- backwards compatibility -->
@@ -4701,6 +4919,7 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
+|status|cancelled|
 
 <h2 id="tocS_PrepareJobEvent">PrepareJobEvent</h2>
 <!-- backwards compatibility -->
@@ -4758,6 +4977,7 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
+|status|cancelled|
 
 <h2 id="tocS_PrepareJobResult">PrepareJobResult</h2>
 <!-- backwards compatibility -->
@@ -4961,6 +5181,7 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
+|status|cancelled|
 |instance_mode|ephemeral|
 
 <h2 id="tocS_DeleteResult">DeleteResult</h2>

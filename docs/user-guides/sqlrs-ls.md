@@ -144,7 +144,7 @@ Columns:
 Columns:
 
 - `JOB_ID`
-- `STATUS` (queued / running / succeeded / failed)
+- `STATUS` (queued / running / succeeded / failed / cancelled)
 - `PREPARE_KIND`
 - `IMAGE_ID`
 - `PLAN_ONLY` (true / false)
@@ -219,7 +219,7 @@ Recommended fields:
 ### Job object
 
 - `job_id`
-- `status` (`queued` | `running` | `succeeded` | `failed`)
+- `status` (`queued` | `running` | `succeeded` | `failed` | `cancelled`)
 - `prepare_kind`
 - `image_id`
 - `plan_only`

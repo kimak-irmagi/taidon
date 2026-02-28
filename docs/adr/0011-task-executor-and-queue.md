@@ -46,6 +46,8 @@ Date: 2026-01-19
 
 ## Decision Record 4: force deletion cancels active jobs
 
+Status: Obsolete (superseded by [2026-02-28-prepare-watch-detach-cancel.md](2026-02-28-prepare-watch-detach-cancel.md))
+
 - Timestamp: 2026-01-19T00:18:34+07:00
 - User: @evilguest
 - Agent: Codex (GPT-5)

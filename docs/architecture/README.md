@@ -29,14 +29,19 @@ Entry points for Taidon architecture and service design.
   component structure.
 - [`local-engine-component-structure.md`](local-engine-component-structure.md) -
   local engine component structure.
+- [`prepare-job-events-flow.md`](prepare-job-events-flow.md) - events-first
+  monitoring flow for prepare jobs.
+- [`prepare-job-events-component-structure.md`][pjecs] -
+  component structure for prepare events streaming and watch controls.
 - [`prepare-manager-refactor.md`](prepare-manager-refactor.md) - prepare manager
   split into coordinator/executor/snapshot roles.
 - [`statefs-component-structure.md`](statefs-component-structure.md) - StateFS
   contract and filesystem isolation in the engine.
-- [`local-engine-storage-schema.md`](local-engine-storage-schema.md) - SQLite schema for local engine state.
+- [`local-engine-storage-schema.md`](local-engine-storage-schema.md) - SQLite
+  schema for local engine state.
 - [`release-happy-path-e2e.md`](release-happy-path-e2e.md) - release-gated
   happy-path E2E flow and component structure.
-- [`../api-guides/sqlrs-engine.openapi.yaml`](../api-guides/sqlrs-engine.openapi.yaml) -
+- [`../api-guides/sqlrs-engine.openapi.yaml`][openAPI] -
   OpenAPI 3.1 spec for the local engine (MVP).
 - [`query-analysis-workflow-review.md`](query-analysis-workflow-review.md) - notes
   on query analysis workflow.
@@ -46,3 +51,6 @@ Entry points for Taidon architecture and service design.
 - [`git-aware-active.md`](git-aware-active.md) — notes on the github interaction
   scenarios that require
   a running service/API endpoint
+
+[pjecs]: prepare-job-events-component-structure.md
+[openAPI]: ../api-guides/sqlrs-engine.openapi.yaml
