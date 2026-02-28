@@ -25,9 +25,9 @@ with minimal polling and explicit reconnection behavior.
      - `continue`.
 
 4) Status validation on status events
-   - On any `status` event (queued/running/succeeded/failed/cancelled),
+   - On any `status` event (queued/running/succeeded/failed),
      the CLI calls: `GET /v1/prepare-jobs/{jobId}`.
-   - If the status endpoint returns `succeeded`, `failed`, or `cancelled`,
+   - If the status endpoint returns `succeeded` or `failed`,
      the CLI stops.
 
 5) Interactive control actions
@@ -56,7 +56,7 @@ with minimal polling and explicit reconnection behavior.
 - Success: job status confirmed as `succeeded`.
 - Failure: job status confirmed as `failed`, or stream ends without a
   definitive status, or any 4xx response.
-- Cancelled: job status confirmed as `cancelled`.
+- Cancellation is represented as `failed` with `error.code=cancelled`.
 
 ## Sequence Diagram (informal)
 
@@ -66,5 +66,5 @@ Engine -> CLI: 201 { job_id, events_url, status_url }
 CLI -> Engine: GET events_url
 Engine -> CLI: NDJSON stream of PrepareJobEvent
 CLI -> Engine: GET /v1/prepare-jobs/{jobId} (on status events)
-Engine -> CLI: PrepareJobStatus (succeeded|failed|cancelled)
+Engine -> CLI: PrepareJobStatus (succeeded|failed)
 ```

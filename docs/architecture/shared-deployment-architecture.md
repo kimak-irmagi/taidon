@@ -123,7 +123,7 @@ flowchart TD
 - `PrepareJobEntry`, `TaskEntry`
   - List payloads for job/task queries.
 - `TaskStatus`
-  - `queued | running | succeeded | failed | cancelled`.
+  - `queued | running | succeeded | failed`.
 - `DeleteResult`
   - Common deletion outcome shape for job removal.
 

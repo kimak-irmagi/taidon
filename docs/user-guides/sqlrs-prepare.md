@@ -157,16 +157,16 @@ than periodic status polling.
     considered complete after the declared byte length is fully read.
   - If the response is any 4xx status, the stream is considered complete and
     the command fails.
-- If the stream ends without a definitive job outcome (`succeeded`, `failed`,
-   or `cancelled`),
+- If the stream ends without a definitive job outcome (`succeeded` or `failed`),
   the command fails with an error.
 
 ### Status Validation
 
-When a status event is received (queued, running, succeeded, failed, cancelled), the CLI
+When a status event is received (queued, running, succeeded, failed), the CLI
 re-fetches the job status via `GET /v1/prepare-jobs/{jobId}` to confirm the
 final result. The job is considered complete only when the status endpoint
-returns `succeeded`, `failed`, or `cancelled`.
+returns `succeeded` or `failed`.
+Cancellation is represented as `failed` with `error.code=cancelled`.
 
 ### Progress UX
 

@@ -26,7 +26,8 @@ Where:
 - The command opens the job events stream and renders progress in the same format
   as `sqlrs prepare --watch`.
 - On status events, the CLI re-fetches `GET /v1/prepare-jobs/{jobId}`.
-- The command exits on terminal status: `succeeded`, `failed`, or `cancelled`.
+- The command exits on terminal status: `succeeded` or `failed`.
+- Cancellation is reported as `failed` with `error.code=cancelled`.
 
 ---
 
@@ -62,4 +63,3 @@ Rules:
 - unauthorized
 - events stream errors
 - stream completion without definitive terminal status
-

@@ -18,7 +18,7 @@ Modules:
   - `waitForPrepare` becomes events-first:
     - Opens stream, parses NDJSON.
     - On `status` events, re-fetches job status.
-    - Stops on confirmed `succeeded`/`failed`/`cancelled`.
+    - Stops on confirmed `succeeded`/`failed`.
     - Errors if stream ends without definitive status.
   - Interactive watch controls:
     - `Ctrl+C` opens a control prompt (`stop`, `detach`, `continue`).
@@ -55,7 +55,7 @@ Modules:
   - Optional range support reads from queue by event index.
   - Emits log events for runtime/DBMS operations and heartbeat task events
     (~500ms) when no new events arrive while a task is running.
-  - Job lifecycle includes `cancelled` as a terminal status.
+  - Cancellation is represented as job/task `failed` with `error.code=cancelled`.
 
 Data ownership:
 

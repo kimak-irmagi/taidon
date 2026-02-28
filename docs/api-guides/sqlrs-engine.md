@@ -1198,7 +1198,7 @@ func main() {
 Requests cancellation for a queued or running prepare job.
 The operation is idempotent:
 - `202 Accepted` when cancellation is requested for `queued` or `running`.
-- `200 OK` when the job is already terminal (`succeeded`, `failed`, `cancelled`).
+- `200 OK` when the job is already terminal (`succeeded`, `failed`).
 
 <h3 id="cancelpreparejob-parameters">Parameters</h3>
 
@@ -1497,7 +1497,6 @@ Status Code **200**
 |status|running|
 |status|succeeded|
 |status|failed|
-|status|cancelled|
 
 Status Code **206**
 
@@ -1536,7 +1535,6 @@ Status Code **206**
 |status|running|
 |status|succeeded|
 |status|failed|
-|status|cancelled|
 
 ### Response Headers
 
@@ -4875,7 +4873,6 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
-|status|cancelled|
 
 <h2 id="tocS_PrepareJobEntry">PrepareJobEntry</h2>
 <!-- backwards compatibility -->
@@ -4919,7 +4916,6 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
-|status|cancelled|
 
 <h2 id="tocS_PrepareJobEvent">PrepareJobEvent</h2>
 <!-- backwards compatibility -->
@@ -4977,7 +4973,6 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
-|status|cancelled|
 
 <h2 id="tocS_PrepareJobResult">PrepareJobResult</h2>
 <!-- backwards compatibility -->
@@ -5181,7 +5176,6 @@ or
 |status|running|
 |status|succeeded|
 |status|failed|
-|status|cancelled|
 |instance_mode|ephemeral|
 
 <h2 id="tocS_DeleteResult">DeleteResult</h2>

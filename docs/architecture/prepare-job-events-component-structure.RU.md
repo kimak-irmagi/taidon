@@ -18,7 +18,7 @@ events-first мониторинга в CLI и engine.
   - `waitForPrepare` работает в events-first режиме:
     - открывает stream, парсит NDJSON,
     - на `status` событиях повторно запрашивает job status,
-    - останавливается на `succeeded`/`failed`/`cancelled`,
+    - останавливается на `succeeded`/`failed`,
     - возвращает ошибку, если stream завершился без terminal status.
   - Интерактивное управление watch:
     - `Ctrl+C` открывает control prompt (`stop`, `detach`, `continue`),
@@ -58,7 +58,7 @@ Data ownership:
   - Опциональная range-поддержка читает события из queue по event index.
   - Публикует `log` события runtime/DBMS операций и heartbeat task events
     (~500ms), когда новых событий нет.
-  - Жизненный цикл job включает terminal status `cancelled`.
+  - Отмена кодируется как `failed` у job/task с `error.code=cancelled`.
 
 Data ownership:
 
@@ -69,4 +69,3 @@ Data ownership:
 
 - CLI: читает события, валидирует terminal status, управляет attach/watch UX.
 - Engine: производит и хранит события, поддерживает streaming и cancel.
-

@@ -25,9 +25,9 @@
      - `continue`.
 
 4) Валидация статуса при status events
-   - На любое `status` событие (queued/running/succeeded/failed/cancelled)
+   - На любое `status` событие (queued/running/succeeded/failed)
      CLI вызывает `GET /v1/prepare-jobs/{jobId}`.
-   - Если status endpoint возвращает `succeeded`, `failed` или `cancelled`,
+   - Если status endpoint возвращает `succeeded` или `failed`,
      CLI завершает наблюдение.
 
 5) Действия из control prompt
@@ -56,7 +56,7 @@
 - Success: статус job подтверждён как `succeeded`.
 - Failure: статус job подтверждён как `failed`, или stream завершился без
   terminal status, или получен 4xx ответ.
-- Cancelled: статус job подтверждён как `cancelled`.
+- Отмена кодируется как `failed` с `error.code=cancelled`.
 
 ## Sequence Diagram (informal)
 
@@ -66,5 +66,5 @@ Engine -> CLI: 201 { job_id, events_url, status_url }
 CLI -> Engine: GET events_url
 Engine -> CLI: NDJSON stream of PrepareJobEvent
 CLI -> Engine: GET /v1/prepare-jobs/{jobId} (on status events)
-Engine -> CLI: PrepareJobStatus (succeeded|failed|cancelled)
+Engine -> CLI: PrepareJobStatus (succeeded|failed)
 ```

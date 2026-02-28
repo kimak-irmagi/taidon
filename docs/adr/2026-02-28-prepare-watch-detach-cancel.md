@@ -48,11 +48,11 @@ Date: 2026-02-28
     - exit successfully after printing `job_id` and skip message.
   - Add explicit cancellation endpoint:
     `POST /v1/prepare-jobs/{jobId}/cancel` (idempotent).
-  - Add `cancelled` terminal status for prepare job lifecycle and task lifecycle.
+  - Keep terminal status model unchanged: cancellation is reported as
+    `failed` with `error.code=cancelled` for jobs and tasks.
 - Rationale:
   - Composite detach remains explicit and avoids ambiguous background `run`
     behavior.
-  - Explicit `cancelled` status improves observability and removes ambiguity of
-    encoding cancellation only as an error subtype of `failed`.
+  - Preserving the existing status enums avoids broad compatibility churn in
+    clients and tests.
   - Dedicated cancel endpoint decouples cancellation from delete semantics.
-

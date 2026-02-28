@@ -203,7 +203,7 @@ paths:
         Requests cancellation for a queued or running prepare job.
         The operation is idempotent:
         - `202 Accepted` when cancellation is requested for `queued` or `running`.
-        - `200 OK` when the job is already terminal (`succeeded`, `failed`, `cancelled`).
+        - `200 OK` when the job is already terminal (`succeeded`, `failed`).
       tags:
         - prepare
       parameters:
@@ -1087,7 +1087,7 @@ components:
           type: string
         status:
           type: string
-          enum: [queued, running, succeeded, failed, cancelled]
+          enum: [queued, running, succeeded, failed]
         prepare_kind:
           type: string
         image_id:
@@ -1133,7 +1133,7 @@ components:
           type: string
         status:
           type: string
-          enum: [queued, running, succeeded, failed, cancelled]
+          enum: [queued, running, succeeded, failed]
         prepare_kind:
           type: string
         image_id:
@@ -1168,7 +1168,7 @@ components:
           description: Present for task status events.
         status:
           type: string
-          enum: [queued, running, succeeded, failed, cancelled]
+          enum: [queued, running, succeeded, failed]
         message:
           type: string
         result:
@@ -1291,7 +1291,7 @@ components:
           enum: [plan, resolve_image, state_execute, prepare_instance]
         status:
           type: string
-          enum: [queued, running, succeeded, failed, cancelled]
+          enum: [queued, running, succeeded, failed]
         planner_kind:
           type: string
         input:
