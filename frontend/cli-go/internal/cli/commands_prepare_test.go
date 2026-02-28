@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -1130,4 +1131,395 @@ func TestHandlePrepareControlActionStopRequestsCancel(t *testing.T) {
 	if !cancelCalled {
 		t.Fatalf("expected cancel endpoint to be called")
 	}
+}
+
+func TestPrepareDetachedErrorMessage(t *testing.T) {
+	if got := (&PrepareDetachedError{}).Error(); got != "prepare detached" {
+		t.Fatalf("unexpected empty detached message: %q", got)
+	}
+	if got := (&PrepareDetachedError{JobID: "job-1"}).Error(); got != "prepare detached from job job-1" {
+		t.Fatalf("unexpected detached message: %q", got)
+	}
+}
+
+func TestSubmitPrepare(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, `{"job_id":"job-submit","status_url":"/v1/prepare-jobs/job-submit","events_url":"/v1/prepare-jobs/job-submit/events"}`)
+	}))
+	defer server.Close()
+
+	accepted, err := SubmitPrepare(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		ImageID:  "image",
+		PsqlArgs: []string{"-c", "select 1"},
+		Timeout:  time.Second,
+	})
+	if err != nil {
+		t.Fatalf("SubmitPrepare: %v", err)
+	}
+	if accepted.JobID != "job-submit" {
+		t.Fatalf("unexpected accepted payload: %+v", accepted)
+	}
+}
+
+func TestRunWatchRequiresJobID(t *testing.T) {
+	_, err := RunWatch(context.Background(), PrepareOptions{}, "   ")
+	if err == nil || !strings.Contains(err.Error(), "prepare job id is required") {
+		t.Fatalf("expected job id error, got %v", err)
+	}
+}
+
+func TestRunWatchFailedImmediately(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/prepare-jobs/job-1" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"job_id":"job-1","status":"failed","error":{"message":"boom","details":"failed fast"}}`)
+	}))
+	defer server.Close()
+
+	_, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, "job-1")
+	if err == nil || !strings.Contains(err.Error(), "boom: failed fast") {
+		t.Fatalf("expected failed status error, got %v", err)
+	}
+}
+
+func TestPromptPrepareControlDefault(t *testing.T) {
+	withTestStdin(t, "\n", func() {
+		var out bytes.Buffer
+		action, err := promptPrepareControlDefault(&out, make(chan os.Signal, 1))
+		if err != nil {
+			t.Fatalf("promptPrepareControlDefault: %v", err)
+		}
+		if action != prepareControlContinue {
+			t.Fatalf("expected continue, got %v", action)
+		}
+	})
+
+	withTestStdin(t, "d", func() {
+		action, err := promptPrepareControlDefault(io.Discard, make(chan os.Signal, 1))
+		if err != nil {
+			t.Fatalf("promptPrepareControlDefault: %v", err)
+		}
+		if action != prepareControlDetach {
+			t.Fatalf("expected detach, got %v", action)
+		}
+	})
+
+	withTestStdin(t, "sy", func() {
+		action, err := promptPrepareControlDefault(io.Discard, make(chan os.Signal, 1))
+		if err != nil {
+			t.Fatalf("promptPrepareControlDefault: %v", err)
+		}
+		if action != prepareControlStop {
+			t.Fatalf("expected stop, got %v", action)
+		}
+	})
+
+	interrupts := make(chan os.Signal, 1)
+	interrupts <- os.Interrupt
+	action, err := promptPrepareControlDefault(io.Discard, interrupts)
+	if err != nil {
+		t.Fatalf("promptPrepareControlDefault: %v", err)
+	}
+	if action != prepareControlContinue {
+		t.Fatalf("expected continue on interrupt, got %v", action)
+	}
+}
+
+func TestConfirmPrepareStop(t *testing.T) {
+	confirmed, err := confirmPrepareStop(bufio.NewReader(strings.NewReader("y")), io.Discard, make(chan os.Signal, 1))
+	if err != nil {
+		t.Fatalf("confirmPrepareStop: %v", err)
+	}
+	if !confirmed {
+		t.Fatalf("expected confirm=true for y")
+	}
+
+	confirmed, err = confirmPrepareStop(bufio.NewReader(strings.NewReader("N")), io.Discard, make(chan os.Signal, 1))
+	if err != nil {
+		t.Fatalf("confirmPrepareStop: %v", err)
+	}
+	if confirmed {
+		t.Fatalf("expected confirm=false for N")
+	}
+
+	interrupts := make(chan os.Signal, 1)
+	interrupts <- os.Interrupt
+	confirmed, err = confirmPrepareStop(bufio.NewReader(strings.NewReader("")), io.Discard, interrupts)
+	if err != nil {
+		t.Fatalf("confirmPrepareStop: %v", err)
+	}
+	if confirmed {
+		t.Fatalf("expected confirm=false on interrupt")
+	}
+}
+
+func TestHandlePrepareControlActionTerminalStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/prepare-jobs/job-1" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+	}))
+	defer server.Close()
+
+	prevPrompt := promptPrepareControl
+	promptPrepareControl = func(writer io.Writer, interrupts <-chan os.Signal) (prepareControlAction, error) {
+		t.Fatalf("prompt should not be called for terminal status")
+		return prepareControlContinue, nil
+	}
+	defer func() { promptPrepareControl = prevPrompt }()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	tracker := newPrepareProgress(io.Discard, false)
+	defer tracker.Close()
+
+	status, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+	if err != nil {
+		t.Fatalf("handlePrepareControlAction: %v", err)
+	}
+	if status == nil || status.Status != "succeeded" {
+		t.Fatalf("expected succeeded status, got %+v", status)
+	}
+}
+
+func TestHandlePrepareControlActionCancelReturnsFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs/job-1/cancel":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"job_id":"job-1","status":"failed","error":{"message":"boom","details":"cancel failed"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	prevPrompt := promptPrepareControl
+	promptPrepareControl = func(writer io.Writer, interrupts <-chan os.Signal) (prepareControlAction, error) {
+		return prepareControlStop, nil
+	}
+	defer func() { promptPrepareControl = prevPrompt }()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	tracker := newPrepareProgress(io.Discard, false)
+	defer tracker.Close()
+
+	status, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+	if err == nil || !strings.Contains(err.Error(), "boom: cancel failed") {
+		t.Fatalf("expected failed cancel error, got status=%+v err=%v", status, err)
+	}
+}
+
+func TestSubmitPrepareError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	_, err := SubmitPrepare(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	})
+	if err == nil {
+		t.Fatalf("expected submit error")
+	}
+}
+
+func TestRunWatchPrepareClientError(t *testing.T) {
+	_, err := RunWatch(context.Background(), PrepareOptions{Mode: "remote"}, "job-1")
+	if err == nil || !strings.Contains(err.Error(), "explicit endpoint") {
+		t.Fatalf("expected endpoint error, got %v", err)
+	}
+}
+
+func TestRunWatchGetJobError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	_, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, "job-1")
+	if err == nil {
+		t.Fatalf("expected get job error")
+	}
+}
+
+func TestHandlePrepareControlActionErrors(t *testing.T) {
+	t.Run("get status error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+		cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+		tracker := newPrepareProgress(io.Discard, false)
+		defer tracker.Close()
+		_, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+		if err == nil {
+			t.Fatalf("expected status error")
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+		cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+		tracker := newPrepareProgress(io.Discard, false)
+		defer tracker.Close()
+		_, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+		if err == nil || !strings.Contains(err.Error(), "prepare job not found") {
+			t.Fatalf("expected not found error, got %v", err)
+		}
+	})
+
+	t.Run("prompt error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1" {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		prevPrompt := promptPrepareControl
+		promptPrepareControl = func(writer io.Writer, interrupts <-chan os.Signal) (prepareControlAction, error) {
+			return prepareControlContinue, errors.New("prompt failed")
+		}
+		defer func() { promptPrepareControl = prevPrompt }()
+
+		cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+		tracker := newPrepareProgress(io.Discard, false)
+		defer tracker.Close()
+		_, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+		if err == nil || !strings.Contains(err.Error(), "prompt failed") {
+			t.Fatalf("expected prompt error, got %v", err)
+		}
+	})
+}
+
+func TestHandlePrepareControlActionStopSucceeded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs/job-1/cancel":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	prevPrompt := promptPrepareControl
+	promptPrepareControl = func(writer io.Writer, interrupts <-chan os.Signal) (prepareControlAction, error) {
+		return prepareControlStop, nil
+	}
+	defer func() { promptPrepareControl = prevPrompt }()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	tracker := newPrepareProgress(io.Discard, false)
+	defer tracker.Close()
+	status, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+	if err != nil {
+		t.Fatalf("handlePrepareControlAction: %v", err)
+	}
+	if status == nil || status.Status != "succeeded" {
+		t.Fatalf("expected succeeded status, got %+v", status)
+	}
+}
+
+func TestDefaultCanUsePrepareControlPrompt(t *testing.T) {
+	prevIsTerminal := isTerminal
+	defer func() { isTerminal = prevIsTerminal }()
+
+	isTerminal = func(fd int) bool { return false }
+	if defaultCanUsePrepareControlPrompt(os.Stdout) {
+		t.Fatalf("expected false when output fd is not terminal")
+	}
+
+	isTerminal = func(fd int) bool { return true }
+	if !defaultCanUsePrepareControlPrompt(os.Stdout) {
+		t.Fatalf("expected true when output and stdin are terminal")
+	}
+}
+
+func TestPromptPrepareControlDefaultNilWriter(t *testing.T) {
+	withTestStdin(t, "\n", func() {
+		action, err := promptPrepareControlDefault(nil, make(chan os.Signal, 1))
+		if err != nil {
+			t.Fatalf("promptPrepareControlDefault: %v", err)
+		}
+		if action != prepareControlContinue {
+			t.Fatalf("expected continue, got %v", action)
+		}
+	})
+}
+
+func TestConfirmPrepareStopReaderError(t *testing.T) {
+	reader := bufio.NewReader(&failingReader{err: errors.New("read failed")})
+	confirmed, err := confirmPrepareStop(reader, io.Discard, make(chan os.Signal, 1))
+	if err == nil || !strings.Contains(err.Error(), "read failed") {
+		t.Fatalf("expected read error, got confirmed=%v err=%v", confirmed, err)
+	}
+}
+
+type failingReader struct {
+	err error
+}
+
+func (r *failingReader) Read(_ []byte) (int, error) {
+	return 0, r.err
+}
+
+func withTestStdin(t *testing.T, input string, fn func()) {
+	t.Helper()
+	old := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	if _, err := io.WriteString(w, input); err != nil {
+		t.Fatalf("write stdin: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close stdin writer: %v", err)
+	}
+	os.Stdin = r
+	defer func() {
+		os.Stdin = old
+		_ = r.Close()
+	}()
+	fn()
 }

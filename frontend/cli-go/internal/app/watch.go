@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -54,15 +53,7 @@ func runWatch(stdout io.Writer, runOpts cli.PrepareOptions, args []string) error
 		}
 		return err
 	}
-	if status.Status == "failed" {
-		if status.Error != nil && status.Error.Message != "" {
-			if status.Error.Details != "" {
-				return fmt.Errorf("%s: %s", status.Error.Message, status.Error.Details)
-			}
-			return fmt.Errorf("%s", status.Error.Message)
-		}
-		return fmt.Errorf("prepare job failed")
-	}
+	_ = status
 	return nil
 }
 

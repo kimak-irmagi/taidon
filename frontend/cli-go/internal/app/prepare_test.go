@@ -2,11 +2,18 @@ package app
 
 import (
 	"bytes"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"sqlrs/cli/internal/cli"
+	"sqlrs/cli/internal/client"
 	"sqlrs/cli/internal/config"
 	"sqlrs/cli/internal/paths"
 )
@@ -363,5 +370,185 @@ func TestRelativizeLiquibaseArgs(t *testing.T) {
 	}
 	if strings.HasPrefix(out[2], "..") {
 		t.Fatalf("expected within root, got %v", out)
+	}
+}
+
+func TestPrintPrepareJobRefs(t *testing.T) {
+	var out bytes.Buffer
+	printPrepareJobRefs(&out, client.PrepareJobAccepted{
+		JobID:     "job-1",
+		StatusURL: "/v1/prepare-jobs/job-1",
+		EventsURL: "/v1/prepare-jobs/job-1/events",
+	})
+	text := out.String()
+	if !strings.Contains(text, "JOB_ID=job-1") {
+		t.Fatalf("expected job id in output, got %q", text)
+	}
+	if !strings.Contains(text, "STATUS_URL=/v1/prepare-jobs/job-1") {
+		t.Fatalf("expected status url in output, got %q", text)
+	}
+	if !strings.Contains(text, "EVENTS_URL=/v1/prepare-jobs/job-1/events") {
+		t.Fatalf("expected events url in output, got %q", text)
+	}
+}
+
+func TestPrintRunSkipped(t *testing.T) {
+	var out bytes.Buffer
+	printRunSkipped(&out, "prepare_detached")
+	if out.String() != "RUN_SKIPPED=prepare_detached\n" {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestPrepareResultNoWatchCompositeRun(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	_, handled, err := prepareResult(
+		stdoutAndErr{stdout: &out, stderr: &errOut},
+		cli.PrepareOptions{
+			Mode:         "remote",
+			Endpoint:     server.URL,
+			Timeout:      time.Second,
+			CompositeRun: true,
+		},
+		config.LoadedConfig{},
+		root,
+		root,
+		[]string{"--no-watch", "--image", "image", "--", "-c", "select 1"},
+	)
+	if err != nil {
+		t.Fatalf("prepareResult: %v", err)
+	}
+	if !handled {
+		t.Fatalf("expected handled=true")
+	}
+	text := out.String()
+	if !strings.Contains(text, "JOB_ID=job-1") {
+		t.Fatalf("expected job refs output, got %q", text)
+	}
+	if !strings.Contains(text, "RUN_SKIPPED=prepare_not_watched") {
+		t.Fatalf("expected run skipped output, got %q", text)
+	}
+}
+
+func TestPrepareResultNoWatchSubmitError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	_, handled, err := prepareResult(
+		stdoutAndErr{stdout: io.Discard, stderr: io.Discard},
+		cli.PrepareOptions{
+			Mode:     "remote",
+			Endpoint: server.URL,
+			Timeout:  time.Second,
+		},
+		config.LoadedConfig{},
+		root,
+		root,
+		[]string{"--no-watch", "--image", "image", "--", "-c", "select 1"},
+	)
+	if err == nil {
+		t.Fatalf("expected submit error")
+	}
+	if handled {
+		t.Fatalf("expected handled=false on submit error")
+	}
+}
+
+func TestPrepareResultLiquibaseNoWatchCompositeRun(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, `{"job_id":"job-lb","status_url":"/v1/prepare-jobs/job-lb","events_url":"/v1/prepare-jobs/job-lb/events"}`)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	_, handled, err := prepareResultLiquibase(
+		stdoutAndErr{stdout: &out, stderr: &errOut},
+		cli.PrepareOptions{
+			Mode:         "remote",
+			Endpoint:     server.URL,
+			Timeout:      time.Second,
+			CompositeRun: true,
+		},
+		config.LoadedConfig{},
+		root,
+		root,
+		[]string{"--no-watch", "--image", "image", "--", "update", "--changelog-file", "changelog.xml"},
+	)
+	if err != nil {
+		t.Fatalf("prepareResultLiquibase: %v", err)
+	}
+	if !handled {
+		t.Fatalf("expected handled=true")
+	}
+	text := out.String()
+	if !strings.Contains(text, "JOB_ID=job-lb") {
+		t.Fatalf("expected job refs output, got %q", text)
+	}
+	if !strings.Contains(text, "RUN_SKIPPED=prepare_not_watched") {
+		t.Fatalf("expected run skipped output, got %q", text)
+	}
+}
+
+func TestPrepareResultLiquibaseNoWatchSubmitError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	_, handled, err := prepareResultLiquibase(
+		stdoutAndErr{stdout: io.Discard, stderr: io.Discard},
+		cli.PrepareOptions{
+			Mode:     "remote",
+			Endpoint: server.URL,
+			Timeout:  time.Second,
+		},
+		config.LoadedConfig{},
+		root,
+		root,
+		[]string{"--no-watch", "--image", "image", "--", "update", "--changelog-file", "changelog.xml"},
+	)
+	if err == nil {
+		t.Fatalf("expected submit error")
+	}
+	if handled {
+		t.Fatalf("expected handled=false on submit error")
+	}
+}
+
+func TestNormalizeLiquibaseArgsSearchPathConverterError(t *testing.T) {
+	root := t.TempDir()
+	_, err := normalizeLiquibaseArgs(
+		[]string{"update", "--search-path=db"},
+		root,
+		root,
+		func(string) (string, error) { return "", errors.New("convert failed") },
+	)
+	if err == nil || !strings.Contains(err.Error(), "convert failed") {
+		t.Fatalf("expected converter error, got %v", err)
 	}
 }
