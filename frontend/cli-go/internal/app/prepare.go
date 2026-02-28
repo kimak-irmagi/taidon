@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,8 +16,10 @@ import (
 )
 
 type prepareArgs struct {
-	Image    string
-	PsqlArgs []string
+	Image          string
+	PsqlArgs       []string
+	Watch          bool
+	WatchSpecified bool
 }
 
 type stdoutAndErr struct {
@@ -25,7 +28,7 @@ type stdoutAndErr struct {
 }
 
 func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
-	var opts prepareArgs
+	opts := prepareArgs{Watch: true}
 	if err := validateNoUnicodeDashFlags(args, 2); err != nil {
 		return opts, false, err
 	}
@@ -40,6 +43,12 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 		switch {
 		case arg == "--help" || arg == "-h":
 			return opts, true, nil
+		case arg == "--watch":
+			opts.Watch = true
+			opts.WatchSpecified = true
+		case arg == "--no-watch":
+			opts.Watch = false
+			opts.WatchSpecified = true
 		case arg == "--image":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --image")
@@ -119,8 +128,33 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 	runOpts.Stdin = stdin
 	runOpts.PrepareKind = "psql"
 
+	if !parsed.Watch {
+		accepted, err := cli.SubmitPrepare(context.Background(), runOpts)
+		if err != nil {
+			return client.PrepareJobResult{}, false, err
+		}
+		printPrepareJobRefs(w.stdout, accepted)
+		if runOpts.CompositeRun {
+			printRunSkipped(w.stdout, "prepare_not_watched")
+		}
+		return client.PrepareJobResult{}, true, nil
+	}
+
 	result, err := cli.RunPrepare(context.Background(), runOpts)
 	if err != nil {
+		var detached *cli.PrepareDetachedError
+		if errors.As(err, &detached) {
+			accepted := client.PrepareJobAccepted{
+				JobID:     detached.JobID,
+				StatusURL: "/v1/prepare-jobs/" + detached.JobID,
+				EventsURL: "/v1/prepare-jobs/" + detached.JobID + "/events",
+			}
+			printPrepareJobRefs(w.stdout, accepted)
+			if runOpts.CompositeRun {
+				printRunSkipped(w.stdout, "prepare_detached")
+			}
+			return client.PrepareJobResult{}, true, nil
+		}
 		return client.PrepareJobResult{}, false, err
 	}
 	return result, false, nil
@@ -184,11 +218,46 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 	runOpts.WorkDir = workDir
 	runOpts.PrepareKind = "lb"
 
+	if !parsed.Watch {
+		accepted, err := cli.SubmitPrepare(context.Background(), runOpts)
+		if err != nil {
+			return client.PrepareJobResult{}, false, err
+		}
+		printPrepareJobRefs(w.stdout, accepted)
+		if runOpts.CompositeRun {
+			printRunSkipped(w.stdout, "prepare_not_watched")
+		}
+		return client.PrepareJobResult{}, true, nil
+	}
+
 	result, err := cli.RunPrepare(context.Background(), runOpts)
 	if err != nil {
+		var detached *cli.PrepareDetachedError
+		if errors.As(err, &detached) {
+			accepted := client.PrepareJobAccepted{
+				JobID:     detached.JobID,
+				StatusURL: "/v1/prepare-jobs/" + detached.JobID,
+				EventsURL: "/v1/prepare-jobs/" + detached.JobID + "/events",
+			}
+			printPrepareJobRefs(w.stdout, accepted)
+			if runOpts.CompositeRun {
+				printRunSkipped(w.stdout, "prepare_detached")
+			}
+			return client.PrepareJobResult{}, true, nil
+		}
 		return client.PrepareJobResult{}, false, err
 	}
 	return result, false, nil
+}
+
+func printPrepareJobRefs(w io.Writer, accepted client.PrepareJobAccepted) {
+	fmt.Fprintf(w, "JOB_ID=%s\n", accepted.JobID)
+	fmt.Fprintf(w, "STATUS_URL=%s\n", accepted.StatusURL)
+	fmt.Fprintf(w, "EVENTS_URL=%s\n", accepted.EventsURL)
+}
+
+func printRunSkipped(w io.Writer, reason string) {
+	fmt.Fprintf(w, "RUN_SKIPPED=%s\n", reason)
 }
 
 func resolvePrepareImage(cliValue string, cfg config.LoadedConfig) (string, string, error) {

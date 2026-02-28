@@ -179,6 +179,25 @@ func (c *Client) GetPrepareJob(ctx context.Context, jobID string) (PrepareJobSta
 	return out, found, err
 }
 
+func (c *Client) CancelPrepareJob(ctx context.Context, jobID string) (PrepareJobStatus, int, error) {
+	path := "/v1/prepare-jobs/" + url.PathEscape(strings.TrimSpace(jobID)) + "/cancel"
+	resp, err := c.doRequest(ctx, http.MethodPost, path, true)
+	if err != nil {
+		return PrepareJobStatus{}, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
+		return PrepareJobStatus{}, resp.StatusCode, parseErrorResponse(resp)
+	}
+
+	var out PrepareJobStatus
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return PrepareJobStatus{}, resp.StatusCode, err
+	}
+	return out, resp.StatusCode, nil
+}
+
 func (c *Client) ListPrepareJobs(ctx context.Context, jobID string) ([]PrepareJobEntry, error) {
 	var out []PrepareJobEntry
 	query := url.Values{}

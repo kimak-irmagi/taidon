@@ -40,6 +40,38 @@ func TestParsePrepareArgsTreatsUnknownAsPsql(t *testing.T) {
 	}
 }
 
+func TestParsePrepareArgsNoWatch(t *testing.T) {
+	opts, showHelp, err := parsePrepareArgs([]string{"--no-watch", "--", "-c", "select 1"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if showHelp {
+		t.Fatalf("did not expect help")
+	}
+	if opts.Watch {
+		t.Fatalf("expected watch disabled")
+	}
+	if !opts.WatchSpecified {
+		t.Fatalf("expected watch mode to be marked as explicitly set")
+	}
+}
+
+func TestParsePrepareArgsWatch(t *testing.T) {
+	opts, showHelp, err := parsePrepareArgs([]string{"--watch", "--", "-c", "select 1"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if showHelp {
+		t.Fatalf("did not expect help")
+	}
+	if !opts.Watch {
+		t.Fatalf("expected watch enabled")
+	}
+	if !opts.WatchSpecified {
+		t.Fatalf("expected watch mode to be marked as explicitly set")
+	}
+}
+
 func TestResolvePrepareImagePrecedence(t *testing.T) {
 	temp := t.TempDir()
 	globalDir := filepath.Join(temp, "config")

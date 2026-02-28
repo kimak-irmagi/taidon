@@ -1024,3 +1024,110 @@ func hasSpinnerSuffix(line string) bool {
 	last := line[len(line)-1]
 	return last == '-' || last == '\\' || last == '|' || last == '/'
 }
+
+func TestRunWatchSucceededImmediately(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	status, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, "job-1")
+	if err != nil {
+		t.Fatalf("RunWatch: %v", err)
+	}
+	if status.Status != "succeeded" {
+		t.Fatalf("expected succeeded status, got %q", status.Status)
+	}
+}
+
+func TestRunWatchNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, "job-missing")
+	if err == nil || !strings.Contains(err.Error(), "prepare job not found") {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
+func TestHandlePrepareControlActionDetach(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	prevPrompt := promptPrepareControl
+	promptPrepareControl = func(writer io.Writer, interrupts <-chan os.Signal) (prepareControlAction, error) {
+		return prepareControlDetach, nil
+	}
+	defer func() { promptPrepareControl = prevPrompt }()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	tracker := newPrepareProgress(io.Discard, false)
+	defer tracker.Close()
+	_, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+	var detached *PrepareDetachedError
+	if !errors.As(err, &detached) {
+		t.Fatalf("expected detached error, got %v", err)
+	}
+}
+
+func TestHandlePrepareControlActionStopRequestsCancel(t *testing.T) {
+	var cancelCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs/job-1/cancel":
+			cancelCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	prevPrompt := promptPrepareControl
+	promptPrepareControl = func(writer io.Writer, interrupts <-chan os.Signal) (prepareControlAction, error) {
+		return prepareControlStop, nil
+	}
+	defer func() { promptPrepareControl = prevPrompt }()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	tracker := newPrepareProgress(io.Discard, false)
+	defer tracker.Close()
+	status, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, make(chan os.Signal))
+	if err != nil {
+		t.Fatalf("handlePrepareControlAction: %v", err)
+	}
+	if status != nil {
+		t.Fatalf("expected nil status for accepted cancel request, got %+v", status)
+	}
+	if !cancelCalled {
+		t.Fatalf("expected cancel endpoint to be called")
+	}
+}

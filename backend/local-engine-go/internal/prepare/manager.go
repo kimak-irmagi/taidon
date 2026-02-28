@@ -380,6 +380,45 @@ func (m *PrepareService) Delete(jobID string, opts deletion.DeleteOptions) (dele
 	return result, true
 }
 
+func (m *PrepareService) Cancel(jobID string) (Status, bool, bool, error) {
+	job, ok, err := m.queue.GetJob(context.Background(), jobID)
+	if err != nil {
+		return Status{}, false, false, err
+	}
+	if !ok {
+		return Status{}, false, false, nil
+	}
+
+	switch job.Status {
+	case StatusSucceeded, StatusFailed:
+		status, ok := m.Get(jobID)
+		if !ok {
+			return Status{}, true, false, nil
+		}
+		return status, true, false, nil
+	}
+
+	if runner := m.getRunner(jobID); runner != nil {
+		m.logJob(jobID, "cancel requested")
+		runner.cancel()
+		status, ok := m.Get(jobID)
+		if !ok {
+			return Status{}, true, true, nil
+		}
+		return status, true, true, nil
+	}
+
+	m.logJob(jobID, "cancel requested without active runner")
+	if err := m.failJob(jobID, errorResponse("cancelled", "job cancelled", "")); err != nil {
+		return Status{}, true, false, err
+	}
+	status, ok := m.Get(jobID)
+	if !ok {
+		return Status{}, true, true, nil
+	}
+	return status, true, true, nil
+}
+
 func (m *PrepareService) EventsSince(jobID string, index int) ([]Event, bool, bool, error) {
 	job, ok, err := m.queue.GetJob(context.Background(), jobID)
 	if err != nil {
@@ -452,6 +491,19 @@ func (c *jobCoordinator) runJob(prepared preparedRequest, jobID string) {
 		close(runner.done)
 		m.unregisterRunner(jobID)
 	}()
+
+	job, ok, err := m.queue.GetJob(ctx, jobID)
+	if err != nil {
+		_ = m.failJob(jobID, errorResponse("internal_error", "cannot load job", err.Error()))
+		return
+	}
+	if !ok {
+		return
+	}
+	if job.Status == StatusSucceeded || job.Status == StatusFailed {
+		m.logJob(jobID, "skip execution for terminal job status=%s", job.Status)
+		return
+	}
 
 	now := m.now().UTC()
 	startedAt := now.Format(time.RFC3339Nano)

@@ -1,15 +1,19 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"sqlrs/cli/internal/client"
@@ -20,9 +24,34 @@ import (
 )
 
 var (
-	isTerminal  = term.IsTerminal
-	getTermSize = term.GetSize
+	isTerminal                 = term.IsTerminal
+	getTermSize                = term.GetSize
+	canUsePrepareControlPrompt = defaultCanUsePrepareControlPrompt
+	promptPrepareControl       = promptPrepareControlDefault
 )
+
+type PrepareDetachedError struct {
+	JobID string
+}
+
+func (e *PrepareDetachedError) Error() string {
+	if strings.TrimSpace(e.JobID) == "" {
+		return "prepare detached"
+	}
+	return fmt.Sprintf("prepare detached from job %s", e.JobID)
+}
+
+type prepareControlAction int
+
+const (
+	prepareControlContinue prepareControlAction = iota
+	prepareControlDetach
+	prepareControlStop
+)
+
+type waitPrepareOptions struct {
+	allowControls bool
+}
 
 type PrepareOptions struct {
 	ProfileName     string
@@ -55,37 +84,14 @@ type PrepareOptions struct {
 	Stdin             *string
 	PrepareKind       string
 	PlanOnly          bool
+	CompositeRun      bool
 }
 
 func RunPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobResult, error) {
 	if opts.PlanOnly {
 		return client.PrepareJobResult{}, fmt.Errorf("plan-only is not supported by RunPrepare")
 	}
-	cliClient, err := prepareClient(ctx, opts)
-	if err != nil {
-		return client.PrepareJobResult{}, err
-	}
-
-	prepareKind := strings.TrimSpace(opts.PrepareKind)
-	if prepareKind == "" {
-		prepareKind = "psql"
-	}
-
-	if opts.Verbose {
-		fmt.Fprintln(os.Stderr, "submitting prepare job")
-	}
-	accepted, err := cliClient.CreatePrepareJob(ctx, client.PrepareJobRequest{
-		PrepareKind:       prepareKind,
-		ImageID:           opts.ImageID,
-		PsqlArgs:          opts.PsqlArgs,
-		LiquibaseArgs:     opts.LiquibaseArgs,
-		LiquibaseExec:     opts.LiquibaseExec,
-		LiquibaseExecMode: opts.LiquibaseExecMode,
-		LiquibaseEnv:      opts.LiquibaseEnv,
-		WorkDir:           opts.WorkDir,
-		Stdin:             opts.Stdin,
-		PlanOnly:          false,
-	})
+	cliClient, accepted, err := createPrepareJob(ctx, opts, false)
 	if err != nil {
 		return client.PrepareJobResult{}, err
 	}
@@ -104,7 +110,9 @@ func RunPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobResu
 		return client.PrepareJobResult{}, fmt.Errorf("prepare events url missing")
 	}
 
-	status, err := waitForPrepare(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose)
+	status, err := waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose, waitPrepareOptions{
+		allowControls: true,
+	})
 	if err != nil {
 		return client.PrepareJobResult{}, err
 	}
@@ -123,31 +131,7 @@ type PlanResult struct {
 
 func RunPlan(ctx context.Context, opts PrepareOptions) (PlanResult, error) {
 	opts.PlanOnly = true
-	cliClient, err := prepareClient(ctx, opts)
-	if err != nil {
-		return PlanResult{}, err
-	}
-
-	prepareKind := strings.TrimSpace(opts.PrepareKind)
-	if prepareKind == "" {
-		prepareKind = "psql"
-	}
-
-	if opts.Verbose {
-		fmt.Fprintln(os.Stderr, "submitting prepare job (plan-only)")
-	}
-	accepted, err := cliClient.CreatePrepareJob(ctx, client.PrepareJobRequest{
-		PrepareKind:       prepareKind,
-		ImageID:           opts.ImageID,
-		PsqlArgs:          opts.PsqlArgs,
-		LiquibaseArgs:     opts.LiquibaseArgs,
-		LiquibaseExec:     opts.LiquibaseExec,
-		LiquibaseExecMode: opts.LiquibaseExecMode,
-		LiquibaseEnv:      opts.LiquibaseEnv,
-		WorkDir:           opts.WorkDir,
-		Stdin:             opts.Stdin,
-		PlanOnly:          true,
-	})
+	cliClient, accepted, err := createPrepareJob(ctx, opts, true)
 	if err != nil {
 		return PlanResult{}, err
 	}
@@ -166,7 +150,7 @@ func RunPlan(ctx context.Context, opts PrepareOptions) (PlanResult, error) {
 		return PlanResult{}, fmt.Errorf("prepare events url missing")
 	}
 
-	status, err := waitForPrepare(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose)
+	status, err := waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose, waitPrepareOptions{})
 	if err != nil {
 		return PlanResult{}, err
 	}
@@ -182,6 +166,42 @@ func RunPlan(ctx context.Context, opts PrepareOptions) (PlanResult, error) {
 		PrepareArgsNormalized: status.PrepareArgsNormalized,
 		Tasks:                 status.Tasks,
 	}, nil
+}
+
+func SubmitPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobAccepted, error) {
+	_, accepted, err := createPrepareJob(ctx, opts, false)
+	if err != nil {
+		return client.PrepareJobAccepted{}, err
+	}
+	return accepted, nil
+}
+
+func RunWatch(ctx context.Context, opts PrepareOptions, jobID string) (client.PrepareJobStatus, error) {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		return client.PrepareJobStatus{}, fmt.Errorf("prepare job id is required")
+	}
+	cliClient, err := prepareClient(ctx, opts)
+	if err != nil {
+		return client.PrepareJobStatus{}, err
+	}
+	status, found, err := cliClient.GetPrepareJob(ctx, jobID)
+	if err != nil {
+		return client.PrepareJobStatus{}, err
+	}
+	if !found {
+		return client.PrepareJobStatus{}, fmt.Errorf("prepare job not found: %s", jobID)
+	}
+	switch status.Status {
+	case "succeeded":
+		return status, nil
+	case "failed":
+		return client.PrepareJobStatus{}, prepareFailureError(status, nil)
+	}
+	eventsURL := "/v1/prepare-jobs/" + jobID + "/events"
+	return waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose, waitPrepareOptions{
+		allowControls: true,
+	})
 }
 
 func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, error) {
@@ -239,11 +259,58 @@ func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, er
 }
 
 func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string, eventsURL string, progress io.Writer, verbose bool) (client.PrepareJobStatus, error) {
+	return waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, progress, verbose, waitPrepareOptions{})
+}
+
+func createPrepareJob(ctx context.Context, opts PrepareOptions, planOnly bool) (*client.Client, client.PrepareJobAccepted, error) {
+	cliClient, err := prepareClient(ctx, opts)
+	if err != nil {
+		return nil, client.PrepareJobAccepted{}, err
+	}
+
+	prepareKind := strings.TrimSpace(opts.PrepareKind)
+	if prepareKind == "" {
+		prepareKind = "psql"
+	}
+
+	if opts.Verbose {
+		if planOnly {
+			fmt.Fprintln(os.Stderr, "submitting prepare job (plan-only)")
+		} else {
+			fmt.Fprintln(os.Stderr, "submitting prepare job")
+		}
+	}
+	accepted, err := cliClient.CreatePrepareJob(ctx, client.PrepareJobRequest{
+		PrepareKind:       prepareKind,
+		ImageID:           opts.ImageID,
+		PsqlArgs:          opts.PsqlArgs,
+		LiquibaseArgs:     opts.LiquibaseArgs,
+		LiquibaseExec:     opts.LiquibaseExec,
+		LiquibaseExecMode: opts.LiquibaseExecMode,
+		LiquibaseEnv:      opts.LiquibaseEnv,
+		WorkDir:           opts.WorkDir,
+		Stdin:             opts.Stdin,
+		PlanOnly:          planOnly,
+	})
+	if err != nil {
+		return nil, client.PrepareJobAccepted{}, err
+	}
+	return cliClient, accepted, nil
+}
+
+func waitForPrepareWithOptions(ctx context.Context, cliClient *client.Client, jobID string, eventsURL string, progress io.Writer, verbose bool, options waitPrepareOptions) (client.PrepareJobStatus, error) {
 	if strings.TrimSpace(eventsURL) == "" {
 		return client.PrepareJobStatus{}, fmt.Errorf("prepare events url missing")
 	}
 	tracker := newPrepareProgress(progress, verbose)
 	defer tracker.Close()
+
+	controlsEnabled := options.allowControls && canUsePrepareControlPrompt(progress)
+	interrupts := make(chan os.Signal, 2)
+	if controlsEnabled {
+		signal.Notify(interrupts, os.Interrupt)
+		defer signal.Stop(interrupts)
+	}
 
 	resumeIndex := 0
 	for {
@@ -251,8 +318,45 @@ func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string,
 		if resumeIndex > 0 {
 			rangeHeader = fmt.Sprintf("events=%d-", resumeIndex)
 		}
-		resp, err := cliClient.StreamPrepareEvents(ctx, eventsURL, rangeHeader)
+		streamCtx := ctx
+		streamCancel := func() {}
+		var interruptFired int32
+		stopInterruptWatch := make(chan struct{})
+		cleanupInterrupt := func() {
+			if controlsEnabled {
+				select {
+				case <-stopInterruptWatch:
+				default:
+					close(stopInterruptWatch)
+				}
+			}
+			streamCancel()
+		}
+		if controlsEnabled {
+			streamCtx, streamCancel = context.WithCancel(ctx)
+			go func() {
+				select {
+				case <-stopInterruptWatch:
+				case <-interrupts:
+					atomic.StoreInt32(&interruptFired, 1)
+					streamCancel()
+				}
+			}()
+		}
+
+		resp, err := cliClient.StreamPrepareEvents(streamCtx, eventsURL, rangeHeader)
 		if err != nil {
+			cleanupInterrupt()
+			if controlsEnabled && atomic.LoadInt32(&interruptFired) == 1 && ctx.Err() == nil {
+				status, actionErr := handlePrepareControlAction(ctx, cliClient, jobID, tracker, interrupts)
+				if actionErr != nil {
+					return client.PrepareJobStatus{}, actionErr
+				}
+				if status != nil {
+					return *status, nil
+				}
+				continue
+			}
 			if ctx.Err() != nil {
 				return client.PrepareJobStatus{}, ctx.Err()
 			}
@@ -260,10 +364,12 @@ func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string,
 		}
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 			resp.Body.Close()
+			cleanupInterrupt()
 			return client.PrepareJobStatus{}, fmt.Errorf("events stream returned status %d", resp.StatusCode)
 		}
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
 			resp.Body.Close()
+			cleanupInterrupt()
 			return client.PrepareJobStatus{}, fmt.Errorf("events stream returned status %d", resp.StatusCode)
 		}
 
@@ -272,6 +378,7 @@ func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string,
 			rangeStart, err := parseEventsContentRange(resp.Header.Get("Content-Range"))
 			if err != nil {
 				resp.Body.Close()
+				cleanupInterrupt()
 				return client.PrepareJobStatus{}, err
 			}
 			startIndex = rangeStart
@@ -303,6 +410,7 @@ func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string,
 			var event client.PrepareJobEvent
 			if err := json.Unmarshal(line, &event); err != nil {
 				resp.Body.Close()
+				cleanupInterrupt()
 				return client.PrepareJobStatus{}, err
 			}
 			tracker.Update(event)
@@ -310,35 +418,40 @@ func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string,
 				status, found, err := cliClient.GetPrepareJob(ctx, jobID)
 				if err != nil {
 					resp.Body.Close()
+					cleanupInterrupt()
 					return client.PrepareJobStatus{}, err
 				}
 				if !found {
 					resp.Body.Close()
+					cleanupInterrupt()
 					return client.PrepareJobStatus{}, fmt.Errorf("prepare job not found: %s", jobID)
 				}
 				switch status.Status {
 				case "succeeded":
 					resp.Body.Close()
+					cleanupInterrupt()
 					return status, nil
 				case "failed":
 					resp.Body.Close()
-					if status.Error != nil {
-						tracker.Update(client.PrepareJobEvent{
-							Type:  "error",
-							Error: status.Error,
-						})
-						if status.Error.Details != "" {
-							return client.PrepareJobStatus{}, fmt.Errorf("%s: %s", status.Error.Message, status.Error.Details)
-						}
-						return client.PrepareJobStatus{}, fmt.Errorf("%s", status.Error.Message)
-					}
-					return client.PrepareJobStatus{}, fmt.Errorf("prepare job failed")
+					cleanupInterrupt()
+					return client.PrepareJobStatus{}, prepareFailureError(status, tracker)
 				}
 			}
 			currentIndex++
 			resumeIndex = currentIndex
 		}
 		resp.Body.Close()
+		cleanupInterrupt()
+		if controlsEnabled && atomic.LoadInt32(&interruptFired) == 1 && ctx.Err() == nil {
+			status, actionErr := handlePrepareControlAction(ctx, cliClient, jobID, tracker, interrupts)
+			if actionErr != nil {
+				return client.PrepareJobStatus{}, actionErr
+			}
+			if status != nil {
+				return *status, nil
+			}
+			continue
+		}
 		if readErr != nil {
 			if ctx.Err() != nil {
 				return client.PrepareJobStatus{}, ctx.Err()
@@ -353,6 +466,142 @@ func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string,
 		}
 		if ctx.Err() != nil {
 			return client.PrepareJobStatus{}, ctx.Err()
+		}
+	}
+}
+
+func handlePrepareControlAction(ctx context.Context, cliClient *client.Client, jobID string, tracker *prepareProgress, interrupts <-chan os.Signal) (*client.PrepareJobStatus, error) {
+	status, found, err := cliClient.GetPrepareJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("prepare job not found: %s", jobID)
+	}
+	switch status.Status {
+	case "succeeded":
+		return &status, nil
+	case "failed":
+		return nil, prepareFailureError(status, tracker)
+	}
+
+	action, err := promptPrepareControl(tracker.writer, interrupts)
+	if err != nil {
+		return nil, err
+	}
+	switch action {
+	case prepareControlDetach:
+		return nil, &PrepareDetachedError{JobID: jobID}
+	case prepareControlStop:
+		cancelStatus, _, err := cliClient.CancelPrepareJob(ctx, jobID)
+		if err != nil {
+			return nil, err
+		}
+		switch cancelStatus.Status {
+		case "succeeded":
+			return &cancelStatus, nil
+		case "failed":
+			return nil, prepareFailureError(cancelStatus, tracker)
+		default:
+			return nil, nil
+		}
+	default:
+		return nil, nil
+	}
+}
+
+func prepareFailureError(status client.PrepareJobStatus, tracker *prepareProgress) error {
+	if status.Error != nil {
+		if tracker != nil {
+			tracker.Update(client.PrepareJobEvent{
+				Type:  "error",
+				Error: status.Error,
+			})
+		}
+		if status.Error.Details != "" {
+			return fmt.Errorf("%s: %s", status.Error.Message, status.Error.Details)
+		}
+		return fmt.Errorf("%s", status.Error.Message)
+	}
+	return fmt.Errorf("prepare job failed")
+}
+
+func defaultCanUsePrepareControlPrompt(progress io.Writer) bool {
+	progressFile, ok := progress.(*os.File)
+	if !ok {
+		return false
+	}
+	if !isTerminal(int(progressFile.Fd())) {
+		return false
+	}
+	return isTerminal(int(os.Stdin.Fd()))
+}
+
+func promptPrepareControlDefault(writer io.Writer, interrupts <-chan os.Signal) (prepareControlAction, error) {
+	if writer == nil {
+		writer = io.Discard
+	}
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Fprintln(writer)
+	fmt.Fprintln(writer, "[s] stop  [d] detach  [Esc/Enter] continue")
+	fmt.Fprint(writer, "> ")
+	for {
+		select {
+		case <-interrupts:
+			fmt.Fprintln(writer)
+			return prepareControlContinue, nil
+		default:
+		}
+		b, err := reader.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return prepareControlContinue, nil
+			}
+			return prepareControlContinue, err
+		}
+		switch b {
+		case '\r', '\n', 27:
+			return prepareControlContinue, nil
+		case 'd', 'D':
+			return prepareControlDetach, nil
+		case 's', 'S':
+			confirmed, err := confirmPrepareStop(reader, writer, interrupts)
+			if err != nil {
+				return prepareControlContinue, err
+			}
+			if confirmed {
+				return prepareControlStop, nil
+			}
+			return prepareControlContinue, nil
+		default:
+		}
+	}
+}
+
+func confirmPrepareStop(reader *bufio.Reader, writer io.Writer, interrupts <-chan os.Signal) (bool, error) {
+	fmt.Fprint(writer, "Cancel job? [y/N] ")
+	for {
+		select {
+		case <-interrupts:
+			fmt.Fprintln(writer)
+			return false, nil
+		default:
+		}
+		b, err := reader.ReadByte()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return false, nil
+			}
+			return false, err
+		}
+		switch b {
+		case 'y', 'Y':
+			fmt.Fprintln(writer)
+			return true, nil
+		case '\r', '\n', 27, 'n', 'N':
+			fmt.Fprintln(writer)
+			return false, nil
+		default:
 		}
 	}
 }

@@ -16,4 +16,7 @@ func TestPrepareUsageIncludesLiquibase(t *testing.T) {
 	if !strings.Contains(out, "prepare:lb") {
 		t.Fatalf("expected prepare:lb in usage, got:\n%s", out)
 	}
+	if !strings.Contains(out, "--no-watch") {
+		t.Fatalf("expected --no-watch in usage, got:\n%s", out)
+	}
 }

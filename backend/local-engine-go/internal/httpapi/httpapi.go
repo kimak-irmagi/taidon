@@ -275,6 +275,32 @@ func NewHandler(opts Options) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		if strings.HasSuffix(path, "/cancel") {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			jobID := strings.TrimSuffix(path, "/cancel")
+			if jobID == "" || strings.Contains(jobID, "/") {
+				http.NotFound(w, r)
+				return
+			}
+			status, ok, accepted, err := opts.Prepare.Cancel(jobID)
+			if err != nil {
+				writeErrorResponse(w, "internal_error", "cancel failed", err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if !ok {
+				writeErrorResponse(w, "not_found", "job not found", "", http.StatusNotFound)
+				return
+			}
+			if accepted {
+				writeJSONStatus(w, status, http.StatusAccepted)
+				return
+			}
+			writeJSONStatus(w, status, http.StatusOK)
+			return
+		}
 		if strings.HasSuffix(path, "/events") {
 			if r.Method != http.MethodGet {
 				w.WriteHeader(http.StatusMethodNotAllowed)
