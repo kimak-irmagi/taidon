@@ -26,12 +26,14 @@ All reproducibility guarantees in sqlrs rely on `prepare`.
 ## Command Syntax
 
 ```text
-sqlrs prepare:<kind> [--image <image-id>] [--] [tool-args...]
+sqlrs prepare:<kind> [--watch|--no-watch] [--image <image-id>] [--] [tool-args...]
 ```
 
 Where:
 
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
+- `--watch` keeps the CLI attached to the job until terminal status (default).
+- `--no-watch` submits the job and exits immediately with job references.
 - `--image <image-id>` overrides the base DB image.
 - `tool-args` are forwarded to the underlying tool for the selected kind.
 
@@ -125,6 +127,16 @@ DSN=postgres://...
 This DSN uniquely identifies the instance and can be consumed by `sqlrs run`
 or external applications.
 
+When `--no-watch` is used, `prepare` prints job references instead of a DSN:
+
+```text
+JOB_ID=<job-id>
+STATUS_URL=/v1/prepare-jobs/<job-id>
+EVENTS_URL=/v1/prepare-jobs/<job-id>/events
+```
+
+Use [`sqlrs-watch.md`](sqlrs-watch.md) to attach later.
+
 ---
 
 ## Job Monitoring (Events-First)
@@ -145,15 +157,16 @@ than periodic status polling.
     considered complete after the declared byte length is fully read.
   - If the response is any 4xx status, the stream is considered complete and
     the command fails.
-- If the stream ends without a definitive job outcome (`succeeded` or `failed`),
+- If the stream ends without a definitive job outcome (`succeeded`, `failed`,
+   or `cancelled`),
   the command fails with an error.
 
 ### Status Validation
 
-When a status event is received (queued, running, succeeded, failed), the CLI
+When a status event is received (queued, running, succeeded, failed, cancelled), the CLI
 re-fetches the job status via `GET /v1/prepare-jobs/{jobId}` to confirm the
 final result. The job is considered complete only when the status endpoint
-returns `succeeded` or `failed`.
+returns `succeeded`, `failed`, or `cancelled`.
 
 ### Progress UX
 
@@ -162,6 +175,25 @@ line and shows a spinner when events repeat. It also includes the `message` from
 the latest event if present.
 
 With `--verbose`, each event is printed on a new line (no overwriting).
+
+During interactive watch mode, `Ctrl+C` opens the control prompt:
+
+```text
+[s] stop  [d] detach  [Esc/Enter] continue
+```
+
+Rules:
+
+- `s` asks for explicit confirmation (`Cancel job? [y/N]`) and then requests cancellation.
+- `d` detaches from the job and leaves it running.
+- `Esc` or `Enter` resumes watch.
+- Repeated `Ctrl+C` while prompt is open is treated as `continue`.
+
+For composite invocation `prepare ... run ...`, `detach` means:
+
+- disconnect from `prepare`,
+- skip the subsequent `run` phase in this CLI process,
+- exit successfully after printing the `job_id` and a message that `run` was skipped.
 
 ---
 

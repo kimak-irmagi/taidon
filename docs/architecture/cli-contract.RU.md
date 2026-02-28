@@ -75,6 +75,7 @@ sqlrs
   ls
   rm
   prepare
+  watch
   plan
   run
 ```
@@ -124,14 +125,23 @@ sqlrs status [options]
 Актуальная семантика команды описана в user guide:
 
 - [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
+- [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
+
+Текущее поведение:
+
+- `prepare` поддерживает `--watch` (по умолчанию) и `--no-watch`.
+- `prepare --no-watch` возвращает `job_id` и ссылки на status/events.
+- В watch-режиме `Ctrl+C` открывает control prompt:
+  - `[s] stop` (с подтверждением),
+  - `[d] detach`,
+  - `[Esc/Enter] continue`.
+- Для composite-вызова `prepare ... run ...` действие `detach` отключает
+  наблюдение за `prepare` и пропускает последующую фазу `run` в текущем CLI-процессе.
 
 TODO (будущее):
 
 - Добавить именованные экземпляры и флаги привязки (`--name`, `--reuse`, `--fresh`,
   `--rebind`).
-- Добавить async-режим (`--watch/--no-watch`) с выводом `prepare_id` и URL статуса.
-
----
 
 ### 3.6 `sqlrs plan`
 
@@ -150,6 +160,20 @@ CLI должен предоставлять `plan:<kind>` для каждого 
 Актуальная семантика команды описана в user guide:
 
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
+
+---
+
+### 3.8 `sqlrs watch`
+
+Подключается к уже запущенной prepare job и стримит прогресс/события.
+
+```bash
+sqlrs watch <job_id>
+```
+
+См.:
+
+- [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
 
 ---
 

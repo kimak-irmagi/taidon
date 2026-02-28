@@ -131,8 +131,15 @@ Key engine endpoints (logical):
 ### 5.1 Long-running operations: async jobs, sync CLI
 
 - Engine handles prepare as asynchronous jobs; `POST /v1/prepare-jobs` returns `201 Created` with a job id.
-- CLI immediately watches the job via status/events and exits when it reaches a terminal state.
-- CLI currently has no detach mode; `--watch/--no-watch` is a future extension.
+- CLI supports:
+  - `prepare --watch` (default): watch status/events until terminal status.
+  - `prepare --no-watch`: submit and return `job_id`, `status_url`, `events_url`.
+  - `watch <job_id>`: attach to an existing prepare job.
+- In interactive watch mode, `Ctrl+C` opens a control prompt:
+  - `stop` (with confirmation) requests cancellation,
+  - `detach` disconnects while leaving the job running.
+- For composite `prepare ... run ...`, `detach` skips the subsequent `run` phase
+  in the same CLI process.
 
 ---
 
