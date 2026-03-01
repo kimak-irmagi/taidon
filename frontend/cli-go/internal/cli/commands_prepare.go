@@ -26,6 +26,8 @@ import (
 var (
 	isTerminal                 = term.IsTerminal
 	getTermSize                = term.GetSize
+	makeRawTerminal            = term.MakeRaw
+	restoreTerminalState       = term.Restore
 	canUsePrepareControlPrompt = defaultCanUsePrepareControlPrompt
 	promptPrepareControl       = promptPrepareControlDefault
 )
@@ -181,6 +183,7 @@ func RunWatch(ctx context.Context, opts PrepareOptions, jobID string) (client.Pr
 	if jobID == "" {
 		return client.PrepareJobStatus{}, fmt.Errorf("prepare job id is required")
 	}
+	requestedJobID := jobID
 	cliClient, err := prepareClient(ctx, opts)
 	if err != nil {
 		return client.PrepareJobStatus{}, err
@@ -190,7 +193,20 @@ func RunWatch(ctx context.Context, opts PrepareOptions, jobID string) (client.Pr
 		return client.PrepareJobStatus{}, err
 	}
 	if !found {
-		return client.PrepareJobStatus{}, fmt.Errorf("prepare job not found: %s", jobID)
+		resolvedJobID, err := resolvePrepareJobByPrefix(ctx, cliClient, requestedJobID)
+		if err != nil {
+			return client.PrepareJobStatus{}, err
+		}
+		if resolvedJobID != "" {
+			jobID = resolvedJobID
+			status, found, err = cliClient.GetPrepareJob(ctx, jobID)
+			if err != nil {
+				return client.PrepareJobStatus{}, err
+			}
+		}
+		if !found {
+			return client.PrepareJobStatus{}, fmt.Errorf("prepare job not found: %s", requestedJobID)
+		}
 	}
 	switch status.Status {
 	case "succeeded":
@@ -202,6 +218,28 @@ func RunWatch(ctx context.Context, opts PrepareOptions, jobID string) (client.Pr
 	return waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose, waitPrepareOptions{
 		allowControls: true,
 	})
+}
+
+func resolvePrepareJobByPrefix(ctx context.Context, cliClient *client.Client, prefix string) (string, error) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return "", nil
+	}
+	jobs, err := cliClient.ListPrepareJobs(ctx, prefix)
+	if err != nil {
+		var statusErr *client.HTTPStatusError
+		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+	if len(jobs) == 0 {
+		return "", nil
+	}
+	if len(jobs) > 1 {
+		return "", &AmbiguousPrefixError{Kind: "job", Prefix: prefix}
+	}
+	return jobs[0].JobID, nil
 }
 
 func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, error) {
@@ -485,6 +523,7 @@ func handlePrepareControlAction(ctx context.Context, cliClient *client.Client, j
 		return nil, prepareFailureError(status, tracker)
 	}
 
+	drainInterruptSignals(interrupts)
 	action, err := promptPrepareControl(tracker.writer, interrupts)
 	if err != nil {
 		return nil, err
@@ -507,6 +546,17 @@ func handlePrepareControlAction(ctx context.Context, cliClient *client.Client, j
 		}
 	default:
 		return nil, nil
+	}
+}
+
+func drainInterruptSignals(interrupts <-chan os.Signal) {
+	for {
+		select {
+		case <-interrupts:
+			continue
+		default:
+			return
+		}
 	}
 }
 
@@ -541,6 +591,8 @@ func promptPrepareControlDefault(writer io.Writer, interrupts <-chan os.Signal) 
 	if writer == nil {
 		writer = io.Discard
 	}
+	restoreRaw := enableRawStdin()
+	defer restoreRaw()
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Fprintln(writer)
 	fmt.Fprintln(writer, "[s] stop  [d] detach  [Esc/Enter] continue")
@@ -560,11 +612,16 @@ func promptPrepareControlDefault(writer io.Writer, interrupts <-chan os.Signal) 
 			return prepareControlContinue, err
 		}
 		switch b {
+		case 3:
+			// Ctrl+C in raw mode
+			fmt.Fprintln(writer)
+			return prepareControlContinue, nil
 		case '\r', '\n', 27:
 			return prepareControlContinue, nil
 		case 'd', 'D':
 			return prepareControlDetach, nil
 		case 's', 'S':
+			consumeBufferedLineEnd(reader)
 			confirmed, err := confirmPrepareStop(reader, writer, interrupts)
 			if err != nil {
 				return prepareControlContinue, err
@@ -575,6 +632,33 @@ func promptPrepareControlDefault(writer io.Writer, interrupts <-chan os.Signal) 
 			return prepareControlContinue, nil
 		default:
 		}
+	}
+}
+
+func enableRawStdin() func() {
+	fd := int(os.Stdin.Fd())
+	if !isTerminal(fd) {
+		return func() {}
+	}
+	state, err := makeRawTerminal(fd)
+	if err != nil {
+		return func() {}
+	}
+	return func() {
+		_ = restoreTerminalState(fd, state)
+	}
+}
+
+func consumeBufferedLineEnd(reader *bufio.Reader) {
+	for reader.Buffered() > 0 {
+		next, err := reader.Peek(1)
+		if err != nil || len(next) == 0 {
+			return
+		}
+		if next[0] != '\r' && next[0] != '\n' {
+			return
+		}
+		_, _ = reader.ReadByte()
 	}
 }
 
@@ -595,6 +679,10 @@ func confirmPrepareStop(reader *bufio.Reader, writer io.Writer, interrupts <-cha
 			return false, err
 		}
 		switch b {
+		case 3:
+			// Ctrl+C in raw mode
+			fmt.Fprintln(writer)
+			return false, nil
 		case 'y', 'Y':
 			fmt.Fprintln(writer)
 			return true, nil

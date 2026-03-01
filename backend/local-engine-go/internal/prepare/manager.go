@@ -492,7 +492,7 @@ func (c *jobCoordinator) runJob(prepared preparedRequest, jobID string) {
 		m.unregisterRunner(jobID)
 	}()
 
-	job, ok, err := m.queue.GetJob(ctx, jobID)
+	job, ok, err := m.queue.GetJob(context.Background(), jobID)
 	if err != nil {
 		_ = m.failJob(jobID, errorResponse("internal_error", "cannot load job", err.Error()))
 		return
@@ -502,6 +502,10 @@ func (c *jobCoordinator) runJob(prepared preparedRequest, jobID string) {
 	}
 	if job.Status == StatusSucceeded || job.Status == StatusFailed {
 		m.logJob(jobID, "skip execution for terminal job status=%s", job.Status)
+		return
+	}
+	if ctx.Err() != nil {
+		_ = m.failJob(jobID, errorResponse("cancelled", "job cancelled", ""))
 		return
 	}
 

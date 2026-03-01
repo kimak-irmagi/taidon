@@ -1,12 +1,14 @@
 # sqlrs prepare (liquibase)
 
-This document describes how `sqlrs prepare:lb` should work in the **local** deployment profile.
+This document describes how `sqlrs prepare:lb` should work in the **local**
+deployment profile.
 
 ---
 
 ## Goals
 
-- Delegate Liquibase changelog parsing/format handling to Liquibase itself (XML/YAML/JSON/formatted SQL).
+- Delegate Liquibase changelog parsing/format handling to Liquibase itself
+  (XML/YAML/JSON/formatted SQL).
 - Keep prepare deterministic and cacheable.
 - Avoid mounting the entire workspace when possible.
 - Minimize new complexity in the CLI and engine.
@@ -50,7 +52,8 @@ liquibase:
 3. User provides **Liquibase command line** after `--` (for example `update`).
 4. Engine executes **plan** via `updateSQL`, inspects the resulting changesets and
    builds a fine-grained plan.
-5. Engine executes the plan as a sequence of `update-count --count=1` steps, snapshotting after
+5. Engine executes the plan as a sequence of `update-count --count=1` steps,
+   snapshotting after
    each changeset.
 6. The prepared state is cached and a new instance is created.
 
@@ -58,12 +61,14 @@ liquibase:
 
 - **Plan task**: run `liquibase updateSQL` and **parse its output** to compute the
   ordered list of changesets and the SQL for each changeset (no DB changes).
-- **Prepare tasks**: execute changesets **one by one** with `liquibase update-count --count=1`,
+- **Prepare tasks**: execute changesets **one by one** with
+  `liquibase update-count --count=1`,
   emitting events per task (stdout lines -> events, exit -> status event).
 
 ### Connection parameters
 
-Connection arguments are **always** supplied by the engine and override defaults file values.
+Connection arguments are **always** supplied by the engine and override defaults
+file values.
 User-provided `--url`, `--username`, `--password`, `--classpath`, etc. are rejected.
 
 ---

@@ -46,7 +46,7 @@ paths:
           name: job
           schema:
             type: string
-          description: Filter by job id (exact match).
+          description: Filter by job id prefix.
       responses:
         "200":
           description: OK

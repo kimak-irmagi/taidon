@@ -23,10 +23,10 @@ import (
 )
 
 const (
-	asyncPrepareChannelWaitTimeout   = 15 * time.Second
-	asyncPrepareStatusPollTimeout    = 10 * time.Second
-	asyncPrepareCompletionTimeout    = 20 * time.Second
-	asyncPreparePollInterval         = 50 * time.Millisecond
+	asyncPrepareChannelWaitTimeout = 15 * time.Second
+	asyncPrepareStatusPollTimeout  = 10 * time.Second
+	asyncPrepareCompletionTimeout  = 20 * time.Second
+	asyncPreparePollInterval       = 50 * time.Millisecond
 )
 
 func TestPrepareJobsRequireAuth(t *testing.T) {
@@ -428,7 +428,11 @@ func TestPrepareJobsListAndFilter(t *testing.T) {
 		t.Fatalf("expected job entries, got %+v", entries)
 	}
 
-	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs?job="+jobID, nil)
+	jobPrefix := jobID
+	if len(jobID) > 4 {
+		jobPrefix = jobID[:len(jobID)-4]
+	}
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/v1/prepare-jobs?job="+jobPrefix, nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}

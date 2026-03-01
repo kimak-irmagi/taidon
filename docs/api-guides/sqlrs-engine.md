@@ -370,7 +370,7 @@ Returns prepare jobs.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|job|query|string|false|Filter by job id (exact match).|
+|job|query|string|false|Filter by job id prefix.|
 
 > Example responses
 
@@ -5453,4 +5453,3 @@ continued
 |created_at|string(date-time)|true|none|none|
 |size_bytes|integer(int64)|false|none|none|
 |refcount|integer(int32)|true|none|none|
-

@@ -1229,6 +1229,16 @@ func TestPromptPrepareControlDefault(t *testing.T) {
 		}
 	})
 
+	withTestStdin(t, string([]byte{3}), func() {
+		action, err := promptPrepareControlDefault(io.Discard, make(chan os.Signal, 1))
+		if err != nil {
+			t.Fatalf("promptPrepareControlDefault: %v", err)
+		}
+		if action != prepareControlContinue {
+			t.Fatalf("expected continue for ctrl+c byte, got %v", action)
+		}
+	})
+
 	interrupts := make(chan os.Signal, 1)
 	interrupts <- os.Interrupt
 	action, err := promptPrepareControlDefault(io.Discard, interrupts)
@@ -1265,6 +1275,14 @@ func TestConfirmPrepareStop(t *testing.T) {
 	}
 	if confirmed {
 		t.Fatalf("expected confirm=false on interrupt")
+	}
+
+	confirmed, err = confirmPrepareStop(bufio.NewReader(strings.NewReader(string([]byte{3}))), io.Discard, make(chan os.Signal, 1))
+	if err != nil {
+		t.Fatalf("confirmPrepareStop: %v", err)
+	}
+	if confirmed {
+		t.Fatalf("expected confirm=false for ctrl+c byte")
 	}
 }
 
@@ -1487,11 +1505,157 @@ func TestPromptPrepareControlDefaultNilWriter(t *testing.T) {
 	})
 }
 
+func TestPromptPrepareControlDefaultStopWithLineInput(t *testing.T) {
+	withTestStdin(t, "s\ny\n", func() {
+		action, err := promptPrepareControlDefault(io.Discard, make(chan os.Signal, 1))
+		if err != nil {
+			t.Fatalf("promptPrepareControlDefault: %v", err)
+		}
+		if action != prepareControlStop {
+			t.Fatalf("expected stop action, got %v", action)
+		}
+	})
+}
+
 func TestConfirmPrepareStopReaderError(t *testing.T) {
 	reader := bufio.NewReader(&failingReader{err: errors.New("read failed")})
 	confirmed, err := confirmPrepareStop(reader, io.Discard, make(chan os.Signal, 1))
 	if err == nil || !strings.Contains(err.Error(), "read failed") {
 		t.Fatalf("expected read error, got confirmed=%v err=%v", confirmed, err)
+	}
+}
+
+func TestHandlePrepareControlActionDrainsStaleInterruptBeforePrompt(t *testing.T) {
+	var cancelCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs/job-1/cancel":
+			cancelCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	prevPrompt := promptPrepareControl
+	promptPrepareControl = promptPrepareControlDefault
+	defer func() { promptPrepareControl = prevPrompt }()
+
+	cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+	tracker := newPrepareProgress(io.Discard, false)
+	defer tracker.Close()
+	interrupts := make(chan os.Signal, 2)
+	interrupts <- os.Interrupt
+
+	withTestStdin(t, "sy", func() {
+		status, err := handlePrepareControlAction(context.Background(), cliClient, "job-1", tracker, interrupts)
+		if err != nil {
+			t.Fatalf("handlePrepareControlAction: %v", err)
+		}
+		if status != nil {
+			t.Fatalf("expected nil status for accepted cancel, got %+v", status)
+		}
+	})
+
+	if !cancelCalled {
+		t.Fatalf("expected cancel endpoint to be called after confirmation")
+	}
+}
+
+func TestRunWatchResolvesUniquePrefix(t *testing.T) {
+	const prefix = "deadbeef"
+	const fullID = "deadbeefcafebabe"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/"+prefix:
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs" && r.URL.Query().Get("job") == prefix:
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"job_id":"`+fullID+`","status":"running","prepare_kind":"psql","image_id":"image"}]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/"+fullID:
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"`+fullID+`","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	status, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, prefix)
+	if err != nil {
+		t.Fatalf("RunWatch: %v", err)
+	}
+	if status.JobID != fullID || status.Status != "succeeded" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestRunWatchRejectsAmbiguousPrefix(t *testing.T) {
+	const prefix = "deadbeef"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/"+prefix:
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs" && r.URL.Query().Get("job") == prefix:
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"job_id":"deadbeef00000001","status":"running","prepare_kind":"psql","image_id":"image"},{"job_id":"deadbeef00000002","status":"running","prepare_kind":"psql","image_id":"image"}]`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	_, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, prefix)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous job id prefix") {
+		t.Fatalf("expected ambiguous prefix error, got %v", err)
+	}
+}
+
+func TestRunWatchResolvesNonHexPrefix(t *testing.T) {
+	const prefix = "job-a"
+	const fullID = "job-alpha-0001"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/"+prefix:
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs" && r.URL.Query().Get("job") == prefix:
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"job_id":"`+fullID+`","status":"running","prepare_kind":"psql","image_id":"image"}]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/"+fullID:
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"`+fullID+`","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	status, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, prefix)
+	if err != nil {
+		t.Fatalf("RunWatch: %v", err)
+	}
+	if status.JobID != fullID || status.Status != "succeeded" {
+		t.Fatalf("unexpected status: %+v", status)
 	}
 }
 
