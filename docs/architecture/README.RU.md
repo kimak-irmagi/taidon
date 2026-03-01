@@ -7,7 +7,7 @@
     k8s топологии.
 - [`local-deployment-architecture.RU.md`](local-deployment-architecture.RU.md) -
     локальный профиль (тонкий CLI, эфемерный engine).
-- [`shared-deployment-architecture.RU.md`](shared-deployment-architecture.RU.md) -
+- [`shared-deployment-architecture.RU.md`][sda] -
   team/cloud профиль (gateway/orchestrator, multi-tenant).
 - [`engine-internals.RU.md`](engine-internals.RU.md) - внутренняя структура sqlrs
   engine.
@@ -28,8 +28,12 @@
   remote и загрузки исходников.
 - [`cli-component-structure.RU.md`](cli-component-structure.RU.md) - внутренняя
   структура CLI.
-- [`local-engine-component-structure.RU.md`](local-engine-component-structure.RU.md) -
+- [`local-engine-component-structure.RU.md`][lecs] -
   внутренняя структура локального engine.
+- [`prepare-job-events-flow.RU.md`][pjef] - events-first
+  флоу мониторинга prepare job.
+- [`prepare-job-events-component-structure.RU.md`][pjecs] -
+  компонентная структура стриминга prepare events и watch-контролов.
 - [`prepare-manager-refactor.RU.md`](prepare-manager-refactor.RU.md) - разбиение
   prepare manager на coordinator/executor/snapshot роли.
 - [`statefs-component-structure.RU.md`](statefs-component-structure.RU.md) - контракт
@@ -38,11 +42,18 @@
   SQLite для локального engine.
 - [`release-happy-path-e2e.RU.md`](release-happy-path-e2e.RU.md) - release-gated
   happy-path E2E flow и внутренняя структура компонентов.
-- [`../api-guides/sqlrs-engine.openapi.yaml`](../api-guides/sqlrs-engine.openapi.yaml) -
+- [`../api-guides/sqlrs-engine.openapi.yaml`][openAPI] -
   спецификация OpenAPI 3.1 для локального engine (MVP).
-- [`query-analysis-workflow-review.RU.md`](query-analysis-workflow-review.RU.md) -
+- [`query-analysis-workflow-review.RU.md`][qawr] -
   заметки по workflow анализа запросов.
 - [`git-aware-passive.RU.md`](git-aware-passive.RU.md) - сценарии работы с git,
   инициируемые локальным CLI.
 - [`git-aware-active.RU.md`](git-aware-active.RU.md) - сценарии github-интеграции,
   требующие сервисного API.
+
+[pjecs]: prepare-job-events-component-structure.RU.md
+[lecs]: local-engine-component-structure.RU.md
+[pjef]: prepare-job-events-flow.RU.md
+[sda]: shared-deployment-architecture.RU.md
+[openAPI]: ../api-guides/sqlrs-engine.openapi.yaml
+[qawr]: query-analysis-workflow-review.RU.md

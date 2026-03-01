@@ -46,7 +46,7 @@ paths:
           name: job
           schema:
             type: string
-          description: Filter by job id (exact match).
+          description: Filter by job id prefix.
       responses:
         "200":
           description: OK
@@ -195,6 +195,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteResult"
+  /v1/prepare-jobs/{jobId}/cancel:
+    post:
+      operationId: cancelPrepareJob
+      summary: Cancel a prepare job
+      description: |
+        Requests cancellation for a queued or running prepare job.
+        The operation is idempotent:
+        - `202 Accepted` when cancellation is requested for `queued` or `running`.
+        - `200 OK` when the job is already terminal (`succeeded`, `failed`).
+      tags:
+        - prepare
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Cancellation requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrepareJobStatus"
+        "200":
+          description: Already terminal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrepareJobStatus"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/prepare-jobs/{jobId}/events:
     get:
       operationId: streamPrepareJobEvents

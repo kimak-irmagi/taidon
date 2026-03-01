@@ -152,7 +152,7 @@ SELECT job_id, status, prepare_kind, image_id, plan_only, snapshot_mode, prepare
 FROM prepare_jobs
 WHERE 1=1`)
 	args := []any{}
-	addFilter(&query, &args, "job_id", jobID)
+	addPrefixFilter(&query, &args, "job_id", jobID)
 	query.WriteString(" ORDER BY created_at")
 	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
@@ -657,6 +657,24 @@ func addFilter(query *strings.Builder, args *[]any, column, value string) {
 	query.WriteString(column)
 	query.WriteString(" = ?")
 	*args = append(*args, value)
+}
+
+func addPrefixFilter(query *strings.Builder, args *[]any, column, prefix string) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return
+	}
+	query.WriteString(" AND ")
+	query.WriteString(column)
+	query.WriteString(" LIKE ? ESCAPE '\\'")
+	*args = append(*args, escapeLike(prefix)+"%")
+}
+
+func escapeLike(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	value = strings.ReplaceAll(value, `_`, `\_`)
+	return value
 }
 
 func boolToInt(value bool) int {

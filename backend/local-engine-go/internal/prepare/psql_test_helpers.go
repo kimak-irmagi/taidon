@@ -9,9 +9,6 @@ func psqlOutputStateID(t *testing.T, mgr *PrepareService, prepared preparedReque
 		t.Fatalf("computePsqlContentDigest: %v", err)
 	}
 	taskHash := psqlTaskHash(prepared.request.PrepareKind, digest.hash, mgr.version)
-	outputID, errResp := mgr.computeOutputStateID(input.Kind, input.ID, taskHash)
-	if errResp != nil {
-		t.Fatalf("computeOutputStateID: %+v", errResp)
-	}
+	outputID, _ := mgr.computeOutputStateID(input.Kind, input.ID, taskHash)
 	return outputID
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -4031,6 +4032,75 @@ func TestRunJobPrepareInstanceUpdateTaskError(t *testing.T) {
 	status, ok := mgr.Get("job-1")
 	if !ok || status.Status != StatusFailed {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestRunJobCancelBeforeInitialGetJob(t *testing.T) {
+	queueStore := newQueueStore(t)
+	req := Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}
+	createJobRecord(t, queueStore, "job-1", req, StatusQueued)
+
+	enterGetJob := make(chan struct{})
+	releaseGetJob := make(chan struct{})
+	var firstGet sync.Once
+	faulty := &faultQueueStore{
+		Store: queueStore,
+		getJob: func(ctx context.Context, jobID string) (queue.JobRecord, bool, error) {
+			firstGet.Do(func() {
+				close(enterGetJob)
+				<-releaseGetJob
+			})
+			if err := ctx.Err(); err != nil {
+				return queue.JobRecord{}, false, err
+			}
+			return queueStore.GetJob(ctx, jobID)
+		},
+	}
+
+	mgr := newManagerWithQueue(t, &fakeStore{}, faulty)
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		mgr.runJob(prepared, "job-1")
+		close(done)
+	}()
+
+	select {
+	case <-enterGetJob:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for initial GetJob")
+	}
+
+	runner := mgr.getRunner("job-1")
+	if runner == nil {
+		t.Fatalf("runner was not registered")
+	}
+	runner.cancel()
+	close(releaseGetJob)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout waiting for runJob completion")
+	}
+
+	status, ok := mgr.Get("job-1")
+	if !ok {
+		t.Fatalf("expected job status")
+	}
+	if status.Status != StatusFailed || status.Error == nil {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if status.Error.Code != "cancelled" {
+		t.Fatalf("expected cancelled error code, got %+v", status.Error)
 	}
 }
 

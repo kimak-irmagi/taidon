@@ -187,7 +187,7 @@ func TestSQLiteStoreGetJobMissing(t *testing.T) {
 
 func TestSQLiteStoreListJobsFilter(t *testing.T) {
 	store := newQueueStore(t)
-	for _, jobID := range []string{"job-1", "job-2"} {
+	for _, jobID := range []string{"job-1", "job-2", "job_3"} {
 		if err := store.CreateJob(context.Background(), JobRecord{
 			JobID:       jobID,
 			Status:      "queued",
@@ -204,6 +204,22 @@ func TestSQLiteStoreListJobsFilter(t *testing.T) {
 	}
 	if len(jobs) != 1 || jobs[0].JobID != "job-2" {
 		t.Fatalf("unexpected jobs: %+v", jobs)
+	}
+
+	jobs, err = store.ListJobs(context.Background(), "job-")
+	if err != nil {
+		t.Fatalf("ListJobs by prefix: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("expected 2 jobs by prefix, got %d", len(jobs))
+	}
+
+	jobs, err = store.ListJobs(context.Background(), "job_")
+	if err != nil {
+		t.Fatalf("ListJobs escaped prefix: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].JobID != "job_3" {
+		t.Fatalf("unexpected escaped prefix result: %+v", jobs)
 	}
 }
 

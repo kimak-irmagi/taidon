@@ -19,24 +19,35 @@ with minimal polling and explicit reconnection behavior.
    - Repetitive events may be animated via a spinner without new lines.
    - Log events include messages from runtime/DBMS operations (Docker/Postgres).
    - In verbose mode, each event is printed on a new line.
+   - In interactive mode, `Ctrl+C` opens a control prompt:
+     - `stop` (with confirmation),
+     - `detach`,
+     - `continue`.
 
 4) Status validation on status events
-   - On any `status` event (queued/running/succeeded/failed), the CLI calls:
-     `GET /v1/prepare-jobs/{jobId}`.
-   - If the status endpoint returns `succeeded` or `failed`, the CLI stops.
+   - On any `status` event (queued/running/succeeded/failed),
+     the CLI calls: `GET /v1/prepare-jobs/{jobId}`.
+   - If the status endpoint returns `succeeded` or `failed`,
+     the CLI stops.
 
-5) Stream completion
+5) Interactive control actions
+   - `continue`: close prompt and keep watching.
+   - `detach`: stop watching and exit while the job continues on the engine.
+   - `stop`: ask confirmation; on confirmation, request cancellation and keep
+     watching until terminal status.
+
+6) Stream completion
    - If HTTP status is 4xx, the CLI fails.
    - If `Content-Length` is present, the stream completes when all declared
      bytes are read.
    - If the stream completes without a definitive job status, the CLI fails.
 
-6) Reconnect behavior (optional)
+7) Reconnect behavior (optional)
    - On disconnect, the CLI resumes using `Range: events=...`.
    - If the server ignores the range and returns 200, the CLI restarts from
      the beginning.
 
-7) Heartbeat behavior
+8) Heartbeat behavior
    - While a task is running, the engine repeats the last task event with a
      fresh timestamp when no new events arrive for ~500ms.
 
@@ -45,6 +56,7 @@ with minimal polling and explicit reconnection behavior.
 - Success: job status confirmed as `succeeded`.
 - Failure: job status confirmed as `failed`, or stream ends without a
   definitive status, or any 4xx response.
+- Cancellation is represented as `failed` with `error.code=cancelled`.
 
 ## Sequence Diagram (informal)
 

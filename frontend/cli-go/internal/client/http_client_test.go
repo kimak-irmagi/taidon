@@ -314,3 +314,49 @@ func TestCreatePrepareJobRequestError(t *testing.T) {
 		t.Fatalf("expected request error")
 	}
 }
+
+func TestCancelPrepareJob(t *testing.T) {
+	var method string
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte(`{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image-1"}`))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	status, code, err := cli.CancelPrepareJob(context.Background(), "job-1")
+	if err != nil {
+		t.Fatalf("CancelPrepareJob: %v", err)
+	}
+	if code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", code)
+	}
+	if method != http.MethodPost || path != "/v1/prepare-jobs/job-1/cancel" {
+		t.Fatalf("unexpected request %s %s", method, path)
+	}
+	if status.JobID != "job-1" || status.Status != "running" {
+		t.Fatalf("unexpected status payload: %+v", status)
+	}
+}
+
+func TestCancelPrepareJobError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"message":"job not found"}`))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	_, code, err := cli.CancelPrepareJob(context.Background(), "missing")
+	if err == nil || err.Error() != "job not found" {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+	if code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", code)
+	}
+}
