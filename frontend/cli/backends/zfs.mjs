@@ -111,7 +111,7 @@ export const zfsBackend = {
                 created_at: new Date().toISOString(),
                 storage,
                 image,
-                snapshot,              // главное отличие
+                snapshot,              // главное отличие       `
                 prepare: prepareCmd ? { cmd: prepareCmd } : null
             },
             null,
@@ -120,7 +120,7 @@ export const zfsBackend = {
         );
         
         console.log(`Created ZFS snapshot ${snapshot} and state directory ${stateDir}`);
-        
+
         return {
             stateId,
             stateDir,
@@ -136,4 +136,8 @@ async function ensureDataset(dataset) {
     } catch {
         await zfs(["create", "-p", "canmount=on", dataset]);
     }
+
+    await runCapture({
+        cmd: ["sudo", "chmod", "-R", "777", dataset]
+    });
 }

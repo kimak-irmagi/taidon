@@ -315,7 +315,7 @@ async function stagePsqlFilesToContainer(container, files) {
     }
     await docker.cpToContainer(file, container, containerPath);
   }
-
+  console.log(`Staged ${files.length} file(s) to container ${container} at ${containerRoot}`);
   return { root, containerRoot };
 }
 
@@ -647,6 +647,7 @@ async function main() {
           ["pg_ctl", "-D", "/var/lib/postgresql/data", "-m", "fast", "-w", "stop"],
           { user: "postgres" }
         );
+        console.log(`Stopped postgres container ${pgName} for snapshotting`);
       } catch (err) {
         stopError = err;
         fs.appendFileSync(stopLog, `\n-- Error during pg_ctl stop: ${err?.stack || String(err)}\n`);
