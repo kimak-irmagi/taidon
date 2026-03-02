@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { runCapture } from "./proc.mjs";
 
 export function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
