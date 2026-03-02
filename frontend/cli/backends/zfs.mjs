@@ -101,13 +101,14 @@ export const zfsBackend = {
 
         await ensureDataset(stateDir);
 
+        const fsDir = `${workspace}/states/${stateId}`;
         await runCapture({
-            cmd: ["sudo", "chmod", "-R", "777", `${workspace}/states/${stateId}`]
+            cmd: ["sudo", "chmod", "-R", "777", fsDir]
         });
 
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(
-            path.join(stateDir, "state.json"),
+            path.join(fsDir, "state.json"),
             JSON.stringify(
             {
                 state_id: stateId,
