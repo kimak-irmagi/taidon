@@ -101,6 +101,10 @@ export const zfsBackend = {
 
         await ensureDataset(stateDir);
 
+        await runCapture({
+            cmd: ["sudo", "chmod", "-R", "777", `${workspace}/states/${stateId}`]
+        });
+
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(
             path.join(stateDir, "state.json"),
@@ -136,8 +140,4 @@ async function ensureDataset(dataset) {
     } catch {
         await zfs(["create", "-p", "canmount=on", dataset]);
     }
-
-    await runCapture({
-        cmd: ["sudo", "chmod", "-R", "777", dataset]
-    });
 }
