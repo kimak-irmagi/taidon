@@ -15,7 +15,7 @@ async function ensureDir(dir) {
 export const btrfsBackend = {
 
     async createVolume({ workspace, runId }) {
-        const subvolPath = path.join(BTRFS_ROOT, `run-${runId}`);
+        const subvolPath = path.join(workspace, `run-${runId}`);
 
         // 1️⃣ создать subvolume
         await btrfs([
@@ -80,7 +80,7 @@ export const btrfsBackend = {
 
         const source = volume.meta.subvolume;
         const snapshotPath = path.join(
-            BTRFS_ROOT,
+            workspace,
             `snap-${runId}-${stateId}`
         );
 
@@ -104,6 +104,10 @@ export const btrfsBackend = {
         }
 
         await ensureDir(stateDir);
+
+        await runCapture({
+            cmd: ["sudo", "chmod", "-R", "777", stateDir]
+        });
 
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(

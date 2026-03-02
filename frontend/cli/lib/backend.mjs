@@ -21,7 +21,9 @@ export async function loadBackend(name, cliRootUnused) {
 
   // placeholders (we'll implement later)
   if (name === "btrfs") {
-    throw new Error(`${name} backend not implemented yet (PoC step 2/3). Use --storage plain or zfs for now.`);
+    const url = pathToFileURL(path.join(backendsDir, "btrfs.mjs"));
+    const mod = await import(url.href);
+    return mod.btrfsBackend;
   }
   throw new Error(`Unknown backend: ${name}`);
 }
