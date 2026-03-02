@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -226,13 +227,18 @@ func TestNormalizeWorkDir(t *testing.T) {
 		t.Fatalf("expected empty output, got %q", out)
 	}
 
-	out, err = normalizeWorkDir("C:\\work", func(path string) (string, error) {
+	workDir := "/work"
+	if runtime.GOOS == "windows" {
+		workDir = "C:\\work"
+	}
+	want := "wsl:" + workDir
+	out, err = normalizeWorkDir(workDir, func(path string) (string, error) {
 		return "wsl:" + path, nil
 	})
 	if err != nil {
 		t.Fatalf("normalizeWorkDir: %v", err)
 	}
-	if out != "wsl:C:\\work" {
+	if out != want {
 		t.Fatalf("unexpected output: %q", out)
 	}
 }
@@ -242,29 +248,29 @@ func TestResolveLiquibaseEnv(t *testing.T) {
 	if env := resolveLiquibaseEnv(); env != nil {
 		t.Fatalf("expected nil env when JAVA_HOME empty, got %+v", env)
 	}
-	t.Setenv("JAVA_HOME", "C:\\Java")
+	t.Setenv("JAVA_HOME", "/opt/java")
 	env := resolveLiquibaseEnv()
-	if env == nil || env["JAVA_HOME"] != "C:\\Java" {
+	if env == nil || env["JAVA_HOME"] != "/opt/java" {
 		t.Fatalf("expected JAVA_HOME env, got %+v", env)
 	}
-	t.Setenv("JAVA_HOME", "\"C:\\Java\\\\\"")
+	t.Setenv("JAVA_HOME", "\"/opt/java/\"")
 	env = resolveLiquibaseEnv()
-	if env == nil || env["JAVA_HOME"] != "C:\\Java" {
+	if env == nil || env["JAVA_HOME"] != "/opt/java" {
 		t.Fatalf("expected sanitized JAVA_HOME env, got %+v", env)
 	}
 }
 
 func TestShouldUseLiquibaseWindowsMode(t *testing.T) {
-	if !shouldUseLiquibaseWindowsMode("C:\\Tools\\liquibase.bat", "") {
+	if !shouldUseLiquibaseWindowsMode("liquibase.bat", "") {
 		t.Fatalf("expected .bat to use windows mode")
 	}
-	if !shouldUseLiquibaseWindowsMode("C:\\Tools\\liquibase.cmd", "auto") {
+	if !shouldUseLiquibaseWindowsMode("liquibase.cmd", "auto") {
 		t.Fatalf("expected .cmd to use windows mode")
 	}
 	if !shouldUseLiquibaseWindowsMode("liquibase", "windows-bat") {
 		t.Fatalf("expected windows-bat mode to force windows")
 	}
-	if shouldUseLiquibaseWindowsMode("C:\\Tools\\liquibase.bat", "native") {
+	if shouldUseLiquibaseWindowsMode("liquibase.bat", "native") {
 		t.Fatalf("expected native mode to disable windows")
 	}
 }
