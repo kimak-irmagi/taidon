@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -155,7 +156,7 @@ func TestRunPlanKindAdditionalBranches(t *testing.T) {
 		err := runPlanKind(
 			&bytes.Buffer{},
 			&bytes.Buffer{},
-			cli.PrepareOptions{WSLDistro: "Ubuntu", Mode: "remote", Endpoint: "http://127.0.0.1:1"},
+			cli.PrepareOptions{WSLDistro: "Ubuntu", Mode: "remote"},
 			config.LoadedConfig{
 				ProjectConfigPath: projectConfig,
 				Paths:             paths.Dirs{ConfigDir: t.TempDir()},
@@ -166,8 +167,14 @@ func TestRunPlanKindAdditionalBranches(t *testing.T) {
 			"json",
 			"lb",
 		)
-		if err == nil || !strings.Contains(err.Error(), "path is not absolute") {
-			t.Fatalf("expected normalize workdir error, got %v", err)
+		if runtime.GOOS == "windows" {
+			if err == nil || !strings.Contains(err.Error(), "path is not absolute") {
+				t.Fatalf("expected normalize workdir error, got %v", err)
+			}
+			return
+		}
+		if err == nil || !strings.Contains(err.Error(), "remote mode requires explicit endpoint") {
+			t.Fatalf("expected remote endpoint error on non-windows, got %v", err)
 		}
 	})
 }

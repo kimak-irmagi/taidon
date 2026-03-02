@@ -44,7 +44,7 @@ func TestStartSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 	})
 
 	stop := startSpinner("init", false)
-	time.Sleep(700 * time.Millisecond)
+	time.Sleep(1100 * time.Millisecond)
 	stop()
 	_ = w.Close()
 	data, readErr := io.ReadAll(r)
@@ -92,7 +92,7 @@ func TestStartCleanupSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 	})
 
 	stop := startCleanupSpinner("inst", false)
-	time.Sleep(700 * time.Millisecond)
+	time.Sleep(1100 * time.Millisecond)
 	stop()
 	_ = w.Close()
 	data, readErr := io.ReadAll(r)
