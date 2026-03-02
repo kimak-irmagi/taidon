@@ -620,6 +620,19 @@ func measureCacheUsage(stateStoreRoot string) (int64, error) {
 		return 0, nil
 	}
 	enginesDir := filepath.Join(stateStoreRoot, "engines")
+	info, err := os.Stat(enginesDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if !info.IsDir() {
+		// Treat a non-directory engines path as missing cache root.
+		// This can happen due to corruption or external interference and should not
+		// fail capacity reporting.
+		return 0, nil
+	}
 	engines, err := os.ReadDir(enginesDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
