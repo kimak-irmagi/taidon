@@ -8,13 +8,17 @@ Date: 2026-01-14
 - Timestamp: 2026-01-14T17:08:02+07:00
 - User: @evilguest
 - Agent: Codex (GPT-5)
-- Question: How should component boundaries and persistence be defined for the CLI and local engine?
+- Question: How should component boundaries and persistence be defined for the
+  CLI and local engine?
 - Alternatives:
   - Keep engine logic in a single package with in-memory collections.
   - Document only deployment tiers (CLI/engine) without internal component structure.
   - Persist registry data outside the engine (or not at all).
-- Decision: Define component-structure docs for CLI and local engine, introduce `internal/store` interfaces with a SQLite implementation, and persist names/instances/states in SQLite under `<StateDir>`.
-- Rationale: Clear boundaries reduce coupling, SQLite provides durable registry data, and documented structure guides implementation.
+- Decision: Define component-structure docs for CLI and local engine, introduce
+  `internal/store` interfaces with a SQLite implementation, and persist names/
+  instances/states in SQLite under `<StateDir>`.
+- Rationale: Clear boundaries reduce coupling, SQLite provides durable registry
+  data, and documented structure guides implementation.
 
 ## Context
 

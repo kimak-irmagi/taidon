@@ -95,6 +95,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  plan:lb    Compute a prepare plan with Liquibase")
 	fmt.Fprintln(w, "  prepare:psql  Prepare a database state with psql")
 	fmt.Fprintln(w, "  prepare:lb    Prepare a database state with Liquibase")
+	fmt.Fprintln(w, "  watch    Attach to a running prepare job")
 	fmt.Fprintln(w, "  status   Check service health")
 	fmt.Fprintln(w, "  config   Manage server config")
 	fmt.Fprintln(w, "")
@@ -145,7 +146,7 @@ func findRunIndex(args []string) int {
 
 func isCommandToken(value string) bool {
 	switch value {
-	case "init", "ls", "rm", "plan", "prepare", "run", "status", "config":
+	case "init", "ls", "rm", "plan", "prepare", "run", "watch", "status", "config":
 		return true
 	}
 	if strings.HasPrefix(value, "prepare:") {

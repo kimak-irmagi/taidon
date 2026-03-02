@@ -73,6 +73,7 @@ sqlrs
   ls
   rm
   prepare
+  watch
   plan
   run
 ```
@@ -134,13 +135,22 @@ ID prefix support (implemented):
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
+- [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
+
+Current behavior:
+
+- `prepare` supports `--watch` (default) and `--no-watch`.
+- `prepare --no-watch` returns `job_id` and stream/status references.
+- In watch mode, `Ctrl+C` opens a control prompt:
+  - `[s] stop` (with confirmation),
+  - `[d] detach`,
+  - `[Esc/Enter] continue`.
+- For composite `prepare ... run ...`, `detach` detaches from `prepare` and
+  skips the subsequent `run` phase in the current CLI process.
 
 TODO (future):
 
 - Add named instances and name binding flags (`--name`, `--reuse`, `--fresh`, `--rebind`).
-- Add async mode (`--watch/--no-watch`) with `prepare_id` and status URL output.
-
----
 
 ### 3.6 `sqlrs plan`
 
@@ -159,6 +169,20 @@ The CLI must expose `plan:<kind>` for every supported `prepare:<kind>`.
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
+
+---
+
+### 3.8 `sqlrs watch`
+
+Attach to an existing prepare job and stream progress/events.
+
+```bash
+sqlrs watch <job_id>
+```
+
+See:
+
+- [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
 
 ---
 

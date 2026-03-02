@@ -42,7 +42,7 @@ When a new prepare job is stored and its tasks are planned:
 
 Notes:
 
-- Only **terminal** jobs are trimmed (`succeeded`, `failed`, `cancelled`).
+- Only **terminal** jobs are trimmed (`succeeded`, `failed`).
 - `running` and `queued` jobs are never deleted.
 - Ordering uses `finished_at` (newest first). If `finished_at` is missing,
   `created_at` is used as a fallback.

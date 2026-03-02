@@ -174,3 +174,72 @@ func TestSplitCommaListSkipsEmpty(t *testing.T) {
 		t.Fatalf("unexpected list: %+v", out)
 	}
 }
+
+func TestHandleLiquibasePathFlagAdditionalBranches(t *testing.T) {
+	t.Run("windows searchPath positional", func(t *testing.T) {
+		args := []string{"--searchPath", "C:\\work\\db"}
+		idx := 0
+		normalized := []string{}
+		mounts := []engineRuntime.Mount{}
+		mountIndex := 0
+		mounted := map[string]string{}
+
+		handled, err := handleLiquibasePathFlag(args, &idx, "C:\\work", true, true, &normalized, &mounts, &mountIndex, mounted)
+		if err != nil || !handled {
+			t.Fatalf("expected handled searchPath in windows mode, err=%v", err)
+		}
+		if len(normalized) != 2 || normalized[0] != "--searchPath" || normalized[1] != "C:\\work\\db" {
+			t.Fatalf("unexpected normalized args: %v", normalized)
+		}
+	})
+
+	t.Run("windows equals forms", func(t *testing.T) {
+		cases := []string{
+			"--changelog-file=C:\\work\\changelog.xml",
+			"--defaults-file=C:\\work\\liquibase.properties",
+			"--searchPath=C:\\work\\db",
+			"--search-path=C:\\work\\db",
+		}
+		for _, arg := range cases {
+			args := []string{arg}
+			idx := 0
+			normalized := []string{}
+			mounts := []engineRuntime.Mount{}
+			mountIndex := 0
+			mounted := map[string]string{}
+
+			handled, err := handleLiquibasePathFlag(args, &idx, "C:\\work", true, true, &normalized, &mounts, &mountIndex, mounted)
+			if err != nil || !handled {
+				t.Fatalf("expected handled flag %q in windows mode, err=%v", arg, err)
+			}
+			if len(normalized) != 1 {
+				t.Fatalf("unexpected normalized args for %q: %v", arg, normalized)
+			}
+		}
+	})
+
+	t.Run("host equals forms validation", func(t *testing.T) {
+		cases := []string{
+			"--changelog-file=",
+			"--defaults-file=",
+			"--searchPath=",
+			"--search-path=",
+		}
+		for _, arg := range cases {
+			args := []string{arg}
+			idx := 0
+			normalized := []string{}
+			mounts := []engineRuntime.Mount{}
+			mountIndex := 0
+			mounted := map[string]string{}
+
+			handled, err := handleLiquibasePathFlag(args, &idx, "", false, false, &normalized, &mounts, &mountIndex, mounted)
+			if !handled {
+				t.Fatalf("expected handled flag for %q", arg)
+			}
+			if err == nil {
+				t.Fatalf("expected validation error for %q", arg)
+			}
+		}
+	})
+}

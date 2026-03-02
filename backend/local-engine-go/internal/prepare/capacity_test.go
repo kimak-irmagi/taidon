@@ -993,6 +993,76 @@ func TestMeasureStoreUsageMissingPath(t *testing.T) {
 	}
 }
 
+func TestMeasureCacheUsageAdditionalBranches(t *testing.T) {
+	t.Run("empty root", func(t *testing.T) {
+		size, err := measureCacheUsage(" ")
+		if err != nil || size != 0 {
+			t.Fatalf("expected zero usage for empty root, got size=%d err=%v", size, err)
+		}
+	})
+
+	t.Run("engines path is a file", func(t *testing.T) {
+		root := t.TempDir()
+		enginesPath := filepath.Join(root, "engines")
+		if err := os.WriteFile(enginesPath, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write engines file: %v", err)
+		}
+		size, err := measureCacheUsage(root)
+		if err != nil {
+			t.Fatalf("expected file engines path to be ignored as missing on this platform, got err=%v", err)
+		}
+		if size != 0 {
+			t.Fatalf("expected zero usage when engines path is not a directory, got %d", size)
+		}
+	})
+
+	t.Run("invalid root bubbles up", func(t *testing.T) {
+		_, err := measureCacheUsage(string([]byte{0}))
+		if err == nil {
+			t.Fatalf("expected invalid path error")
+		}
+	})
+
+	t.Run("store usage not-exist is ignored", func(t *testing.T) {
+		root := t.TempDir()
+		statesDir := filepath.Join(root, "engines", "image-1", "v1", "states")
+		if err := os.MkdirAll(statesDir, 0o700); err != nil {
+			t.Fatalf("mkdir states: %v", err)
+		}
+		oldUsage := storeUsageFn
+		storeUsageFn = func(path string) (int64, error) {
+			return 0, os.ErrNotExist
+		}
+		t.Cleanup(func() { storeUsageFn = oldUsage })
+
+		size, err := measureCacheUsage(root)
+		if err != nil {
+			t.Fatalf("measureCacheUsage: %v", err)
+		}
+		if size != 0 {
+			t.Fatalf("expected zero usage when states dir disappears, got %d", size)
+		}
+	})
+
+	t.Run("store usage error bubbles up", func(t *testing.T) {
+		root := t.TempDir()
+		statesDir := filepath.Join(root, "engines", "image-1", "v1", "states")
+		if err := os.MkdirAll(statesDir, 0o700); err != nil {
+			t.Fatalf("mkdir states: %v", err)
+		}
+		oldUsage := storeUsageFn
+		storeUsageFn = func(path string) (int64, error) {
+			return 0, errors.New("usage boom")
+		}
+		t.Cleanup(func() { storeUsageFn = oldUsage })
+
+		_, err := measureCacheUsage(root)
+		if err == nil || !strings.Contains(err.Error(), "usage boom") {
+			t.Fatalf("expected usage error, got %v", err)
+		}
+	})
+}
+
 func TestMeasureCacheUsageIgnoresJobsRuntimeTree(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits are not reliable on windows")

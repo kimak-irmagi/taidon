@@ -23,6 +23,9 @@ func runPlanKind(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg confi
 		cli.PrintPlanUsage(stdout)
 		return nil
 	}
+	if parsed.WatchSpecified {
+		return ExitErrorf(2, "plan does not support --watch/--no-watch")
+	}
 
 	if kind == "lb" && len(parsed.PsqlArgs) == 0 {
 		return ExitErrorf(2, "liquibase command is required")

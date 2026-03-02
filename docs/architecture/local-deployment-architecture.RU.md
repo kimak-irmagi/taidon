@@ -131,8 +131,15 @@ CLI намеренно **тонкий** и без состояния.
 ### 5.1 Долгие операции: async jobs, sync CLI
 
 - Engine выполняет prepare как асинхронные job; `POST /v1/prepare-jobs` отвечает `201 Created` с job id.
-- CLI сразу начинает наблюдать job через статус/стрим и завершает работу после терминального статуса.
-- У CLI пока нет detach-режима; `--watch/--no-watch` — future extension.
+- CLI поддерживает:
+  - `prepare --watch` (по умолчанию): наблюдение за status/events до терминального статуса.
+  - `prepare --no-watch`: отправить job и вернуть `job_id`, `status_url`, `events_url`.
+  - `watch <job_id>`: подключиться к уже запущенной prepare job.
+- В интерактивном watch-режиме `Ctrl+C` открывает control prompt:
+  - `stop` (с подтверждением) запрашивает отмену,
+  - `detach` отключает наблюдение, оставляя job выполняться.
+- Для composite-вызова `prepare ... run ...` действие `detach` пропускает
+  последующую фазу `run` в том же CLI-процессе.
 
 ---
 

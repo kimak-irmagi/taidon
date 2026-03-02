@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -76,7 +77,11 @@ func TestNormalizeWorkDirCoverage(t *testing.T) {
 	if got, err := normalizeWorkDir("", nil); err != nil || got != "" {
 		t.Fatalf("expected empty workdir, got %q err=%v", got, err)
 	}
-	_, err := normalizeWorkDir("C:\\root", func(string) (string, error) {
+	workDir := "/root"
+	if runtime.GOOS == "windows" {
+		workDir = "C:\\root"
+	}
+	_, err := normalizeWorkDir(workDir, func(string) (string, error) {
 		return "", errors.New("boom")
 	})
 	if err == nil || !strings.Contains(err.Error(), "boom") {
@@ -154,12 +159,12 @@ func TestResolveLiquibaseConfigErrors(t *testing.T) {
 }
 
 func TestResolveLiquibaseEnvAndSanitize(t *testing.T) {
-	t.Setenv("JAVA_HOME", "\"C:\\\\Java\\\\\"")
+	t.Setenv("JAVA_HOME", "\"/opt/java/\"")
 	env := resolveLiquibaseEnv()
-	if env["JAVA_HOME"] != "C:\\\\Java" {
+	if env["JAVA_HOME"] != "/opt/java" {
 		t.Fatalf("unexpected JAVA_HOME: %q", env["JAVA_HOME"])
 	}
-	if got := sanitizeLiquibaseExec(" \"C:\\\\Program Files\\\\lb.bat\" "); got != "C:\\\\Program Files\\\\lb.bat" {
+	if got := sanitizeLiquibaseExec(" \"/opt/Program Files/lb\" "); got != "/opt/Program Files/lb" {
 		t.Fatalf("unexpected sanitize output: %q", got)
 	}
 	if got := sanitizeLiquibaseExec(" "); got != "" {
@@ -259,10 +264,18 @@ func TestNormalizeLiquibaseArgsWithConverterError(t *testing.T) {
 }
 
 func TestNormalizeWorkDirConversion(t *testing.T) {
-	out, err := normalizeWorkDir("C:\\root", func(path string) (string, error) {
-		return "/mnt/c/root", nil
+	workDir := "/root"
+	if runtime.GOOS == "windows" {
+		workDir = "C:\\root"
+	}
+	want := "/mnt/root"
+	if runtime.GOOS == "windows" {
+		want = "/mnt/c/root"
+	}
+	out, err := normalizeWorkDir(workDir, func(string) (string, error) {
+		return want, nil
 	})
-	if err != nil || out != "/mnt/c/root" {
+	if err != nil || out != want {
 		t.Fatalf("unexpected conversion result: %q err=%v", out, err)
 	}
 }
@@ -473,7 +486,11 @@ func TestNormalizeLiquibaseArgsSearchPathBadItem(t *testing.T) {
 }
 
 func TestNormalizeWorkDirWithConverterError(t *testing.T) {
-	_, err := normalizeWorkDir("C:\\root", func(string) (string, error) {
+	workDir := "/root"
+	if runtime.GOOS == "windows" {
+		workDir = "C:\\root"
+	}
+	_, err := normalizeWorkDir(workDir, func(string) (string, error) {
 		return "", context.DeadlineExceeded
 	})
 	if err == nil {

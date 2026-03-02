@@ -638,6 +638,108 @@ func TestParseInitFlagsRemoteRejectsLocalFlags(t *testing.T) {
 	}
 }
 
+func TestResolveStoreTypeBranchesMore(t *testing.T) {
+	if got, err := resolveStoreType("auto", "DIR"); err != nil || got != "dir" {
+		t.Fatalf("expected explicit store type normalization, got %q err=%v", got, err)
+	}
+	if got, err := resolveStoreType("copy", ""); err != nil || got != "dir" {
+		t.Fatalf("expected copy->dir, got %q err=%v", got, err)
+	}
+	if got, err := resolveStoreType("overlay", ""); err != nil || got != "dir" {
+		t.Fatalf("expected overlay->dir, got %q err=%v", got, err)
+	}
+	if got, err := resolveStoreType("auto", ""); err != nil {
+		t.Fatalf("resolveStoreType(auto): %v", err)
+	} else if runtime.GOOS == "windows" && got != "image" {
+		t.Fatalf("expected auto->image on windows, got %q", got)
+	} else if runtime.GOOS != "windows" && got != "dir" {
+		t.Fatalf("expected auto->dir on non-windows, got %q", got)
+	}
+	if got, err := resolveStoreType("unknown", ""); err != nil || got != "dir" {
+		t.Fatalf("expected fallback dir, got %q err=%v", got, err)
+	}
+}
+
+func TestResolveStorePathAdditionalBranchesMore(t *testing.T) {
+	if pathValue, err := resolveStorePath("mystery", ""); err != nil || pathValue != "" {
+		t.Fatalf("expected unknown type to resolve empty path, got %q err=%v", pathValue, err)
+	}
+	if pathValue, err := resolveStorePath("dir", "/custom/path"); err != nil || pathValue != "/custom/path" {
+		t.Fatalf("expected explicit store path passthrough, got %q err=%v", pathValue, err)
+	}
+}
+
+func TestShouldUseWSLBranchesMore(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		if use, required := shouldUseWSL("btrfs", "image", true); use || required {
+			t.Fatalf("expected no WSL usage on non-windows")
+		}
+		return
+	}
+
+	if use, required := shouldUseWSL("btrfs", "dir", true); use || !required {
+		t.Fatalf("expected btrfs+dir -> no use, required=true, got use=%v required=%v", use, required)
+	}
+	if use, required := shouldUseWSL("btrfs", "image", true); !use || !required {
+		t.Fatalf("expected btrfs+image -> use+required, got use=%v required=%v", use, required)
+	}
+	if use, required := shouldUseWSL("auto", "dir", false); use || required {
+		t.Fatalf("expected auto+dir -> no use/required, got use=%v required=%v", use, required)
+	}
+	if use, required := shouldUseWSL("auto", "image", false); !use || required {
+		t.Fatalf("expected auto+image explicit=false -> use=true required=false, got use=%v required=%v", use, required)
+	}
+	if use, required := shouldUseWSL("auto", "image", true); !use || !required {
+		t.Fatalf("expected auto+image explicit=true -> use+required, got use=%v required=%v", use, required)
+	}
+}
+
+func TestDetectBinaryFormatAndValidateLinuxEngineBinaryForWSLMore(t *testing.T) {
+	if err := validateLinuxEngineBinaryForWSL(""); err != nil {
+		t.Fatalf("empty engine path should pass: %v", err)
+	}
+	if err := validateLinuxEngineBinaryForWSL("sqlrs-engine.exe"); err == nil {
+		t.Fatalf("expected .exe to be rejected")
+	}
+
+	missingPath := filepath.Join(t.TempDir(), "missing-engine")
+	if err := validateLinuxEngineBinaryForWSL(missingPath); err != nil {
+		t.Fatalf("missing engine path should be tolerated, got %v", err)
+	}
+
+	pePath := filepath.Join(t.TempDir(), "engine-pe")
+	if err := os.WriteFile(pePath, []byte{'M', 'Z', 0, 0}, 0o600); err != nil {
+		t.Fatalf("write PE header: %v", err)
+	}
+	if err := validateLinuxEngineBinaryForWSL(pePath); err == nil {
+		t.Fatalf("expected PE header to be rejected")
+	}
+
+	elfPath := filepath.Join(t.TempDir(), "engine-elf")
+	if err := os.WriteFile(elfPath, []byte{0x7f, 'E', 'L', 'F'}, 0o600); err != nil {
+		t.Fatalf("write ELF header: %v", err)
+	}
+	if err := validateLinuxEngineBinaryForWSL(elfPath); err != nil {
+		t.Fatalf("expected ELF header to pass, got %v", err)
+	}
+
+	unknownPath := filepath.Join(t.TempDir(), "engine-unknown")
+	if err := os.WriteFile(unknownPath, []byte{1, 2, 3, 4}, 0o600); err != nil {
+		t.Fatalf("write unknown header: %v", err)
+	}
+	if err := validateLinuxEngineBinaryForWSL(unknownPath); err == nil {
+		t.Fatalf("expected unknown binary format to be rejected")
+	}
+
+	shortPath := filepath.Join(t.TempDir(), "engine-short")
+	if err := os.WriteFile(shortPath, []byte{1, 2}, 0o600); err != nil {
+		t.Fatalf("write short binary: %v", err)
+	}
+	if _, err := detectBinaryFormat(shortPath); err == nil {
+		t.Fatalf("expected short binary read error")
+	}
+}
+
 func pathsEquivalent(expected, actual string) bool {
 	normalize := func(value string) string {
 		dir := filepath.Dir(value)

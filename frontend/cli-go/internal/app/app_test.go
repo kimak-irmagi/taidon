@@ -343,6 +343,92 @@ func TestRunPrepareCommand(t *testing.T) {
 	}
 }
 
+func TestRunPrepareNoWatchCommand(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() {
+		_ = w.Close()
+		os.Stdout = oldStdout
+	}()
+
+	err = Run([]string{"--mode=remote", "--endpoint", server.URL, "prepare:psql", "--no-watch", "--image", "image", "--", "-c", "select 1"})
+	_ = w.Close()
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "JOB_ID=job-1") || !strings.Contains(out, "STATUS_URL=/v1/prepare-jobs/job-1") || !strings.Contains(out, "EVENTS_URL=/v1/prepare-jobs/job-1/events") {
+		t.Fatalf("unexpected output: %s", out)
+	}
+	if strings.Contains(out, "DSN=") {
+		t.Fatalf("did not expect DSN output: %s", out)
+	}
+}
+
+func TestRunWatchCommand(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	if err := Run([]string{"--mode=remote", "--endpoint", server.URL, "watch", "job-1"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRunWatchMissingJobID(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	err := Run([]string{"watch"})
+	if err == nil || !strings.Contains(err.Error(), "Missing prepare job id") {
+		t.Fatalf("expected missing job id error, got %v", err)
+	}
+}
+
+func TestRunPlanRejectsWatchFlags(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	err := Run([]string{"plan:psql", "--no-watch"})
+	if err == nil || !strings.Contains(err.Error(), "plan does not support --watch/--no-watch") {
+		t.Fatalf("expected watch flag rejection, got %v", err)
+	}
+}
+
 func TestRunPlanCommandJSON(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)

@@ -235,6 +235,7 @@ func Run(args []string) error {
 				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
+				CompositeRun:    len(commands) > 1,
 			}
 			if len(commands) == 1 {
 				return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
@@ -268,6 +269,7 @@ func Run(args []string) error {
 				IdleTimeout:     idleTimeout,
 				StartupTimeout:  startupTimeout,
 				Verbose:         opts.Verbose,
+				CompositeRun:    len(commands) > 1,
 			}
 			if len(commands) == 1 {
 				return runPrepareLiquibase(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
@@ -477,6 +479,32 @@ func Run(args []string) error {
 				return fmt.Errorf("service unhealthy")
 			}
 			return nil
+		case "watch":
+			if len(commands) > 1 {
+				return fmt.Errorf("watch cannot be combined with other commands")
+			}
+			runOpts := cli.PrepareOptions{
+				ProfileName:     profileName,
+				Mode:            mode,
+				AuthToken:       authToken,
+				Endpoint:        profile.Endpoint,
+				Autostart:       profile.Autostart,
+				DaemonPath:      daemonPath,
+				RunDir:          runDir,
+				StateDir:        dirs.StateDir,
+				EngineRunDir:    engineRunDir,
+				EngineStatePath: engineStatePath,
+				EngineStoreDir:  engineStoreDir,
+				WSLVHDXPath:     engineHostStorePath,
+				WSLMountUnit:    engineWSLMountUnit,
+				WSLMountFSType:  engineWSLMountFSType,
+				WSLDistro:       wslDistro,
+				Timeout:         timeout,
+				IdleTimeout:     idleTimeout,
+				StartupTimeout:  startupTimeout,
+				Verbose:         opts.Verbose,
+			}
+			return runWatch(os.Stdout, runOpts, cmd.Args)
 		case "config":
 			if len(commands) > 1 {
 				return fmt.Errorf("config cannot be combined with other commands")
