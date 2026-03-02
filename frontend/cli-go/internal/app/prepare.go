@@ -535,17 +535,21 @@ func normalizeLiquibaseArgs(args []string, workspaceRoot string, cwd string, con
 }
 
 func normalizeWorkDir(cwd string, convert func(string) (string, error)) (string, error) {
-	if strings.TrimSpace(cwd) == "" {
+	cleaned := strings.TrimSpace(cwd)
+	if cleaned == "" {
 		return "", nil
 	}
+	if !filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("path is not absolute: %s", cleaned)
+	}
 	if convert != nil {
-		converted, err := convert(cwd)
+		converted, err := convert(cleaned)
 		if err != nil {
 			return "", err
 		}
 		return converted, nil
 	}
-	return cwd, nil
+	return cleaned, nil
 }
 
 func rewriteLiquibasePathArg(flag string, value string, workspaceRoot string, cwd string, convert func(string) (string, error)) (string, error) {

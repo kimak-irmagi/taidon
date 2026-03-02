@@ -1089,6 +1089,9 @@ func logWSLInit(verbose bool, format string, args ...any) {
 	if !verbose {
 		return
 	}
+	if runtime.GOOS != "windows" {
+		return
+	}
 	fmt.Fprintf(os.Stderr, "wsl init: "+format+"\n", args...)
 }
 

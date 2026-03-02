@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -167,14 +166,8 @@ func TestRunPlanKindAdditionalBranches(t *testing.T) {
 			"json",
 			"lb",
 		)
-		if runtime.GOOS == "windows" {
-			if err == nil || !strings.Contains(err.Error(), "path is not absolute") {
-				t.Fatalf("expected normalize workdir error, got %v", err)
-			}
-			return
-		}
-		if err == nil || !strings.Contains(err.Error(), "remote mode requires explicit endpoint") {
-			t.Fatalf("expected remote endpoint error on non-windows, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "path is not absolute") {
+			t.Fatalf("expected normalize workdir error, got %v", err)
 		}
 	})
 }
