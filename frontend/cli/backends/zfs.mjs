@@ -118,7 +118,9 @@ export const zfsBackend = {
             2
             )
         );
-
+        
+        console.log(`Created ZFS snapshot ${snapshot} and state directory ${stateDir}`);
+        
         return {
             stateId,
             stateDir,
