@@ -99,7 +99,8 @@ export const zfsBackend = {
         await runCapture({
             cmd: ["sudo", "chmod", "-R", "777", fsDir]
         });
-
+        
+        console.log(`Snaphotting ZFS dataset ${dataset} to ${snapshot} and preparing state directory ${stateDir}`);
         // 1️⃣ создаём ZFS snapshot (атомарно, O(1))
         try {
             await zfs(["snapshot", `${dataset}@${stateId}`]);
