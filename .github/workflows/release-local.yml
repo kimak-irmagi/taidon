@@ -534,20 +534,39 @@ jobs:
           "sqlrs_bin=$($windowsSqlrs.FullName)" >> $env:GITHUB_OUTPUT
           "engine_windows_bin=$($windowsEngine.FullName)" >> $env:GITHUB_OUTPUT
           "engine_linux_bin=$($linuxEngine.FullName)" >> $env:GITHUB_OUTPUT
-
       - name: Provide liquibase via liquibase/liquibase:latest (linux)
         if: matrix.platform == 'linux' && matrix.scenario == 'hp-lb-jhipster'
         shell: bash
         run: |
           set -euo pipefail
+
+          driver_dir="${RUNNER_TEMP}/liquibase-drivers"
+          mkdir -p "$driver_dir"
+
+          postgres_jdbc_version="$({ curl -fsSL "https://repo1.maven.org/maven2/org/postgresql/postgresql/maven-metadata.xml" | python3 -c 'import sys, xml.etree.ElementTree as ET; root=ET.fromstring(sys.stdin.read()); print(root.findtext("./versioning/release") or root.findtext("./versioning/latest") or "")'; } )"
+          if [[ -z "$postgres_jdbc_version" ]]; then
+            echo "failed to resolve postgresql JDBC version" >&2
+            exit 1
+          fi
+
+          driver_jar="$driver_dir/postgresql.jar"
+          curl -fsSL -o "$driver_jar" "https://repo1.maven.org/maven2/org/postgresql/postgresql/${postgres_jdbc_version}/postgresql-${postgres_jdbc_version}.jar"
+
           bin_dir="${RUNNER_TEMP}/liquibase-bin"
           mkdir -p "$bin_dir"
           cat > "$bin_dir/liquibase" <<'EOF'
           #!/usr/bin/env bash
           set -euo pipefail
           workdir="$(pwd)"
+          driver_jar="${RUNNER_TEMP}/liquibase-drivers/postgresql.jar"
+          if [[ ! -f "$driver_jar" ]]; then
+            echo "postgresql JDBC driver jar not found: $driver_jar" >&2
+            exit 1
+          fi
           exec docker run --rm --network host \
             -v "$workdir:$workdir" -w "$workdir" \
+            -v "$driver_jar:/liquibase/lib/postgresql.jar:ro" \
+            -e LIQUIBASE_CLASSPATH=/liquibase/lib/postgresql.jar \
             liquibase/liquibase:latest "$@"
           EOF
           chmod +x "$bin_dir/liquibase"

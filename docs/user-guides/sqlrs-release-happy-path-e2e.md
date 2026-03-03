@@ -50,7 +50,7 @@ Initial scope:
 
 Runner prerequisites (Linux):
 
-- `liquibase` available on PATH (in CI we provide it as a small wrapper that executes `liquibase/liquibase:latest` via Docker).
+- `liquibase` available on PATH (in CI we provide it as a small wrapper that executes `liquibase/liquibase:latest` via Docker, plus a downloaded PostgreSQL JDBC driver jar for connectivity).
 
 ---
 
