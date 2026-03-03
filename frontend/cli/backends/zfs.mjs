@@ -18,6 +18,7 @@ export const zfsBackend = {
     // 1. создать пустой dataset
     await zfs([
         "create",
+        "-p",
         "-o", "canmount=on",
         dataset
     ]);
