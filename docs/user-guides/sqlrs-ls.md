@@ -8,7 +8,8 @@ sqlrs manages five object types:
 
 - **states** - immutable database states produced by `prepare:psql`
 - **instances** - mutable database instances derived from states
-- **names** - stable user-defined handles pointing to instances (and bound to a state fingerprint)
+- **names** - stable user-defined handles pointing to instances (and bound to a
+  state fingerprint)
 - **jobs** - prepare job executions and their lifecycle
 - **tasks** - queued or running steps belonging to jobs
 
@@ -74,8 +75,8 @@ If no object selector flags are given, `sqlrs ls` lists:
 
 - `--names` and `--instances`
 
-Rationale: these are the objects users interact with most often. `--states` can be
-large (cache), and jobs/tasks are operational details, so they are shown explicitly.
+Rationale: these are the objects users interact with most often. `--states` can
+be large (cache), and jobs/tasks are operational details, so they are shown explicitly.
 
 ---
 
@@ -90,10 +91,40 @@ By default, `sqlrs ls` prints a table per selected object type, in this order:
 5. Tasks
 
 Each section begins with a one-line title (suppressed by `--quiet`).
-When `--quiet` is set and multiple sections are printed, sections are separated by a blank line.
+When `--quiet` is set and multiple sections are printed, sections are separated
+by a blank line.
 
 IDs are printed in lowercase. By default, human output shortens ids to 12
 characters. Use `--long` to print full ids.
+
+### IMAGE_ID formatting (human output)
+
+In human-readable output, `IMAGE_ID` can be displayed in a compact form to keep
+tables readable:
+
+- For digest references like `postgres@sha256:<64-hex>`, the short form is `postgres@<12-hex>`.
+- For raw digests like `sha256:<64-hex>`, the short form is `<12-hex>`.
+- For non-digest references (e.g. `postgres:16`), the value is printed as-is.
+
+Use `--long` to print the full `IMAGE_ID` values as returned by the engine.
+
+#### `IMAGE_ID` vs Docker identifiers
+
+`sqlrs ls` prints `IMAGE_ID` as a digest-based image reference (the value used
+by the engine for caching).
+This is typically comparable to Docker `RepoDigests`, not to the Docker `IMAGE ID`
+column.
+
+Examples (show both kinds of ids):
+
+```bash
+# Repo digests (comparable to sqlrs IMAGE_ID)
+docker image ls --digests postgres
+docker image inspect postgres --format '{{json .RepoDigests}}'
+
+# Local image id (config digest; often different)
+docker image inspect postgres --format '{{.Id}}'
+```
 
 ### Names table
 
@@ -138,6 +169,30 @@ Columns:
 - `CREATED`
 - `SIZE`
 - `REFCOUNT` (number of instances referencing this state)
+
+#### States hierarchy (human output)
+
+The `STATE_ID` column is rendered as a compact tree. The prefix uses
+**one character per depth level**:
+
+- `+` means “this node has following siblings” (not last)
+- `` ` `` means “last sibling”
+- `|` means “there are further siblings at this ancestor depth”
+- space means “no further siblings at this ancestor depth”
+
+When `ParentStateID` information is available, `sqlrs ls --states` renders
+`STATE_ID` as a tree to make
+parent/child relationships visible (similar to `sqlrs rm --recurse` output).
+For example:
+
+```text
+STATE_ID         IMAGE_ID             PREPARE_KIND  PREPARE_ARGS  CREATED  SIZE  REFCOUNT
+aaaaaaaaaaaa     postgres@7352e0c4d62b psql         ...          ...      ...   ...
++bbbbbbbbbbbb   postgres@7352e0c4d62b psql         ...          ...      ...   ...
+`cccccccccccc   postgres@7352e0c4d62b psql         ...          ...      ...   ...
+```
+
+For machine-readable processing, use `--output json`.
 
 ### Jobs table
 
@@ -311,8 +366,9 @@ sqlrs ls --all --output json
 
 ### Why separate `names` from `instances`?
 
-- Names are the *stable handles* users remember.
-- Instances are the *actual mutable databases* that may be ephemeral, expiring, or renamed.
+- Names are the _stable handles_ users remember.
+- Instances are the _actual mutable databases_ that may be ephemeral, expiring,
+  or renamed.
 - Keeping both visible makes lifecycle debugging straightforward.
 
 ### Why not list states by default?

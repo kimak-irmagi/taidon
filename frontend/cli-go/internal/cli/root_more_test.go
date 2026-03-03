@@ -12,6 +12,22 @@ func TestSplitCommandsNonComposite(t *testing.T) {
 	}
 }
 
+func TestSplitCommandsCompositePrepareRun(t *testing.T) {
+	cmds, err := splitCommands([]string{"prepare:psql", "--image", "img", "run:psql", "--", "-c", "select 1"})
+	if err != nil {
+		t.Fatalf("splitCommands: %v", err)
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %+v", cmds)
+	}
+	if cmds[0].Name != "prepare:psql" || len(cmds[0].Args) != 2 || cmds[0].Args[0] != "--image" {
+		t.Fatalf("unexpected first command: %+v", cmds[0])
+	}
+	if cmds[1].Name != "run:psql" || len(cmds[1].Args) == 0 || cmds[1].Args[0] != "--" {
+		t.Fatalf("unexpected second command: %+v", cmds[1])
+	}
+}
+
 func TestIsCompositePrepareRunFalse(t *testing.T) {
 	if isCompositePrepareRun([]string{"run:psql", "prepare:psql"}) {
 		t.Fatalf("expected false for non-prepare prefix")
@@ -33,5 +49,12 @@ func TestIsCommandToken(t *testing.T) {
 	}
 	if isCommandToken("unknown") {
 		t.Fatalf("unexpected command token")
+	}
+}
+
+func TestSplitCommandsMissingCommand(t *testing.T) {
+	_, err := splitCommands(nil)
+	if err == nil {
+		t.Fatalf("expected error")
 	}
 }

@@ -431,8 +431,14 @@ func TestPrintRmChildPrefixes(t *testing.T) {
 	var buf bytes.Buffer
 	PrintRm(&buf, result)
 	out := buf.String()
-	if !strings.Contains(out, "|--") || !strings.Contains(out, "`--") {
-		t.Fatalf("expected tree prefixes, got %q", out)
+	if !strings.Contains(out, "\n+ instance child-1 deleted") {
+		t.Fatalf("expected + prefix for first child, got %q", out)
+	}
+	if !strings.Contains(out, "\n` instance child-2 deleted") {
+		t.Fatalf("expected ` prefix for last child, got %q", out)
+	}
+	if !strings.Contains(out, "\n|` state grandchild deleted") {
+		t.Fatalf("expected |` prefix for grandchild, got %q", out)
 	}
 	if !strings.Contains(out, "grandchild") {
 		t.Fatalf("expected nested child output, got %q", out)
