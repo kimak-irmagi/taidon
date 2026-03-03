@@ -541,8 +541,8 @@ async function main() {
     } catch (_) {}
 
     // 🔥 вместо copyDir — clone
-    await zfs(["snapshot", `${statePath}@${stateId}`]);
-    await zfs(["clone", `${statePath}@${stateId}`, newDataset]);
+    await zfs(["snapshot", `${statePath}@${runId}`]);
+    await zfs(["clone", `${statePath}@${runId}`, newDataset]);
 
     reusedState = true;
     metrics.state = { state_id: prepareState.stateId, path: stateDir, reused: true };
