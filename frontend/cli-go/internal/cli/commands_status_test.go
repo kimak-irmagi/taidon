@@ -181,6 +181,25 @@ func TestRuntimeModeFromEngineConfig(t *testing.T) {
 	if mode != "podman" {
 		t.Fatalf("expected podman mode, got %q", mode)
 	}
+
+	t.Run("fallback-on-non-string", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/v1/config" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"path":"container.runtime","value":123}`))
+		}))
+		defer server.Close()
+
+		cliClient := client.New(server.URL, client.Options{Timeout: time.Second})
+		mode := runtimeModeFromEngineConfig(context.Background(), cliClient, false)
+		if mode != "auto" {
+			t.Fatalf("expected auto mode, got %q", mode)
+		}
+	})
+
 }
 
 func TestRuntimeModeFromEngineConfigFallbackOnError(t *testing.T) {
@@ -609,4 +628,26 @@ func commandExit(ctx context.Context, code int) *exec.Cmd {
 func runExitStatusError(code int) error {
 	cmd := commandExit(context.Background(), code)
 	return cmd.Run()
+}
+
+func TestFormatContainerRuntimeProbeWarning(t *testing.T) {
+	msg := formatContainerRuntimeProbeWarning("config container.runtime=auto", []string{"docker", "podman"}, nil)
+	if !strings.Contains(msg, "no probe results") {
+		t.Fatalf("expected no probe results message, got %q", msg)
+	}
+
+	msg = formatContainerRuntimeProbeWarning(
+		"config container.runtime=auto",
+		[]string{"docker", "podman"},
+		[]runtimeProbe{
+			{name: "docker", path: "/usr/bin/docker", err: errors.New("boom")},
+			{name: "podman"},
+		},
+	)
+	if !strings.Contains(msg, "docker (/usr/bin/docker)") {
+		t.Fatalf("expected path detail, got %q", msg)
+	}
+	if !strings.Contains(msg, "podman: ready") {
+		t.Fatalf("expected ready detail, got %q", msg)
+	}
 }

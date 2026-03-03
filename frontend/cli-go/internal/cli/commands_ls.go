@@ -375,7 +375,7 @@ func printNamesTable(w io.Writer, rows []client.NameEntry, noHeader bool, longID
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			row.Name,
 			formatIDPtr(row.InstanceID, longIDs),
-			row.ImageID,
+			formatImageID(row.ImageID, longIDs),
 			formatID(stateID, longIDs),
 			row.Status,
 			optionalString(row.LastUsedAt),
@@ -392,7 +392,7 @@ func printInstancesTable(w io.Writer, rows []client.InstanceEntry, noHeader bool
 	for _, row := range rows {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			formatID(row.InstanceID, longIDs),
-			row.ImageID,
+			formatImageID(row.ImageID, longIDs),
 			formatID(row.StateID, longIDs),
 			optionalString(row.Name),
 			row.CreatedAt,
@@ -408,17 +408,95 @@ func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, long
 	if !noHeader {
 		fmt.Fprintln(tw, "STATE_ID\tIMAGE_ID\tPREPARE_KIND\tPREPARE_ARGS\tCREATED\tSIZE\tREFCOUNT")
 	}
-	for _, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			formatID(row.StateID, longIDs),
-			row.ImageID,
-			row.PrepareKind,
-			row.PrepareArgs,
-			row.CreatedAt,
-			optionalInt64(row.SizeBytes),
-			strconv.Itoa(row.RefCount),
-		)
+
+	type stateNode struct {
+		key      string
+		row      client.StateEntry
+		parent   *stateNode
+		children []*stateNode
 	}
+
+	nodes := make([]*stateNode, 0, len(rows))
+	byID := make(map[string]*stateNode, len(rows))
+	for _, row := range rows {
+		key := strings.ToLower(strings.TrimSpace(row.StateID))
+		if key == "" {
+			continue
+		}
+		node := &stateNode{key: key, row: row}
+		nodes = append(nodes, node)
+		byID[key] = node
+	}
+
+	for _, node := range nodes {
+		if node.row.ParentStateID == nil {
+			continue
+		}
+		parentKey := strings.ToLower(strings.TrimSpace(*node.row.ParentStateID))
+		if parentKey == "" || parentKey == node.key {
+			continue
+		}
+		parent, ok := byID[parentKey]
+		if !ok {
+			continue
+		}
+		node.parent = parent
+		parent.children = append(parent.children, node)
+	}
+
+	roots := make([]*stateNode, 0, len(nodes))
+	for _, node := range nodes {
+		if node.parent == nil {
+			roots = append(roots, node)
+		}
+	}
+
+	visited := make(map[string]bool, len(nodes))
+	var walk func(node *stateNode, ancestorsHasNext []bool, depth int, isLast bool)
+	walk = func(node *stateNode, ancestorsHasNext []bool, depth int, isLast bool) {
+		if node == nil {
+			return
+		}
+		if visited[node.key] {
+			return
+		}
+		visited[node.key] = true
+
+		stateID := formatID(node.row.StateID, longIDs)
+		if depth > 0 {
+			stateID = compactTreePrefix(ancestorsHasNext, isLast) + stateID
+		}
+
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			stateID,
+			formatImageID(node.row.ImageID, longIDs),
+			node.row.PrepareKind,
+			node.row.PrepareArgs,
+			node.row.CreatedAt,
+			optionalInt64(node.row.SizeBytes),
+			strconv.Itoa(node.row.RefCount),
+		)
+
+		childAncestors := ancestorsHasNext
+		if depth > 0 {
+			childAncestors = compactTreeNextAncestors(ancestorsHasNext, isLast)
+		}
+		for i, child := range node.children {
+			childLast := i == len(node.children)-1
+			walk(child, childAncestors, depth+1, childLast)
+		}
+	}
+
+	for _, root := range roots {
+		walk(root, nil, 0, true)
+	}
+	for _, node := range nodes {
+		if visited[node.key] {
+			continue
+		}
+		walk(node, nil, 0, true)
+	}
+
 	_ = tw.Flush()
 }
 
@@ -432,7 +510,7 @@ func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, l
 			formatID(row.JobID, longIDs),
 			row.Status,
 			row.PrepareKind,
-			row.ImageID,
+			formatImageID(row.ImageID, longIDs),
 			formatBool(row.PlanOnly),
 			optionalString(row.CreatedAt),
 			optionalString(row.StartedAt),
@@ -574,4 +652,52 @@ func formatIDPtr(value *string, longIDs bool) string {
 		return ""
 	}
 	return formatID(*value, longIDs)
+}
+
+// formatImageID shortens digest-based image references in human-readable output.
+// See docs/user-guides/sqlrs-ls.md.
+func formatImageID(value string, longIDs bool) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if longIDs {
+		return value
+	}
+
+	const digestPrefix = "sha256:"
+	if strings.HasPrefix(value, digestPrefix) {
+		digest := strings.TrimSpace(strings.TrimPrefix(value, digestPrefix))
+		if len(digest) >= 12 && isHexString(digest[:12]) {
+			return digest[:12]
+		}
+		return value
+	}
+
+	const atDigestMarker = "@sha256:"
+	if i := strings.Index(value, atDigestMarker); i >= 0 {
+		name := strings.TrimSpace(value[:i])
+		digest := strings.TrimSpace(value[i+len(atDigestMarker):])
+		if name != "" && len(digest) >= 12 && isHexString(digest[:12]) {
+			return name + "@" + digest[:12]
+		}
+	}
+
+	return value
+}
+
+func isHexString(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, ch := range value {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }

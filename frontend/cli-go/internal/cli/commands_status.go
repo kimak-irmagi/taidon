@@ -326,15 +326,11 @@ func runtimeProbeCandidates(mode string) ([]string, string) {
 }
 
 func runtimeModeFromEngineConfig(ctx context.Context, cliClient *client.Client, verbose bool) string {
-	value, err := cliClient.GetConfig(ctx, "container.runtime", true)
+	entry, err := cliClient.GetConfigValue(ctx, "container.runtime", true)
 	if err != nil {
 		if verbose {
 			fmt.Fprintf(os.Stderr, "container runtime mode probe failed: %v\n", err)
 		}
-		return "auto"
-	}
-	entry, ok := value.(client.ConfigValue)
-	if !ok {
 		return "auto"
 	}
 	mode, ok := entry.Value.(string)
