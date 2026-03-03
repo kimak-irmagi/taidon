@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { runCapture } from "../lib/proc.mjs";
 
 const ZFS_POOL = "tank";
-const ZFS_ROOT = `${ZFS_POOL}/workspaces2`;
+export const ZFS_ROOT = `${ZFS_POOL}/workspaces2`;
 const ZFS_BASE = `${ZFS_ROOT}/base`;
 const ZFS_BASE_SNAPSHOT = "clean"; // base@clean
 
