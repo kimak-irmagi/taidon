@@ -95,11 +95,6 @@ export const zfsBackend = {
 
         await ensureDataset(stateDir);
 
-        const fsDir = `${workspace}/states/${stateId}/pgdata`;
-        await runCapture({
-            cmd: ["sudo", "chmod", "-R", "777", fsDir]
-        });
-        
         console.log(`Snaphotting ZFS dataset ${dataset} to ${snapshot} and preparing state directory ${stateDir}`);
         // 1️⃣ создаём ZFS snapshot (атомарно, O(1))
         try {
@@ -108,6 +103,11 @@ export const zfsBackend = {
         } catch (err) {
             throw new Error(`Failed to create ZFS snapshot ${snapshot}: ${err.message}`);
         }
+
+        const fsDir = `${workspace}/states/${stateId}/pgdata`;
+        await runCapture({
+            cmd: ["sudo", "chmod", "-R", "777", fsDir]
+        });
 
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(
