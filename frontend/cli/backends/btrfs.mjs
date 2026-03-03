@@ -92,6 +92,11 @@ export const btrfsBackend = {
             cmd: ["sudo", "chmod", "-R", "777", stateDir]
         });
 
+        const snapshotPath = path.join(
+            stateDir,
+            "pgdata"
+        );
+
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(
             path.join(stateDir, "state.json"),
@@ -108,11 +113,6 @@ export const btrfsBackend = {
                 null,
                 2
             )
-        );
-
-        const snapshotPath = path.join(
-            stateDir,
-            "pgdata"
         );
 
         // 1️⃣ создаём read-only snapshot (O(1), COW)
