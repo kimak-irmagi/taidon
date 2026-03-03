@@ -95,7 +95,7 @@ export const zfsBackend = {
 
         await ensureDataset(stateDir);
 
-        const fsDir = `${workspace}/states/${stateId}`;
+        const fsDir = `${workspace}/states/${stateId}/pgdata`;
         await runCapture({
             cmd: ["sudo", "chmod", "-R", "777", fsDir]
         });
