@@ -34,6 +34,26 @@ copy path.
 
 ---
 
+## Selected Direction (2026-03-03)
+
+Add a Liquibase-based happy-path scenario sourced from `examples/liquibase/`.
+This catches regressions in `prepare:lb` and validates that the engine can
+accept DB connections from the host-side Liquibase process (not only from
+in-container `psql`).
+
+Initial scope:
+
+- platform: Linux only (release-gated);
+- runtime: Docker (same as existing scenarios);
+- scenario id: `hp-lb-jhipster` (JHipster sample changelog);
+- snapshot backend: `copy` only (btrfs is covered by existing psql scenarios).
+
+Runner prerequisites (Linux):
+
+- `liquibase` available on PATH (in CI we provide it as a small wrapper that executes `liquibase/liquibase:latest` via Docker).
+
+---
+
 ## Tagging Contract
 
 Use two tag classes:
@@ -113,6 +133,33 @@ Blocking policy:
 
 - both Linux backend profiles are required for RC publication;
 - Windows/macOS smoke checks remain required unchanged.
+
+---
+
+## Liquibase Scenario Contract (hp-lb-jhipster)
+
+The goal of `hp-lb-jhipster` is to validate the Liquibase integration end-to-end
+using a non-trivial changelog tree (includes + CSV loads).
+
+Source:
+
+- `examples/liquibase/jhipster-sample-app`
+
+Flow:
+
+1. `sqlrs prepare:lb --image postgres:17 -- update --changelog-file config/liquibase/master.xml`
+2. `sqlrs run:psql -- -At -f .e2e-query.sql`
+
+The scenario query should validate that Liquibase applied changes by checking a
+small set of stable artifacts, for example:
+
+- `databasechangelog` table exists;
+- `jhi_user` table exists;
+- at least one row in `jhi_user` (from `loadData` CSVs).
+
+This scenario requires host-side Liquibase execution, so it also validates that
+PostgreSQL accepts host connections through the published port (Docker bridge
+source IP).
 
 ---
 

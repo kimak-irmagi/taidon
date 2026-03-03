@@ -244,6 +244,7 @@ jobs:
         scenario:
           - hp-psql-chinook
           - hp-psql-sakila
+          - hp-lb-jhipster
         snapshot_backend:
           - copy
           - btrfs
@@ -256,6 +257,11 @@ jobs:
         exclude:
           - platform: windows
             scenario: hp-psql-sakila
+          - platform: windows
+            scenario: hp-lb-jhipster
+          - platform: linux
+            scenario: hp-lb-jhipster
+            snapshot_backend: btrfs
           - platform: windows
             snapshot_backend: copy
     steps:
@@ -529,6 +535,24 @@ jobs:
           "engine_windows_bin=$($windowsEngine.FullName)" >> $env:GITHUB_OUTPUT
           "engine_linux_bin=$($linuxEngine.FullName)" >> $env:GITHUB_OUTPUT
 
+      - name: Provide liquibase via liquibase/liquibase:latest (linux)
+        if: matrix.platform == 'linux' && matrix.scenario == 'hp-lb-jhipster'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin_dir="${RUNNER_TEMP}/liquibase-bin"
+          mkdir -p "$bin_dir"
+          cat > "$bin_dir/liquibase" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          workdir="$(pwd)"
+          exec docker run --rm --network host \
+            -v "$workdir:$workdir" -w "$workdir" \
+            liquibase/liquibase:latest "$@"
+          EOF
+          chmod +x "$bin_dir/liquibase"
+          echo "$bin_dir" >> "$GITHUB_PATH"
+
       - name: Run happy-path scenario (linux)
         if: matrix.platform == 'linux'
         env:
@@ -542,6 +566,7 @@ jobs:
           mkdir -p "${XDG_CONFIG_HOME}" "${XDG_STATE_HOME}" "${XDG_CACHE_HOME}"
           case "${{ matrix.scenario }}" in
             hp-psql-sakila) scenario_timeout="45m" ;;
+            hp-lb-jhipster) scenario_timeout="45m" ;;
             *) scenario_timeout="15m" ;;
           esac
           node scripts/e2e-release/run-scenario.mjs \
@@ -561,6 +586,7 @@ jobs:
           case "${{ matrix.scenario }}" in
             hp-psql-chinook) golden="test/e2e/release/hp-psql-chinook/golden.txt" ;;
             hp-psql-sakila) golden="test/e2e/release/hp-psql-sakila/golden.txt" ;;
+            hp-lb-jhipster) golden="test/e2e/release/hp-lb-jhipster/golden.txt" ;;
             *) echo "unknown scenario: ${{ matrix.scenario }}" >&2; exit 1 ;;
           esac
           node scripts/e2e-release/compare-golden.mjs \
