@@ -538,7 +538,7 @@ jobs:
         if: matrix.platform == 'linux' && matrix.scenario == 'hp-lb-jhipster'
         uses: liquibase/setup-liquibase@v2
         with:
-          version: 'latest'
+          version: '5.0.1'
           edition: 'community'
 
       - name: Install Liquibase PostgreSQL driver via lpm (linux host)
