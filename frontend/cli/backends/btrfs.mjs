@@ -79,23 +79,6 @@ export const btrfsBackend = {
         }
 
         const source = volume.meta.subvolume;
-        const snapshotPath = path.join(
-            workspace,
-            `snap-${runId}-${stateId}`
-        );
-
-        // 1️⃣ создаём read-only snapshot (O(1), COW)
-        try {
-            await btrfs([
-                "subvolume",
-                "snapshot",
-                "-r",
-                source,
-                snapshotPath
-            ]);
-        } catch (err) {
-            throw new Error(`Failed to create Btrfs snapshot ${snapshotPath}: ${err.message}`);
-        }
 
         // 2️⃣ создаём каталог состояния (метаданные)
         const stateDir = path.join(workspace, "states", stateId);
@@ -126,6 +109,24 @@ export const btrfsBackend = {
                 2
             )
         );
+
+        const snapshotPath = path.join(
+            stateDir,
+            "pgdata"
+        );
+
+        // 1️⃣ создаём read-only snapshot (O(1), COW)
+        try {
+            await btrfs([
+                "subvolume",
+                "snapshot",
+                "-r",
+                source,
+                snapshotPath
+            ]);
+        } catch (err) {
+            throw new Error(`Failed to create Btrfs snapshot ${snapshotPath}: ${err.message}`);
+        }
 
         return {
             stateId,
