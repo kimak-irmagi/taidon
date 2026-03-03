@@ -8,6 +8,7 @@ import { ensureDir, writeJson, nowMs } from "./sqlrs.d/lib/fs.mjs";
 import { run, runCapture } from "./sqlrs.d/lib/proc.mjs";
 import { docker } from "./sqlrs.d/lib/docker.mjs";
 import { loadBackend } from "./sqlrs.d/lib/backend.mjs";
+import { btrfs } from "./backends/btrfs.mjs"
 
 function randomId() {
   return `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
@@ -532,7 +533,20 @@ async function main() {
   let reusedState = false;
   if (prepareState && stateDir && fs.existsSync(path.join(stateDir, "pgdata"))) {
     console.log(`[state] reuse ${prepareState.stateId}`);
-    copyDir(path.join(stateDir, "pgdata"), pgdataHostPath);
+    const snapshotSource = path.join(stateDir, "pgdata");
+
+    // Удаляем старый pgdata если существует
+    if (fs.existsSync(pgdataHostPath)) {
+      await btrfs(["subvolume", "delete", pgdataHostPath]);
+    }
+
+    await btrfs([
+      "subvolume",
+      "snapshot",
+      snapshotSource,
+      pgdataHostPath
+    ]);
+
     reusedState = true;
     metrics.state = { state_id: prepareState.stateId, path: stateDir, reused: true };
   }

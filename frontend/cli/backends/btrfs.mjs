@@ -4,7 +4,7 @@ import { runCapture } from "../lib/proc.mjs";
 
 const BTRFS_ROOT = "/home/kislosladky/diploma/btrfs-ws"; 
 
-async function btrfs(cmd) {
+export async function btrfs(cmd) {
     return runCapture({ cmd: ["sudo", "btrfs", ...cmd] });
 }
 
