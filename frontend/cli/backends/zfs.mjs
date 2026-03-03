@@ -102,7 +102,8 @@ export const zfsBackend = {
 
         // 1️⃣ создаём ZFS snapshot (атомарно, O(1))
         try {
-            await zfs(["clone", dataset, snapshot]);
+            await zfs(["snapshot", `${dataset}@${stateId}`]);
+            await zfs(["clone", `${dataset}@${stateId}`, snapshot]);
         } catch (err) {
             throw new Error(`Failed to create ZFS snapshot ${snapshot}: ${err.message}`);
         }
