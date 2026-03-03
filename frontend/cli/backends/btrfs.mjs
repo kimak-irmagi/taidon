@@ -15,7 +15,7 @@ async function ensureDir(dir) {
 export const btrfsBackend = {
 
     async createVolume({ workspace, runId }) {
-        const subvolPath = path.join(workspace, "runs", runId);
+        const subvolPath = path.join(workspace, "volumes", "btrfs", runId);
 
         // 1️⃣ создать subvolume
         await btrfs([
