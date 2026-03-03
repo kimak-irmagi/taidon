@@ -48,7 +48,7 @@ export const zfsBackend = {
         if (!volume?.meta?.dataset) return;
 
         // recursive destroy is safe for clones
-        await zfs(["destroy", "-r", volume.meta.dataset]);
+        // await zfs(["destroy", "-r", volume.meta.dataset]);
     },
 
     async statBytes({ volume }) {
