@@ -533,7 +533,8 @@ async function main() {
   let reusedState = false;
   if (prepareState && stateDir && fs.existsSync(path.join(stateDir, "pgdata"))) {
     console.log(`[state] reuse ${prepareState.stateId}`);
-    const statePath = path.join(stateDir, "pgdata");
+    const statePath = path.join(ZFS_ROOT, "states", prepareState.stateId, "pgdata");
+
     // copyDir(path.join(stateDir, "pgdata"), pgdataHostPath);
     const newDataset = `${ZFS_ROOT}/volumes/zfs/${runId}`;
     try {
