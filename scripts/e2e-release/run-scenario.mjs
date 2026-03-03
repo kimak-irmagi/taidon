@@ -303,6 +303,10 @@ async function main() {
   const workspaceDir = path.join(outDir, "workspace");
   ensureDir(workspaceDir);
   fs.cpSync(exampleDir, workspaceDir, { recursive: true });
+  const workspaceMarkerDir = path.join(workspaceDir, ".sqlrs");
+  if (fs.existsSync(workspaceMarkerDir)) {
+    fs.rmSync(workspaceMarkerDir, { recursive: true, force: true });
+  }
   const storePlan = resolveStorePlan(snapshotBackend, outDir);
   let cleanupStore = () => {};
   cleanupStore = setupStorePlan(storePlan);
