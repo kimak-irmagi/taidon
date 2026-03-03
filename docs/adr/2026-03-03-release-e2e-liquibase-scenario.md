@@ -21,14 +21,18 @@ Date: 2026-03-03
 - Timestamp: 2026-03-03T16:44:07.671126+07:00
 - User: @evilguest
 - Agent: Codex CLI (GPT-5.2)
-- Question: What scope should the Liquibase scenario cover, and how should Liquibase be provided in CI?
+- Question: What scope should the Liquibase scenario cover, and how should
+  Liquibase be provided in CI?
 - Alternatives:
   - Run the scenario on `copy+btrfs` snapshot backends in the Linux matrix.
   - Run the scenario on `copy` only (keep matrix size/time bounded).
   - Install pinned Liquibase CLI binaries (version+checksum) on the runner.
   - Install Liquibase via OS package manager (less deterministic).
-  - Provide `liquibase` via a PATH wrapper that executes `liquibase/liquibase:latest` using Docker.
+  - Install Liquibase on the host runner via `liquibase/setup-liquibase@v1` with
+  `version: latest`.
 - Decision: Run `hp-lb-jhipster` on Linux with `snapshot_backend=copy` only, and
-  provide `liquibase` via a wrapper around `liquibase/liquibase:latest`.
+  provide host `liquibase` via `liquibase/setup-liquibase@v1` with `version: latest`
+  and `edition: community`.
 - Rationale: `btrfs` behavior is already validated by existing psql scenarios,
-  while using `latest` catches upstream regressions from Liquibase itself.
+  while using host `latest` catches upstream regressions from Liquibase itself
+  in the same execution mode users run locally.
