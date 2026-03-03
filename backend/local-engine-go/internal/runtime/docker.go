@@ -296,6 +296,32 @@ func ensureHostAuth(dataDir string) error {
 	return nil
 }
 
+func (r *DockerRuntime) ensureContainerHostAuth(ctx context.Context, containerID string) error {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return fmt.Errorf("container id is required")
+	}
+
+	script := fmt.Sprintf(
+		"set -e; f=%q; "+
+			"[ -f \"$f\" ] || exit 0; "+
+			"grep -Fq \"0.0.0.0/0\" \"$f\" || echo \"host all all 0.0.0.0/0 trust\" >> \"$f\"; "+
+			"grep -Fq \"::/0\" \"$f\" || echo \"host all all ::/0 trust\" >> \"$f\"",
+		filepath.ToSlash(filepath.Join(PostgresDataDir, "pg_hba.conf")),
+	)
+	_, err := r.Exec(ctx, containerID, ExecRequest{
+		User: "postgres",
+		Args: []string{"sh", "-c", script},
+	})
+	if err != nil {
+		if isDockerUnavailable(err) {
+			return fmt.Errorf("docker is not running: %w", err)
+		}
+		return fmt.Errorf("pg_hba.conf update failed: %w", err)
+	}
+	return nil
+}
+
 func pgDataHostDir(dataDir string) string {
 	dataDir = strings.TrimSpace(dataDir)
 	if dataDir == "" {
@@ -481,6 +507,10 @@ func (r *DockerRuntime) Start(ctx context.Context, req StartRequest) (Instance, 
 		}
 	}
 	if err := ensureHostAuth(req.DataDir); err != nil {
+		_ = r.Stop(ctx, containerID)
+		return Instance{}, err
+	}
+	if err := r.ensureContainerHostAuth(ctx, containerID); err != nil {
 		_ = r.Stop(ctx, containerID)
 		return Instance{}, err
 	}

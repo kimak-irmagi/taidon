@@ -18,6 +18,7 @@ func TestDockerRuntimeStartSkipsInvalidMountsAndMarksReadOnly(t *testing.T) {
 			{output: ""},              // chmod
 			{output: "container-1\n"}, // docker run
 			{output: ""},              // test -f PG_VERSION
+			{output: ""},              // ensureContainerHostAuth
 			{output: ""},              // pg_ctl start
 			{output: "accepting connections\n"},
 			{output: "0.0.0.0:5432\n"},
