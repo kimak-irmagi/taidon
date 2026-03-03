@@ -1017,3 +1017,111 @@ func TestRunLsGetInstanceError(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 }
+
+func TestPrintStatesTableCompactTreePrefixes(t *testing.T) {
+	rows := []client.StateEntry{
+		{
+			StateID:     "aaaaaaaaaaaa",
+			ImageID:     "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			PrepareKind: "psql",
+			PrepareArgs: "-c select 1",
+			CreatedAt:   "2025-01-01T00:00:00Z",
+			RefCount:    1,
+		},
+		{
+			StateID:       "bbbbbbbbbbbb",
+			ParentStateID: strPtr("aaaaaaaaaaaa"),
+			ImageID:       "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			PrepareKind:   "psql",
+			PrepareArgs:   "-c select 2",
+			CreatedAt:     "2025-01-01T00:00:00Z",
+			RefCount:      1,
+		},
+		{
+			StateID:       "dddddddddddd",
+			ParentStateID: strPtr("bbbbbbbbbbbb"),
+			ImageID:       "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			PrepareKind:   "psql",
+			PrepareArgs:   "-c select 3",
+			CreatedAt:     "2025-01-01T00:00:00Z",
+			RefCount:      1,
+		},
+		{
+			StateID:       "cccccccccccc",
+			ParentStateID: strPtr("aaaaaaaaaaaa"),
+			ImageID:       "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			PrepareKind:   "psql",
+			PrepareArgs:   "-c select 4",
+			CreatedAt:     "2025-01-01T00:00:00Z",
+			RefCount:      1,
+		},
+		{
+			StateID:       "eeeeeeeeeeee",
+			ParentStateID: strPtr("cccccccccccc"),
+			ImageID:       "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			PrepareKind:   "psql",
+			PrepareArgs:   "-c select 5",
+			CreatedAt:     "2025-01-01T00:00:00Z",
+			RefCount:      1,
+		},
+	}
+
+	var buf bytes.Buffer
+	printStatesTable(&buf, rows, false, false)
+	out := buf.String()
+
+	if !strings.Contains(out, "\n+bbbbbbbbbbbb") {
+		t.Fatalf("expected + prefix for first child, got %q", out)
+	}
+	if !strings.Contains(out, "\n`cccccccccccc") {
+		t.Fatalf("expected ` prefix for last child, got %q", out)
+	}
+	if !strings.Contains(out, "\n|`dddddddddddd") {
+		t.Fatalf("expected |` prefix for grandchild, got %q", out)
+	}
+	if !strings.Contains(out, "\n `eeeeeeeeeeee") {
+		t.Fatalf("expected space-prefixed grandchild, got %q", out)
+	}
+
+	rootPos := strings.Index(out, "\naaaaaaaaaaaa")
+	childPos := strings.Index(out, "\n+bbbbbbbbbbbb")
+	grandChildPos := strings.Index(out, "\n|`dddddddddddd")
+	lastChildPos := strings.Index(out, "\n`cccccccccccc")
+	spaceGrandChildPos := strings.Index(out, "\n `eeeeeeeeeeee")
+	if rootPos == -1 || childPos == -1 || grandChildPos == -1 || lastChildPos == -1 || spaceGrandChildPos == -1 {
+		t.Fatalf("expected all nodes in output, got %q", out)
+	}
+	if !(rootPos < childPos && childPos < grandChildPos && grandChildPos < lastChildPos && lastChildPos < spaceGrandChildPos) {
+		t.Fatalf("expected parent-first ordering, got %q", out)
+	}
+}
+
+func TestPrintLs_ImageIDCompactFormatting(t *testing.T) {
+	image := "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	rows := []client.NameEntry{
+		{
+			Name:    "dev",
+			ImageID: image,
+			StateID: "aaaaaaaaaaaa",
+			Status:  "active",
+		},
+	}
+
+	var buf bytes.Buffer
+	printNamesTable(&buf, rows, false, false)
+	out := buf.String()
+	if !strings.Contains(out, "postgres@0123456789ab") {
+		t.Fatalf("expected compact digest image id, got %q", out)
+	}
+
+	buf.Reset()
+	printNamesTable(&buf, rows, false, true)
+	out = buf.String()
+	if !strings.Contains(out, image) {
+		t.Fatalf("expected full image id in --long output, got %q", out)
+	}
+}
+
+func strPtr(value string) *string {
+	return &value
+}

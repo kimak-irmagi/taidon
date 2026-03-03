@@ -74,7 +74,12 @@ Flags:
 
 ## Output (Human)
 
-Human output is a tree:
+Human output is a compact tree (one character per depth level):
+
+- `+` means “this node has following siblings” (not last)
+- `` ` `` means “last sibling”
+- `|` means “there are further siblings at this ancestor depth”
+- space means “no further siblings at this ancestor depth”
 
 - `deleted` or `would delete` for successful actions
 - `blocked (<reason>)` for any node that cannot be deleted
@@ -84,8 +89,8 @@ Example (real deletion):
 
 ```text
 state 6b6f... deleted
-|-- instance 6b6f... deleted (connections=0)
-`-- state 6b6f... deleted
++ instance 6b6f... deleted (connections=0)
+` state 6b6f... deleted
 ```
 
 Example (job deletion):
@@ -98,7 +103,7 @@ Example (`--dry-run`):
 
 ```text
 state 6b6f... would delete
-`-- instance 6b6f... blocked (active_connections) (connections=2)
+` instance 6b6f... blocked (active_connections) (connections=2)
 ```
 
 If `--recurse` is not set, only the root node is shown.

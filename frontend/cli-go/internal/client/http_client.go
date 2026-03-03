@@ -263,6 +263,22 @@ func (c *Client) GetConfig(ctx context.Context, path string, effective bool) (an
 	return out, nil
 }
 
+func (c *Client) GetConfigValue(ctx context.Context, path string, effective bool) (ConfigValue, error) {
+	if strings.TrimSpace(path) == "" {
+		return ConfigValue{}, errors.New("config path is required")
+	}
+	query := url.Values{}
+	addFilter(query, "path", path)
+	if effective {
+		query.Set("effective", "true")
+	}
+	var out ConfigValue
+	if err := c.doJSON(ctx, http.MethodGet, appendQuery("/v1/config", query), true, &out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 func (c *Client) SetConfig(ctx context.Context, req ConfigValue) (ConfigValue, error) {
 	var out ConfigValue
 	body, err := json.Marshal(req)

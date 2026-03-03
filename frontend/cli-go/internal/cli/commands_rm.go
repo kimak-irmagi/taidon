@@ -190,28 +190,18 @@ func printRootNode(w io.Writer, result client.DeleteResult) {
 		return
 	}
 	printNodeLine(w, result.Root, "", true, result)
-	printNodeChildren(w, result.Root.Children, "", result)
+	printNodeChildren(w, result.Root.Children, nil, result)
 }
 
-func printNodeChildren(w io.Writer, children []client.DeleteNode, prefix string, result client.DeleteResult) {
+func printNodeChildren(w io.Writer, children []client.DeleteNode, ancestorsHasNext []bool, result client.DeleteResult) {
 	for i, child := range children {
 		last := i == len(children)-1
-		linePrefix := prefix
-		if last {
-			linePrefix += "`-- "
-		} else {
-			linePrefix += "|-- "
-		}
+		linePrefix := compactTreePrefix(ancestorsHasNext, last) + " "
 		printNodeLine(w, child, linePrefix, false, result)
 
-		nextPrefix := prefix
-		if last {
-			nextPrefix += "    "
-		} else {
-			nextPrefix += "|   "
-		}
 		if len(child.Children) > 0 {
-			printNodeChildren(w, child.Children, nextPrefix, result)
+			nextAncestors := compactTreeNextAncestors(ancestorsHasNext, last)
+			printNodeChildren(w, child.Children, nextAncestors, result)
 		}
 	}
 }
