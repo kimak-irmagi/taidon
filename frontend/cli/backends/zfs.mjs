@@ -13,7 +13,7 @@ async function zfs(cmd) {
 
 export const zfsBackend = {
     async createVolume({ workspace, runId }) {
-    const dataset = `${ZFS_ROOT}/run-${runId}`;
+    const dataset = `${ZFS_ROOT}/volumes/zfs/${runId}`;
 
     // 1. создать пустой dataset
     await zfs([
@@ -84,14 +84,7 @@ export const zfsBackend = {
         }
 
         const dataset = volume.meta.dataset;
-        const snapshot = `${dataset}@${stateId}`;
-
-        // 1️⃣ создаём ZFS snapshot (атомарно, O(1))
-        try {
-            await zfs(["snapshot", snapshot]);
-        } catch (err) {
-            throw new Error(`Failed to create ZFS snapshot ${snapshot}: ${err.message}`);
-        }
+        const snapshot = `${ZFS_ROOT}/states/${stateId}/pgdata`;
 
         // 2️⃣ создаём каталог состояния ТОЛЬКО для метаданных
         const stateDir = path.join(ZFS_ROOT, "states", stateId);
@@ -105,6 +98,13 @@ export const zfsBackend = {
         await runCapture({
             cmd: ["sudo", "chmod", "-R", "777", fsDir]
         });
+
+        // 1️⃣ создаём ZFS snapshot (атомарно, O(1))
+        try {
+            await zfs(["clone", dataset, snapshot]);
+        } catch (err) {
+            throw new Error(`Failed to create ZFS snapshot ${snapshot}: ${err.message}`);
+        }
 
         // 3️⃣ сохраняем описание состояния
         await fs.promises.writeFile(
