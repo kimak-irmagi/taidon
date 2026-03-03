@@ -536,10 +536,10 @@ jobs:
           "engine_linux_bin=$($linuxEngine.FullName)" >> $env:GITHUB_OUTPUT
       - name: Setup Liquibase latest (linux host)
         if: matrix.platform == 'linux' && matrix.scenario == 'hp-lb-jhipster'
-        uses: liquibase/setup-liquibase@v1
+        uses: liquibase/setup-liquibase@v2
         with:
           version: 'latest'
-          edition: community
+          edition: 'community'
 
       - name: Install Liquibase PostgreSQL driver via lpm (linux host)
         if: matrix.platform == 'linux' && matrix.scenario == 'hp-lb-jhipster'
