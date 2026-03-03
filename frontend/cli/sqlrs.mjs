@@ -8,7 +8,7 @@ import { ensureDir, writeJson, nowMs } from "./sqlrs.d/lib/fs.mjs";
 import { run, runCapture } from "./sqlrs.d/lib/proc.mjs";
 import { docker } from "./sqlrs.d/lib/docker.mjs";
 import { loadBackend } from "./sqlrs.d/lib/backend.mjs";
-import { btrfs } from "./backends/btrfs.mjs"
+import { btrfs } from "./sqlrs.d/backends/btrfs.mjs"
 
 function randomId() {
   return `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
