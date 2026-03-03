@@ -8,6 +8,7 @@ import { ensureDir, writeJson, nowMs } from "./sqlrs.d/lib/fs.mjs";
 import { run, runCapture } from "./sqlrs.d/lib/proc.mjs";
 import { docker } from "./sqlrs.d/lib/docker.mjs";
 import { loadBackend } from "./sqlrs.d/lib/backend.mjs";
+import { zfs } from "./sqlrs.d/backends/zfs.mjs";
 
 function randomId() {
   return `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
@@ -532,7 +533,17 @@ async function main() {
   let reusedState = false;
   if (prepareState && stateDir && fs.existsSync(path.join(stateDir, "pgdata"))) {
     console.log(`[state] reuse ${prepareState.stateId}`);
-    copyDir(path.join(stateDir, "pgdata"), pgdataHostPath);
+    const statePath = path.join(stateDir, "pgdata");
+    // copyDir(path.join(stateDir, "pgdata"), pgdataHostPath);
+    const newDataset = `${ZFS_ROOT}/volumes/zfs/${runId}`;
+    try {
+      await zfs(["destroy", "-r", newDataset]);
+    } catch (_) {}
+
+    // 🔥 вместо copyDir — clone
+    await zfs(["snapshot", `${statePath}@${stateId}`]);
+    await zfs(["clone", `${statePath}@${stateId}`, newDataset]);
+
     reusedState = true;
     metrics.state = { state_id: prepareState.stateId, path: stateDir, reused: true };
   }
