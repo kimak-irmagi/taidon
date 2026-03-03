@@ -70,9 +70,7 @@ func runPlanKind(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg confi
 		if err != nil {
 			return err
 		}
-		if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
-			liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
-		}
+		liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
 		liquibaseEnv := resolveLiquibaseEnv()
 		workDir, err := normalizeWorkDir(cwd, converter)
 		if err != nil {
