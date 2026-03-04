@@ -38,7 +38,7 @@ jobs:
       SCENARIO_ID: hp-lb-jhipster
       SNAPSHOT_BACKEND: copy
       FLOW_RUNS: ${{ github.event.inputs.flow_runs || '2' }}
-      LIQUIBASE_VERSION: ${{ github.event.inputs.liquibase_version || 'latest' }}
+      LIQUIBASE_VERSION: ${{ github.event.inputs.liquibase_version || '5.0.1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
