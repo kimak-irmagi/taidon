@@ -10,12 +10,14 @@ on:
       liquibase_version:
         description: "Liquibase version (latest recommended for regression detection)"
         required: false
-        default: "5.0.1"
+        default: "latest"
   pull_request:
     paths:
       - ".github/workflows/e2e-liquibase.yml"
       - "backend/local-engine-go/**"
       - "frontend/cli-go/**"
+      - "scripts/fetch-sql-scripts.mjs"
+      - "scripts/external/**"
       - "scripts/e2e-release/**"
       - "test/e2e/release/**"
       - "examples/liquibase/**"
@@ -26,6 +28,8 @@ on:
       - ".github/workflows/e2e-liquibase.yml"
       - "backend/local-engine-go/**"
       - "frontend/cli-go/**"
+      - "scripts/fetch-sql-scripts.mjs"
+      - "scripts/external/**"
       - "scripts/e2e-release/**"
       - "test/e2e/release/**"
       - "examples/liquibase/**"
@@ -38,7 +42,7 @@ jobs:
       SCENARIO_ID: hp-lb-jhipster
       SNAPSHOT_BACKEND: copy
       FLOW_RUNS: ${{ github.event.inputs.flow_runs || '2' }}
-      LIQUIBASE_VERSION: ${{ github.event.inputs.liquibase_version || '5.0.1' }}
+      LIQUIBASE_VERSION: ${{ github.event.inputs.liquibase_version || 'latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,6 +56,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Use pnpm
+        run: corepack prepare pnpm@10.26.2 --activate
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch SQL/Liquibase example assets (locked)
+        run: pnpm fetch:sql --lock
 
       - name: Build CLI binary
         working-directory: frontend/cli-go
