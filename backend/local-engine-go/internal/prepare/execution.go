@@ -892,9 +892,12 @@ func (e *taskExecutor) startRuntime(ctx context.Context, jobID string, prepared 
 	if err := removeAllFn(runtimeDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 		staleRuntimeDir := fmt.Sprintf("%s.stale-%d", runtimeDir, time.Now().UnixNano())
 		if renameErr := os.Rename(runtimeDir, staleRuntimeDir); renameErr != nil {
-			return nil, errorResponse("internal_error", "cannot reset runtime dir", fmt.Sprintf("remove=%v rename=%v", err, renameErr))
+			if !errors.Is(renameErr, os.ErrNotExist) && !errors.Is(renameErr, syscall.ENOTDIR) {
+				return nil, errorResponse("internal_error", "cannot reset runtime dir", fmt.Sprintf("remove=%v rename=%v", err, renameErr))
+			}
+		} else {
+			m.logInfoJob(jobID, "runtime dir reset via rename old=%s new=%s remove_err=%v", runtimeDir, staleRuntimeDir, err)
 		}
-		m.logInfoJob(jobID, "runtime dir reset via rename old=%s new=%s remove_err=%v", runtimeDir, staleRuntimeDir, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(runtimeDir), 0o700); err != nil {
 		if noSpaceResp := noSpaceErrorResponse("insufficient storage before state execution", "prepare_step", err); noSpaceResp != nil {
