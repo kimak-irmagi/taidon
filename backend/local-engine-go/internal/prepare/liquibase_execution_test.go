@@ -2,6 +2,9 @@ package prepare
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -75,6 +78,41 @@ func TestExecuteLiquibaseStepUsesUpdateCountForChangeset(t *testing.T) {
 	}
 	if !containsArg(args, "--count") || !containsArg(args, "1") {
 		t.Fatalf("expected count args, got %+v", args)
+	}
+}
+
+func TestExecuteLiquibaseStepRelativizesHostChangelogPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("host liquibase relative-path behavior is linux/mac specific")
+	}
+	workspace := t.TempDir()
+	changelog := filepath.Join(workspace, "config", "liquibase", "master.xml")
+	if err := os.MkdirAll(filepath.Dir(changelog), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeTempFile(t, changelog, "<databaseChangeLog/>")
+
+	liquibase := &fakeLiquibaseRunner{output: "ok"}
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{liquibase: liquibase})
+	prepared := preparedRequest{
+		request:        Request{PrepareKind: "lb", WorkDir: workspace},
+		normalizedArgs: []string{"update", "--changelog-file", changelog},
+	}
+	rt := &jobRuntime{instance: engineRuntime.Instance{ID: "container-1", Host: "127.0.0.1", Port: 5432}}
+
+	if errResp := mgr.executeLiquibaseStep(context.Background(), "job-1", prepared, rt, taskState{}); errResp != nil {
+		t.Fatalf("executeLiquibaseStep: %+v", errResp)
+	}
+	if len(liquibase.runs) != 1 {
+		t.Fatalf("expected liquibase run call, got %+v", liquibase.runs)
+	}
+	rel := filepath.Join("config", "liquibase", "master.xml")
+	args := liquibase.runs[0].Args
+	if !containsArgPair(args, "--changelog-file", rel) {
+		t.Fatalf("expected relative --changelog-file=%q, got %+v", rel, args)
+	}
+	if !containsArg(args, "update-count") {
+		t.Fatalf("expected update-count command, got %+v", args)
 	}
 }
 

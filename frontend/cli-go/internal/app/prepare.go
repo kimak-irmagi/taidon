@@ -201,9 +201,7 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
-		liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
-	}
+	liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
 	liquibaseEnv := resolveLiquibaseEnv()
 	workDir, err := normalizeWorkDir(cwd, converter)
 	if err != nil {
@@ -591,9 +589,9 @@ func rewriteLiquibasePathArg(flag string, value string, workspaceRoot string, cw
 }
 
 func relativizeLiquibaseArgs(args []string, workspaceRoot string, cwd string) []string {
-	base := strings.TrimSpace(workspaceRoot)
+	base := strings.TrimSpace(cwd)
 	if base == "" {
-		base = cwd
+		base = strings.TrimSpace(workspaceRoot)
 	}
 	if strings.TrimSpace(base) == "" {
 		return args

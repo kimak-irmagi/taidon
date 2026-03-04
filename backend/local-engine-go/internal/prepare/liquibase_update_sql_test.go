@@ -2,7 +2,9 @@ package prepare
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -144,6 +146,42 @@ func TestRunLiquibaseUpdateSQLSuccess(t *testing.T) {
 	}
 	if len(liquibase.runs) != 1 || !containsArg(liquibase.runs[0].Args, "updateSQL") {
 		t.Fatalf("expected updateSQL in args, got %+v", liquibase.runs)
+	}
+}
+
+func TestRunLiquibaseUpdateSQLRelativizesHostChangelogPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("host liquibase relative-path behavior is linux/mac specific")
+	}
+	workspace := t.TempDir()
+	changelog := filepath.Join(workspace, "config", "liquibase", "master.xml")
+	if err := os.MkdirAll(filepath.Dir(changelog), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeTempFile(t, changelog, "<databaseChangeLog/>")
+
+	output := strings.Join([]string{
+		"-- Changeset config/liquibase/master.xml::1::dev",
+		"INSERT INTO databasechangelog (MD5SUM) VALUES ('abc');",
+	}, "\n")
+	liquibase := &fakeLiquibaseRunner{output: output}
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{liquibase: liquibase})
+	prepared := preparedRequest{
+		request:        Request{PrepareKind: "lb", WorkDir: workspace},
+		normalizedArgs: []string{"update", "--changelog-file", changelog},
+	}
+	rt := &jobRuntime{instance: engineRuntime.Instance{Host: "127.0.0.1", Port: 5432}}
+
+	_, errResp := mgr.runLiquibaseUpdateSQL(context.Background(), "job-1", prepared, rt)
+	if errResp != nil {
+		t.Fatalf("runLiquibaseUpdateSQL: %+v", errResp)
+	}
+	if len(liquibase.runs) != 1 {
+		t.Fatalf("expected one liquibase run, got %+v", liquibase.runs)
+	}
+	rel := filepath.Join("config", "liquibase", "master.xml")
+	if !containsArgPair(liquibase.runs[0].Args, "--changelog-file", rel) {
+		t.Fatalf("expected relative --changelog-file=%q, got %v", rel, liquibase.runs[0].Args)
 	}
 }
 

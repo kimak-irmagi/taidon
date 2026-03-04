@@ -110,8 +110,8 @@ func TestRelativizeLiquibaseArgsCoverage(t *testing.T) {
 	abs := filepath.Join(root, "change.xml")
 	args := []string{"--changelog-file", abs, "--defaults-file=" + abs}
 	out := relativizeLiquibaseArgs(args, root, cwd)
-	if out[1] == abs {
-		t.Fatalf("expected relative changelog path, got %q", out[1])
+	if out[1] != abs {
+		t.Fatalf("expected changelog path to remain absolute when outside cwd, got %q", out[1])
 	}
 }
 

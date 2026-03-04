@@ -9,12 +9,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sqlrs/cli/internal/client"
+	"sqlrs/cli/internal/util"
 	"strings"
 	"sync"
 	"time"
-
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/util"
+	"unicode"
 )
 
 var isWindows = runtime.GOOS == "windows"
@@ -260,25 +260,35 @@ func ensureWSLStoreMount(ctx context.Context, opts ConnectOptions) error {
 	}
 	logVerbose(opts.Verbose, "ensuring WSL store mount (%s) via %s", fstype, unit)
 
+	var mountUnitErr error
 	if err := ensureWSLMountUnitActive(ctx, opts.WSLDistro, unit); err != nil {
+		mountUnitErr = err
 		if runtime.GOOS == "windows" && strings.TrimSpace(opts.WSLVHDXPath) != "" {
 			if attachErr := attachVHDXToWSL(ctx, opts.WSLVHDXPath, opts.Verbose); attachErr != nil {
 				return appendWSLMountLogs(ctx, opts.WSLDistro, unit, attachErr)
 			}
 			if err := ensureWSLMountUnitActive(ctx, opts.WSLDistro, unit); err != nil {
-				return err
+				mountUnitErr = err
+				logVerbose(opts.Verbose, "WSL mount unit not active after attach: %v", err)
+			} else {
+				mountUnitErr = nil
 			}
 		} else {
 			return err
 		}
 	}
-
 	out, err := runWSLCommandInInitNamespace(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
 	if err != nil {
+		if mountUnitErr != nil {
+			return fmt.Errorf("%v; findmnt failed: %w", mountUnitErr, err)
+		}
 		return err
 	}
 	fs := strings.TrimSpace(out)
 	if fs == "" {
+		if mountUnitErr != nil {
+			return fmt.Errorf("%v; WSL store mount is not available (empty fstype)", mountUnitErr)
+		}
 		return fmt.Errorf("WSL store mount is not available (empty fstype)")
 	}
 	if fs != fstype {
@@ -288,18 +298,31 @@ func ensureWSLStoreMount(ctx context.Context, opts ConnectOptions) error {
 				return appendWSLMountLogs(ctx, opts.WSLDistro, unit, attachErr)
 			}
 			if err := ensureWSLMountUnitActive(ctx, opts.WSLDistro, unit); err != nil {
-				return err
+				mountUnitErr = err
+				logVerbose(opts.Verbose, "WSL mount unit still not active after retry attach: %v", err)
+			} else {
+				mountUnitErr = nil
 			}
 			out, err = runWSLCommandInInitNamespace(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
 			if err != nil {
+				if mountUnitErr != nil {
+					return fmt.Errorf("%v; findmnt retry failed: %w", mountUnitErr, err)
+				}
 				return err
 			}
 			fs = strings.TrimSpace(out)
 			if fs == "" {
+				if mountUnitErr != nil {
+					return fmt.Errorf("%v; WSL store mount is not available (empty fstype)", mountUnitErr)
+				}
 				return fmt.Errorf("WSL store mount is not available (empty fstype)")
 			}
 			if fs != fstype {
-				return appendWSLMountLogs(ctx, opts.WSLDistro, unit, fmt.Errorf("WSL store mount is %s, expected %s", fs, fstype))
+				mismatchErr := fmt.Errorf("WSL store mount is %s, expected %s", fs, fstype)
+				if mountUnitErr != nil {
+					mismatchErr = fmt.Errorf("%v; %w", mountUnitErr, mismatchErr)
+				}
+				return appendWSLMountLogs(ctx, opts.WSLDistro, unit, mismatchErr)
 			}
 			return nil
 		}
@@ -316,6 +339,12 @@ func runWSLCommand(ctx context.Context, distro string, args ...string) (string, 
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		text := strings.TrimSpace(string(output))
+		if text != "" {
+			return string(output), fmt.Errorf("%v (%s)", err, text)
+		}
+	}
 	return string(output), err
 }
 
@@ -378,6 +407,10 @@ func attachVHDXToWSL(ctx context.Context, vhdxPath string, verbose bool) error {
 	logVerbose(verbose, "attaching VHDX: %s", vhdxPath)
 	out, err := runHostCommandFn(ctx, "wsl.exe", "--mount", vhdxPath, "--vhd", "--bare")
 	if err != nil {
+		if isVHDXAlreadyAttachedError(err, out) {
+			logVerbose(verbose, "VHDX already attached: %s", vhdxPath)
+			return nil
+		}
 		if strings.TrimSpace(out) != "" {
 			return fmt.Errorf("attach VHDX failed: %v (%s)", err, strings.TrimSpace(out))
 		}
@@ -386,6 +419,31 @@ func attachVHDXToWSL(ctx context.Context, vhdxPath string, verbose bool) error {
 	return nil
 }
 
+func isVHDXAlreadyAttachedError(err error, output string) bool {
+	if err == nil {
+		return false
+	}
+	if strings.Contains(normalizeVHDXAttachErrorText(err.Error()), "wsl_e_user_vhd_already_attached") {
+		return true
+	}
+	normalizedOutput := normalizeVHDXAttachErrorText(output)
+	return strings.Contains(normalizedOutput, "wsl_e_user_vhd_already_attached") ||
+		strings.Contains(normalizedOutput, "alreadyattached")
+}
+
+func normalizeVHDXAttachErrorText(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	var builder strings.Builder
+	builder.Grow(len(value))
+	for _, symbol := range strings.ToLower(value) {
+		if unicode.IsLetter(symbol) || unicode.IsDigit(symbol) || symbol == '_' {
+			builder.WriteRune(symbol)
+		}
+	}
+	return builder.String()
+}
 func isExitStatus(err error, code int) bool {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {

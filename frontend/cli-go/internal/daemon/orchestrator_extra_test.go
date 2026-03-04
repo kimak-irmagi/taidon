@@ -121,3 +121,27 @@ func TestStartLogTailSeekError(t *testing.T) {
 		t.Skip("directory is seekable on this platform")
 	}
 }
+
+func TestAttachVHDXToWSLAlreadyAttachedFromOutput(t *testing.T) {
+	prev := runHostCommandFn
+	runHostCommandFn = func(ctx context.Context, args ...string) (string, error) {
+		return "Failed to attach disk: W S L _ E _ U S E R _ V H D _ A L R E A D Y _ A T T A C H E D", errors.New("exit status 0xffffffff")
+	}
+	t.Cleanup(func() { runHostCommandFn = prev })
+
+	if err := attachVHDXToWSL(context.Background(), "C:\\temp\\store.vhdx", false); err != nil {
+		t.Fatalf("expected already-attached VHDX to be tolerated, got %v", err)
+	}
+}
+
+func TestAttachVHDXToWSLAlreadyAttachedFromError(t *testing.T) {
+	prev := runHostCommandFn
+	runHostCommandFn = func(ctx context.Context, args ...string) (string, error) {
+		return "", errors.New("Wsl/Service/AttachDisk/MountDisk/WSL_E_USER_VHD_ALREADY_ATTACHED")
+	}
+	t.Cleanup(func() { runHostCommandFn = prev })
+
+	if err := attachVHDXToWSL(context.Background(), "C:\\temp\\store.vhdx", false); err != nil {
+		t.Fatalf("expected already-attached VHDX to be tolerated, got %v", err)
+	}
+}

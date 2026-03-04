@@ -74,6 +74,7 @@ func TestDockerRuntimeStart(t *testing.T) {
 			{output: "container-1\n"},
 			{output: ""},
 			{output: ""},
+			{output: ""},
 			{output: "accepting connections\n"},
 			{output: "0.0.0.0:54321\n"},
 		},
@@ -119,6 +120,22 @@ func TestDockerRuntimeStart(t *testing.T) {
 	}
 	if !foundMkdir || !foundChown || !foundChmod {
 		t.Fatalf("expected mkdir/chown/chmod calls, got %+v", runner.calls[:5])
+	}
+
+	foundHostAuthPatch := false
+	for _, call := range runner.calls {
+		for _, arg := range call.args {
+			if strings.Contains(arg, "pg_hba.conf") {
+				foundHostAuthPatch = true
+				break
+			}
+		}
+		if foundHostAuthPatch {
+			break
+		}
+	}
+	if !foundHostAuthPatch {
+		t.Fatalf("expected pg_hba.conf patch exec call, got %+v", runner.calls)
 	}
 }
 
@@ -483,6 +500,7 @@ func TestDockerRuntimeStartRunsInitdbWhenMissing(t *testing.T) {
 			{output: ""},
 			{output: ""},
 			{output: ""},
+			{output: ""},
 			{output: "accepting connections\n"},
 			{output: "0.0.0.0:54321\n"},
 		},
@@ -525,6 +543,7 @@ func TestDockerRuntimeStartPortParseError(t *testing.T) {
 			{output: ""},
 			{output: ""},
 			{output: "container-1\n"},
+			{output: ""},
 			{output: ""},
 			{output: ""},
 			{output: "accepting connections\n"},
@@ -778,6 +797,7 @@ func TestDockerRuntimeWaitForReadyTimeout(t *testing.T) {
 func TestDockerRuntimeWaitForReadySuccess(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
+			{output: ""},
 			{output: "accepting connections\n"},
 		},
 	}
@@ -1207,6 +1227,7 @@ func TestDockerRuntimeStartPortCommandError(t *testing.T) {
 			{output: "container-1\n"},
 			{output: ""},
 			{output: ""},
+			{output: ""},
 			{output: "accepting connections\n"},
 			{output: "port error\n", err: errors.New("fail")},
 		},
@@ -1272,6 +1293,7 @@ func TestDockerRuntimeWaitForReadyContextCancelled(t *testing.T) {
 func TestDockerRuntimeWaitForReadyDefaultTimeout(t *testing.T) {
 	runner := &fakeRunner{
 		responses: []runResponse{
+			{output: ""},
 			{output: "accepting connections\n"},
 		},
 	}

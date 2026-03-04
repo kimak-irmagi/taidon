@@ -1123,6 +1123,9 @@ func (e *taskExecutor) runLiquibaseUpdateSQL(ctx context.Context, jobID string, 
 		}
 		workDir = mappedDir
 	}
+	if !windowsMode {
+		args = relativizeLiquibaseHostFileArgs(args, workDir)
+	}
 	args = replaceLiquibaseCommand(args, "updateSQL")
 	args = prependLiquibaseConnectionArgs(args, rt.instance)
 	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
@@ -1161,6 +1164,65 @@ func (e *taskExecutor) runLiquibaseUpdateSQL(ctx context.Context, jobID string, 
 		return nil, errorResponse("invalid_argument", "cannot parse liquibase changesets", err.Error())
 	}
 	return changesets, nil
+}
+
+func relativizeLiquibaseHostFileArgs(args []string, workDir string) []string {
+	base := strings.TrimSpace(workDir)
+	if base == "" {
+		return args
+	}
+	base = filepath.Clean(base)
+	if resolved, err := filepath.EvalSymlinks(base); err == nil {
+		base = resolved
+	}
+	normalized := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--changelog-file" || arg == "--defaults-file":
+			if i+1 >= len(args) {
+				normalized = append(normalized, arg)
+				continue
+			}
+			normalized = append(normalized, arg, relativizeLiquibaseHostPath(args[i+1], base))
+			i++
+		case strings.HasPrefix(arg, "--changelog-file="):
+			value := strings.TrimPrefix(arg, "--changelog-file=")
+			normalized = append(normalized, "--changelog-file="+relativizeLiquibaseHostPath(value, base))
+		case strings.HasPrefix(arg, "--defaults-file="):
+			value := strings.TrimPrefix(arg, "--defaults-file=")
+			normalized = append(normalized, "--defaults-file="+relativizeLiquibaseHostPath(value, base))
+		default:
+			normalized = append(normalized, arg)
+		}
+	}
+	return normalized
+}
+
+func relativizeLiquibaseHostPath(value string, base string) string {
+	path := strings.TrimSpace(value)
+	if path == "" {
+		return value
+	}
+	if looksLikeRemoteRef(path) || looksLikeWindowsPath(path) {
+		return value
+	}
+	if !filepath.IsAbs(path) {
+		return value
+	}
+	path = filepath.Clean(path)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	rel, err := filepath.Rel(base, path)
+	if err != nil {
+		return value
+	}
+	rel = filepath.Clean(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return value
+	}
+	return rel
 }
 
 func (m *PrepareService) computeTaskHash(prepared preparedRequest) (string, *ErrorResponse) {

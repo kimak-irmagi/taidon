@@ -303,6 +303,10 @@ async function main() {
   const workspaceDir = path.join(outDir, "workspace");
   ensureDir(workspaceDir);
   fs.cpSync(exampleDir, workspaceDir, { recursive: true });
+  const workspaceMarkerDir = path.join(workspaceDir, ".sqlrs");
+  if (fs.existsSync(workspaceMarkerDir)) {
+    fs.rmSync(workspaceMarkerDir, { recursive: true, force: true });
+  }
   const storePlan = resolveStorePlan(snapshotBackend, outDir);
   let cleanupStore = () => {};
   cleanupStore = setupStorePlan(storePlan);
@@ -323,7 +327,16 @@ async function main() {
     containerRuntime
   });
 
-  const prepareArgs = Array.isArray(scenario.prepareArgs) ? scenario.prepareArgs : ["-f", "prepare.sql"];
+  const prepareCmd = typeof scenario.prepareCmd === "string" && scenario.prepareCmd.trim() !== "" ? scenario.prepareCmd : "prepare:psql";
+  const prepareArgs = Array.isArray(scenario.prepareArgs)
+    ? scenario.prepareArgs
+    : prepareCmd === "prepare:psql"
+      ? ["-f", "prepare.sql"]
+      : null;
+  if (!prepareArgs) {
+    throw new Error(`Scenario ${scenarioId} must define prepareArgs for ${prepareCmd}`);
+  }
+
   const runArgs = Array.isArray(scenario.runArgs) ? scenario.runArgs : ["-At", "-f", ".e2e-query.sql"];
   const image = typeof scenario.image === "string" && scenario.image.trim() !== "" ? scenario.image : "postgres:17";
 
@@ -333,7 +346,7 @@ async function main() {
     runTimeout,
     "--workspace",
     workspaceDir,
-    "prepare:psql",
+    prepareCmd,
     "--image",
     image,
     "--",

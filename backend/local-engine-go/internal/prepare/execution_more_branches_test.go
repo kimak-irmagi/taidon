@@ -304,6 +304,64 @@ func TestStartRuntimeReturnsCannotCreateRuntimeDirWhenJobsPathIsFile(t *testing.
 	}
 }
 
+func TestStartRuntimeRenamesRuntimeDirWhenRemoveFails(t *testing.T) {
+	stateRoot := t.TempDir()
+	runtimeDir := filepath.Join(stateRoot, "jobs", "job-1", "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "stale.txt"), []byte("stale"), 0o600); err != nil {
+		t.Fatalf("write stale file: %v", err)
+	}
+
+	originalRemoveAll := removeAllFn
+	removeAllFn = func(path string) error {
+		if path == runtimeDir {
+			return errors.New("permission denied")
+		}
+		return os.RemoveAll(path)
+	}
+	t.Cleanup(func() {
+		removeAllFn = originalRemoveAll
+	})
+
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{
+		stateRoot: stateRoot,
+		runtime:   &fakeRuntime{},
+		statefs:   &fakeStateFS{},
+	})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	_, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "image", ID: "image-1"})
+	if errResp != nil {
+		t.Fatalf("expected runtime start after stale dir rename, got %+v", errResp)
+	}
+
+	renamed, err := filepath.Glob(runtimeDir + ".stale-*")
+	if err != nil {
+		t.Fatalf("glob stale runtime dir: %v", err)
+	}
+	if len(renamed) != 1 {
+		t.Fatalf("expected one renamed stale runtime dir, got %d", len(renamed))
+	}
+	if _, err := os.Stat(filepath.Join(renamed[0], "stale.txt")); err != nil {
+		t.Fatalf("expected stale file in renamed dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "stale.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale file removed from runtime dir")
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "PG_VERSION")); err != nil {
+		t.Fatalf("expected cloned runtime pg_version: %v", err)
+	}
+}
+
 func TestStartRuntimeReturnsDirtyRuntimeDataDirWhenCloneMountHasPostmasterPID(t *testing.T) {
 	mountDir := filepath.Join(t.TempDir(), "runtime-mount")
 	if err := os.MkdirAll(mountDir, 0o700); err != nil {
@@ -451,5 +509,112 @@ func TestCreateInstanceReturnsRuntimeConnectionInfoError(t *testing.T) {
 	_, errResp := mgr.createInstance(context.Background(), "job-1", prepared, "state-1")
 	if errResp == nil || !strings.Contains(errResp.Message, "runtime instance is missing connection info") {
 		t.Fatalf("expected runtime connection info error, got %+v", errResp)
+	}
+}
+
+type failStateRuntimeStart struct {
+	fakeRuntime
+}
+
+func (r *failStateRuntimeStart) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
+	r.startCalls = append(r.startCalls, req)
+	if !req.AllowInitdb {
+		return engineRuntime.Instance{}, errors.New("runtime data dir missing PG_VERSION")
+	}
+	instance := r.instance
+	if !r.noDefaults {
+		if instance.ID == "" {
+			instance.ID = "container-1"
+		}
+		if instance.Host == "" {
+			instance.Host = "127.0.0.1"
+		}
+		if instance.Port == 0 {
+			instance.Port = 5432
+		}
+	}
+	return instance, nil
+}
+
+func TestExecuteStateTaskLiquibaseCachedStateRuntimeFailureRebuildsWithFreshRuntime(t *testing.T) {
+	fs := &fakeStateFS{}
+	st := &fakeStore{}
+	runtime := &failStateRuntimeStart{}
+	liquibaseOutput := strings.Join([]string{
+		"-- Changeset config/liquibase/master.xml::1::dev",
+		"CREATE TABLE test(id INT);",
+	}, "\n")
+	liquibase := &fakeLiquibaseRunner{output: liquibaseOutput}
+
+	mgr := newManagerWithStateFS(t, st, fs)
+	mgr.runtime = runtime
+	mgr.liquibase = liquibase
+
+	workspace := t.TempDir()
+	changelog := filepath.Join(workspace, "config", "liquibase", "master.xml")
+	if err := os.MkdirAll(filepath.Dir(changelog), 0o700); err != nil {
+		t.Fatalf("mkdir changelog dir: %v", err)
+	}
+	if err := os.WriteFile(changelog, []byte("<databaseChangeLog/>"), 0o600); err != nil {
+		t.Fatalf("write changelog: %v", err)
+	}
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1",
+		WorkDir:       workspace,
+		LiquibaseArgs: []string{"update", "--changelog-file", changelog},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	changesets, err := parseLiquibaseUpdateSQL(liquibaseOutput)
+	if err != nil {
+		t.Fatalf("parseLiquibaseUpdateSQL: %v", err)
+	}
+	if len(changesets) == 0 {
+		t.Fatalf("expected changesets")
+	}
+	taskHash := liquibaseFingerprint("image-1", []LiquibaseChangeset{changesets[0]})
+	outputID, errResp := mgr.computeOutputStateID("image", "image-1", taskHash)
+	if errResp != nil {
+		t.Fatalf("computeOutputStateID: %+v", errResp)
+	}
+
+	st.statesByID = map[string]store.StateEntry{
+		outputID: {StateID: outputID, ImageID: "image-1"},
+	}
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", outputID, mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
+	}
+
+	task := taskState{PlanTask: PlanTask{
+		TaskID:        "execute-0",
+		Type:          "state_execute",
+		OutputStateID: outputID,
+		Input:         &TaskInput{Kind: "image", ID: "image-1"},
+	}}
+	got, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if got != outputID {
+		t.Fatalf("expected %q, got %q", outputID, got)
+	}
+	if len(runtime.startCalls) != 3 {
+		t.Fatalf("expected 3 runtime starts (image/state/image), got %+v", runtime.startCalls)
+	}
+	if !runtime.startCalls[0].AllowInitdb || runtime.startCalls[1].AllowInitdb || !runtime.startCalls[2].AllowInitdb {
+		t.Fatalf("unexpected runtime start sequence: %+v", runtime.startCalls)
+	}
+	if len(st.states) != 1 {
+		t.Fatalf("expected rebuilt state to be stored, got %+v", st.states)
 	}
 }

@@ -38,6 +38,10 @@ Status: Obsolete (superseded by
 
 ## Decision Record 3: Liquibase happy-path gating order
 
+Status: Obsolete (superseded by
+[2026-03-03-release-e2e-liquibase-scenario.md](2026-03-03-release-e2e-liquibase-scenario.md))
+
+
 - Timestamp: 2026-02-16T16:38:17.8397425+07:00
 - User: @evilguest
 - Agent: Codex (GPT-5)
