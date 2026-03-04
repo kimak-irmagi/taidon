@@ -584,6 +584,9 @@ func (e *taskExecutor) executeLiquibaseStep(ctx context.Context, jobID string, p
 		}
 		workDir = mappedDir
 	}
+	if !windowsMode {
+		args = relativizeLiquibaseHostFileArgs(args, workDir)
+	}
 	args = applyLiquibaseTaskArgs(args, task)
 	args = prependLiquibaseConnectionArgs(args, rt.instance)
 	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
