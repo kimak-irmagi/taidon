@@ -1,0 +1,140 @@
+name: e2e-liquibase
+
+on:
+  workflow_dispatch:
+    inputs:
+      flow_runs:
+        description: "How many flow runs to execute (cache/reuse check)"
+        required: false
+        default: "2"
+      liquibase_version:
+        description: "Liquibase version (latest recommended for regression detection)"
+        required: false
+        default: "latest"
+  pull_request:
+    paths:
+      - ".github/workflows/e2e-liquibase.yml"
+      - "backend/local-engine-go/**"
+      - "frontend/cli-go/**"
+      - "scripts/e2e-release/**"
+      - "test/e2e/release/**"
+      - "examples/liquibase/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/e2e-liquibase.yml"
+      - "backend/local-engine-go/**"
+      - "frontend/cli-go/**"
+      - "scripts/e2e-release/**"
+      - "test/e2e/release/**"
+      - "examples/liquibase/**"
+
+jobs:
+  hp-lb-jhipster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SCENARIO_ID: hp-lb-jhipster
+      SNAPSHOT_BACKEND: copy
+      FLOW_RUNS: ${{ github.event.inputs.flow_runs || '2' }}
+      LIQUIBASE_VERSION: ${{ github.event.inputs.liquibase_version || 'latest' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: frontend/cli-go/go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build CLI binary
+        working-directory: frontend/cli-go
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/dist/e2e-liquibase/bin"
+          go build -o "${GITHUB_WORKSPACE}/dist/e2e-liquibase/bin/sqlrs" ./cmd/sqlrs
+
+      - name: Build engine binary
+        working-directory: backend/local-engine-go
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/dist/e2e-liquibase/bin"
+          go build -o "${GITHUB_WORKSPACE}/dist/e2e-liquibase/bin/sqlrs-engine" ./cmd/sqlrs-engine
+
+      - name: Setup Liquibase (host)
+        uses: liquibase/setup-liquibase@v2
+        with:
+          version: ${{ env.LIQUIBASE_VERSION }}
+          edition: community
+
+      - name: Install Liquibase PostgreSQL driver via lpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v lpm >/dev/null 2>&1; then
+            lpm add postgresql --global
+          else
+            liquibase lpm add postgresql --global
+          fi
+          liquibase --version
+
+      - name: Run Liquibase e2e scenario
+        shell: bash
+        env:
+          XDG_CONFIG_HOME: ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/xdg-config
+          XDG_STATE_HOME: ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/xdg-state
+          XDG_CACHE_HOME: ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/xdg-cache
+        run: |
+          set -euo pipefail
+          out_dir="${RUNNER_TEMP}/e2e/linux/hp-lb-jhipster-copy"
+          mkdir -p "${XDG_CONFIG_HOME}" "${XDG_STATE_HOME}" "${XDG_CACHE_HOME}"
+
+          node scripts/e2e-release/run-scenario.mjs \
+            --scenario "${SCENARIO_ID}" \
+            --snapshot-backend "${SNAPSHOT_BACKEND}" \
+            --flow-runs "${FLOW_RUNS}" \
+            --scenarios "test/e2e/release/scenarios.json" \
+            --sqlrs "${GITHUB_WORKSPACE}/dist/e2e-liquibase/bin/sqlrs" \
+            --engine "${GITHUB_WORKSPACE}/dist/e2e-liquibase/bin/sqlrs-engine" \
+            --timeout "30m" \
+            --out-dir "${out_dir}"
+
+          node scripts/e2e-release/normalize-output.mjs \
+            --scenario "${SCENARIO_ID}" \
+            --scenarios "test/e2e/release/scenarios.json" \
+            --input "${out_dir}/raw-stdout.log" \
+            --output "${out_dir}/normalized-stdout.log"
+
+          node scripts/e2e-release/compare-golden.mjs \
+            --expected "test/e2e/release/${SCENARIO_ID}/golden.txt" \
+            --actual "${out_dir}/normalized-stdout.log" \
+            --diff "${out_dir}/diff.log"
+
+      - name: Upload Liquibase e2e diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-linux-hp-lb-jhipster-copy
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/command-init.txt
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/command-flow*.txt
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/init-stdout.log
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/init-stderr.log
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/raw-stdout*.log
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/raw-stderr*.log
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/normalized-stdout.log
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/diff.log
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/result.json
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/scenario.json
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/xdg-state/sqlrs/engine.json
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/xdg-state/sqlrs/logs/engine.log
+            ${{ runner.temp }}/e2e/linux/hp-lb-jhipster-copy/workspace/*.sql

@@ -453,3 +453,110 @@ func TestCreateInstanceReturnsRuntimeConnectionInfoError(t *testing.T) {
 		t.Fatalf("expected runtime connection info error, got %+v", errResp)
 	}
 }
+
+type failStateRuntimeStart struct {
+	fakeRuntime
+}
+
+func (r *failStateRuntimeStart) Start(ctx context.Context, req engineRuntime.StartRequest) (engineRuntime.Instance, error) {
+	r.startCalls = append(r.startCalls, req)
+	if !req.AllowInitdb {
+		return engineRuntime.Instance{}, errors.New("runtime data dir missing PG_VERSION")
+	}
+	instance := r.instance
+	if !r.noDefaults {
+		if instance.ID == "" {
+			instance.ID = "container-1"
+		}
+		if instance.Host == "" {
+			instance.Host = "127.0.0.1"
+		}
+		if instance.Port == 0 {
+			instance.Port = 5432
+		}
+	}
+	return instance, nil
+}
+
+func TestExecuteStateTaskLiquibaseCachedStateRuntimeFailureRebuildsWithFreshRuntime(t *testing.T) {
+	fs := &fakeStateFS{}
+	st := &fakeStore{}
+	runtime := &failStateRuntimeStart{}
+	liquibaseOutput := strings.Join([]string{
+		"-- Changeset config/liquibase/master.xml::1::dev",
+		"CREATE TABLE test(id INT);",
+	}, "\n")
+	liquibase := &fakeLiquibaseRunner{output: liquibaseOutput}
+
+	mgr := newManagerWithStateFS(t, st, fs)
+	mgr.runtime = runtime
+	mgr.liquibase = liquibase
+
+	workspace := t.TempDir()
+	changelog := filepath.Join(workspace, "config", "liquibase", "master.xml")
+	if err := os.MkdirAll(filepath.Dir(changelog), 0o700); err != nil {
+		t.Fatalf("mkdir changelog dir: %v", err)
+	}
+	if err := os.WriteFile(changelog, []byte("<databaseChangeLog/>"), 0o600); err != nil {
+		t.Fatalf("write changelog: %v", err)
+	}
+
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1",
+		WorkDir:       workspace,
+		LiquibaseArgs: []string{"update", "--changelog-file", changelog},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	changesets, err := parseLiquibaseUpdateSQL(liquibaseOutput)
+	if err != nil {
+		t.Fatalf("parseLiquibaseUpdateSQL: %v", err)
+	}
+	if len(changesets) == 0 {
+		t.Fatalf("expected changesets")
+	}
+	taskHash := liquibaseFingerprint("image-1", []LiquibaseChangeset{changesets[0]})
+	outputID, errResp := mgr.computeOutputStateID("image", "image-1", taskHash)
+	if errResp != nil {
+		t.Fatalf("computeOutputStateID: %+v", errResp)
+	}
+
+	st.statesByID = map[string]store.StateEntry{
+		outputID: {StateID: outputID, ImageID: "image-1"},
+	}
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", outputID, mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
+	}
+
+	task := taskState{PlanTask: PlanTask{
+		TaskID:        "execute-0",
+		Type:          "state_execute",
+		OutputStateID: outputID,
+		Input:         &TaskInput{Kind: "image", ID: "image-1"},
+	}}
+	got, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if got != outputID {
+		t.Fatalf("expected %q, got %q", outputID, got)
+	}
+	if len(runtime.startCalls) != 3 {
+		t.Fatalf("expected 3 runtime starts (image/state/image), got %+v", runtime.startCalls)
+	}
+	if !runtime.startCalls[0].AllowInitdb || runtime.startCalls[1].AllowInitdb || !runtime.startCalls[2].AllowInitdb {
+		t.Fatalf("unexpected runtime start sequence: %+v", runtime.startCalls)
+	}
+	if len(st.states) != 1 {
+		t.Fatalf("expected rebuilt state to be stored, got %+v", st.states)
+	}
+}

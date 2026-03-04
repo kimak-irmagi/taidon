@@ -273,6 +273,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 		if prepared.request.PrepareKind == "psql" || prepared.request.PrepareKind == "lb" {
 			if runner.getRuntime() != nil {
 				m.cleanupRuntime(context.Background(), runner)
+				rt = nil
 				m.logInfoJob(jobID, "cached runtime released state=%s", outputStateID)
 			}
 			planned, errResp := e.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: outputStateID})
