@@ -8,9 +8,9 @@ on:
         required: false
         default: "2"
       liquibase_version:
-        description: "Liquibase version (latest recommended for regression detection)"
+        description: "Liquibase version (must be a valid version available in liquibase/setup-liquibase@v2, e.g. 5.0.1)"
         required: false
-        default: "latest"
+        default: "5.0.1"
   pull_request:
     paths:
       - ".github/workflows/e2e-liquibase.yml"
@@ -42,7 +42,7 @@ jobs:
       SCENARIO_ID: hp-lb-jhipster
       SNAPSHOT_BACKEND: copy
       FLOW_RUNS: ${{ github.event.inputs.flow_runs || '2' }}
-      LIQUIBASE_VERSION: ${{ github.event.inputs.liquibase_version || 'latest' }}
+      LIQUIBASE_VERSION: ${{ github.event.inputs.liquibase_version || '5.0.1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
