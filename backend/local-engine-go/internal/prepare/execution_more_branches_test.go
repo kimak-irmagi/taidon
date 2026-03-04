@@ -304,6 +304,64 @@ func TestStartRuntimeReturnsCannotCreateRuntimeDirWhenJobsPathIsFile(t *testing.
 	}
 }
 
+func TestStartRuntimeRenamesRuntimeDirWhenRemoveFails(t *testing.T) {
+	stateRoot := t.TempDir()
+	runtimeDir := filepath.Join(stateRoot, "jobs", "job-1", "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "stale.txt"), []byte("stale"), 0o600); err != nil {
+		t.Fatalf("write stale file: %v", err)
+	}
+
+	originalRemoveAll := removeAllFn
+	removeAllFn = func(path string) error {
+		if path == runtimeDir {
+			return errors.New("permission denied")
+		}
+		return os.RemoveAll(path)
+	}
+	t.Cleanup(func() {
+		removeAllFn = originalRemoveAll
+	})
+
+	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{
+		stateRoot: stateRoot,
+		runtime:   &fakeRuntime{},
+		statefs:   &fakeStateFS{},
+	})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	_, errResp := mgr.startRuntime(context.Background(), "job-1", prepared, &TaskInput{Kind: "image", ID: "image-1"})
+	if errResp != nil {
+		t.Fatalf("expected runtime start after stale dir rename, got %+v", errResp)
+	}
+
+	renamed, err := filepath.Glob(runtimeDir + ".stale-*")
+	if err != nil {
+		t.Fatalf("glob stale runtime dir: %v", err)
+	}
+	if len(renamed) != 1 {
+		t.Fatalf("expected one renamed stale runtime dir, got %d", len(renamed))
+	}
+	if _, err := os.Stat(filepath.Join(renamed[0], "stale.txt")); err != nil {
+		t.Fatalf("expected stale file in renamed dir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "stale.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected stale file removed from runtime dir")
+	}
+	if _, err := os.Stat(filepath.Join(runtimeDir, "PG_VERSION")); err != nil {
+		t.Fatalf("expected cloned runtime pg_version: %v", err)
+	}
+}
+
 func TestStartRuntimeReturnsDirtyRuntimeDataDirWhenCloneMountHasPostmasterPID(t *testing.T) {
 	mountDir := filepath.Join(t.TempDir(), "runtime-mount")
 	if err := os.MkdirAll(mountDir, 0o700); err != nil {

@@ -1,4 +1,6 @@
 \connect demo
+SET search_path = bookings, pg_catalog;
+
 --
 -- Name: aircrafts_data aircrafts_pkey; Type: CONSTRAINT; Schema: bookings; Owner: -
 --
