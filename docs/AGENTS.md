@@ -8,3 +8,5 @@
 3. Whenever a document is moved, renamed, or deleted, verify the inbound links to that
    document from all the documents and code comments, and update accordingly.
    If the document referenced from elsewhere is removed, ask for the user confirmaiton first.
+4. Whenever `docs/user-guides/sqlrs-config.md` is updated, also update the VS Code YAML schema
+   for workspace config at `.vscode/sqlrs-workspace-config.schema.json` so editor hints stay in sync.

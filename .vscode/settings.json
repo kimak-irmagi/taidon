@@ -1,0 +1,7 @@
+{
+  "yaml.schemas": {
+    "./.vscode/sqlrs-workspace-config.schema.json": [
+      "**/.sqlrs/config.yaml"
+    ]
+  }
+}

@@ -1,0 +1,203 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sqlrs workspace config",
+  "type": "object",
+  "properties": {
+    "defaultProfile": {
+      "type": "string",
+      "description": "Default profile name selected by sqlrs CLI."
+    },
+    "client": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "string",
+          "description": "CLI request timeout (Go duration string, for example: 30s, 2m)."
+        },
+        "retries": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of retry attempts for client operations."
+        },
+        "output": {
+          "type": "string",
+          "enum": [
+            "human",
+            "json"
+          ],
+          "description": "Default output format."
+        }
+      },
+      "additionalProperties": false
+    },
+    "orchestrator": {
+      "type": "object",
+      "properties": {
+        "startupTimeout": {
+          "type": "string",
+          "description": "Engine startup timeout (Go duration string)."
+        },
+        "idleTimeout": {
+          "type": "string",
+          "description": "Engine idle timeout before auto-stop (Go duration string)."
+        },
+        "runDir": {
+          "type": "string",
+          "description": "Directory for runtime files."
+        },
+        "daemonPath": {
+          "type": "string",
+          "description": "Path to local engine binary."
+        }
+      },
+      "additionalProperties": false
+    },
+    "engine": {
+      "type": "object",
+      "properties": {
+        "storePath": {
+          "type": "string",
+          "description": "Path to state store root (or VHDX on Windows+WSL setup)."
+        },
+        "wsl": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "required"
+              ],
+              "description": "WSL integration mode on Windows."
+            },
+            "distro": {
+              "type": "string",
+              "description": "WSL distro name."
+            },
+            "stateDir": {
+              "type": "string",
+              "description": "WSL-side state directory path."
+            },
+            "enginePath": {
+              "type": "string",
+              "description": "WSL-side path to sqlrs-engine binary."
+            },
+            "mount": {
+              "type": "object",
+              "properties": {
+                "device": {
+                  "type": "string"
+                },
+                "fstype": {
+                  "type": "string"
+                },
+                "deviceUUID": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Map of profile name to profile settings.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "local",
+              "remote"
+            ]
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "autostart": {
+            "type": "boolean"
+          },
+          "auth": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string"
+              },
+              "tokenEnv": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "dbms": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "description": "Default DB image for prepare commands."
+        }
+      },
+      "additionalProperties": false
+    },
+    "liquibase": {
+      "type": "object",
+      "properties": {
+        "exec": {
+          "type": "string",
+          "description": "Liquibase executable path."
+        },
+        "exec_mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "native",
+            "windows-bat"
+          ],
+          "description": "Liquibase invocation mode."
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "btrfs",
+            "overlay",
+            "copy"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "shared": {
+          "type": "boolean",
+          "description": "Whether workspace opts into shared cache."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}
