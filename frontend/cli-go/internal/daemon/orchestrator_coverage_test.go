@@ -349,3 +349,45 @@ func waitUntilFileUnlockedAndRemove(path string, timeout time.Duration) error {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+func TestEnsureWSLStoreMountAllowsFindmntSuccessWhenUnitChecksFailAfterAttach(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only path")
+	}
+	prevWSL := runWSLCommandFn
+	prevHost := runHostCommandFn
+	t.Cleanup(func() {
+		runWSLCommandFn = prevWSL
+		runHostCommandFn = prevHost
+	})
+
+	runHostCommandFn = func(ctx context.Context, args ...string) (string, error) {
+		return "W S L _ E _ U S E R _ V H D _ A L R E A D Y _ A T T A C H E D", errors.New("exit status 0xffffffff")
+	}
+
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		switch {
+		case len(args) >= 2 && args[0] == "systemctl" && args[1] == "is-active":
+			return "", errors.New("exit status 0xffffffff")
+		case len(args) >= 2 && args[0] == "systemctl" && args[1] == "start":
+			return "", errors.New("exit status 0xffffffff")
+		case len(args) >= 1 && args[0] == "journalctl":
+			return "", errors.New("exit status 0xffffffff")
+		case len(args) >= 1 && args[0] == "nsenter":
+			return "btrfs\n", nil
+		default:
+			return "", nil
+		}
+	}
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountUnit:   "sqlrs-state-store.mount",
+		WSLMountFSType: "btrfs",
+		WSLVHDXPath:    "C:\\temp\\store.vhdx",
+	})
+	if err != nil {
+		t.Fatalf("expected successful findmnt fallback, got %v", err)
+	}
+}

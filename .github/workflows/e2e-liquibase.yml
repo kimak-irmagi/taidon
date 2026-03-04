@@ -10,7 +10,7 @@ on:
       liquibase_version:
         description: "Liquibase version (latest recommended for regression detection)"
         required: false
-        default: "latest"
+        default: "5.0.1"
   pull_request:
     paths:
       - ".github/workflows/e2e-liquibase.yml"
