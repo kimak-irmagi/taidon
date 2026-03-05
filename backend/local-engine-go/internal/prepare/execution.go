@@ -208,30 +208,35 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	}
 
 	if prepared.request.PrepareKind == "lb" {
-		planned, errResp := e.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
-		if errResp != nil {
-			return "", errResp
+		// Liquibase task hash is precomputed during planning and must remain stable
+		// across execution retries to allow cache hits. Recompute only when missing
+		// to support recovery of legacy queued tasks without persisted hashes.
+		if strings.TrimSpace(taskHash) == "" {
+			planned, errResp := e.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+			if errResp != nil {
+				return "", errResp
+			}
+			rt = planned
+			lock, errResp := ensureLiquibaseContentLock(prepared, task.ChangesetPath)
+			if errResp != nil {
+				return "", errResp
+			}
+			contentLocker = lock
+			changesets, errResp := e.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
+			if errResp != nil {
+				_ = lock.Close()
+				return "", errResp
+			}
+			if len(changesets) == 0 {
+				_ = lock.Close()
+				return "", errorResponse("internal_error", "liquibase returned no pending changesets", "")
+			}
+			parentFingerprintID := ""
+			if task.Input != nil {
+				parentFingerprintID = task.Input.ID
+			}
+			taskHash = liquibaseFingerprint(strings.TrimSpace(parentFingerprintID), []LiquibaseChangeset{changesets[0]})
 		}
-		rt = planned
-		lock, errResp := ensureLiquibaseContentLock(prepared, task.ChangesetPath)
-		if errResp != nil {
-			return "", errResp
-		}
-		contentLocker = lock
-		changesets, errResp := e.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
-		if errResp != nil {
-			_ = lock.Close()
-			return "", errResp
-		}
-		if len(changesets) == 0 {
-			_ = lock.Close()
-			return "", errorResponse("internal_error", "liquibase returned no pending changesets", "")
-		}
-		parentFingerprintID := ""
-		if task.Input != nil {
-			parentFingerprintID = task.Input.ID
-		}
-		taskHash = liquibaseFingerprint(strings.TrimSpace(parentFingerprintID), []LiquibaseChangeset{changesets[0]})
 	}
 
 	if contentLocker != nil {
@@ -257,15 +262,6 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 		outputStateID,
 		cached,
 	)
-	if cached {
-		invalidated, errResp := e.snapshot.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
-		if errResp != nil {
-			return "", errResp
-		}
-		if invalidated {
-			cached = false
-		}
-	}
 	cachedFlag := cached
 	if outputStateID != task.OutputStateID || task.TaskHash != taskHash || (task.Cached == nil || *task.Cached != cachedFlag) {
 		update := queue.TaskUpdate{
@@ -280,52 +276,14 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	}
 	if cached {
 		m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
-		if prepared.request.PrepareKind == "psql" || prepared.request.PrepareKind == "lb" {
-			if runner.getRuntime() != nil {
-				m.cleanupRuntime(context.Background(), runner)
-				rt = nil
-				m.logInfoJob(jobID, "cached runtime released state=%s", outputStateID)
-			}
-			planned, errResp := e.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: outputStateID})
-			if errResp == nil {
-				runner.setRuntime(planned)
-				m.logInfoJob(jobID, "cached runtime started state=%s", outputStateID)
-				return outputStateID, nil
-			}
-			if strings.Contains(errResp.Details, "postmaster.pid") ||
-				strings.Contains(errResp.Message, "dirty") ||
-				strings.Contains(errResp.Details, "PG_VERSION") ||
-				strings.Contains(errResp.Message, "PG_VERSION") ||
-				strings.Contains(errResp.Details, "not initialized") ||
-				strings.Contains(errResp.Message, "not initialized") {
-				invalidated, invalidateResp := e.snapshot.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
-				if invalidateResp != nil {
-					return "", invalidateResp
-				}
-				if !invalidated {
-					m.logInfoJob(jobID, "cached runtime start failed; rebuilding state=%s", outputStateID)
-				}
-				forceRebuild = true
-				cached = false
-				cachedFlag = false
-				if outputStateID != task.OutputStateID || task.TaskHash != taskHash || (task.Cached == nil || *task.Cached != cachedFlag) {
-					update := queue.TaskUpdate{
-						TaskHash:      nullableString(taskHash),
-						OutputStateID: nullableString(outputStateID),
-						Cached:        &cachedFlag,
-					}
-					_ = m.queue.UpdateTask(ctx, jobID, task.TaskID, update)
-					task.OutputStateID = outputStateID
-					task.TaskHash = taskHash
-					task.Cached = &cachedFlag
-				}
-			} else {
-				return "", errResp
-			}
+		// Cached states are trusted after marker/metadata checks above; defer
+		// runtime startup to prepare-instance to avoid per-step container churn.
+		if runner.getRuntime() != nil {
+			m.cleanupRuntime(context.Background(), runner)
+			rt = nil
+			m.logInfoJob(jobID, "cached runtime released state=%s", outputStateID)
 		}
-		if cached {
-			return outputStateID, nil
-		}
+		return outputStateID, nil
 	}
 	if capErr := m.ensureCacheCapacity(ctx, jobID, "prepare_step"); capErr != nil {
 		return "", capErr

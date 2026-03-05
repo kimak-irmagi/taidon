@@ -560,6 +560,21 @@ func (c *jobCoordinator) runJob(prepared preparedRequest, jobID string) {
 			_ = m.failJob(jobID, errorResponse("internal_error", "task failed", task.TaskID))
 			return
 		}
+		if task.Type == "state_execute" && task.Cached != nil && *task.Cached && strings.TrimSpace(task.OutputStateID) != "" {
+			cached, err := m.isStateCached(task.OutputStateID)
+			if err != nil {
+				_ = m.failJob(jobID, errorResponse("internal_error", "cannot check state cache", err.Error()))
+				return
+			}
+			if cached {
+				stateID = task.OutputStateID
+				if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil); err != nil {
+					_ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
+					return
+				}
+				continue
+			}
+		}
 		if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusRunning, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil, nil); err != nil {
 			_ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
 			return
