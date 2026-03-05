@@ -97,6 +97,7 @@ type preparedRequest struct {
 	liquibaseMounts      []runtime.Mount
 	resolvedImageID      string
 	psqlInputs           []psqlInput
+	psqlSteps            []psqlStep
 	psqlWorkDir          string
 	liquibaseLockPaths   []string
 	liquibaseSearchPaths []string
@@ -839,6 +840,7 @@ func (m *PrepareService) prepareRequest(req Request) (preparedRequest, error) {
 			argsNormalized: psqlPrepared.argsNormalized,
 			filePaths:      psqlPrepared.filePaths,
 			psqlInputs:     psqlPrepared.inputs,
+			psqlSteps:      psqlPrepared.steps,
 			psqlWorkDir:    psqlPrepared.workDir,
 		}
 	case "lb":
@@ -890,25 +892,21 @@ func (c *jobCoordinator) buildPlan(ctx context.Context, jobID string, prepared p
 
 func (c *jobCoordinator) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	m := c.m
-	taskHash, errResp := m.computeTaskHash(prepared)
-	if errResp != nil {
-		return nil, "", errResp
-	}
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
 		return nil, "", errorResponse("internal_error", "resolved image id is required", "")
 	}
-	stateID, errResp := m.computeOutputStateID("image", imageID, taskHash)
-	if errResp != nil {
-		return nil, "", errResp
-	}
-	cached, err := m.isStateCached(stateID)
-	if err != nil {
-		return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
-	}
-	cachedFlag := cached
 
-	tasks := make([]PlanTask, 0, 3)
+	steps := prepared.psqlSteps
+	if len(steps) == 0 {
+		steps = []psqlStep{{
+			args:   append([]string{}, prepared.normalizedArgs...),
+			inputs: append([]psqlInput{}, prepared.psqlInputs...),
+			stdin:  prepared.request.Stdin,
+		}}
+	}
+
+	tasks := make([]PlanTask, 0, 3+len(steps))
 	tasks = append(tasks, PlanTask{
 		TaskID:      "plan",
 		Type:        "plan",
@@ -922,28 +920,52 @@ func (c *jobCoordinator) buildPlanPsql(prepared preparedRequest) ([]PlanTask, st
 			ResolvedImageID: imageID,
 		})
 	}
-	tasks = append(tasks,
-		PlanTask{
-			TaskID: "execute-0",
+
+	inputKind := "image"
+	inputID := imageID
+	stateID := ""
+	for i, step := range steps {
+		digest, err := computePsqlContentDigest(step.inputs, prepared.psqlWorkDir)
+		if err != nil {
+			return nil, "", errorResponse("invalid_argument", "cannot compute psql content hash", err.Error())
+		}
+		taskHash := psqlTaskHash(prepared.request.PrepareKind, digest.hash, m.version)
+		outputStateID, errResp := m.computeOutputStateID(inputKind, inputID, taskHash)
+		if errResp != nil {
+			return nil, "", errResp
+		}
+		cached, err := m.isStateCached(outputStateID)
+		if err != nil {
+			return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
+		}
+		cachedFlag := cached
+		tasks = append(tasks, PlanTask{
+			TaskID: fmt.Sprintf("execute-%d", i),
 			Type:   "state_execute",
 			Input: &TaskInput{
-				Kind: "image",
-				ID:   imageID,
+				Kind: inputKind,
+				ID:   inputID,
 			},
 			TaskHash:      taskHash,
-			OutputStateID: stateID,
+			OutputStateID: outputStateID,
 			Cached:        &cachedFlag,
+		})
+		inputKind = "state"
+		inputID = outputStateID
+		stateID = outputStateID
+	}
+	if strings.TrimSpace(stateID) == "" {
+		return nil, "", errorResponse("internal_error", "missing output state", "")
+	}
+	tasks = append(tasks, PlanTask{
+		TaskID: "prepare-instance",
+		Type:   "prepare_instance",
+		Input: &TaskInput{
+			Kind: "state",
+			ID:   stateID,
 		},
-		PlanTask{
-			TaskID: "prepare-instance",
-			Type:   "prepare_instance",
-			Input: &TaskInput{
-				Kind: "state",
-				ID:   stateID,
-			},
-			InstanceMode: "ephemeral",
-		},
-	)
+		InstanceMode: "ephemeral",
+	})
 	return tasks, stateID, nil
 }
 

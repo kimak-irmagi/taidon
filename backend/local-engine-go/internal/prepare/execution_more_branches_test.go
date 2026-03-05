@@ -439,7 +439,7 @@ func TestExecutePsqlStepReturnsCancelledWhenRunFailsAfterCancel(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		cancel()
 	}()
-	errResp := mgr.executePsqlStep(ctx, "job-1", prepared, rt)
+	errResp := mgr.executePsqlStep(ctx, "job-1", prepared, rt, taskState{})
 	if errResp == nil || errResp.Code != "cancelled" {
 		t.Fatalf("expected cancelled error, got %+v", errResp)
 	}

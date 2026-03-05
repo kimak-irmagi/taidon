@@ -187,8 +187,12 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	var rt *jobRuntime
 
 	if prepared.request.PrepareKind == "psql" {
+		step, err := psqlStepForPreparedTask(prepared, task.TaskID)
+		if err != nil {
+			return "", errorResponse("internal_error", "cannot resolve psql step", err.Error())
+		}
 		lock := &contentLock{files: map[string]*os.File{}}
-		digest, err := computePsqlContentDigestWithLock(prepared.psqlInputs, prepared.psqlWorkDir, lock)
+		digest, err := computePsqlContentDigestWithLock(step.inputs, prepared.psqlWorkDir, lock)
 		if err != nil {
 			_ = lock.Close()
 			return "", errorResponse("invalid_argument", "cannot compute psql content hash", err.Error())
@@ -484,7 +488,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 func (e *taskExecutor) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	switch prepared.request.PrepareKind {
 	case "psql":
-		return e.executePsqlStep(ctx, jobID, prepared, rt)
+		return e.executePsqlStep(ctx, jobID, prepared, rt, task)
 	case "lb":
 		return e.executeLiquibaseStep(ctx, jobID, prepared, rt, task)
 	default:
@@ -505,9 +509,13 @@ func noSpaceFromErrorResponse(message string, phase string, errResp *ErrorRespon
 	return noSpaceErrorResponse(message, phase, errors.New(errResp.Message))
 }
 
-func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
+func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	m := e.m
-	psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
+	step, err := psqlStepForPreparedTask(prepared, task.TaskID)
+	if err != nil {
+		return errorResponse("internal_error", "cannot resolve psql step", err.Error())
+	}
+	psqlArgs, workdir, err := buildPsqlExecArgs(step.args, rt.scriptMount)
 	if err != nil {
 		return errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
 	}
@@ -523,7 +531,7 @@ func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepar
 	output, err := m.psql.Run(psqlCtx, rt.instance, PsqlRunRequest{
 		Args:    psqlArgs,
 		Env:     map[string]string{},
-		Stdin:   prepared.request.Stdin,
+		Stdin:   step.stdin,
 		WorkDir: workdir,
 	})
 	if !sinkCalled.Load() && strings.TrimSpace(output) != "" {

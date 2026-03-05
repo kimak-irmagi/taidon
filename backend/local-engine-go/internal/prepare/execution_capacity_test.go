@@ -85,7 +85,7 @@ func TestExecutePsqlStepMapsNoSpaceOutputToCapacityError(t *testing.T) {
 		normalizedArgs: []string{"-c", "select 1"},
 	}
 
-	errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt)
+	errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{})
 	if errResp == nil || errResp.Code != "cache_limit_too_small" {
 		t.Fatalf("expected cache_limit_too_small, got %+v", errResp)
 	}
