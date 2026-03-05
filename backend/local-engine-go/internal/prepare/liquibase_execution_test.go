@@ -2,6 +2,7 @@ package prepare
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -197,7 +198,7 @@ func TestExecuteLiquibaseStepRunError(t *testing.T) {
 }
 
 func TestPrependLiquibaseConnectionArgs(t *testing.T) {
-	out := prependLiquibaseConnectionArgs([]string{"update"}, engineRuntime.Instance{Host: "host", Port: 5432})
+	out := prependLiquibaseConnectionArgs([]string{"update"}, engineRuntime.Instance{Host: "host", Port: 5432}, false)
 	if len(out) < 3 {
 		t.Fatalf("expected args, got %+v", out)
 	}
@@ -207,8 +208,37 @@ func TestPrependLiquibaseConnectionArgs(t *testing.T) {
 	if out[2] != "update" {
 		t.Fatalf("expected update arg, got %+v", out)
 	}
-	empty := prependLiquibaseConnectionArgs(nil, engineRuntime.Instance{})
+	empty := prependLiquibaseConnectionArgs(nil, engineRuntime.Instance{}, false)
 	if len(empty) != 2 || !strings.HasPrefix(empty[0], "--url=") {
 		t.Fatalf("expected connection args only, got %+v", empty)
+	}
+}
+
+func TestPrependLiquibaseConnectionArgsWSLWindowsModeUsesWSLIPv4(t *testing.T) {
+	setWSLForTest(t, true)
+
+	prevList := listNetInterfaces
+	listNetInterfaces = func() ([]net.Interface, error) {
+		return []net.Interface{
+			{Index: 1, Name: "lo", Flags: net.FlagUp | net.FlagLoopback},
+			{Index: 2, Name: "eth0", Flags: net.FlagUp},
+		}, nil
+	}
+	t.Cleanup(func() { listNetInterfaces = prevList })
+
+	prevAddrs := ifaceAddrs
+	ifaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+		if iface.Name != "eth0" {
+			return nil, nil
+		}
+		return []net.Addr{
+			&net.IPNet{IP: net.ParseIP("172.28.221.15"), Mask: net.CIDRMask(20, 32)},
+		}, nil
+	}
+	t.Cleanup(func() { ifaceAddrs = prevAddrs })
+
+	out := prependLiquibaseConnectionArgs([]string{"update"}, engineRuntime.Instance{Host: "127.0.0.1", Port: 5432}, true)
+	if len(out) < 1 || !strings.Contains(out[0], "jdbc:postgresql://172.28.221.15:5432/postgres") {
+		t.Fatalf("expected WSL ipv4 in URL, got %+v", out)
 	}
 }

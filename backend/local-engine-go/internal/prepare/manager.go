@@ -1149,7 +1149,7 @@ func (e *taskExecutor) runLiquibaseUpdateSQL(ctx context.Context, jobID string, 
 		args = relativizeLiquibaseHostFileArgs(args, workDir)
 	}
 	args = replaceLiquibaseCommand(args, "updateSQL")
-	args = prependLiquibaseConnectionArgs(args, rt.instance)
+	args = prependLiquibaseConnectionArgs(args, rt.instance, windowsMode)
 	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
 	if err != nil {
 		return nil, errorResponse("internal_error", "cannot map liquibase env", err.Error())

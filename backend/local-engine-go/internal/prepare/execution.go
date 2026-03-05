@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -42,6 +43,11 @@ type psqlRunner interface {
 
 type liquibaseRunner interface {
 	Run(ctx context.Context, req LiquibaseRunRequest) (string, error)
+}
+
+var listNetInterfaces = net.Interfaces
+var ifaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+	return iface.Addrs()
 }
 
 type containerPsqlRunner struct {
@@ -597,7 +603,7 @@ func (e *taskExecutor) executeLiquibaseStep(ctx context.Context, jobID string, p
 		args = relativizeLiquibaseHostFileArgs(args, workDir)
 	}
 	args = applyLiquibaseTaskArgs(args, task)
-	args = prependLiquibaseConnectionArgs(args, rt.instance)
+	args = prependLiquibaseConnectionArgs(args, rt.instance, windowsMode)
 	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
 	if err != nil {
 		return errorResponse("internal_error", "cannot map liquibase env", err.Error())
@@ -646,10 +652,15 @@ func (e *taskExecutor) executeLiquibaseStep(ctx context.Context, jobID string, p
 	return nil
 }
 
-func prependLiquibaseConnectionArgs(args []string, instance engineRuntime.Instance) []string {
+func prependLiquibaseConnectionArgs(args []string, instance engineRuntime.Instance, windowsMode bool) []string {
 	host := instance.Host
 	if strings.TrimSpace(host) == "" {
 		host = "localhost"
+	}
+	if windowsMode && isWSL() && (host == "127.0.0.1" || strings.EqualFold(host, "localhost")) {
+		if resolved, err := resolveWSLPrimaryIPv4(); err == nil && strings.TrimSpace(resolved) != "" {
+			host = resolved
+		}
 	}
 	port := instance.Port
 	if port == 0 {
@@ -666,6 +677,43 @@ func prependLiquibaseConnectionArgs(args []string, instance engineRuntime.Instan
 	out = append(out, conn...)
 	out = append(out, args...)
 	return out
+}
+
+func resolveWSLPrimaryIPv4() (string, error) {
+	ifaces, err := listNetInterfaces()
+	if err != nil {
+		return "", err
+	}
+	var firstGlobal string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := ifaceAddrs(iface)
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet == nil || ipNet.IP == nil {
+				continue
+			}
+			ip := ipNet.IP.To4()
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+				continue
+			}
+			if iface.Name == "eth0" {
+				return ip.String(), nil
+			}
+			if firstGlobal == "" {
+				firstGlobal = ip.String()
+			}
+		}
+	}
+	if firstGlobal == "" {
+		return "", fmt.Errorf("no global ipv4")
+	}
+	return firstGlobal, nil
 }
 
 func formatExecLine(execPath string, args []string) string {
