@@ -776,8 +776,8 @@ func TestDockerRuntimeStopIgnoresMissingContainer(t *testing.T) {
 	if err := rt.Stop(context.Background(), "container-1"); err != nil {
 		t.Fatalf("expected missing container to be ignored, got %v", err)
 	}
-	if len(runner.calls) != 1 || runner.calls[0].args[0] != "stop" {
-		t.Fatalf("expected docker stop call, got %+v", runner.calls)
+	if len(runner.calls) != 1 || runner.calls[0].args[0] != "rm" || !containsFlag(runner.calls[0].args, "-f") {
+		t.Fatalf("expected docker rm -f call, got %+v", runner.calls)
 	}
 }
 

@@ -598,7 +598,9 @@ func (r *DockerRuntime) Stop(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	output, err := r.run(ctx, []string{"stop", "-t", "10", id}, nil)
+	// Instances are ephemeral; force-remove is faster than graceful stop and
+	// avoids waiting on PostgreSQL shutdown during cleanup paths.
+	output, err := r.run(ctx, []string{"rm", "-f", id}, nil)
 	if err != nil && isDockerNotFoundOutput(output, err) {
 		return nil
 	}

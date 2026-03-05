@@ -296,6 +296,146 @@ func TestConnectOrStartReturnsHealthyState(t *testing.T) {
 	}
 }
 
+func TestConnectOrStartRefreshesEngineStateOnAuthRejected(t *testing.T) {
+	temp := t.TempDir()
+	statePath := filepath.Join(temp, "engine.json")
+	var mu sync.Mutex
+	updated := false
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"ok":true,"instanceId":"inst"}`)
+		case "/v1/prepare-jobs":
+			auth := strings.TrimSpace(r.Header.Get("Authorization"))
+			if auth == "Bearer token-new" {
+				w.Header().Set("Content-Type", "application/json")
+				io.WriteString(w, "[]")
+				return
+			}
+			mu.Lock()
+			if !updated {
+				updated = true
+				_ = WriteEngineState(statePath, EngineState{
+					Endpoint:   server.URL,
+					InstanceID: "inst",
+					AuthToken:  "token-new",
+				})
+			}
+			mu.Unlock()
+			w.WriteHeader(http.StatusForbidden)
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	if err := WriteEngineState(statePath, EngineState{
+		Endpoint:   server.URL,
+		InstanceID: "inst",
+		AuthToken:  "token-old",
+	}); err != nil {
+		t.Fatalf("WriteEngineState: %v", err)
+	}
+
+	result, err := ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:      "auto",
+		Autostart:     false,
+		StateDir:      temp,
+		ClientTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("ConnectOrStart: %v", err)
+	}
+	if result.AuthToken != "token-new" {
+		t.Fatalf("expected refreshed token, got %+v", result)
+	}
+}
+
+func TestCheckAuthWithTokenAcceptsEndpointWithoutScheme(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer token" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, "[]")
+	}))
+	defer server.Close()
+
+	endpoint := strings.TrimPrefix(server.URL, "http://")
+	ok, rejected, reason := checkAuthWithToken(context.Background(), endpoint, "token", time.Second)
+	if !ok || rejected {
+		t.Fatalf("expected auth probe success, got ok=%v rejected=%v reason=%q", ok, rejected, reason)
+	}
+}
+
+func TestConnectOrStartUsesCachedStateBeforeEngineJSON(t *testing.T) {
+	temp := t.TempDir()
+	statePath := filepath.Join(temp, "engine.json")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"ok":true,"instanceId":"inst"}`)
+		case "/v1/prepare-jobs":
+			if strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer token" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, "[]")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	if err := WriteEngineState(statePath, EngineState{
+		Endpoint:   strings.TrimPrefix(server.URL, "http://"),
+		InstanceID: "inst",
+		AuthToken:  "token",
+	}); err != nil {
+		t.Fatalf("WriteEngineState: %v", err)
+	}
+
+	first, err := ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:      "auto",
+		Autostart:     false,
+		StateDir:      temp,
+		ClientTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("first ConnectOrStart: %v", err)
+	}
+	if strings.TrimSpace(first.Endpoint) == "" {
+		t.Fatalf("expected non-empty endpoint: %+v", first)
+	}
+
+	if err := os.Remove(statePath); err != nil {
+		t.Fatalf("remove engine.json: %v", err)
+	}
+
+	second, err := ConnectOrStart(context.Background(), ConnectOptions{
+		Endpoint:      "auto",
+		Autostart:     false,
+		StateDir:      temp,
+		ClientTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("second ConnectOrStart: %v", err)
+	}
+	if second.Endpoint != first.Endpoint {
+		t.Fatalf("expected cached endpoint %q, got %q", first.Endpoint, second.Endpoint)
+	}
+}
+
 func TestConnectOrStartEnsureDirError(t *testing.T) {
 	temp := t.TempDir()
 	runDir := filepath.Join(temp, "run")
