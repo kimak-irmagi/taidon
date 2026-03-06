@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"testing"
 
-	"sqlrs/cli/internal/app"
-	"sqlrs/cli/internal/daemon"
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/app"
+	"github.com/sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 func TestCLIStatusWithLocalEngine(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
 )
 
 type stringerVal struct{}

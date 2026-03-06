@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/engine/internal/snapshot"
+	"github.com/sqlrs/engine-local/internal/snapshot"
 )
 
 type fakeBackend struct {

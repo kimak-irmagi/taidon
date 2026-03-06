@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/cli"
 )
 
 func TestResolveStoreTypeExplicit(t *testing.T) {

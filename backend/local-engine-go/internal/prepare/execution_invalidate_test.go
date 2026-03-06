@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/statefs"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 type errorStore struct {

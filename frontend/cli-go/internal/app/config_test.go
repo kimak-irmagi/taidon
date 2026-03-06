@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/cli"
 )
 
 func TestRunConfigGetHuman(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/daemon"
 )
 
 func TestRunRunKindRequiredCoverage(t *testing.T) {

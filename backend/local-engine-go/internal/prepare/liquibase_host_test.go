@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	engineRuntime "sqlrs/engine/internal/runtime"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
 )
 
 func TestQuoteCmdArg(t *testing.T) {

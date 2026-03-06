@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"sqlrs/engine/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/runtime"
 )
 
 type LiquibaseChangeset struct {

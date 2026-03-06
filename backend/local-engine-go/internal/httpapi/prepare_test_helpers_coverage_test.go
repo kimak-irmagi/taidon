@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/prepare"
-	engineRuntime "sqlrs/engine/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/prepare"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
 )
 
 func TestPrepareTestHelpersCoverage(t *testing.T) {

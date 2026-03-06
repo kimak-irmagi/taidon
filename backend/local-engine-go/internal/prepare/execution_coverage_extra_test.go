@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/statefs"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/statefs"
 )
 
 type errorStateFS struct {

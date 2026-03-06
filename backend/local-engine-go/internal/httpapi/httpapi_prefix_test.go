@@ -12,10 +12,10 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"sqlrs/engine/internal/prepare"
-	"sqlrs/engine/internal/registry"
-	"sqlrs/engine/internal/store"
-	"sqlrs/engine/internal/store/sqlite"
+	"github.com/sqlrs/engine-local/internal/prepare"
+	"github.com/sqlrs/engine-local/internal/registry"
+	"github.com/sqlrs/engine-local/internal/store"
+	"github.com/sqlrs/engine-local/internal/store/sqlite"
 )
 
 func TestInstancesIDPrefixFilter(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sqlrs/engine/internal/prepare/queue"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func TestTaskExecutorEnsureRuntimeReusesRunnerRuntime(t *testing.T) {

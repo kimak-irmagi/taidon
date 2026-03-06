@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func TestEngineStateReadWrite(t *testing.T) {

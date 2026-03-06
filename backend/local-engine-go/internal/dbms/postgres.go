@@ -6,7 +6,7 @@ import (
 	"log"
 	"strings"
 
-	"sqlrs/engine/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/runtime"
 )
 
 type PostgresConnector struct {

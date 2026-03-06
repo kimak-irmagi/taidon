@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"sqlrs/engine/internal/config"
+	"github.com/sqlrs/engine-local/internal/config"
 )
 
 func TestConfigRoutesRequireConfigStore(t *testing.T) {

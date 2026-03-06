@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/statefs"
 )
 
 type blockingSnapshot struct {

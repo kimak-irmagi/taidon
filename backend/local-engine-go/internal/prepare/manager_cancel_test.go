@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
 )
 
 func TestCancelQueuedWithoutRunnerMarksFailed(t *testing.T) {

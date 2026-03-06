@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/daemon"
 )
 
 var connectOrStart = daemon.ConnectOrStart

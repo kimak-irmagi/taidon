@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"sqlrs/cli/internal/app"
+	"github.com/sqlrs/cli/internal/app"
 )
 
 func TestRunSuccess(t *testing.T) {

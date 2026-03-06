@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func TestExecuteStateTaskRejectsCancelledContext(t *testing.T) {

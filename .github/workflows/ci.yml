@@ -92,7 +92,7 @@ jobs:
             pkgs=()
             while IFS= read -r pkg; do
               pkgs+=("$pkg")
-            done < <(go list ./... | grep -v -E 'sqlrs/engine/internal/httpapi$|sqlrs/engine/internal/prepare$|sqlrs/engine/cmd/sqlrs-engine$|sqlrs/engine/internal/run$|sqlrs/engine/internal/store/sqlite$|sqlrs/engine/internal/prepare/queue$')
+            done < <(go list ./... | grep -v -E 'github.com/sqlrs/engine-local/internal/httpapi$|github.com/sqlrs/engine-local/internal/prepare$|github.com/sqlrs/engine-local/cmd/sqlrs-engine$|github.com/sqlrs/engine-local/internal/run$|github.com/sqlrs/engine-local/internal/store/sqlite$|github.com/sqlrs/engine-local/internal/prepare/queue$')
           fi
           if [[ "${{ matrix.runner }}" == "windows-latest" ]]; then
             go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out -json \
@@ -206,142 +206,14 @@ jobs:
           echo "engine=$engine" >> "$GITHUB_OUTPUT"
           echo "cli=$cli" >> "$GITHUB_OUTPUT"
 
-          python - <<'PY'
-          import os, re
-
-          workspace = os.environ.get("GITHUB_WORKSPACE", "")
-          workspace = os.path.normpath(workspace) if workspace else ""
-          pattern = re.compile(r"^(.+):(\d+\.\d+,\d+\.\d+\s+\d+\s+\d+)$")
-
-          def normalize_path(path: str) -> str:
-              if workspace:
-                  norm = os.path.normpath(path)
-                  if os.path.isabs(norm) and norm.startswith(workspace):
-                      path = os.path.relpath(norm, workspace)
-              if path.startswith("sqlrs/engine/"):
-                  path = path.replace("sqlrs/engine/", "backend/local-engine-go/", 1)
-              elif path.startswith("sqlrs/cli/"):
-                  path = path.replace("sqlrs/cli/", "frontend/cli-go/", 1)
-              return path.replace("\\", "/")
-
-          def resolve_existing(path: str) -> str:
-              candidates = [path]
-              if not os.path.isabs(path):
-                  candidates.append(os.path.join("frontend", "cli-go", path))
-                  candidates.append(os.path.join("backend", "local-engine-go", path))
-                  candidates.append(os.path.join("frontend", "cli-go", "internal", path))
-                  candidates.append(os.path.join("backend", "local-engine-go", "internal", path))
-              for candidate in candidates:
-                  if not workspace:
-                      return candidate.replace("\\", "/")
-                  full = os.path.normpath(os.path.join(workspace, candidate))
-                  if os.path.isfile(full):
-                      return os.path.relpath(full, workspace).replace("\\", "/")
-              if workspace and os.path.isabs(path):
-                  return os.path.relpath(path, workspace).replace("\\", "/")
-              if workspace:
-                  return os.path.normpath(path).replace("\\", "/")
-              return path.replace("\\", "/")
-
-          def rewrite(path: str, out_path: str) -> None:
-              out_lines = []
-              unresolved = []
-              with open(path, "r", encoding="utf-8") as fh:
-                  for line in fh:
-                      line = line.rstrip("\n")
-                      if line.startswith("mode:"):
-                          out_lines.append(line)
-                          continue
-                      match = pattern.match(line)
-                      if not match:
-                          out_lines.append(line)
-                          continue
-                      raw_path = match.group(1)
-                      file_path = normalize_path(raw_path)
-                      resolved = resolve_existing(file_path)
-                      if workspace and not os.path.isfile(os.path.join(workspace, resolved)):
-                          unresolved.append(raw_path)
-                      out_lines.append(f"{resolved}:{match.group(2)}")
-              with open(out_path, "w", encoding="utf-8") as fh:
-                  fh.write("\n".join(out_lines) + "\n")
-              if unresolved:
-                  print("unresolved coverage paths (sample):")
-                  for path in unresolved[:10]:
-                      print(" -", path)
-
-          def rewrite_relative(path: str, out_path: str, prefix: str) -> None:
-              prefix = prefix.replace("\\", "/").strip("/")
-              out_lines = []
-              with open(path, "r", encoding="utf-8") as fh:
-                  for line in fh:
-                      line = line.rstrip("\n")
-                      if line.startswith("mode:"):
-                          out_lines.append(line)
-                          continue
-                      match = pattern.match(line)
-                      if not match:
-                          out_lines.append(line)
-                          continue
-                      file_path = normalize_path(match.group(1))
-                      if file_path.startswith(prefix + "/"):
-                          file_path = file_path[len(prefix) + 1:]
-                      out_lines.append(f"{file_path}:{match.group(2)}")
-              with open(out_path, "w", encoding="utf-8") as fh:
-                  fh.write("\n".join(out_lines) + "\n")
-
-          rewrite("coverage.raw", "coverage.out")
-          rewrite_relative("coverage-cli.raw", "coverage-cli.out", "frontend/cli-go")
-          rewrite_relative("coverage-engine.raw", "coverage-engine.out", "backend/local-engine-go")
-          PY
-
-      - name: Debug coverage path formats
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "coverage.out first lines:"
-          head -n 5 coverage.out
-          python - <<'PY'
-          import re
-          drive = re.compile(r"^[A-Za-z]:\\\\")
-          abs_posix = re.compile(r"^/")
-          total = 0
-          drive_hits = []
-          abs_hits = []
-          with open("coverage.out", "r", encoding="utf-8") as fh:
-              for line in fh:
-                  if line.startswith("mode:"):
-                      continue
-                  total += 1
-                  path = line.split(":", 1)[0]
-                  if drive.match(path):
-                      if len(drive_hits) < 5:
-                          drive_hits.append(path)
-                  if abs_posix.match(path):
-                      if len(abs_hits) < 5:
-                          abs_hits.append(path)
-          print(f"total lines: {total}")
-          print(f"windows-drive paths: {len(drive_hits)} sample={drive_hits}")
-          print(f"posix-abs paths: {len(abs_hits)} sample={abs_hits}")
-          PY
-
-      - name: Show coverage paths (debug)
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "coverage.out sample:"
-          head -n 5 coverage.out
-          echo "coverage.raw sample:"
-          head -n 5 coverage.raw
-
       - name: Upload merged coverage artifact
         uses: actions/upload-artifact@v4
         with:
           name: coverage-merged
           path: |
-            coverage.out
             coverage.raw
-            coverage-cli.out
-            coverage-engine.out
+            coverage-cli.raw
+            coverage-engine.raw
 
       - name: Summarize low coverage
         id: coverage-details
@@ -490,11 +362,11 @@ jobs:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: coverage-cli.out
+          file: coverage-cli.raw
           format: golang
           fail-on-error: false
           debug: true
-          base-path: /frontend/cli-go
+          base-path: frontend/cli-go
           coverage-reporter-version: v0.6.14
 
       - name: Upload engine coverage to Coveralls
@@ -504,9 +376,9 @@ jobs:
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: coverage-engine.out
+          file: coverage-engine.raw
           format: golang
           fail-on-error: false
           debug: true
-          base-path: /backend/local-engine-go
+          base-path: backend/local-engine-go
           coverage-reporter-version: v0.6.14

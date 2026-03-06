@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"sqlrs/cli/internal/app"
+	"github.com/sqlrs/cli/internal/app"
 )
 
 var runApp = app.Run

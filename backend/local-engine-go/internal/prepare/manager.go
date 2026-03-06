@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"sqlrs/engine/internal/config"
-	"sqlrs/engine/internal/dbms"
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/prepare/queue"
-	"sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/statefs"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/config"
+	"github.com/sqlrs/engine-local/internal/dbms"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 const (

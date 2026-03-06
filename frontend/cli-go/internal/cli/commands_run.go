@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"sqlrs/cli/internal/cli/runkind"
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/cli/runkind"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/daemon"
 )
 
 type RunOptions struct {

@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"sqlrs/engine/internal/prepare"
+	"github.com/sqlrs/engine-local/internal/prepare"
 )
 
 func TestTasksListAndFilter(t *testing.T) {

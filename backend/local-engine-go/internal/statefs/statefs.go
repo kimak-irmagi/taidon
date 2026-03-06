@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"sqlrs/engine/internal/snapshot"
+	"github.com/sqlrs/engine-local/internal/snapshot"
 )
 
 type Capabilities struct {

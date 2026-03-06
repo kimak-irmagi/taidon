@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/config"
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 func TestResolvePrepareImageFromProjectConfig(t *testing.T) {

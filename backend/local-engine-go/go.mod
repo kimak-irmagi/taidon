@@ -1,4 +1,4 @@
-module sqlrs/engine
+module github.com/sqlrs/engine-local
 
 go 1.22
 

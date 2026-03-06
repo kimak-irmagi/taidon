@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"sqlrs/engine/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/statefs"
 )
 
 func TestResolveStatePaths(t *testing.T) {
