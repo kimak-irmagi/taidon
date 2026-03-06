@@ -667,6 +667,13 @@ func (c *jobCoordinator) loadOrPlanTasks(ctx context.Context, jobID string, prep
 		m.trimCompletedJobs(ctx, prepared)
 		return taskStatesFromPlan(tasks), stateID, nil
 	}
+	replanned, tasks, replannedStateID, errResp := c.replanTasksOnDrift(ctx, jobID, prepared, taskRecords)
+	if errResp != nil {
+		return nil, "", errResp
+	}
+	if replanned {
+		return taskStatesFromPlan(tasks), replannedStateID, nil
+	}
 	states := taskStatesFromRecords(taskRecords)
 	stateID := findOutputStateID(states)
 	for i := range states {
@@ -686,6 +693,102 @@ func (c *jobCoordinator) loadOrPlanTasks(ctx context.Context, jobID string, prep
 		}
 	}
 	return states, stateID, nil
+}
+
+func (c *jobCoordinator) replanTasksOnDrift(ctx context.Context, jobID string, prepared preparedRequest, taskRecords []queue.TaskRecord) (bool, []PlanTask, string, *ErrorResponse) {
+	m := c.m
+	if len(taskRecords) == 0 {
+		return false, nil, "", nil
+	}
+	job, ok, err := m.queue.GetJob(ctx, jobID)
+	if err != nil {
+		return false, nil, "", errorResponse("internal_error", "cannot load job", err.Error())
+	}
+	if !ok {
+		return false, nil, "", errorResponse("internal_error", "cannot load job", jobID)
+	}
+
+	signatureDrift, errResp := m.hasPlanSignatureDrift(prepared, job, taskRecords)
+	if errResp != nil {
+		return false, nil, "", errResp
+	}
+	shapeDrift := hasPsqlExecuteShapeDrift(prepared, taskRecords)
+	if !signatureDrift && !shapeDrift {
+		return false, nil, "", nil
+	}
+
+	tasks, stateID, buildErr := c.buildPlan(ctx, jobID, prepared)
+	if buildErr != nil {
+		return false, nil, "", buildErr
+	}
+	if prepared.request.PrepareKind == "lb" {
+		if errResp := m.updateJobSignatureFromPlan(ctx, jobID, prepared, tasks); errResp != nil {
+			return false, nil, "", errResp
+		}
+	} else {
+		if errResp := m.updateJobSignature(ctx, jobID, prepared); errResp != nil {
+			return false, nil, "", errResp
+		}
+	}
+	records := taskRecordsFromPlan(jobID, tasks)
+	if err := m.queue.ReplaceTasks(ctx, jobID, records); err != nil {
+		return false, nil, "", errorResponse("internal_error", "cannot store tasks", err.Error())
+	}
+	m.logJob(jobID, "replanned tasks due to plan drift signature=%t shape=%t count=%d state_id=%s", signatureDrift, shapeDrift, len(tasks), stateID)
+	return true, tasks, stateID, nil
+}
+
+func (m *PrepareService) hasPlanSignatureDrift(prepared preparedRequest, job queue.JobRecord, taskRecords []queue.TaskRecord) (bool, *ErrorResponse) {
+	storedSignature := strings.TrimSpace(valueOrEmpty(job.Signature))
+	if storedSignature == "" {
+		return false, nil
+	}
+
+	var expectedSignature string
+	var errResp *ErrorResponse
+	if prepared.request.PrepareKind == "lb" {
+		expectedSignature, errResp = m.computeJobSignatureFromPlan(prepared, planTasksFromRecords(taskRecords))
+	} else {
+		expectedSignature, errResp = m.computeJobSignature(prepared)
+	}
+	if errResp != nil {
+		return false, errResp
+	}
+	return storedSignature != expectedSignature, nil
+}
+
+func hasPsqlExecuteShapeDrift(prepared preparedRequest, taskRecords []queue.TaskRecord) bool {
+	if prepared.request.PrepareKind != "psql" {
+		return false
+	}
+	expectedExecTasks := len(prepared.psqlSteps)
+	if expectedExecTasks == 0 {
+		expectedExecTasks = 1
+	}
+	if expectedExecTasks <= 1 {
+		return false
+	}
+	actualExecTasks := 0
+	seen := map[string]bool{}
+	for _, task := range taskRecords {
+		if task.Type != "state_execute" {
+			continue
+		}
+		actualExecTasks++
+		seen[task.TaskID] = true
+	}
+	if actualExecTasks > 0 && actualExecTasks < expectedExecTasks {
+		return true
+	}
+	if actualExecTasks != expectedExecTasks {
+		return false
+	}
+	for i := 0; i < expectedExecTasks; i++ {
+		if !seen[fmt.Sprintf("execute-%d", i)] {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *PrepareService) updateJobSignature(ctx context.Context, jobID string, prepared preparedRequest) *ErrorResponse {
@@ -738,6 +841,7 @@ func (m *PrepareService) computeJobSignatureFromPlan(prepared preparedRequest, t
 	hasher := newStateHasher()
 	hasher.write("image_id", imageID)
 	hasher.write("plan_only", fmt.Sprintf("%t", prepared.request.PlanOnly))
+	hasher.write("engine_version", m.version)
 	for _, task := range tasks {
 		hasher.write("task_id", task.TaskID)
 		hasher.write("task_type", task.Type)
