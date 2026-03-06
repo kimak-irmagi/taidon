@@ -76,9 +76,11 @@ sqlrs
   watch
   plan
   run
+  diff
 ```
 
-Not all groups are required in MVP.
+Not all groups are required in MVP. `diff` is part of the git-aware passive
+feature set (future).
 
 ---
 
@@ -183,6 +185,19 @@ sqlrs watch <job_id>
 See:
 
 - [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
+
+---
+
+### 3.9 `sqlrs diff`
+
+Compare the prepare context (migration/script files) between two Git refs or two
+local paths. Reports Added / Modified / Removed with optional content and summary.
+Part of the git-aware passive feature set; not in MVP.
+
+See:
+
+- [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
+- [`docs/architecture/git-aware-passive.md`](git-aware-passive.md) (scenario P3)
 
 ---
 
