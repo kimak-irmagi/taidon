@@ -354,23 +354,23 @@ func TestExecutePsqlStepErrors(t *testing.T) {
 	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{psql: &fakePsqlRunner{}})
 	prepared := preparedRequest{normalizedArgs: []string{"-f"}}
 	rt := &jobRuntime{scriptMount: &scriptMount{HostRoot: t.TempDir(), ContainerRoot: containerScriptsRoot}}
-	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt); errResp == nil {
+	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{}); errResp == nil {
 		t.Fatalf("expected args error")
 	}
 	mgr.psql = nil
 	prepared = preparedRequest{normalizedArgs: []string{"-c", "select 1"}}
 	rt = &jobRuntime{}
-	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt); errResp == nil {
+	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{}); errResp == nil {
 		t.Fatalf("expected missing psql runner error")
 	}
 	mgr.psql = &fakePsqlRunner{output: " ", err: errors.New("boom")}
-	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt); errResp == nil {
+	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{}); errResp == nil {
 		t.Fatalf("expected execution error")
 	}
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 	mgr.psql = &fakePsqlRunner{}
-	if errResp := mgr.executePsqlStep(cancelCtx, "job-1", prepared, rt); errResp == nil {
+	if errResp := mgr.executePsqlStep(cancelCtx, "job-1", prepared, rt, taskState{}); errResp == nil {
 		t.Fatalf("expected cancelled error")
 	}
 }
@@ -421,7 +421,7 @@ func TestExecutePsqlStepOutputDetails(t *testing.T) {
 	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{psql: psql})
 	prepared := preparedRequest{normalizedArgs: []string{"-c", "select 1"}}
 	rt := &jobRuntime{}
-	errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt)
+	errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{})
 	if errResp == nil || !strings.Contains(errResp.Details, "details") {
 		t.Fatalf("expected details from output, got %+v", errResp)
 	}
@@ -443,7 +443,7 @@ func TestExecutePsqlStepContextCancelAfterRun(t *testing.T) {
 	rt := &jobRuntime{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if errResp := mgr.executePsqlStep(ctx, "job-1", prepared, rt); errResp == nil {
+	if errResp := mgr.executePsqlStep(ctx, "job-1", prepared, rt, taskState{}); errResp == nil {
 		t.Fatalf("expected cancelled error")
 	}
 }
@@ -460,7 +460,7 @@ func TestExecutePsqlStepOutputFallback(t *testing.T) {
 	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{psql: psql})
 	prepared := preparedRequest{normalizedArgs: []string{"-c", "select 1"}}
 	rt := &jobRuntime{}
-	errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt)
+	errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{})
 	if errResp == nil || !strings.Contains(errResp.Details, "boom") {
 		t.Fatalf("expected fallback details, got %+v", errResp)
 	}
@@ -501,7 +501,7 @@ func TestExecutePsqlStepRunsAndLogs(t *testing.T) {
 	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{psql: psql})
 	prepared := preparedRequest{normalizedArgs: []string{"-c", "select 1"}}
 	rt := &jobRuntime{}
-	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt); errResp != nil {
+	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{}); errResp != nil {
 		t.Fatalf("executePsqlStep: %+v", errResp)
 	}
 }
@@ -613,7 +613,7 @@ func TestExecutePsqlStepOutputLines(t *testing.T) {
 	mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), &testDeps{psql: psql})
 	prepared := preparedRequest{normalizedArgs: []string{"-c", "select 1"}}
 	rt := &jobRuntime{}
-	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt); errResp != nil {
+	if errResp := mgr.executePsqlStep(context.Background(), "job-1", prepared, rt, taskState{}); errResp != nil {
 		t.Fatalf("executePsqlStep: %+v", errResp)
 	}
 }

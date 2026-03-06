@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,13 @@ import (
 )
 
 var isWindows = runtime.GOOS == "windows"
+
+var cachedEngineStates = struct {
+	mu sync.Mutex
+	m  map[string]EngineState
+}{
+	m: map[string]EngineState{},
+}
 
 type ConnectOptions struct {
 	Endpoint        string
@@ -50,15 +58,39 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 		return ConnectResult{Endpoint: endpoint}, nil
 	}
 
+	enginePath := filepath.Join(opts.StateDir, "engine.json")
+	if state, ok := loadCachedEngineState(opts); ok {
+		if healthy, ok := tryHealthyState(ctx, state, opts.ClientTimeout, opts.Verbose); ok {
+			return ConnectResult{Endpoint: healthy.Endpoint, AuthToken: healthy.AuthToken, State: healthy}, nil
+		}
+	}
+	logVerbose(opts.Verbose, "checking engine.json at %s", enginePath)
+	if state, ok, _ := loadHealthyStateWithReason(ctx, enginePath, opts.ClientTimeout); ok {
+		if refreshed, authOK := refreshStateOnAuthRejected(ctx, enginePath, state, opts.ClientTimeout, opts.Verbose); authOK {
+			state = refreshed
+		} else {
+			goto LONG_PATH
+		}
+		storeCachedEngineState(opts, state)
+		logVerbose(opts.Verbose, "engine healthy at %s", state.Endpoint)
+		return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
+	}
+
+LONG_PATH:
 	if err := ensureWSLStoreMount(ctx, opts); err != nil {
 		return ConnectResult{}, err
 	}
 
-	enginePath := filepath.Join(opts.StateDir, "engine.json")
-	logVerbose(opts.Verbose, "checking engine.json at %s", enginePath)
-	if state, ok := loadHealthyState(ctx, enginePath, opts.ClientTimeout); ok {
-		logVerbose(opts.Verbose, "engine healthy at %s", state.Endpoint)
-		return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
+	mustStartDaemon := false
+	// Recheck after WSL mount setup to avoid unnecessary daemon startup.
+	if state, ok, _ := loadHealthyStateWithReason(ctx, enginePath, opts.ClientTimeout); ok {
+		if refreshed, authOK := refreshStateOnAuthRejected(ctx, enginePath, state, opts.ClientTimeout, opts.Verbose); authOK {
+			state = refreshed
+			logVerbose(opts.Verbose, "engine healthy at %s", state.Endpoint)
+			storeCachedEngineState(opts, state)
+			return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
+		}
+		mustStartDaemon = true
 	}
 
 	if !opts.Autostart {
@@ -85,11 +117,21 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 	defer lock.Release()
 
 	logVerbose(opts.Verbose, "acquired engine lock")
-	if state, ok := loadHealthyState(ctx, enginePath, opts.ClientTimeout); ok {
-		logVerbose(opts.Verbose, "engine became healthy while waiting for lock")
-		return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
+	if !mustStartDaemon {
+		if state, ok, _ := loadHealthyStateWithReason(ctx, enginePath, opts.ClientTimeout); ok {
+			if refreshed, authOK := refreshStateOnAuthRejected(ctx, enginePath, state, opts.ClientTimeout, opts.Verbose); authOK {
+				state = refreshed
+				logVerbose(opts.Verbose, "engine became healthy while waiting for lock")
+				storeCachedEngineState(opts, state)
+				return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
+			}
+			mustStartDaemon = true
+		}
 	}
 
+	if mustStartDaemon {
+		logVerbose(opts.Verbose, "healthy engine rejected auth after refresh; starting new daemon")
+	}
 	logsDir := filepath.Join(opts.StateDir, "logs")
 	if err := util.EnsureDir(logsDir); err != nil {
 		return ConnectResult{}, err
@@ -167,6 +209,7 @@ func ConnectOrStart(ctx context.Context, opts ConnectOptions) (ConnectResult, er
 				tailer.Stop()
 			}
 			logVerbose(opts.Verbose, "engine healthy at %s", state.Endpoint)
+			storeCachedEngineState(opts, state)
 			return ConnectResult{Endpoint: state.Endpoint, AuthToken: state.AuthToken, State: state}, nil
 		} else if opts.Verbose && reason != "" {
 			now := time.Now()
@@ -226,6 +269,95 @@ func loadHealthyStateWithReason(ctx context.Context, enginePath string, timeout 
 		return EngineState{}, false, "engine state is stale"
 	}
 	return state, true, ""
+}
+
+func cacheKey(opts ConnectOptions) string {
+	return filepath.Clean(strings.TrimSpace(opts.StateDir))
+}
+
+func loadCachedEngineState(opts ConnectOptions) (EngineState, bool) {
+	key := cacheKey(opts)
+	if key == "" {
+		return EngineState{}, false
+	}
+	cachedEngineStates.mu.Lock()
+	defer cachedEngineStates.mu.Unlock()
+	state, ok := cachedEngineStates.m[key]
+	return state, ok
+}
+
+func storeCachedEngineState(opts ConnectOptions, state EngineState) {
+	key := cacheKey(opts)
+	if key == "" || strings.TrimSpace(state.Endpoint) == "" {
+		return
+	}
+	cachedEngineStates.mu.Lock()
+	cachedEngineStates.m[key] = state
+	cachedEngineStates.mu.Unlock()
+}
+
+func tryHealthyState(ctx context.Context, state EngineState, timeout time.Duration, verbose bool) (EngineState, bool) {
+	health, err := checkHealth(ctx, state.Endpoint, timeout)
+	if err != nil {
+		return EngineState{}, false
+	}
+	if state.InstanceID != "" && health.InstanceID != "" && state.InstanceID != health.InstanceID {
+		return EngineState{}, false
+	}
+	if ok, _, reason := checkAuthWithToken(ctx, state.Endpoint, state.AuthToken, timeout); ok {
+		logVerbose(verbose, "engine healthy at %s", state.Endpoint)
+		return state, true
+	} else if reason != "" {
+		logVerbose(verbose, "auth probe failed: %s", reason)
+	}
+	return EngineState{}, false
+}
+
+func refreshStateOnAuthRejected(ctx context.Context, enginePath string, state EngineState, timeout time.Duration, verbose bool) (EngineState, bool) {
+	if ok, authRejected, reason := checkAuthWithToken(ctx, state.Endpoint, state.AuthToken, timeout); ok {
+		return state, true
+	} else if !authRejected {
+		logVerbose(verbose, "auth probe failed: %s", reason)
+		return EngineState{}, false
+	}
+	logVerbose(verbose, "auth rejected, re-reading engine.json")
+	refreshed, ok, _ := loadHealthyStateWithReason(ctx, enginePath, timeout)
+	if !ok {
+		return EngineState{}, false
+	}
+	if ok, _, _ := checkAuthWithToken(ctx, refreshed.Endpoint, refreshed.AuthToken, timeout); !ok {
+		return EngineState{}, false
+	}
+	return refreshed, true
+}
+
+func checkAuthWithToken(ctx context.Context, endpoint, token string, timeout time.Duration) (ok bool, authRejected bool, reason string) {
+	if strings.TrimSpace(endpoint) == "" {
+		return false, false, "empty endpoint"
+	}
+	// If auth is not configured, health check is sufficient.
+	if strings.TrimSpace(token) == "" {
+		return true, false, ""
+	}
+	base := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "http://" + base
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/prepare-jobs", nil)
+	if err != nil {
+		return false, false, err.Error()
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	cli := &http.Client{Timeout: timeout}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return false, false, err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return false, true, resp.Status
+	}
+	return true, false, ""
 }
 
 func formatEngineExit(err error) error {

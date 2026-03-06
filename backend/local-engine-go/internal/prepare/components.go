@@ -14,7 +14,7 @@ type jobCoordinatorAPI interface {
 type taskExecutorAPI interface {
 	executeStateTask(ctx context.Context, jobID string, prepared preparedRequest, task taskState) (string, *ErrorResponse)
 	executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse
-	executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse
+	executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse
 	executeLiquibaseStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse
 	runLiquibaseUpdateSQL(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) ([]LiquibaseChangeset, *ErrorResponse)
 	createInstance(ctx context.Context, jobID string, prepared preparedRequest, stateID string) (*Result, *ErrorResponse)
@@ -73,8 +73,8 @@ func (m *PrepareService) executePrepareStep(ctx context.Context, jobID string, p
 	return m.executor.executePrepareStep(ctx, jobID, prepared, rt, task)
 }
 
-func (m *PrepareService) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
-	return m.executor.executePsqlStep(ctx, jobID, prepared, rt)
+func (m *PrepareService) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
+	return m.executor.executePsqlStep(ctx, jobID, prepared, rt, task)
 }
 
 func (m *PrepareService) executeLiquibaseStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {

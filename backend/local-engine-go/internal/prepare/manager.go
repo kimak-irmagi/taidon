@@ -97,6 +97,7 @@ type preparedRequest struct {
 	liquibaseMounts      []runtime.Mount
 	resolvedImageID      string
 	psqlInputs           []psqlInput
+	psqlSteps            []psqlStep
 	psqlWorkDir          string
 	liquibaseLockPaths   []string
 	liquibaseSearchPaths []string
@@ -559,6 +560,21 @@ func (c *jobCoordinator) runJob(prepared preparedRequest, jobID string) {
 			_ = m.failJob(jobID, errorResponse("internal_error", "task failed", task.TaskID))
 			return
 		}
+		if task.Type == "state_execute" && task.Cached != nil && *task.Cached && strings.TrimSpace(task.OutputStateID) != "" {
+			cached, err := m.isStateCached(task.OutputStateID)
+			if err != nil {
+				_ = m.failJob(jobID, errorResponse("internal_error", "cannot check state cache", err.Error()))
+				return
+			}
+			if cached {
+				stateID = task.OutputStateID
+				if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusSucceeded, nil, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil); err != nil {
+					_ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
+					return
+				}
+				continue
+			}
+		}
 		if err := m.updateTaskStatus(ctx, jobID, task.TaskID, StatusRunning, strPtr(m.now().UTC().Format(time.RFC3339Nano)), nil, nil); err != nil {
 			_ = m.failJob(jobID, errorResponse("internal_error", "cannot update task status", err.Error()))
 			return
@@ -651,6 +667,13 @@ func (c *jobCoordinator) loadOrPlanTasks(ctx context.Context, jobID string, prep
 		m.trimCompletedJobs(ctx, prepared)
 		return taskStatesFromPlan(tasks), stateID, nil
 	}
+	replanned, tasks, replannedStateID, errResp := c.replanTasksOnDrift(ctx, jobID, prepared, taskRecords)
+	if errResp != nil {
+		return nil, "", errResp
+	}
+	if replanned {
+		return taskStatesFromPlan(tasks), replannedStateID, nil
+	}
 	states := taskStatesFromRecords(taskRecords)
 	stateID := findOutputStateID(states)
 	for i := range states {
@@ -670,6 +693,102 @@ func (c *jobCoordinator) loadOrPlanTasks(ctx context.Context, jobID string, prep
 		}
 	}
 	return states, stateID, nil
+}
+
+func (c *jobCoordinator) replanTasksOnDrift(ctx context.Context, jobID string, prepared preparedRequest, taskRecords []queue.TaskRecord) (bool, []PlanTask, string, *ErrorResponse) {
+	m := c.m
+	if len(taskRecords) == 0 {
+		return false, nil, "", nil
+	}
+	job, ok, err := m.queue.GetJob(ctx, jobID)
+	if err != nil {
+		return false, nil, "", errorResponse("internal_error", "cannot load job", err.Error())
+	}
+	if !ok {
+		return false, nil, "", errorResponse("internal_error", "cannot load job", jobID)
+	}
+
+	signatureDrift, errResp := m.hasPlanSignatureDrift(prepared, job, taskRecords)
+	if errResp != nil {
+		return false, nil, "", errResp
+	}
+	shapeDrift := hasPsqlExecuteShapeDrift(prepared, taskRecords)
+	if !signatureDrift && !shapeDrift {
+		return false, nil, "", nil
+	}
+
+	tasks, stateID, buildErr := c.buildPlan(ctx, jobID, prepared)
+	if buildErr != nil {
+		return false, nil, "", buildErr
+	}
+	if prepared.request.PrepareKind == "lb" {
+		if errResp := m.updateJobSignatureFromPlan(ctx, jobID, prepared, tasks); errResp != nil {
+			return false, nil, "", errResp
+		}
+	} else {
+		if errResp := m.updateJobSignature(ctx, jobID, prepared); errResp != nil {
+			return false, nil, "", errResp
+		}
+	}
+	records := taskRecordsFromPlan(jobID, tasks)
+	if err := m.queue.ReplaceTasks(ctx, jobID, records); err != nil {
+		return false, nil, "", errorResponse("internal_error", "cannot store tasks", err.Error())
+	}
+	m.logJob(jobID, "replanned tasks due to plan drift signature=%t shape=%t count=%d state_id=%s", signatureDrift, shapeDrift, len(tasks), stateID)
+	return true, tasks, stateID, nil
+}
+
+func (m *PrepareService) hasPlanSignatureDrift(prepared preparedRequest, job queue.JobRecord, taskRecords []queue.TaskRecord) (bool, *ErrorResponse) {
+	storedSignature := strings.TrimSpace(valueOrEmpty(job.Signature))
+	if storedSignature == "" {
+		return false, nil
+	}
+
+	var expectedSignature string
+	var errResp *ErrorResponse
+	if prepared.request.PrepareKind == "lb" {
+		expectedSignature, errResp = m.computeJobSignatureFromPlan(prepared, planTasksFromRecords(taskRecords))
+	} else {
+		expectedSignature, errResp = m.computeJobSignature(prepared)
+	}
+	if errResp != nil {
+		return false, errResp
+	}
+	return storedSignature != expectedSignature, nil
+}
+
+func hasPsqlExecuteShapeDrift(prepared preparedRequest, taskRecords []queue.TaskRecord) bool {
+	if prepared.request.PrepareKind != "psql" {
+		return false
+	}
+	expectedExecTasks := len(prepared.psqlSteps)
+	if expectedExecTasks == 0 {
+		expectedExecTasks = 1
+	}
+	if expectedExecTasks <= 1 {
+		return false
+	}
+	actualExecTasks := 0
+	seen := map[string]bool{}
+	for _, task := range taskRecords {
+		if task.Type != "state_execute" {
+			continue
+		}
+		actualExecTasks++
+		seen[task.TaskID] = true
+	}
+	if actualExecTasks > 0 && actualExecTasks < expectedExecTasks {
+		return true
+	}
+	if actualExecTasks != expectedExecTasks {
+		return false
+	}
+	for i := 0; i < expectedExecTasks; i++ {
+		if !seen[fmt.Sprintf("execute-%d", i)] {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *PrepareService) updateJobSignature(ctx context.Context, jobID string, prepared preparedRequest) *ErrorResponse {
@@ -722,6 +841,7 @@ func (m *PrepareService) computeJobSignatureFromPlan(prepared preparedRequest, t
 	hasher := newStateHasher()
 	hasher.write("image_id", imageID)
 	hasher.write("plan_only", fmt.Sprintf("%t", prepared.request.PlanOnly))
+	hasher.write("engine_version", m.version)
 	for _, task := range tasks {
 		hasher.write("task_id", task.TaskID)
 		hasher.write("task_type", task.Type)
@@ -839,6 +959,7 @@ func (m *PrepareService) prepareRequest(req Request) (preparedRequest, error) {
 			argsNormalized: psqlPrepared.argsNormalized,
 			filePaths:      psqlPrepared.filePaths,
 			psqlInputs:     psqlPrepared.inputs,
+			psqlSteps:      psqlPrepared.steps,
 			psqlWorkDir:    psqlPrepared.workDir,
 		}
 	case "lb":
@@ -890,25 +1011,21 @@ func (c *jobCoordinator) buildPlan(ctx context.Context, jobID string, prepared p
 
 func (c *jobCoordinator) buildPlanPsql(prepared preparedRequest) ([]PlanTask, string, *ErrorResponse) {
 	m := c.m
-	taskHash, errResp := m.computeTaskHash(prepared)
-	if errResp != nil {
-		return nil, "", errResp
-	}
 	imageID := prepared.effectiveImageID()
 	if strings.TrimSpace(imageID) == "" {
 		return nil, "", errorResponse("internal_error", "resolved image id is required", "")
 	}
-	stateID, errResp := m.computeOutputStateID("image", imageID, taskHash)
-	if errResp != nil {
-		return nil, "", errResp
-	}
-	cached, err := m.isStateCached(stateID)
-	if err != nil {
-		return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
-	}
-	cachedFlag := cached
 
-	tasks := make([]PlanTask, 0, 3)
+	steps := prepared.psqlSteps
+	if len(steps) == 0 {
+		steps = []psqlStep{{
+			args:   append([]string{}, prepared.normalizedArgs...),
+			inputs: append([]psqlInput{}, prepared.psqlInputs...),
+			stdin:  prepared.request.Stdin,
+		}}
+	}
+
+	tasks := make([]PlanTask, 0, 3+len(steps))
 	tasks = append(tasks, PlanTask{
 		TaskID:      "plan",
 		Type:        "plan",
@@ -922,28 +1039,52 @@ func (c *jobCoordinator) buildPlanPsql(prepared preparedRequest) ([]PlanTask, st
 			ResolvedImageID: imageID,
 		})
 	}
-	tasks = append(tasks,
-		PlanTask{
-			TaskID: "execute-0",
+
+	inputKind := "image"
+	inputID := imageID
+	stateID := ""
+	for i, step := range steps {
+		digest, err := computePsqlContentDigest(step.inputs, prepared.psqlWorkDir)
+		if err != nil {
+			return nil, "", errorResponse("invalid_argument", "cannot compute psql content hash", err.Error())
+		}
+		taskHash := psqlTaskHash(prepared.request.PrepareKind, digest.hash, m.version)
+		outputStateID, errResp := m.computeOutputStateID(inputKind, inputID, taskHash)
+		if errResp != nil {
+			return nil, "", errResp
+		}
+		cached, err := m.isStateCached(outputStateID)
+		if err != nil {
+			return nil, "", errorResponse("internal_error", "cannot check state cache", err.Error())
+		}
+		cachedFlag := cached
+		tasks = append(tasks, PlanTask{
+			TaskID: fmt.Sprintf("execute-%d", i),
 			Type:   "state_execute",
 			Input: &TaskInput{
-				Kind: "image",
-				ID:   imageID,
+				Kind: inputKind,
+				ID:   inputID,
 			},
 			TaskHash:      taskHash,
-			OutputStateID: stateID,
+			OutputStateID: outputStateID,
 			Cached:        &cachedFlag,
+		})
+		inputKind = "state"
+		inputID = outputStateID
+		stateID = outputStateID
+	}
+	if strings.TrimSpace(stateID) == "" {
+		return nil, "", errorResponse("internal_error", "missing output state", "")
+	}
+	tasks = append(tasks, PlanTask{
+		TaskID: "prepare-instance",
+		Type:   "prepare_instance",
+		Input: &TaskInput{
+			Kind: "state",
+			ID:   stateID,
 		},
-		PlanTask{
-			TaskID: "prepare-instance",
-			Type:   "prepare_instance",
-			Input: &TaskInput{
-				Kind: "state",
-				ID:   stateID,
-			},
-			InstanceMode: "ephemeral",
-		},
-	)
+		InstanceMode: "ephemeral",
+	})
 	return tasks, stateID, nil
 }
 
@@ -1127,7 +1268,7 @@ func (e *taskExecutor) runLiquibaseUpdateSQL(ctx context.Context, jobID string, 
 		args = relativizeLiquibaseHostFileArgs(args, workDir)
 	}
 	args = replaceLiquibaseCommand(args, "updateSQL")
-	args = prependLiquibaseConnectionArgs(args, rt.instance)
+	args = prependLiquibaseConnectionArgs(args, rt.instance, windowsMode)
 	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
 	if err != nil {
 		return nil, errorResponse("internal_error", "cannot map liquibase env", err.Error())

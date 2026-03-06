@@ -64,7 +64,7 @@ func (s *executorSpy) executePrepareStep(ctx context.Context, jobID string, prep
 	return nil
 }
 
-func (s *executorSpy) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
+func (s *executorSpy) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	s.executePsqlStepCalled = true
 	return nil
 }
@@ -169,7 +169,7 @@ func TestManagerDelegatesToExecutorAndSnapshot(t *testing.T) {
 	if !executor.executePrepareStepCalled {
 		t.Fatalf("expected executePrepareStep delegation")
 	}
-	if errResp := mgr.executePsqlStep(context.Background(), "job-1", preparedRequest{}, &jobRuntime{}); errResp != nil {
+	if errResp := mgr.executePsqlStep(context.Background(), "job-1", preparedRequest{}, &jobRuntime{}, taskState{}); errResp != nil {
 		t.Fatalf("unexpected executePsqlStep error: %+v", errResp)
 	}
 	if !executor.executePsqlStepCalled {

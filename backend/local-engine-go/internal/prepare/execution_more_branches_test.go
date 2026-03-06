@@ -101,7 +101,7 @@ func TestExecuteStateTaskCachedUnknownKindReturnsImmediately(t *testing.T) {
 	}
 }
 
-func TestExecuteStateTaskCachedStateMissingPGVersionInvalidatesAndRebuilds(t *testing.T) {
+func TestExecuteStateTaskCachedStateMissingPGVersionReturnsCachedWithoutInvalidation(t *testing.T) {
 	st := &fakeStore{}
 	mgr := newManagerWithStateFS(t, st, &fakeStateFS{})
 	prepared, err := mgr.prepareRequest(Request{
@@ -138,15 +138,15 @@ func TestExecuteStateTaskCachedStateMissingPGVersionInvalidatesAndRebuilds(t *te
 	if got != outputID {
 		t.Fatalf("expected %q, got %q", outputID, got)
 	}
-	if len(st.deletedStates) == 0 || st.deletedStates[0] != outputID {
-		t.Fatalf("expected cached state invalidation, got %+v", st.deletedStates)
+	if len(st.deletedStates) != 0 {
+		t.Fatalf("expected no cached state invalidation during execute task, got %+v", st.deletedStates)
 	}
-	if _, ok := st.statesByID[outputID]; !ok {
-		t.Fatalf("expected state %q to be recreated", outputID)
+	if len(st.states) != 0 {
+		t.Fatalf("expected no state rebuild for cached state, got %+v", st.states)
 	}
 }
 
-func TestExecuteStateTaskCachedStatePGVersionRuntimeFailureRebuildsWithoutInvalidation(t *testing.T) {
+func TestExecuteStateTaskCachedStatePGVersionReturnsWithoutRuntimeStart(t *testing.T) {
 	mountDir := filepath.Join(t.TempDir(), "runtime-mount")
 	if err := os.MkdirAll(mountDir, 0o700); err != nil {
 		t.Fatalf("mkdir mount dir: %v", err)
@@ -194,15 +194,15 @@ func TestExecuteStateTaskCachedStatePGVersionRuntimeFailureRebuildsWithoutInvali
 	if len(st.deletedStates) != 0 {
 		t.Fatalf("expected no cached state invalidation, got %+v", st.deletedStates)
 	}
-	if len(fs.snapshotCalls) != 1 {
-		t.Fatalf("expected forced rebuild snapshot, got %+v", fs.snapshotCalls)
+	if len(fs.snapshotCalls) != 0 {
+		t.Fatalf("expected no snapshot rebuild for cached state, got %+v", fs.snapshotCalls)
 	}
-	if len(st.states) != 1 {
-		t.Fatalf("expected rebuilt state to be stored, got %+v", st.states)
+	if len(st.states) != 0 {
+		t.Fatalf("expected no state rebuild for cached state, got %+v", st.states)
 	}
 }
 
-func TestExecuteStateTaskCachedStateNonRecoverableStartErrorReturnsOriginal(t *testing.T) {
+func TestExecuteStateTaskCachedStateSkipsRuntimeStartErrorPath(t *testing.T) {
 	fs := &fakeStateFS{cloneErr: errors.New("clone failed")}
 	st := &fakeStore{}
 	mgr := newManagerWithStateFS(t, st, fs)
@@ -236,9 +236,12 @@ func TestExecuteStateTaskCachedStateNonRecoverableStartErrorReturnsOriginal(t *t
 			Input:         &TaskInput{Kind: "image", ID: "image-1"},
 		},
 	}
-	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
-	if errResp == nil || !strings.Contains(errResp.Message, "cannot clone state") {
-		t.Fatalf("expected clone error, got %+v", errResp)
+	got, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if got != outputID {
+		t.Fatalf("expected %q, got %q", outputID, got)
 	}
 }
 
@@ -439,7 +442,7 @@ func TestExecutePsqlStepReturnsCancelledWhenRunFailsAfterCancel(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		cancel()
 	}()
-	errResp := mgr.executePsqlStep(ctx, "job-1", prepared, rt)
+	errResp := mgr.executePsqlStep(ctx, "job-1", prepared, rt, taskState{})
 	if errResp == nil || errResp.Code != "cancelled" {
 		t.Fatalf("expected cancelled error, got %+v", errResp)
 	}
@@ -536,7 +539,7 @@ func (r *failStateRuntimeStart) Start(ctx context.Context, req engineRuntime.Sta
 	return instance, nil
 }
 
-func TestExecuteStateTaskLiquibaseCachedStateRuntimeFailureRebuildsWithFreshRuntime(t *testing.T) {
+func TestExecuteStateTaskLiquibaseCachedStateSkipsIntermediateRuntimeStart(t *testing.T) {
 	fs := &fakeStateFS{}
 	st := &fakeStore{}
 	runtime := &failStateRuntimeStart{}
@@ -608,13 +611,13 @@ func TestExecuteStateTaskLiquibaseCachedStateRuntimeFailureRebuildsWithFreshRunt
 	if got != outputID {
 		t.Fatalf("expected %q, got %q", outputID, got)
 	}
-	if len(runtime.startCalls) != 3 {
-		t.Fatalf("expected 3 runtime starts (image/state/image), got %+v", runtime.startCalls)
+	if len(runtime.startCalls) != 1 {
+		t.Fatalf("expected one runtime start for updateSQL fallback, got %+v", runtime.startCalls)
 	}
-	if !runtime.startCalls[0].AllowInitdb || runtime.startCalls[1].AllowInitdb || !runtime.startCalls[2].AllowInitdb {
-		t.Fatalf("unexpected runtime start sequence: %+v", runtime.startCalls)
+	if !runtime.startCalls[0].AllowInitdb {
+		t.Fatalf("expected planning runtime start from image, got %+v", runtime.startCalls)
 	}
-	if len(st.states) != 1 {
-		t.Fatalf("expected rebuilt state to be stored, got %+v", st.states)
+	if len(st.states) != 0 {
+		t.Fatalf("expected no state rebuild for cached liquibase step, got %+v", st.states)
 	}
 }

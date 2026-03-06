@@ -49,6 +49,161 @@ func TestLoadOrPlanTasksRequeuesRunningStateWhenCacheMissing(t *testing.T) {
 	}
 }
 
+func TestLoadOrPlanTasksReplansLegacySingleStepPsqlShape(t *testing.T) {
+	queueStore := newQueueStore(t)
+	req := Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1@sha256:resolved",
+		PsqlArgs:    []string{"-c", "select 1", "-c", "select 2"},
+	}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+
+	mgr := newManagerWithQueue(t, &fakeStore{statesByID: map[string]store.StateEntry{}}, queueStore)
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	signature, errResp := mgr.computeJobSignature(prepared)
+	if errResp != nil {
+		t.Fatalf("computeJobSignature: %+v", errResp)
+	}
+	if err := queueStore.UpdateJob(context.Background(), "job-1", queue.JobUpdate{Signature: &signature}); err != nil {
+		t.Fatalf("UpdateJob signature: %v", err)
+	}
+	legacyTaskHash, errResp := mgr.computeTaskHash(prepared)
+	if errResp != nil {
+		t.Fatalf("computeTaskHash: %+v", errResp)
+	}
+	legacyStateID, errResp := mgr.computeOutputStateID("image", prepared.effectiveImageID(), legacyTaskHash)
+	if errResp != nil {
+		t.Fatalf("computeOutputStateID: %+v", errResp)
+	}
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", []queue.TaskRecord{
+		{
+			JobID:    "job-1",
+			TaskID:   "plan",
+			Position: 0,
+			Type:     "plan",
+			Status:   StatusQueued,
+		},
+		{
+			JobID:         "job-1",
+			TaskID:        "execute-0",
+			Position:      1,
+			Type:          "state_execute",
+			Status:        StatusQueued,
+			InputKind:     strPtr("image"),
+			InputID:       strPtr(prepared.effectiveImageID()),
+			TaskHash:      &legacyTaskHash,
+			OutputStateID: &legacyStateID,
+		},
+		{
+			JobID:       "job-1",
+			TaskID:      "prepare-instance",
+			Position:    2,
+			Type:        "prepare_instance",
+			Status:      StatusQueued,
+			InputKind:   strPtr("state"),
+			InputID:     &legacyStateID,
+			InstanceMode: strPtr("runtime"),
+		},
+	}); err != nil {
+		t.Fatalf("ReplaceTasks legacy plan: %v", err)
+	}
+
+	states, _, errResp := mgr.loadOrPlanTasks(context.Background(), "job-1", prepared)
+	if errResp != nil {
+		t.Fatalf("loadOrPlanTasks: %+v", errResp)
+	}
+	if len(states) != 4 {
+		t.Fatalf("expected re-planned 4 tasks (plan + 2 execute + prepare-instance), got %+v", states)
+	}
+	foundExecute1 := false
+	for _, task := range states {
+		if task.TaskID == "execute-1" {
+			foundExecute1 = true
+			break
+		}
+	}
+	if !foundExecute1 {
+		t.Fatalf("expected execute-1 task after re-plan, got %+v", states)
+	}
+}
+
+func TestLoadOrPlanTasksReplansOnEngineVersionSignatureDrift(t *testing.T) {
+	queueStore := newQueueStore(t)
+	req := Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1@sha256:resolved",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}
+	createJobRecord(t, queueStore, "job-1", req, StatusRunning)
+
+	mgr := newManagerWithQueue(t, &fakeStore{statesByID: map[string]store.StateEntry{}}, queueStore)
+	prepared, err := mgr.prepareRequest(req)
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	currentVersion := mgr.version
+	mgr.version = "legacy-v0"
+	legacySignature, errResp := mgr.computeJobSignature(prepared)
+	if errResp != nil {
+		t.Fatalf("legacy computeJobSignature: %+v", errResp)
+	}
+	legacyTasks, _, errResp := mgr.buildPlan(context.Background(), "job-1", prepared)
+	if errResp != nil {
+		t.Fatalf("legacy buildPlan: %+v", errResp)
+	}
+	mgr.version = currentVersion
+
+	if err := queueStore.UpdateJob(context.Background(), "job-1", queue.JobUpdate{Signature: &legacySignature}); err != nil {
+		t.Fatalf("UpdateJob signature: %v", err)
+	}
+	if err := queueStore.ReplaceTasks(context.Background(), "job-1", taskRecordsFromPlan("job-1", legacyTasks)); err != nil {
+		t.Fatalf("ReplaceTasks legacy plan: %v", err)
+	}
+	legacyExecHash := legacyTasks[1].TaskHash
+
+	states, _, errResp := mgr.loadOrPlanTasks(context.Background(), "job-1", prepared)
+	if errResp != nil {
+		t.Fatalf("loadOrPlanTasks: %+v", errResp)
+	}
+	if len(states) != len(legacyTasks) {
+		t.Fatalf("unexpected re-planned task count: got %d want %d", len(states), len(legacyTasks))
+	}
+
+	records, err := queueStore.ListTasks(context.Background(), "job-1")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	var executeHash string
+	for _, record := range records {
+		if record.TaskID == "execute-0" && record.TaskHash != nil {
+			executeHash = *record.TaskHash
+			break
+		}
+	}
+	if strings.TrimSpace(executeHash) == "" {
+		t.Fatalf("expected execute-0 hash after re-plan")
+	}
+	if executeHash == legacyExecHash {
+		t.Fatalf("expected execute-0 hash to change after version drift re-plan")
+	}
+
+	currentSignature, errResp := mgr.computeJobSignature(prepared)
+	if errResp != nil {
+		t.Fatalf("current computeJobSignature: %+v", errResp)
+	}
+	job, ok, err := queueStore.GetJob(context.Background(), "job-1")
+	if err != nil || !ok {
+		t.Fatalf("GetJob: ok=%v err=%v", ok, err)
+	}
+	if strings.TrimSpace(valueOrEmpty(job.Signature)) != currentSignature {
+		t.Fatalf("expected updated signature %s, got %q", currentSignature, valueOrEmpty(job.Signature))
+	}
+}
+
 func TestUpdateJobSignatureReturnsComputeError(t *testing.T) {
 	mgr := newManager(t, &fakeStore{})
 	prepared := preparedRequest{request: Request{PrepareKind: "lb"}}

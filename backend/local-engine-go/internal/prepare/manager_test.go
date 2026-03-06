@@ -2241,7 +2241,7 @@ func TestStartRuntimeFailsWhenRuntimeDirMissingPGVersion(t *testing.T) {
 	}
 }
 
-func TestExecuteStateTaskInvalidatesDirtyCachedState(t *testing.T) {
+func TestExecuteStateTaskDirtyCachedStateReturnsCachedWithoutInvalidation(t *testing.T) {
 	stateStore := &fakeStore{statesByID: map[string]store.StateEntry{}}
 	mgr := newManagerWithStateFS(t, stateStore, &fakeStateFS{})
 
@@ -2279,15 +2279,15 @@ func TestExecuteStateTaskInvalidatesDirtyCachedState(t *testing.T) {
 	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
-	if len(stateStore.deletedStates) == 0 || stateStore.deletedStates[0] != outputID {
-		t.Fatalf("expected cached state deletion, got %+v", stateStore.deletedStates)
+	if len(stateStore.deletedStates) != 0 {
+		t.Fatalf("expected no cached state deletion during execute task, got %+v", stateStore.deletedStates)
 	}
-	if len(stateStore.states) == 0 {
-		t.Fatalf("expected state to be rebuilt")
+	if len(stateStore.states) != 0 {
+		t.Fatalf("expected no rebuild for cached state, got %+v", stateStore.states)
 	}
 }
 
-func TestExecuteStateTaskInvalidatesCachedStateMissingPGVersion(t *testing.T) {
+func TestExecuteStateTaskCachedStateMissingPGVersionReturnsCachedWithoutInvalidationManager(t *testing.T) {
 	stateStore := &fakeStore{statesByID: map[string]store.StateEntry{}}
 	mgr := newManagerWithStateFS(t, stateStore, &fakeStateFS{})
 
@@ -2322,11 +2322,11 @@ func TestExecuteStateTaskInvalidatesCachedStateMissingPGVersion(t *testing.T) {
 	if _, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task); errResp != nil {
 		t.Fatalf("executeStateTask: %+v", errResp)
 	}
-	if len(stateStore.deletedStates) == 0 || stateStore.deletedStates[0] != outputID {
-		t.Fatalf("expected cached state deletion, got %+v", stateStore.deletedStates)
+	if len(stateStore.deletedStates) != 0 {
+		t.Fatalf("expected no cached state deletion during execute task, got %+v", stateStore.deletedStates)
 	}
-	if len(stateStore.states) == 0 {
-		t.Fatalf("expected state to be rebuilt")
+	if len(stateStore.states) != 0 {
+		t.Fatalf("expected no rebuild for cached state, got %+v", stateStore.states)
 	}
 }
 
@@ -2520,6 +2520,62 @@ func TestExecuteStateTaskLiquibaseRequiresPendingChangesets(t *testing.T) {
 	}
 	if len(liquibase.runs) == 0 {
 		t.Fatalf("expected liquibase planning call")
+	}
+}
+
+func TestExecuteStateTaskLiquibaseUsesPlannedHashForCachedState(t *testing.T) {
+	stateStore := &fakeStore{statesByID: map[string]store.StateEntry{}}
+	liquibase := &fakeLiquibaseRunner{output: ""}
+	mgr := newManagerWithDeps(t, stateStore, newQueueStore(t), &testDeps{
+		runtime:   &fakeRuntime{},
+		liquibase: liquibase,
+	})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1",
+		LiquibaseArgs: []string{"update"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+
+	taskHash := "planned-task-hash"
+	outputID, errResp := mgr.computeOutputStateID("image", "image-1", taskHash)
+	if errResp != nil {
+		t.Fatalf("computeOutputStateID: %+v", errResp)
+	}
+	stateStore.statesByID[outputID] = store.StateEntry{StateID: outputID, ImageID: "image-1"}
+	paths, err := resolveStatePaths(mgr.stateStoreRoot, "image-1", outputID, mgr.statefs)
+	if err != nil {
+		t.Fatalf("resolveStatePaths: %v", err)
+	}
+	if err := os.MkdirAll(paths.stateDir, 0o700); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.stateDir, "PG_VERSION"), []byte("17"), 0o600); err != nil {
+		t.Fatalf("write PG_VERSION: %v", err)
+	}
+
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			Type:          "state_execute",
+			OutputStateID: outputID,
+			TaskHash:      taskHash,
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+		Status: StatusQueued,
+	}
+
+	got, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if got != outputID {
+		t.Fatalf("expected output %q, got %q", outputID, got)
+	}
+	if len(liquibase.runs) != 0 {
+		t.Fatalf("expected no liquibase updateSQL calls for cached task hash, got %+v", liquibase.runs)
 	}
 }
 

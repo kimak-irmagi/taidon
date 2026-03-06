@@ -10,6 +10,7 @@ type psqlPrepared struct {
 	normalizedArgs []string
 	argsNormalized string
 	inputs         []psqlInput
+	steps          []psqlStep
 	filePaths      []string
 	workDir        string
 }
@@ -86,11 +87,16 @@ func preparePsqlArgs(args []string, stdin *string) (psqlPrepared, error) {
 	if !hasOnErrorStop {
 		normalized = append(normalized, "-v", "ON_ERROR_STOP=1")
 	}
+	steps, err := buildPsqlSteps(normalized, stdin)
+	if err != nil {
+		return psqlPrepared{}, err
+	}
 
 	return psqlPrepared{
 		normalizedArgs: normalized,
 		argsNormalized: strings.Join(normalized, " "),
 		inputs:         inputs,
+		steps:          steps,
 		filePaths:      filePaths,
 		workDir:        workDir,
 	}, nil

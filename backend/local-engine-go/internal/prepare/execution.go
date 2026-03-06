@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -42,6 +43,11 @@ type psqlRunner interface {
 
 type liquibaseRunner interface {
 	Run(ctx context.Context, req LiquibaseRunRequest) (string, error)
+}
+
+var listNetInterfaces = net.Interfaces
+var ifaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+	return iface.Addrs()
 }
 
 type containerPsqlRunner struct {
@@ -187,8 +193,12 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	var rt *jobRuntime
 
 	if prepared.request.PrepareKind == "psql" {
+		step, err := psqlStepForPreparedTask(prepared, task.TaskID)
+		if err != nil {
+			return "", errorResponse("internal_error", "cannot resolve psql step", err.Error())
+		}
 		lock := &contentLock{files: map[string]*os.File{}}
-		digest, err := computePsqlContentDigestWithLock(prepared.psqlInputs, prepared.psqlWorkDir, lock)
+		digest, err := computePsqlContentDigestWithLock(step.inputs, prepared.psqlWorkDir, lock)
 		if err != nil {
 			_ = lock.Close()
 			return "", errorResponse("invalid_argument", "cannot compute psql content hash", err.Error())
@@ -198,30 +208,35 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	}
 
 	if prepared.request.PrepareKind == "lb" {
-		planned, errResp := e.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
-		if errResp != nil {
-			return "", errResp
+		// Liquibase task hash is precomputed during planning and must remain stable
+		// across execution retries to allow cache hits. Recompute only when missing
+		// to support recovery of legacy queued tasks without persisted hashes.
+		if strings.TrimSpace(taskHash) == "" {
+			planned, errResp := e.ensureRuntime(ctx, jobID, prepared, task.Input, runner)
+			if errResp != nil {
+				return "", errResp
+			}
+			rt = planned
+			lock, errResp := ensureLiquibaseContentLock(prepared, task.ChangesetPath)
+			if errResp != nil {
+				return "", errResp
+			}
+			contentLocker = lock
+			changesets, errResp := e.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
+			if errResp != nil {
+				_ = lock.Close()
+				return "", errResp
+			}
+			if len(changesets) == 0 {
+				_ = lock.Close()
+				return "", errorResponse("internal_error", "liquibase returned no pending changesets", "")
+			}
+			parentFingerprintID := ""
+			if task.Input != nil {
+				parentFingerprintID = task.Input.ID
+			}
+			taskHash = liquibaseFingerprint(strings.TrimSpace(parentFingerprintID), []LiquibaseChangeset{changesets[0]})
 		}
-		rt = planned
-		lock, errResp := ensureLiquibaseContentLock(prepared, task.ChangesetPath)
-		if errResp != nil {
-			return "", errResp
-		}
-		contentLocker = lock
-		changesets, errResp := e.runLiquibaseUpdateSQL(ctx, jobID, prepared, rt)
-		if errResp != nil {
-			_ = lock.Close()
-			return "", errResp
-		}
-		if len(changesets) == 0 {
-			_ = lock.Close()
-			return "", errorResponse("internal_error", "liquibase returned no pending changesets", "")
-		}
-		parentFingerprintID := ""
-		if task.Input != nil {
-			parentFingerprintID = task.Input.ID
-		}
-		taskHash = liquibaseFingerprint(strings.TrimSpace(parentFingerprintID), []LiquibaseChangeset{changesets[0]})
 	}
 
 	if contentLocker != nil {
@@ -247,15 +262,6 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 		outputStateID,
 		cached,
 	)
-	if cached {
-		invalidated, errResp := e.snapshot.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
-		if errResp != nil {
-			return "", errResp
-		}
-		if invalidated {
-			cached = false
-		}
-	}
 	cachedFlag := cached
 	if outputStateID != task.OutputStateID || task.TaskHash != taskHash || (task.Cached == nil || *task.Cached != cachedFlag) {
 		update := queue.TaskUpdate{
@@ -270,52 +276,14 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	}
 	if cached {
 		m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
-		if prepared.request.PrepareKind == "psql" || prepared.request.PrepareKind == "lb" {
-			if runner.getRuntime() != nil {
-				m.cleanupRuntime(context.Background(), runner)
-				rt = nil
-				m.logInfoJob(jobID, "cached runtime released state=%s", outputStateID)
-			}
-			planned, errResp := e.startRuntime(ctx, jobID, prepared, &TaskInput{Kind: "state", ID: outputStateID})
-			if errResp == nil {
-				runner.setRuntime(planned)
-				m.logInfoJob(jobID, "cached runtime started state=%s", outputStateID)
-				return outputStateID, nil
-			}
-			if strings.Contains(errResp.Details, "postmaster.pid") ||
-				strings.Contains(errResp.Message, "dirty") ||
-				strings.Contains(errResp.Details, "PG_VERSION") ||
-				strings.Contains(errResp.Message, "PG_VERSION") ||
-				strings.Contains(errResp.Details, "not initialized") ||
-				strings.Contains(errResp.Message, "not initialized") {
-				invalidated, invalidateResp := e.snapshot.invalidateDirtyCachedState(ctx, jobID, prepared, outputStateID)
-				if invalidateResp != nil {
-					return "", invalidateResp
-				}
-				if !invalidated {
-					m.logInfoJob(jobID, "cached runtime start failed; rebuilding state=%s", outputStateID)
-				}
-				forceRebuild = true
-				cached = false
-				cachedFlag = false
-				if outputStateID != task.OutputStateID || task.TaskHash != taskHash || (task.Cached == nil || *task.Cached != cachedFlag) {
-					update := queue.TaskUpdate{
-						TaskHash:      nullableString(taskHash),
-						OutputStateID: nullableString(outputStateID),
-						Cached:        &cachedFlag,
-					}
-					_ = m.queue.UpdateTask(ctx, jobID, task.TaskID, update)
-					task.OutputStateID = outputStateID
-					task.TaskHash = taskHash
-					task.Cached = &cachedFlag
-				}
-			} else {
-				return "", errResp
-			}
+		// Cached states are trusted after marker/metadata checks above; defer
+		// runtime startup to prepare-instance to avoid per-step container churn.
+		if runner.getRuntime() != nil {
+			m.cleanupRuntime(context.Background(), runner)
+			rt = nil
+			m.logInfoJob(jobID, "cached runtime released state=%s", outputStateID)
 		}
-		if cached {
-			return outputStateID, nil
-		}
+		return outputStateID, nil
 	}
 	if capErr := m.ensureCacheCapacity(ctx, jobID, "prepare_step"); capErr != nil {
 		return "", capErr
@@ -484,7 +452,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 func (e *taskExecutor) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	switch prepared.request.PrepareKind {
 	case "psql":
-		return e.executePsqlStep(ctx, jobID, prepared, rt)
+		return e.executePsqlStep(ctx, jobID, prepared, rt, task)
 	case "lb":
 		return e.executeLiquibaseStep(ctx, jobID, prepared, rt, task)
 	default:
@@ -505,9 +473,13 @@ func noSpaceFromErrorResponse(message string, phase string, errResp *ErrorRespon
 	return noSpaceErrorResponse(message, phase, errors.New(errResp.Message))
 }
 
-func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime) *ErrorResponse {
+func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {
 	m := e.m
-	psqlArgs, workdir, err := buildPsqlExecArgs(prepared.normalizedArgs, rt.scriptMount)
+	step, err := psqlStepForPreparedTask(prepared, task.TaskID)
+	if err != nil {
+		return errorResponse("internal_error", "cannot resolve psql step", err.Error())
+	}
+	psqlArgs, workdir, err := buildPsqlExecArgs(step.args, rt.scriptMount)
 	if err != nil {
 		return errorResponse("internal_error", "cannot prepare psql arguments", err.Error())
 	}
@@ -523,7 +495,7 @@ func (e *taskExecutor) executePsqlStep(ctx context.Context, jobID string, prepar
 	output, err := m.psql.Run(psqlCtx, rt.instance, PsqlRunRequest{
 		Args:    psqlArgs,
 		Env:     map[string]string{},
-		Stdin:   prepared.request.Stdin,
+		Stdin:   step.stdin,
 		WorkDir: workdir,
 	})
 	if !sinkCalled.Load() && strings.TrimSpace(output) != "" {
@@ -589,7 +561,7 @@ func (e *taskExecutor) executeLiquibaseStep(ctx context.Context, jobID string, p
 		args = relativizeLiquibaseHostFileArgs(args, workDir)
 	}
 	args = applyLiquibaseTaskArgs(args, task)
-	args = prependLiquibaseConnectionArgs(args, rt.instance)
+	args = prependLiquibaseConnectionArgs(args, rt.instance, windowsMode)
 	env, err := mapLiquibaseEnv(prepared.request.LiquibaseEnv, windowsMode)
 	if err != nil {
 		return errorResponse("internal_error", "cannot map liquibase env", err.Error())
@@ -638,10 +610,15 @@ func (e *taskExecutor) executeLiquibaseStep(ctx context.Context, jobID string, p
 	return nil
 }
 
-func prependLiquibaseConnectionArgs(args []string, instance engineRuntime.Instance) []string {
+func prependLiquibaseConnectionArgs(args []string, instance engineRuntime.Instance, windowsMode bool) []string {
 	host := instance.Host
 	if strings.TrimSpace(host) == "" {
 		host = "localhost"
+	}
+	if windowsMode && isWSL() && (host == "127.0.0.1" || strings.EqualFold(host, "localhost")) {
+		if resolved, err := resolveWSLPrimaryIPv4(); err == nil && strings.TrimSpace(resolved) != "" {
+			host = resolved
+		}
 	}
 	port := instance.Port
 	if port == 0 {
@@ -658,6 +635,43 @@ func prependLiquibaseConnectionArgs(args []string, instance engineRuntime.Instan
 	out = append(out, conn...)
 	out = append(out, args...)
 	return out
+}
+
+func resolveWSLPrimaryIPv4() (string, error) {
+	ifaces, err := listNetInterfaces()
+	if err != nil {
+		return "", err
+	}
+	var firstGlobal string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := ifaceAddrs(iface)
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok || ipNet == nil || ipNet.IP == nil {
+				continue
+			}
+			ip := ipNet.IP.To4()
+			if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+				continue
+			}
+			if iface.Name == "eth0" {
+				return ip.String(), nil
+			}
+			if firstGlobal == "" {
+				firstGlobal = ip.String()
+			}
+		}
+	}
+	if firstGlobal == "" {
+		return "", fmt.Errorf("no global ipv4")
+	}
+	return firstGlobal, nil
 }
 
 func formatExecLine(execPath string, args []string) string {
