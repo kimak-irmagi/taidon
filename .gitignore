@@ -146,3 +146,6 @@ sqlrs-work
 .gocache
 .gomodcache
 .tmp
+
+#IDE
+.idea
