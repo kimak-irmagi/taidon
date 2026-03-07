@@ -79,6 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           test_log=../../engine-test-output-${{ matrix.runner }}-${{ matrix.group }}.log
+          json_log=../../engine-test-output-${{ matrix.runner }}-${{ matrix.group }}.json
           if [[ "${{ matrix.group }}" == "slow" ]]; then
             pkgs=(
               ./internal/httpapi
@@ -94,13 +95,22 @@ jobs:
               pkgs+=("$pkg")
             done < <(go list ./... | grep -v -E 'github.com/sqlrs/engine-local/internal/httpapi$|github.com/sqlrs/engine-local/internal/prepare$|github.com/sqlrs/engine-local/cmd/sqlrs-engine$|github.com/sqlrs/engine-local/internal/run$|github.com/sqlrs/engine-local/internal/store/sqlite$|github.com/sqlrs/engine-local/internal/prepare/queue$')
           fi
-          if [[ "${{ matrix.runner }}" == "windows-latest" ]]; then
-            go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out -json \
-              | tee ../../test-timing-engine-windows-${{ matrix.group }}.json "$test_log"
-          else
-            go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out \
-              | tee "$test_log"
+          go test "${pkgs[@]}" -covermode=count -coverprofile=../../coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out -json \
+            | tee "$json_log" "$test_log"
+
+      - name: Print failed tests (${{ matrix.group }})
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          json_log=engine-test-output-${{ matrix.runner }}-${{ matrix.group }}.json
+          if [[ ! -f "$json_log" ]]; then
+            echo "test json log not found: $json_log"
+            exit 0
           fi
+
+          echo "Fail events from $json_log:"
+          grep '"Action":"fail"' "$json_log" || true
 
       - name: Upload engine test output (${{ matrix.group }})
         if: failure()
@@ -116,12 +126,12 @@ jobs:
           name: coverage-engine-${{ matrix.runner }}-${{ matrix.group }}
           path: coverage-engine-${{ matrix.runner }}-${{ matrix.group }}.out
 
-      - name: Upload windows timing artifacts (${{ matrix.group }})
-        if: always() && matrix.runner == 'windows-latest'
+      - name: Upload engine json artifacts (${{ matrix.group }})
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-timing-windows-${{ matrix.group }}
-          path: test-timing-engine-windows-${{ matrix.group }}.json
+          name: engine-test-json-${{ matrix.runner }}-${{ matrix.group }}
+          path: engine-test-output-${{ matrix.runner }}-${{ matrix.group }}.json
           if-no-files-found: ignore
 
   coverage-cli:
@@ -382,3 +392,4 @@ jobs:
           debug: true
           base-path: backend/local-engine-go
           coverage-reporter-version: v0.6.14
+
