@@ -179,7 +179,7 @@ func TestEnsureLoopImageCreatesDefaultSizeWhenUnset(t *testing.T) {
 	if call.command != "truncate" {
 		t.Fatalf("expected truncate command, got %q", call.command)
 	}
-	if len(call.args) != 4 || call.args[0] != "-s" || call.args[1] != strconv.Itoa(defaultBtrfsStoreSizeGB)+"G" || call.args[3] != image {
+	if len(call.args) != 3 || call.args[0] != "-s" || call.args[1] != strconv.Itoa(defaultBtrfsStoreSizeGB)+"G" || call.args[2] != image {
 		t.Fatalf("unexpected truncate args: %#v", call.args)
 	}
 }
