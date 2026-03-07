@@ -3,6 +3,7 @@ package prepare
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -742,4 +743,92 @@ func TestResetStateDirTimeout(t *testing.T) {
 	if err := resetStateDir(ctx, fs, t.TempDir()); err != nil {
 		t.Fatalf("resetStateDir: %v", err)
 	}
+}
+
+func TestLiquibaseWorkDirDerivationExtraCoverage(t *testing.T) {
+	if dir := deriveLiquibaseWorkDir([]string{"--changelog-file=C:\\work\\changelog.xml"}); dir != "C:\\work" {
+		t.Fatalf("unexpected changelog workdir from equals form: %q", dir)
+	}
+	if dir := deriveLiquibaseWorkDir([]string{"--changelog-file"}); dir != "" {
+		t.Fatalf("expected empty workdir for missing changelog value, got %q", dir)
+	}
+}
+
+func TestResolveWSLPrimaryIPv4Coverage(t *testing.T) {
+	prevList := listNetInterfaces
+	prevAddrs := ifaceAddrs
+	t.Cleanup(func() {
+		listNetInterfaces = prevList
+		ifaceAddrs = prevAddrs
+	})
+
+	t.Run("interfaces error", func(t *testing.T) {
+		listNetInterfaces = func() ([]net.Interface, error) {
+			return nil, errors.New("boom")
+		}
+		ifaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+			return nil, nil
+		}
+		if _, err := resolveWSLPrimaryIPv4(); err == nil {
+			t.Fatalf("expected interfaces error")
+		}
+	})
+
+	t.Run("prefers eth0", func(t *testing.T) {
+		listNetInterfaces = func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "eth1", Flags: net.FlagUp}, {Name: "eth0", Flags: net.FlagUp}}, nil
+		}
+		ifaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+			switch iface.Name {
+			case "eth1":
+				return []net.Addr{&net.IPNet{IP: net.ParseIP("10.50.0.10"), Mask: net.CIDRMask(24, 32)}}, nil
+			case "eth0":
+				return []net.Addr{&net.IPNet{IP: net.ParseIP("172.20.10.2"), Mask: net.CIDRMask(24, 32)}}, nil
+			default:
+				return nil, nil
+			}
+		}
+		got, err := resolveWSLPrimaryIPv4()
+		if err != nil {
+			t.Fatalf("resolveWSLPrimaryIPv4: %v", err)
+		}
+		if got != "172.20.10.2" {
+			t.Fatalf("expected eth0 address, got %q", got)
+		}
+	})
+
+	t.Run("fallback first global", func(t *testing.T) {
+		listNetInterfaces = func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "wlan0", Flags: net.FlagUp}}, nil
+		}
+		ifaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+			return []net.Addr{&net.IPNet{IP: net.ParseIP("192.168.10.4"), Mask: net.CIDRMask(24, 32)}}, nil
+		}
+		got, err := resolveWSLPrimaryIPv4()
+		if err != nil {
+			t.Fatalf("resolveWSLPrimaryIPv4: %v", err)
+		}
+		if got != "192.168.10.4" {
+			t.Fatalf("expected first global address, got %q", got)
+		}
+	})
+
+	t.Run("no global ipv4", func(t *testing.T) {
+		listNetInterfaces = func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "lo", Flags: net.FlagUp | net.FlagLoopback}, {Name: "eth1", Flags: net.FlagUp}, {Name: "eth2", Flags: net.FlagUp}}, nil
+		}
+		ifaceAddrs = func(iface net.Interface) ([]net.Addr, error) {
+			switch iface.Name {
+			case "eth1":
+				return nil, errors.New("addr error")
+			case "eth2":
+				return []net.Addr{&net.IPAddr{IP: net.ParseIP("10.0.0.3")}, &net.IPNet{IP: net.ParseIP("::1"), Mask: net.CIDRMask(128, 128)}, &net.IPNet{IP: net.ParseIP("0.0.0.0"), Mask: net.CIDRMask(32, 32)}}, nil
+			default:
+				return nil, nil
+			}
+		}
+		if _, err := resolveWSLPrimaryIPv4(); err == nil || !strings.Contains(err.Error(), "no global ipv4") {
+			t.Fatalf("expected no global ipv4 error, got %v", err)
+		}
+	})
 }

@@ -199,3 +199,49 @@ func TestClientCoverageStreamPrepareEventsInvalidURL(t *testing.T) {
 		t.Fatalf("expected invalid URL error")
 	}
 }
+
+func TestClientCoverageGetConfigValueRequiresPath(t *testing.T) {
+	cli := New("http://127.0.0.1:1234", Options{Timeout: time.Second})
+	_, err := cli.GetConfigValue(context.Background(), "", false)
+	if err == nil || !strings.Contains(err.Error(), "config path is required") {
+		t.Fatalf("expected config path validation error, got %v", err)
+	}
+}
+
+func TestClientCoverageGetConfigValueSuccessAndError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/config" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.URL.Query().Get("path") == "boom" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"message":"bad path"}`)
+			return
+		}
+		if r.URL.Query().Get("path") != "dbms.image" || r.URL.Query().Get("effective") != "true" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"path":"dbms.image","value":"postgres:16","source":"user"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	cli := New(server.URL, Options{Timeout: time.Second})
+	value, err := cli.GetConfigValue(context.Background(), "dbms.image", true)
+	if err != nil {
+		t.Fatalf("GetConfigValue success: %v", err)
+	}
+	if value.Path != "dbms.image" {
+		t.Fatalf("unexpected config value: %+v", value)
+	}
+	if got, ok := value.Value.(string); !ok || got != "postgres:16" {
+		t.Fatalf("unexpected config value payload: %#v", value.Value)
+	}
+
+	if _, err := cli.GetConfigValue(context.Background(), "boom", false); err == nil {
+		t.Fatalf("expected GetConfigValue error for bad path")
+	}
+}
