@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func PrintPlan(w io.Writer, result PlanResult) error {

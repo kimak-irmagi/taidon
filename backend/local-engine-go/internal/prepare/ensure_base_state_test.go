@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	engineRuntime "sqlrs/engine/internal/runtime"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
 )
 
 type blockingRuntime struct {

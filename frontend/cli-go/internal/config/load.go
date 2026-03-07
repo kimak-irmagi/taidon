@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 var findProjectConfigFn = paths.FindProjectConfig

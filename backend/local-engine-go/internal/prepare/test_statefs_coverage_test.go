@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sqlrs/engine/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/statefs"
 )
 
 func TestFakeStateFSNilReceiver(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"sqlrs/cli/internal/cli"
-	"sqlrs/cli/internal/cli/runkind"
+	"github.com/sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/cli/runkind"
 )
 
 type runArgs struct {

@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/cli/internal/cli"
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/config"
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 func TestParsePrepareArgsSplitsPsqlArgs(t *testing.T) {

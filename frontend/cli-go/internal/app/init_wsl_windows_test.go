@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/wsl"
+	"github.com/sqlrs/cli/internal/wsl"
 )
 
 func TestInitWSLHappyPathWithStubs(t *testing.T) {

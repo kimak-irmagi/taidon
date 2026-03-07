@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"sqlrs/engine/internal/conntrack"
-	"sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/statefs"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/conntrack"
+	"github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 const (

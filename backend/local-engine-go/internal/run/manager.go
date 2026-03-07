@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"sqlrs/engine/internal/registry"
-	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/registry"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 const (

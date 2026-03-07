@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/cli"
 )
 
 type configCommand struct {

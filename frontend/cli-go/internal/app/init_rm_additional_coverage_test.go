@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/cli"
 )
 
 func TestReadConfigMapAdditionalErrors(t *testing.T) {

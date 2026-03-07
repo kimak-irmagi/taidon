@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/cli/internal/wsl"
+	"github.com/sqlrs/cli/internal/wsl"
 )
 
 func TestInitWSLDisabled(t *testing.T) {

@@ -13,10 +13,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"sqlrs/cli/internal/cli"
-	"sqlrs/cli/internal/config"
-	"sqlrs/cli/internal/paths"
-	"sqlrs/cli/internal/util"
+	"github.com/sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/util"
 )
 
 type initOptions struct {

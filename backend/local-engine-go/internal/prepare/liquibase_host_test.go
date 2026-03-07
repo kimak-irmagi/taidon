@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	engineRuntime "sqlrs/engine/internal/runtime"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
 )
 
 func TestQuoteCmdArg(t *testing.T) {
@@ -312,10 +312,26 @@ func TestRunCommandWithSinkStartError(t *testing.T) {
 func helperCommand(ctx context.Context, stdout string, stderr string, exitCode int) *exec.Cmd {
 	args := []string{"-test.run=TestHelperProcess", "--", stdout, stderr, strconv.Itoa(exitCode)}
 	cmd := exec.CommandContext(ctx, os.Args[0], args...)
-	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+	cmd.Env = append(helperProcessEnv(), "GO_WANT_HELPER_PROCESS=1")
 	return cmd
 }
-
+func helperProcessEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, "GOCOVERDIR=") {
+			out = append(out, entry)
+			continue
+		}
+		helperCoverDir, err := os.MkdirTemp("", "sqlrs-helper-cover-*")
+		if err != nil {
+			out = append(out, entry)
+			continue
+		}
+		out = append(out, "GOCOVERDIR="+helperCoverDir)
+	}
+	return out
+}
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
@@ -352,3 +368,21 @@ func containsLine(lines []string, prefix string) bool {
 	}
 	return false
 }
+func TestHelperProcessEnvRelocatesGoCoverDir(t *testing.T) {
+	coverDir := t.TempDir()
+	t.Setenv("GOCOVERDIR", coverDir)
+
+	env := helperProcessEnv()
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, "GOCOVERDIR=") {
+			continue
+		}
+		if entry == "GOCOVERDIR="+coverDir {
+			t.Fatalf("expected helper env to use isolated GOCOVERDIR, got %v", env)
+		}
+		return
+	}
+	t.Fatalf("expected helper env to include GOCOVERDIR, got %v", env)
+}
+
+

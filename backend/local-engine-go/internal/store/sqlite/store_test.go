@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func TestStoreListAndGet(t *testing.T) {

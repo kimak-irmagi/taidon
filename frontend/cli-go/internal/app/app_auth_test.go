@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/config"
 )
 
 func TestResolveAuthTokenUsesEnv(t *testing.T) {

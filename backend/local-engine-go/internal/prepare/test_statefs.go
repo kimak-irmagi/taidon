@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"sqlrs/engine/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/statefs"
 )
 
 var testLayoutFS = statefs.NewManager(statefs.Options{Backend: "copy"})

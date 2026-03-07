@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/registry"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/registry"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 type errorStore struct {

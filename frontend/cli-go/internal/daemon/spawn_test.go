@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -137,6 +138,20 @@ func TestAppendLogLineSkipsEmpty(t *testing.T) {
 func TestAppendLogLineOpenError(t *testing.T) {
 	dir := t.TempDir()
 	appendLogLine(dir, "line")
+}
+
+func TestAppendLogLineWritesLine(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "engine.log")
+	appendLogLine(path, "first")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if got := string(data); got != "first\n" {
+		t.Fatalf("unexpected log contents: %q", got)
+	}
 }
 
 func containsEnv(env []string, value string) bool {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"sqlrs/engine/internal/id"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/id"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 type Registry struct {

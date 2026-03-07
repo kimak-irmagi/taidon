@@ -10,9 +10,9 @@ import (
 	"runtime"
 	"strings"
 
-	"sqlrs/cli/internal/cli"
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/config"
 )
 
 type prepareArgs struct {

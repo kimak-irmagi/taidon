@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"sqlrs/engine/internal/auth"
-	"sqlrs/engine/internal/config"
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/prepare"
-	"sqlrs/engine/internal/registry"
-	"sqlrs/engine/internal/run"
-	"sqlrs/engine/internal/store"
-	"sqlrs/engine/internal/stream"
+	"github.com/sqlrs/engine-local/internal/auth"
+	"github.com/sqlrs/engine-local/internal/config"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/prepare"
+	"github.com/sqlrs/engine-local/internal/registry"
+	"github.com/sqlrs/engine-local/internal/run"
+	"github.com/sqlrs/engine-local/internal/store"
+	"github.com/sqlrs/engine-local/internal/stream"
 )
 
 type Options struct {

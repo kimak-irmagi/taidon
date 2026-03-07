@@ -2,10 +2,11 @@ package daemon
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
-	"sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func TestEngineStateReadWrite(t *testing.T) {
@@ -48,5 +49,24 @@ func TestEngineStateStaleRules(t *testing.T) {
 
 	if !IsEngineStateStale(state, client.HealthResponse{InstanceID: "def"}, nil, true) {
 		t.Fatalf("expected state to be stale on instance mismatch")
+	}
+}
+
+func TestReadEngineStateInvalidJSON(t *testing.T) {
+	temp := t.TempDir()
+	path := filepath.Join(temp, "engine-invalid.json")
+	if err := os.WriteFile(path, []byte("{invalid"), 0o600); err != nil {
+		t.Fatalf("write invalid json: %v", err)
+	}
+
+	if _, err := ReadEngineState(path); err == nil {
+		t.Fatalf("expected unmarshal error for invalid json")
+	}
+}
+
+func TestEngineStateStaleWhenPIDNotRunning(t *testing.T) {
+	state := EngineState{InstanceID: "abc", PID: 42}
+	if !IsEngineStateStale(state, client.HealthResponse{InstanceID: "abc"}, nil, false) {
+		t.Fatalf("expected stale state when pid is not running")
 	}
 }

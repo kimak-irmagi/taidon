@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/daemon"
-	"sqlrs/cli/internal/util"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/util"
 
 	"golang.org/x/term"
 )

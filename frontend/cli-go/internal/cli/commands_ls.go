@@ -10,8 +10,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/daemon"
 )
 
 type LsOptions struct {

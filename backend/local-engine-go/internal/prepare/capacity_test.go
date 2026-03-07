@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func TestLoadCapacitySettingsUsesStoreCoupledEffectiveMax(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	engineRuntime "sqlrs/engine/internal/runtime"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
 )
 
 const containerScriptsRoot = "/sqlrs/scripts"
