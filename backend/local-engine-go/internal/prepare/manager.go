@@ -1352,6 +1352,10 @@ func relativizeLiquibaseHostPath(value string, base string) string {
 		return value
 	}
 	path = filepath.Clean(path)
+	base = filepath.Clean(base)
+	if resolved, err := filepath.EvalSymlinks(base); err == nil {
+		base = resolved
+	}
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
 	}
