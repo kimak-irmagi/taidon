@@ -1,7 +1,23 @@
 # sqlrs-engine (local, Go)
 
-Minimal local engine used by `sqlrs` for MVP validation.
-Right now it exposes only `/v1/health` and auto-shuts down after an idle timeout.
+Local engine used by `sqlrs` in the local profile.
+
+Current API surface includes:
+
+- `/v1/health`
+- `/v1/config*`
+- `/v1/prepare-jobs*` and `/v1/tasks`
+- `/v1/runs`
+- `/v1/names*`, `/v1/instances*`, `/v1/states*`
+
+The engine owns local prepare planning/execution, state snapshotting, instance
+lifecycle, config persistence, and deletion flows.
+
+See also:
+
+- `../../docs/architecture/engine-internals.md`
+- `../../docs/architecture/local-engine-component-structure.md`
+- `../../docs/api-guides/sqlrs-engine.openapi.yaml`
 
 ## Build
 
@@ -29,20 +45,14 @@ go build -o ../../dist/bin/sqlrs-engine ./cmd/sqlrs-engine
 
 ## Flags
 
-- `--listen` (required): host:port to bind (use `127.0.0.1:0` for random port).
-- `--run-dir`: runtime directory (created if missing).
-- `--write-engine-json` (required): path to `engine.json` written on startup.
-- `--idle-timeout`: shutdown after idle period (default `30s`).
-- `--version`: engine version string (default `dev`).
+- `--listen` (required): host:port to bind; use `127.0.0.1:0` for a random port.
+- `--run-dir`: runtime directory for engine process state.
+- `--write-engine-json` (required): path to discovery metadata written on startup.
+- `--idle-timeout`: shutdown after idle period.
+- `--version`: engine version string.
 
-## Health check
+## Test
 
-```http
-GET /v1/health
-```
-
-Response:
-
-```json
-{"ok":true,"version":"dev","instanceId":"...","pid":1234}
+```bash
+go test ./...
 ```
