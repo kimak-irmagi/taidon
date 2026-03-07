@@ -42,6 +42,11 @@ func TestRelativizeLiquibaseHostPathCoverage(t *testing.T) {
 func TestRelativizeLiquibaseHostFileArgsCoverage(t *testing.T) {
 	base, changelogPath, outsidePath := relativizePathsForCurrentOS(t)
 	defaultsPath := filepath.Join(filepath.Dir(changelogPath), "liquibase.properties")
+	if runtime.GOOS != "windows" {
+		if err := os.WriteFile(defaultsPath, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write defaults file: %v", err)
+		}
+	}
 
 	args := []string{
 		"update",
