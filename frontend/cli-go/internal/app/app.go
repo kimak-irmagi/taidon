@@ -6,11 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -55,108 +53,9 @@ func Run(args []string) error {
 		return runInit(os.Stdout, cwd, opts.Workspace, commands[0].Args, opts.Verbose)
 	}
 
-	configWorkingDir := cwd
-	if workspace := strings.TrimSpace(opts.Workspace); workspace != "" {
-		if filepath.IsAbs(workspace) {
-			configWorkingDir = filepath.Clean(workspace)
-		} else {
-			configWorkingDir = filepath.Clean(filepath.Join(cwd, workspace))
-		}
-	}
-
-	cfgResult, err := config.Load(config.LoadOptions{WorkingDir: configWorkingDir})
+	cmdCtx, err := resolveCommandContext(cwd, opts)
 	if err != nil {
 		return err
-	}
-
-	cfg := cfgResult.Config
-	dirs := cfgResult.Paths
-	workspaceRoot := ""
-	if cfgResult.ProjectConfigPath != "" {
-		workspaceRoot = filepath.Dir(filepath.Dir(cfgResult.ProjectConfigPath))
-	}
-
-	profileName := opts.Profile
-	if profileName == "" {
-		profileName = cfg.DefaultProfile
-	}
-	if profileName == "" {
-		profileName = "local"
-	}
-
-	profile, ok := cfg.Profiles[profileName]
-	if !ok {
-		return fmt.Errorf("profile not found: %s", profileName)
-	}
-
-	if opts.Endpoint != "" {
-		profile.Endpoint = opts.Endpoint
-	}
-
-	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
-	if mode == "" || mode == "auto" {
-		mode = strings.ToLower(strings.TrimSpace(profile.Mode))
-		if mode == "" {
-			mode = "local"
-		}
-	}
-
-	if mode != "local" && mode != "remote" {
-		return fmt.Errorf("invalid mode: %s", mode)
-	}
-
-	authToken := resolveAuthToken(profile.Auth)
-
-	output := strings.ToLower(strings.TrimSpace(cfg.Client.Output))
-	if opts.Output != "" {
-		output = strings.ToLower(strings.TrimSpace(opts.Output))
-	}
-	if output == "" {
-		output = "human"
-	}
-	if output != "human" && output != "json" {
-		return fmt.Errorf("invalid output: %s", output)
-	}
-
-	timeout := opts.Timeout
-	if timeout == 0 {
-		parsed, err := config.ParseDuration(cfg.Client.Timeout, defaultTimeout)
-		if err != nil {
-			return err
-		}
-		timeout = parsed
-	}
-
-	startupTimeout, err := config.ParseDuration(cfg.Orchestrator.StartupTimeout, defaultStartupTimeout)
-	if err != nil {
-		return err
-	}
-	idleTimeout, err := config.ParseDuration(cfg.Orchestrator.IdleTimeout, defaultIdleTimeout)
-	if err != nil {
-		return err
-	}
-
-	runDir := cfg.Orchestrator.RunDir
-	if runDir == "" {
-		runDir = filepath.Join(dirs.StateDir, "run")
-	}
-
-	daemonPath := os.Getenv("SQLRS_DAEMON_PATH")
-	if daemonPath == "" {
-		daemonPath = cfg.Orchestrator.DaemonPath
-	}
-	engineRunDir := ""
-	engineStatePath := ""
-	engineStoreDir := strings.TrimSpace(cfg.Engine.StorePath)
-	engineHostStorePath := engineStoreDir
-	engineWSLMountUnit := ""
-	engineWSLMountFSType := ""
-	wslDistro := ""
-	if runtime.GOOS == "windows" {
-		daemonPath, engineRunDir, engineStatePath, engineStoreDir, wslDistro, engineWSLMountUnit, engineWSLMountFSType, err = resolveWSLSettings(cfg, dirs, daemonPath)
-		if err != nil {
-			return err
-		}
 	}
 
 	var prepared *client.PrepareJobResult
@@ -166,81 +65,18 @@ func Run(args []string) error {
 			if len(commands) > 1 {
 				return fmt.Errorf("ls cannot be combined with other commands")
 			}
-			runOpts := cli.LsOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
-			return runLs(os.Stdout, runOpts, cmd.Args, output)
+			return runLs(os.Stdout, cmdCtx.lsOptions(), cmd.Args, cmdCtx.output)
 		case "rm":
 			if len(commands) > 1 {
 				return fmt.Errorf("rm cannot be combined with other commands")
 			}
-			runOpts := cli.RmOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
-			return runRm(os.Stdout, runOpts, cmd.Args, output)
+			return runRm(os.Stdout, cmdCtx.rmOptions(), cmd.Args, cmdCtx.output)
 		case "prepare:psql":
-			runOpts := cli.PrepareOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-				CompositeRun:    len(commands) > 1,
-			}
+			prepareOpts := cmdCtx.prepareOptions(len(commands) > 1)
 			if len(commands) == 1 {
-				return runPrepare(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+				return runPrepare(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, cmd.Args)
 			}
-			result, handled, err := prepareResult(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			result, handled, err := prepareResult(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, cmd.Args)
 			if err != nil {
 				return err
 			}
@@ -249,32 +85,11 @@ func Run(args []string) error {
 			}
 			prepared = &result
 		case "prepare:lb":
-			runOpts := cli.PrepareOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-				CompositeRun:    len(commands) > 1,
-			}
+			prepareOpts := cmdCtx.prepareOptions(len(commands) > 1)
 			if len(commands) == 1 {
-				return runPrepareLiquibase(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+				return runPrepareLiquibase(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, cmd.Args)
 			}
-			result, handled, err := prepareResultLiquibase(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args)
+			result, handled, err := prepareResultLiquibase(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, cmd.Args)
 			if err != nil {
 				return err
 			}
@@ -286,148 +101,28 @@ func Run(args []string) error {
 			if len(commands) > 1 {
 				return fmt.Errorf("plan cannot be combined with other commands")
 			}
-			runOpts := cli.PrepareOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
-			return runPlanKind(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output, "psql")
+			return runPlanKind(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, cmd.Args, cmdCtx.output, "psql")
 		case "plan:lb":
 			if len(commands) > 1 {
 				return fmt.Errorf("plan cannot be combined with other commands")
 			}
-			runOpts := cli.PrepareOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
-			return runPlanKind(os.Stdout, os.Stderr, runOpts, cfgResult, workspaceRoot, cwd, cmd.Args, output, "lb")
+			return runPlanKind(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, cmd.Args, cmdCtx.output, "lb")
 		case "run:psql":
-			runOpts := cli.RunOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
+			runOpts := cmdCtx.runOptions()
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
-				defer func(instanceID string) {
-					stopSpinner := startCleanupSpinner(instanceID, opts.Verbose)
-					result, status, err := cli.DeleteInstanceDetailed(context.Background(), runOpts, instanceID)
-					stopSpinner()
-					if err != nil {
-						if opts.Verbose {
-							fmt.Fprintf(os.Stderr, "cleanup failed for instance %s: %v\n", instanceID, err)
-						} else {
-							fmt.Fprintf(os.Stderr, "cleanup failed: %v\n", err)
-						}
-						return
-					}
-					if status == http.StatusConflict || strings.EqualFold(result.Outcome, "blocked") {
-						if opts.Verbose {
-							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s: %s\n", instanceID, formatCleanupResult(result))
-						} else {
-							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s\n", instanceID)
-						}
-					}
-				}(prepared.InstanceID)
+				defer cleanupPreparedInstance(context.Background(), os.Stderr, runOpts, prepared.InstanceID, cmdCtx.verbose)
 			}
-			if err := runRun(os.Stdout, os.Stderr, runOpts, "psql", cmd.Args, workspaceRoot, cwd); err != nil {
+			if err := runRun(os.Stdout, os.Stderr, runOpts, "psql", cmd.Args, cmdCtx.workspaceRoot, cmdCtx.cwd); err != nil {
 				return err
 			}
 		case "run:pgbench":
-			runOpts := cli.RunOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
+			runOpts := cmdCtx.runOptions()
 			if prepared != nil {
 				runOpts.InstanceRef = prepared.InstanceID
-				defer func(instanceID string) {
-					stopSpinner := startCleanupSpinner(instanceID, opts.Verbose)
-					result, status, err := cli.DeleteInstanceDetailed(context.Background(), runOpts, instanceID)
-					stopSpinner()
-					if err != nil {
-						if opts.Verbose {
-							fmt.Fprintf(os.Stderr, "cleanup failed for instance %s: %v\n", instanceID, err)
-						} else {
-							fmt.Fprintf(os.Stderr, "cleanup failed: %v\n", err)
-						}
-						return
-					}
-					if status == http.StatusConflict || strings.EqualFold(result.Outcome, "blocked") {
-						if opts.Verbose {
-							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s: %s\n", instanceID, formatCleanupResult(result))
-						} else {
-							fmt.Fprintf(os.Stderr, "cleanup blocked for instance %s\n", instanceID)
-						}
-					}
-				}(prepared.InstanceID)
+				defer cleanupPreparedInstance(context.Background(), os.Stderr, runOpts, prepared.InstanceID, cmdCtx.verbose)
 			}
-			if err := runRun(os.Stdout, os.Stderr, runOpts, "pgbench", cmd.Args, workspaceRoot, cwd); err != nil {
+			if err := runRun(os.Stdout, os.Stderr, runOpts, "pgbench", cmd.Args, cmdCtx.workspaceRoot, cmdCtx.cwd); err != nil {
 				return err
 			}
 		case "status":
@@ -437,44 +132,21 @@ func Run(args []string) error {
 			if len(cmd.Args) > 0 {
 				return fmt.Errorf("status does not accept arguments")
 			}
-			statusOpts := cli.StatusOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
 
-			result, err := cli.RunStatus(context.Background(), statusOpts)
+			result, err := cli.RunStatus(context.Background(), cmdCtx.statusOptions())
 			if err != nil {
 				return err
 			}
 
 			result.Client = Version
-			result.Workspace = workspaceRoot
-
-			if output == "json" {
+			result.Workspace = cmdCtx.workspaceRoot
+			if cmdCtx.output == "json" {
 				if err := writeJSON(os.Stdout, result); err != nil {
 					return err
 				}
 			} else {
 				cli.PrintStatus(os.Stdout, result)
 			}
-
 			if !result.OK {
 				return fmt.Errorf("service unhealthy")
 			}
@@ -483,54 +155,12 @@ func Run(args []string) error {
 			if len(commands) > 1 {
 				return fmt.Errorf("watch cannot be combined with other commands")
 			}
-			runOpts := cli.PrepareOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
-			return runWatch(os.Stdout, runOpts, cmd.Args)
+			return runWatch(os.Stdout, cmdCtx.prepareOptions(false), cmd.Args)
 		case "config":
 			if len(commands) > 1 {
 				return fmt.Errorf("config cannot be combined with other commands")
 			}
-			runOpts := cli.ConfigOptions{
-				ProfileName:     profileName,
-				Mode:            mode,
-				AuthToken:       authToken,
-				Endpoint:        profile.Endpoint,
-				Autostart:       profile.Autostart,
-				DaemonPath:      daemonPath,
-				RunDir:          runDir,
-				StateDir:        dirs.StateDir,
-				EngineRunDir:    engineRunDir,
-				EngineStatePath: engineStatePath,
-				EngineStoreDir:  engineStoreDir,
-				WSLVHDXPath:     engineHostStorePath,
-				WSLMountUnit:    engineWSLMountUnit,
-				WSLMountFSType:  engineWSLMountFSType,
-				WSLDistro:       wslDistro,
-				Timeout:         timeout,
-				IdleTimeout:     idleTimeout,
-				StartupTimeout:  startupTimeout,
-				Verbose:         opts.Verbose,
-			}
-			return runConfig(os.Stdout, runOpts, cmd.Args, output)
+			return runConfig(os.Stdout, cmdCtx.configOptions(), cmd.Args, cmdCtx.output)
 		case "prepare":
 			return fmt.Errorf("missing prepare kind (consider prepare:psql)")
 		case "plan":
@@ -750,7 +380,7 @@ func windowsToWSLPath(value string) (string, error) {
 		drive = strings.TrimSuffix(strings.ToLower(vol), ":")
 		rest = cleaned[len(vol):]
 	}
-	rest = strings.TrimLeft(rest, `\/`)
+	rest = strings.TrimLeft(rest, `\\/`)
 	rest = strings.ReplaceAll(rest, "\\", "/")
 	if rest == "" {
 		return fmt.Sprintf("/mnt/%s", drive), nil
