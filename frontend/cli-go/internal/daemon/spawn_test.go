@@ -12,10 +12,7 @@ import (
 func TestBuildDaemonCommand(t *testing.T) {
 	runDir := filepath.Join("C:\\", "sqlrs", "run")
 	statePath := filepath.Join("C:\\", "sqlrs", "engine.json")
-	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "", "", "", 0, "")
-	if err != nil {
-		t.Fatalf("buildDaemonCommand: %v", err)
-	}
+	cmd := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "", "", "", 0, "")
 	if len(cmd.Args) < 2 || cmd.Args[0] != "sqlrs-engine" {
 		t.Fatalf("unexpected args: %+v", cmd.Args)
 	}
@@ -27,10 +24,7 @@ func TestBuildDaemonCommand(t *testing.T) {
 func TestBuildDaemonCommandWSL(t *testing.T) {
 	runDir := "/var/lib/sqlrs/run"
 	statePath := "/mnt/c/sqlrs/engine.json"
-	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "/var/lib/sqlrs/store", "sqlrs-state-store.mount", "btrfs", 0, filepath.Join("C:\\", "sqlrs", "logs", "engine.log"))
-	if err != nil {
-		t.Fatalf("buildDaemonCommand: %v", err)
-	}
+	cmd := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "/var/lib/sqlrs/store", "sqlrs-state-store.mount", "btrfs", 0, filepath.Join("C:\\", "sqlrs", "logs", "engine.log"))
 	if runtime.GOOS == "windows" {
 		if len(cmd.Args) < 5 || cmd.Args[0] != "wsl.exe" {
 			t.Fatalf("unexpected args: %+v", cmd.Args)
@@ -63,10 +57,7 @@ func TestBuildDaemonCommandWSL(t *testing.T) {
 func TestBuildDaemonCommandEnvVars(t *testing.T) {
 	runDir := filepath.Join("C:\\", "sqlrs", "run")
 	statePath := filepath.Join("C:\\", "sqlrs", "engine.json")
-	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "C:\\store", "unit.mount", "btrfs", 0, "")
-	if err != nil {
-		t.Fatalf("buildDaemonCommand: %v", err)
-	}
+	cmd := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "C:\\store", "unit.mount", "btrfs", 0, "")
 	if !containsEnv(cmd.Env, "SQLRS_STATE_STORE=C:\\store") {
 		t.Fatalf("expected SQLRS_STATE_STORE in env")
 	}
@@ -81,10 +72,7 @@ func TestBuildDaemonCommandEnvVars(t *testing.T) {
 func TestBuildDaemonCommandWSLNoEnv(t *testing.T) {
 	runDir := "/var/lib/sqlrs/run"
 	statePath := "/mnt/c/sqlrs/engine.json"
-	cmd, err := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "", "", "", 0, "")
-	if err != nil {
-		t.Fatalf("buildDaemonCommand: %v", err)
-	}
+	cmd := buildDaemonCommand("/mnt/c/sqlrs/sqlrs-engine", runDir, statePath, "Ubuntu", "", "", "", 0, "")
 	if containsArg(cmd.Args, "SQLRS_STATE_STORE=") {
 		t.Fatalf("did not expect SQLRS_STATE_STORE in args")
 	}
@@ -99,10 +87,7 @@ func TestQuotePowerShell(t *testing.T) {
 func TestBuildDaemonCommandWithIdleTimeout(t *testing.T) {
 	runDir := filepath.Join("C:\\", "sqlrs", "run")
 	statePath := filepath.Join("C:\\", "sqlrs", "engine.json")
-	cmd, err := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "", "", "", 2*time.Minute, "")
-	if err != nil {
-		t.Fatalf("buildDaemonCommand: %v", err)
-	}
+	cmd := buildDaemonCommand("sqlrs-engine", runDir, statePath, "", "", "", "", 2*time.Minute, "")
 	if !containsArg(cmd.Args, "--idle-timeout") {
 		t.Fatalf("expected --idle-timeout flag in args, got %+v", cmd.Args)
 	}

@@ -35,7 +35,7 @@ Entry points for Taidon architecture and service design.
   component structure for prepare events streaming and watch controls.
 - [`prepare-manager-refactor.md`](prepare-manager-refactor.md) - prepare manager
   split into coordinator/executor/snapshot roles.
-- [`local-engine-cli-maintainability-refactor.md`](local-engine-cli-maintainability-refactor.md) -
+- [`local-engine-cli-maintainability-refactor.md`][lecmr] -
   proposed next pass for prepare/httpapi/CLI maintainability boundary cleanup.
 - [`statefs-component-structure.md`](statefs-component-structure.md) - StateFS
   contract and filesystem isolation in the engine.
@@ -56,3 +56,4 @@ Entry points for Taidon architecture and service design.
 
 [pjecs]: prepare-job-events-component-structure.md
 [openAPI]: ../api-guides/sqlrs-engine.openapi.yaml
+[lecmr]: local-engine-cli-maintainability-refactor.md
