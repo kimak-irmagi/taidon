@@ -37,24 +37,59 @@ type StatusOptions struct {
 	IdleTimeout     time.Duration
 	StartupTimeout  time.Duration
 	Verbose         bool
+	CacheDetails    bool
 }
 
 type StatusResult struct {
-	OK         bool   `json:"ok"`
-	Endpoint   string `json:"endpoint"`
-	Profile    string `json:"profile"`
-	Mode       string `json:"mode"`
-	Client     string `json:"clientVersion,omitempty"`
-	Workspace  string `json:"workspace,omitempty"`
-	Version    string `json:"version,omitempty"`
-	InstanceID string `json:"instanceId,omitempty"`
-	PID        int    `json:"pid,omitempty"`
+	OK           bool                `json:"ok"`
+	Endpoint     string              `json:"endpoint"`
+	Profile      string              `json:"profile"`
+	Mode         string              `json:"mode"`
+	Client       string              `json:"clientVersion,omitempty"`
+	Workspace    string              `json:"workspace,omitempty"`
+	Version      string              `json:"version,omitempty"`
+	InstanceID   string              `json:"instanceId,omitempty"`
+	PID          int                 `json:"pid,omitempty"`
+	CacheSummary *StatusCacheSummary `json:"cacheSummary,omitempty"`
+	CacheDetails *StatusCacheDetails `json:"cacheDetails,omitempty"`
 	// DockerReady is kept for backward-compatible JSON shape.
 	// It reports container runtime readiness (docker or podman).
 	DockerReady bool     `json:"dockerReady,omitempty"`
 	WSLReady    bool     `json:"wslReady,omitempty"`
 	BtrfsReady  bool     `json:"btrfsReady,omitempty"`
 	Warnings    []string `json:"warnings,omitempty"`
+}
+
+type StatusCacheSummary struct {
+	UsageBytes        int64    `json:"usageBytes"`
+	EffectiveMaxBytes int64    `json:"effectiveMaxBytes"`
+	StoreFreeBytes    int64    `json:"storeFreeBytes"`
+	StateCount        int      `json:"stateCount"`
+	PressureReasons   []string `json:"pressureReasons,omitempty"`
+}
+
+type StatusCacheDetails struct {
+	ReserveBytes     int64                       `json:"reserveBytes"`
+	HighWatermark    float64                     `json:"highWatermark"`
+	LowWatermark     float64                     `json:"lowWatermark"`
+	MinStateAge      string                      `json:"minStateAge"`
+	StoreTotalBytes  int64                       `json:"storeTotalBytes"`
+	ReclaimableBytes int64                       `json:"reclaimableBytes"`
+	BlockedCount     int                         `json:"blockedCount"`
+	LastEviction     *StatusCacheEvictionSummary `json:"lastEviction,omitempty"`
+}
+
+type StatusCacheEvictionSummary struct {
+	CompletedAt      string `json:"completedAt"`
+	Trigger          string `json:"trigger"`
+	EvictedCount     int    `json:"evictedCount"`
+	FreedBytes       int64  `json:"freedBytes"`
+	BlockedCount     int    `json:"blockedCount"`
+	ReclaimableBytes int64  `json:"reclaimableBytes"`
+	UsageBytesBefore int64  `json:"usageBytesBefore"`
+	UsageBytesAfter  int64  `json:"usageBytesAfter"`
+	FreeBytesBefore  int64  `json:"freeBytesBefore"`
+	FreeBytesAfter   int64  `json:"freeBytesAfter"`
 }
 
 type LocalDepsOptions struct {
@@ -158,18 +193,48 @@ func RunStatus(ctx context.Context, opts StatusOptions) (StatusResult, error) {
 		}
 	}
 
+	warnings := append([]string(nil), deps.Warnings...)
+	var cacheSummary *StatusCacheSummary
+	var cacheDetails *StatusCacheDetails
+	cacheStatus, cacheErr := cliClient.GetCacheStatus(ctx)
+	if cacheErr != nil {
+		if opts.CacheDetails {
+			return StatusResult{
+				OK:          health.Ok,
+				Endpoint:    endpoint,
+				Profile:     opts.ProfileName,
+				Mode:        mode,
+				Version:     health.Version,
+				InstanceID:  health.InstanceID,
+				PID:         health.PID,
+				DockerReady: deps.DockerReady,
+				WSLReady:    deps.WSLReady,
+				BtrfsReady:  deps.BtrfsReady,
+				Warnings:    warnings,
+			}, cacheErr
+		}
+		warnings = append(warnings, formatCacheSummaryWarning(cacheErr))
+	} else {
+		cacheSummary = summarizeCacheStatus(cacheStatus)
+		if opts.CacheDetails {
+			cacheDetails = detailedCacheStatus(cacheStatus)
+		}
+	}
+
 	return StatusResult{
-		OK:          health.Ok,
-		Endpoint:    endpoint,
-		Profile:     opts.ProfileName,
-		Mode:        mode,
-		Version:     health.Version,
-		InstanceID:  health.InstanceID,
-		PID:         health.PID,
-		DockerReady: deps.DockerReady,
-		WSLReady:    deps.WSLReady,
-		BtrfsReady:  deps.BtrfsReady,
-		Warnings:    deps.Warnings,
+		OK:           health.Ok,
+		Endpoint:     endpoint,
+		Profile:      opts.ProfileName,
+		Mode:         mode,
+		Version:      health.Version,
+		InstanceID:   health.InstanceID,
+		PID:          health.PID,
+		CacheSummary: cacheSummary,
+		CacheDetails: cacheDetails,
+		DockerReady:  deps.DockerReady,
+		WSLReady:     deps.WSLReady,
+		BtrfsReady:   deps.BtrfsReady,
+		Warnings:     warnings,
 	}, nil
 }
 
@@ -206,12 +271,80 @@ func PrintStatus(w io.Writer, result StatusResult) {
 		fmt.Fprintf(w, "wsl: %s\n", readinessLabel(result.WSLReady))
 		fmt.Fprintf(w, "btrfs: %s\n", readinessLabel(result.BtrfsReady))
 	}
+	if result.CacheSummary != nil {
+		fmt.Fprintf(w, "cache.usageBytes: %d\n", result.CacheSummary.UsageBytes)
+		fmt.Fprintf(w, "cache.effectiveMaxBytes: %d\n", result.CacheSummary.EffectiveMaxBytes)
+		fmt.Fprintf(w, "cache.storeFreeBytes: %d\n", result.CacheSummary.StoreFreeBytes)
+		fmt.Fprintf(w, "cache.stateCount: %d\n", result.CacheSummary.StateCount)
+		if len(result.CacheSummary.PressureReasons) > 0 {
+			fmt.Fprintf(w, "cache.pressureReasons: %s\n", strings.Join(result.CacheSummary.PressureReasons, ", "))
+		}
+	}
+	if result.CacheDetails != nil {
+		fmt.Fprintf(w, "cache.reserveBytes: %d\n", result.CacheDetails.ReserveBytes)
+		fmt.Fprintf(w, "cache.highWatermark: %g\n", result.CacheDetails.HighWatermark)
+		fmt.Fprintf(w, "cache.lowWatermark: %g\n", result.CacheDetails.LowWatermark)
+		fmt.Fprintf(w, "cache.minStateAge: %s\n", result.CacheDetails.MinStateAge)
+		fmt.Fprintf(w, "cache.storeTotalBytes: %d\n", result.CacheDetails.StoreTotalBytes)
+		fmt.Fprintf(w, "cache.reclaimableBytes: %d\n", result.CacheDetails.ReclaimableBytes)
+		fmt.Fprintf(w, "cache.blockedCount: %d\n", result.CacheDetails.BlockedCount)
+		if result.CacheDetails.LastEviction != nil {
+			fmt.Fprintf(w, "cache.lastEviction.completedAt: %s\n", result.CacheDetails.LastEviction.CompletedAt)
+			fmt.Fprintf(w, "cache.lastEviction.trigger: %s\n", result.CacheDetails.LastEviction.Trigger)
+			fmt.Fprintf(w, "cache.lastEviction.evictedCount: %d\n", result.CacheDetails.LastEviction.EvictedCount)
+			fmt.Fprintf(w, "cache.lastEviction.freedBytes: %d\n", result.CacheDetails.LastEviction.FreedBytes)
+		}
+	}
 	for _, warning := range result.Warnings {
 		if warning == "" {
 			continue
 		}
 		fmt.Fprintf(w, "warning: %s\n", warning)
 	}
+}
+
+func summarizeCacheStatus(status client.CacheStatus) *StatusCacheSummary {
+	return &StatusCacheSummary{
+		UsageBytes:        status.UsageBytes,
+		EffectiveMaxBytes: status.EffectiveMaxBytes,
+		StoreFreeBytes:    status.StoreFreeBytes,
+		StateCount:        status.StateCount,
+		PressureReasons:   append([]string(nil), status.PressureReasons...),
+	}
+}
+
+func detailedCacheStatus(status client.CacheStatus) *StatusCacheDetails {
+	details := &StatusCacheDetails{
+		ReserveBytes:     status.ReserveBytes,
+		HighWatermark:    status.HighWatermark,
+		LowWatermark:     status.LowWatermark,
+		MinStateAge:      status.MinStateAge,
+		StoreTotalBytes:  status.StoreTotalBytes,
+		ReclaimableBytes: status.ReclaimableBytes,
+		BlockedCount:     status.BlockedCount,
+	}
+	if status.LastEviction != nil {
+		details.LastEviction = &StatusCacheEvictionSummary{
+			CompletedAt:      status.LastEviction.CompletedAt,
+			Trigger:          status.LastEviction.Trigger,
+			EvictedCount:     status.LastEviction.EvictedCount,
+			FreedBytes:       status.LastEviction.FreedBytes,
+			BlockedCount:     status.LastEviction.BlockedCount,
+			ReclaimableBytes: status.LastEviction.ReclaimableBytes,
+			UsageBytesBefore: status.LastEviction.UsageBytesBefore,
+			UsageBytesAfter:  status.LastEviction.UsageBytesAfter,
+			FreeBytesBefore:  status.LastEviction.FreeBytesBefore,
+			FreeBytesAfter:   status.LastEviction.FreeBytesAfter,
+		}
+	}
+	return details
+}
+
+func formatCacheSummaryWarning(err error) string {
+	if err == nil {
+		return "cache summary unavailable"
+	}
+	return fmt.Sprintf("cache summary unavailable: %v", err)
 }
 
 func readinessLabel(ok bool) string {

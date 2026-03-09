@@ -602,12 +602,16 @@ func newTestServer(t *testing.T) (*httptest.Server, func()) {
 
 func seedHTTPData(db *sql.DB) error {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
+	minRetentionUntil := time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339Nano)
 	if _, err := db.Exec(`INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "state-1", "state-1", "image-1", "lb", "a=1", now, int64(10), nil); err != nil {
 		return err
 	}
 	if _, err := db.Exec(`INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "state-2", "state-2", "image-2", "sql", "b=2", now, int64(20), nil); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE states SET last_used_at = ?, use_count = ?, min_retention_until = ? WHERE state_id = ?`, now, int64(7), minRetentionUntil, "state-1"); err != nil {
 		return err
 	}
 	if _, err := db.Exec(`INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, status)

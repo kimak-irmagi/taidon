@@ -63,6 +63,7 @@ type PrepareService struct {
 	idGen          func() (string, error)
 	async          bool
 	heartbeatEvery time.Duration
+	lastEviction   *CacheEvictionSummary
 
 	mu      sync.Mutex
 	running map[string]*jobRunner

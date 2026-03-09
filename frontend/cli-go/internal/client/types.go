@@ -7,6 +7,36 @@ type HealthResponse struct {
 	PID        int    `json:"pid"`
 }
 
+type CacheEvictionSummary struct {
+	CompletedAt      string `json:"completed_at"`
+	Trigger          string `json:"trigger"`
+	EvictedCount     int    `json:"evicted_count"`
+	FreedBytes       int64  `json:"freed_bytes"`
+	BlockedCount     int    `json:"blocked_count"`
+	ReclaimableBytes int64  `json:"reclaimable_bytes"`
+	UsageBytesBefore int64  `json:"usage_bytes_before"`
+	UsageBytesAfter  int64  `json:"usage_bytes_after"`
+	FreeBytesBefore  int64  `json:"free_bytes_before"`
+	FreeBytesAfter   int64  `json:"free_bytes_after"`
+}
+
+type CacheStatus struct {
+	UsageBytes         int64                 `json:"usage_bytes"`
+	ConfiguredMaxBytes *int64                `json:"configured_max_bytes,omitempty"`
+	EffectiveMaxBytes  int64                 `json:"effective_max_bytes"`
+	ReserveBytes       int64                 `json:"reserve_bytes"`
+	HighWatermark      float64               `json:"high_watermark"`
+	LowWatermark       float64               `json:"low_watermark"`
+	MinStateAge        string                `json:"min_state_age"`
+	StoreTotalBytes    int64                 `json:"store_total_bytes"`
+	StoreFreeBytes     int64                 `json:"store_free_bytes"`
+	StateCount         int                   `json:"state_count"`
+	ReclaimableBytes   int64                 `json:"reclaimable_bytes"`
+	BlockedCount       int                   `json:"blocked_count"`
+	PressureReasons    []string              `json:"pressure_reasons"`
+	LastEviction       *CacheEvictionSummary `json:"last_eviction,omitempty"`
+}
+
 type ListFilters struct {
 	Name     string
 	Instance string
@@ -37,14 +67,17 @@ type InstanceEntry struct {
 }
 
 type StateEntry struct {
-	StateID       string  `json:"state_id"`
-	ParentStateID *string `json:"parent_state_id,omitempty"`
-	ImageID       string  `json:"image_id"`
-	PrepareKind   string  `json:"prepare_kind"`
-	PrepareArgs   string  `json:"prepare_args_normalized"`
-	CreatedAt     string  `json:"created_at"`
-	SizeBytes     *int64  `json:"size_bytes,omitempty"`
-	RefCount      int     `json:"refcount"`
+	StateID           string  `json:"state_id"`
+	ParentStateID     *string `json:"parent_state_id,omitempty"`
+	ImageID           string  `json:"image_id"`
+	PrepareKind       string  `json:"prepare_kind"`
+	PrepareArgs       string  `json:"prepare_args_normalized"`
+	CreatedAt         string  `json:"created_at"`
+	SizeBytes         *int64  `json:"size_bytes,omitempty"`
+	LastUsedAt        *string `json:"last_used_at,omitempty"`
+	UseCount          *int64  `json:"use_count,omitempty"`
+	MinRetentionUntil *string `json:"min_retention_until,omitempty"`
+	RefCount          int     `json:"refcount"`
 }
 
 type PrepareJobRequest struct {
