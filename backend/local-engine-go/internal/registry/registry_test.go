@@ -72,6 +72,10 @@ func (f *fakeStore) CreateState(ctx context.Context, entry store.StateCreate) er
 	return nil
 }
 
+func (f *fakeStore) UpdateStateSize(ctx context.Context, stateID string, sizeBytes int64) error {
+	return nil
+}
+
 func (f *fakeStore) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
 	if f.createInstance != nil {
 		return f.createInstance(ctx, entry)
