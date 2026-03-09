@@ -123,9 +123,8 @@ function resolvePrepareCmd(scenario, scenarioId) {
   return { prepareCmd, prepareArgs };
 }
 
-function buildFlowCommand({ sqlrsPath, workspaceDir, timeout, scenario }) {
+function buildPrepareCommand({ sqlrsPath, workspaceDir, timeout, scenario }) {
   const { prepareCmd, prepareArgs } = resolvePrepareCmd(scenario, scenario.id || "unknown");
-  const runArgs = Array.isArray(scenario.runArgs) ? scenario.runArgs : ["-At", "-f", ".e2e-query.sql"];
   const image = typeof scenario.image === "string" && scenario.image.trim() !== "" ? scenario.image : "postgres:17";
   return [
     sqlrsPath,
@@ -137,15 +136,38 @@ function buildFlowCommand({ sqlrsPath, workspaceDir, timeout, scenario }) {
     "--image",
     image,
     "--",
-    ...prepareArgs,
-    "run:psql",
-    "--",
-    ...runArgs
+    ...prepareArgs
   ];
 }
 
 function buildStatusCommand({ sqlrsPath, workspaceDir }) {
   return [sqlrsPath, "--output", "json", "--workspace", workspaceDir, "status", "--cache"];
+}
+
+function buildListInstancesCommand({ sqlrsPath, workspaceDir }) {
+  return [sqlrsPath, "--output", "json", "--workspace", workspaceDir, "ls", "--instances"];
+}
+
+function buildRmCommand({ sqlrsPath, workspaceDir, idPrefix }) {
+  return [sqlrsPath, "--workspace", workspaceDir, "rm", idPrefix];
+}
+
+function parseInstanceIDs(payload) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("ls payload must be an object");
+  }
+  const instances = Array.isArray(payload.instances) ? payload.instances : null;
+  if (!instances) {
+    throw new Error("ls payload must include instances array");
+  }
+  if (instances.length === 0) {
+    throw new Error("cache-pressure scenario expects at least one instance");
+  }
+  const ids = instances.map((entry) => (typeof entry?.instance_id === "string" ? entry.instance_id.trim() : "")).filter(Boolean);
+  if (ids.length !== instances.length) {
+    throw new Error("ls payload instance entries must include instance_id");
+  }
+  return ids;
 }
 
 function buildConfigSetCommand({ sqlrsPath, workspaceDir, pathName, value }) {
@@ -286,20 +308,22 @@ async function main() {
     workspaceDir,
     containerRuntime
   });
-  const flowCmd = buildFlowCommand({
+  const prepareCmd = buildPrepareCommand({
     sqlrsPath,
     workspaceDir,
     timeout: runTimeout,
     scenario: { ...scenario, id: scenarioId }
   });
   const statusCmd = buildStatusCommand({ sqlrsPath, workspaceDir });
+  const listInstancesCmd = buildListInstancesCommand({ sqlrsPath, workspaceDir });
 
   fs.writeFileSync(path.join(outDir, "command-init.txt"), `${commandToString(initCmd)}\n`, "utf8");
   if (runtimeConfigCmd) {
     fs.writeFileSync(path.join(outDir, "command-config-runtime.txt"), `${commandToString(runtimeConfigCmd)}\n`, "utf8");
   }
-  fs.writeFileSync(path.join(outDir, "command-flow.txt"), `${commandToString(flowCmd)}\n`, "utf8");
+  fs.writeFileSync(path.join(outDir, "command-prepare.txt"), `${commandToString(prepareCmd)}\n`, "utf8");
   fs.writeFileSync(path.join(outDir, "command-status.txt"), `${commandToString(statusCmd)}\n`, "utf8");
+  fs.writeFileSync(path.join(outDir, "command-ls-instances.txt"), `${commandToString(listInstancesCmd)}\n`, "utf8");
   writeJSON(path.join(outDir, "scenario.json"), scenario);
 
   const baseEnv = { ...process.env };
@@ -329,15 +353,47 @@ async function main() {
   }
 
   await runChecked({
-    cmd: flowCmd,
+    cmd: prepareCmd,
     cwd: workspaceDir,
     env: baseEnv,
     stdoutPath: path.join(outDir, "raw-stdout.log"),
     stderrPath: path.join(outDir, "raw-stderr.log"),
-    stage: "prepare+run-first",
+    stage: "prepare-first",
     scenarioId,
     workspaceDir
   });
+
+  await runChecked({
+    cmd: listInstancesCmd,
+    cwd: workspaceDir,
+    env: baseEnv,
+    stdoutPath: path.join(outDir, "instances-after-prepare.json"),
+    stderrPath: path.join(outDir, "instances-after-prepare.stderr.log"),
+    stage: "list-instances-after-prepare",
+    scenarioId,
+    workspaceDir
+  });
+
+  const instanceIDs = parseInstanceIDs(JSON.parse(fs.readFileSync(path.join(outDir, "instances-after-prepare.json"), "utf8")));
+  fs.writeFileSync(
+    path.join(outDir, "command-rm-instance.txt"),
+    `${instanceIDs.map((instanceID) => commandToString(buildRmCommand({ sqlrsPath, workspaceDir, idPrefix: instanceID }))).join("\n")}\n`,
+    "utf8"
+  );
+  for (let index = 0; index < instanceIDs.length; index += 1) {
+    const instanceID = instanceIDs[index];
+    const rmInstanceCmd = buildRmCommand({ sqlrsPath, workspaceDir, idPrefix: instanceID });
+    await runChecked({
+      cmd: rmInstanceCmd,
+      cwd: workspaceDir,
+      env: baseEnv,
+      stdoutPath: path.join(outDir, `rm-instance-${index + 1}.stdout.log`),
+      stderrPath: path.join(outDir, `rm-instance-${index + 1}.stderr.log`),
+      stage: `rm-instance-after-prepare-${index + 1}`,
+      scenarioId,
+      workspaceDir
+    });
+  }
 
   await runChecked({
     cmd: statusCmd,
@@ -382,15 +438,15 @@ async function main() {
   }
 
   appendPrepareVariant(workspaceDir);
-  fs.writeFileSync(path.join(outDir, "command-flow-run2.txt"), `${commandToString(flowCmd)}\n`, "utf8");
+  fs.writeFileSync(path.join(outDir, "command-prepare-run2.txt"), `${commandToString(prepareCmd)}\n`, "utf8");
 
   await runChecked({
-    cmd: flowCmd,
+    cmd: prepareCmd,
     cwd: workspaceDir,
     env: baseEnv,
     stdoutPath: path.join(outDir, "raw-stdout-run2.log"),
     stderrPath: path.join(outDir, "raw-stderr-run2.log"),
-    stage: "prepare+run-second",
+    stage: "prepare-second",
     scenarioId,
     workspaceDir
   });
@@ -431,4 +487,4 @@ if (path.resolve(process.argv[1] || "") === __filename) {
   });
 }
 
-export { buildConfigSetCommand, deriveCachePressureMaxBytes, validateCachePressureStatus };
+export { buildConfigSetCommand, buildListInstancesCommand, buildPrepareCommand, buildRmCommand, deriveCachePressureMaxBytes, parseInstanceIDs, validateCachePressureStatus };

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import {
   buildConfigSetCommand,
+  buildListInstancesCommand,
+  buildPrepareCommand,
+  buildRmCommand,
   deriveCachePressureMaxBytes,
+  parseInstanceIDs,
   validateCachePressureStatus
 } from "./run-cache-pressure-scenario.mjs";
 
@@ -14,6 +18,39 @@ function run(name, fn) {
     throw err;
   }
 }
+
+run("buildPrepareCommand keeps cache-pressure scenario prepare-only", () => {
+  assert.deepEqual(
+    buildPrepareCommand({
+      sqlrsPath: "/tmp/sqlrs",
+      workspaceDir: "/tmp/workspace",
+      timeout: "30m",
+      scenario: {
+        id: "cache-pressure-chinook",
+        image: "postgres:17",
+        prepareArgs: ["-f", "prepare.sql"]
+      }
+    }),
+    ["/tmp/sqlrs", "--timeout", "30m", "--workspace", "/tmp/workspace", "prepare:psql", "--image", "postgres:17", "--", "-f", "prepare.sql"]
+  );
+});
+
+run("buildListInstancesCommand and buildRmCommand target local workspace CLI", () => {
+  assert.deepEqual(
+    buildListInstancesCommand({ sqlrsPath: "/tmp/sqlrs", workspaceDir: "/tmp/workspace" }),
+    ["/tmp/sqlrs", "--output", "json", "--workspace", "/tmp/workspace", "ls", "--instances"]
+  );
+  assert.deepEqual(
+    buildRmCommand({ sqlrsPath: "/tmp/sqlrs", workspaceDir: "/tmp/workspace", idPrefix: "inst-1" }),
+    ["/tmp/sqlrs", "--workspace", "/tmp/workspace", "rm", "inst-1"]
+  );
+});
+
+run("parseInstanceIDs extracts all listed instance ids", () => {
+  assert.deepEqual(parseInstanceIDs({ instances: [{ instance_id: "inst-1" }, { instance_id: "inst-2" }] }), ["inst-1", "inst-2"]);
+  assert.throws(() => parseInstanceIDs({ instances: [] }), /at least one instance/);
+  assert.throws(() => parseInstanceIDs({ instances: [{ instance_id: "" }] }), /instance_id/);
+});
 
 run("buildConfigSetCommand encodes string values as JSON literals", () => {
   assert.deepEqual(
