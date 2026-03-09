@@ -1,5 +1,7 @@
 # sqlrs diff
 
+Russian: [sqlrs-diff.RU.md](sqlrs-diff.RU.md)
+
 ## Overview
 
 **Status: design / future.** This command is part of the git-aware passive
@@ -12,8 +14,21 @@ command, evaluates that command in two contexts, and reports the difference.
 The goal is to stay syntactically close to the main sqlrs command surface rather
 than introducing a separate `diff`-specific input DSL.
 
-In other words, the user writes the command they already know (`plan:*` or
-`prepare:*`) and inserts a `diff` block between `sqlrs` and that command.
+**Composite diff commands.** To maximise compatibility with the main CLI, `diff`
+is designed as a **group of composite commands**: you take the same verb you would
+use for a real run and insert the diff scope between `sqlrs` and that verb. The
+three forms and what they compare are:
+
+| Form | Compares |
+|------|----------|
+| `sqlrs diff ... plan ...` | **Difference in task plans** for instance preparation (ordered steps, task hashes, cacheability). |
+| `sqlrs diff ... prepare ...` | **Difference in task bodies** for preparation (resolved files, include graph, normalized content units). |
+| `sqlrs diff ... run ...` | **Difference in task bodies** for query execution (file-backed run inputs only). |
+
+So: `diff ... plan` answers “how does the *plan* change?”; `diff ... prepare` answers
+“how do the *prepare inputs/bodies* change?”; `diff ... run` answers “how do the
+*run inputs* change?”. The same command line you use for `plan` / `prepare` / `run`
+is reused, with only the diff scope inserted.
 
 Use cases:
 
@@ -32,8 +47,14 @@ sqlrs [global-options] diff (--from-ref <refA> --to-ref <refB> | --from-path <pa
 Where:
 
 - `diff` defines only the **comparison scope**.
-- `<sqlrs-command>` is one wrapped sqlrs command using its **normal syntax**.
-- Global flags such as `-v` and `--output` keep their existing meaning.
+- `<sqlrs-command>` is one wrapped sqlrs command and must use the **exact same
+  syntax** as in the main CLI: same subcommand, same options, same `--` and
+  trailing args. See [`sqlrs-plan.md`](sqlrs-plan.md), [`sqlrs-prepare.md`](sqlrs-prepare.md),
+  and [`sqlrs-run.md`](sqlrs-run.md) (and their variant docs) for the authoritative
+  syntax of each command.
+- **Global options** apply as in any sqlrs invocation: `-v` / `--verbose` enables
+  more verbose logging to stdout/stderr during the diff process; `--output human|json`
+  selects the output format (no diff-specific `--format`).
 
 Examples of wrapped commands:
 
@@ -83,6 +104,14 @@ You must not mix ref-based and path-based scope options.
 Instead, it builds the **derived representation** that matters for that command
 and compares the two sides.
 
+**Revision-sensitive vs other arguments:** Only inputs that depend on the
+repository or path context (e.g. files named by `-f`, or the include graph) are
+compared. Arguments that do not depend on revision (e.g. `-c 'SELECT 1'` in psql
+commands, or `--image postgres:17`) are the same on both sides; diff does not
+invent semantics for them. For commands that mix file-backed and inline inputs,
+only the file-derived part is diffed; the implementation may warn or reject
+when there is nothing revision-dependent to compare.
+
 ### `plan:*`
 
 Compare the derived task plan:
@@ -103,8 +132,45 @@ Compare the preparation payload:
 ### `run:*` (future / limited)
 
 `run:*` is a future extension and is only meaningful for **file-backed inputs**.
-Inline-only invocations such as `-c 'select 1'` may be rejected because the Git
-revision does not change the payload.
+Arguments that do not depend on revision (e.g. `-c 'select 1'` in `run:psql`) are
+not diffable — the Git ref does not change that payload. Inline-only invocations
+may be rejected or produce an empty diff. The same principle applies to other
+kinds: only inputs that come from files (or from the resolved file graph) are
+compared across refs.
+
+### Revision-dependent file discovery
+
+The **set of files** that participate in the wrapped command can differ between
+the two sides. For example, in the old revision a script may `\i` two files, and
+in the new revision it may include three; or an included file may have been
+renamed or removed. The diff implementation must perform **full file discovery
+and include expansion in each side’s context** and report:
+
+- added or removed files in the resolved graph,
+- changes in the content of files that appear in both graphs.
+
+So “what files matter” is derived per revision, not assumed to be the same on both
+sides.
+
+### File list construction per kind (core requirement)
+
+From diff's perspective, the commands (plan, prepare, run) differ mainly in **how
+the file list is built** for that kind. The implementation must be able to
+construct the **closure of file inputs** for each prepare kind and run kind, using
+the same rules as the main CLI.
+
+| Kind | Entry point | Closure rule |
+|------|-------------|--------------|
+| **prepare:psql** / plan:psql | `-f <file>` (and `-f -` with stdin) | Closure over `\i`, `\ir`, `\include`, `\include_relative` (and any other include directives the engine expands). Start from the file(s) named in `-f`; recursively add every file referenced by those directives. |
+| **prepare:lb** / plan:lb | `--changelog-file <path>` | Closure over the changelog graph: start from the changelog file; add every file referenced by it (include, includeAll, etc.). Liquibase defines the graph; diff reuses the same resolution so the file set is identical to what prepare/plan would use. |
+| **run:psql** (future) | `-f <file>` (file-backed only) | Same as prepare:psql: closure over `\i` / `\include` from each `-f` entry. Inline `-c` does not contribute to the file list. |
+| **run:*** (other kinds, future) | Kind-specific | Each run kind defines which arguments are file-backed; the file list is built from those (e.g. script path, config path) and their kind-specific includes. |
+
+Once the file list (closure) is built for each side, diff compares the two sets
+and their contents (Added / Modified / Removed). Plan vs prepare vs run then
+only affect *what* is derived from those files (task plan, task bodies, or run
+payload); the mechanism for building the file list per kind is the main
+implementation requirement.
 
 ---
 
@@ -120,10 +186,12 @@ revision does not change the payload.
 | `--include-content` | Include content snippets in human/json output. |
 | `--limit <n>` | Truncate listed entries for very large diffs. |
 
-Output selection is **not** a diff-local option:
+Output and verbosity are **global**, not diff-specific:
 
-- `--output human|json` remains the global output selector.
-- `-v` / `--verbose` remains the global verbose flag.
+- `--output human|json` is the global output selector (same as for `ls`, `plan`,
+  etc.). Use it to choose human-readable text or JSON.
+- `-v` / `--verbose` is the global verbose flag: when set, sqlrs logs more detail
+  about the diff process (e.g. scope resolution, file discovery) to stdout/stderr.
 
 ---
 
@@ -193,15 +261,26 @@ sqlrs --output json diff --from-path ./left --to-path ./right prepare:psql -- -f
 
 ## Implementation Notes
 
+The core requirement is **building the file list (closure) for each prepare kind
+and run kind** as defined in the table above; diff then compares those lists and
+their contents. The rest is shared machinery.
+
 1. Parse global flags first, exactly as in a normal sqlrs invocation.
 2. Parse the `diff` scope block.
-3. Parse the wrapped command using the same grammar and validation rules as the
-   main CLI.
-4. Evaluate the wrapped command independently on both sides.
-5. Perform file discovery and include expansion in each side's own context.
-6. Compare the derived representations.
+3. Parse the wrapped command using the **same grammar and validation rules** as
+   the main CLI (so that the syntax stays compatible).
+4. For each side (from-ref/to-ref or from-path/to-path), build the **file list**
+   for the wrapped kind: resolve ref or path, then apply that kind's closure rule
+   (e.g. `\i`/`\include` for psql, changelog graph for lb). The file set and
+   content can differ per side.
+5. Optionally build the derived representation (plan tasks, prepare payload, run
+   file-backed inputs) for each side if the output format needs it.
+6. Compare the two file sets (and optionally derived representations) and
+   classify Added / Modified / Removed.
 7. Render human or JSON output according to the global `--output` flag.
 
 This command does not start an engine or execute SQL in the first design slice;
-it compares the sqlrs-relevant inputs and derived artefacts of the wrapped
-command.
+it compares the sqlrs-relevant file sets and their contents. Compatibility with
+the main CLI (syntax, global `-v`, `--output`) is intentional so that users can
+reuse the same command line they use for `plan` or `prepare`, only inserting the
+`diff` scope.

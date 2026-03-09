@@ -89,8 +89,7 @@ sqlrs
   diff
 ```
 
-Not all groups are required in MVP. `diff` is part of the git-aware passive
-feature set (future).
+Not all groups are required in MVP.
 
 ---
 
@@ -200,9 +199,17 @@ See:
 
 ### 3.9 `sqlrs diff`
 
-`sqlrs diff` compares two contexts by **wrapping one existing content-aware sqlrs
-command** and evaluating it on both sides. Diff-specific options define the
-comparison scope; the wrapped command keeps its normal syntax.
+`sqlrs diff` is a **group of composite commands**: the user inserts the diff scope
+between `sqlrs` and one content-aware command (`plan`, `prepare`, or `run`), and
+the same command syntax is used as in the main CLI. It compares two contexts by
+evaluating that command on both sides and reporting the difference.
+
+- `sqlrs diff ... plan ...` — difference in **task plans** for instance preparation.
+- `sqlrs diff ... prepare ...` — difference in **task bodies** for preparation.
+- `sqlrs diff ... run ...` — difference in **task bodies** for query execution (file-backed inputs).
+
+Diff-specific options define the comparison scope; the wrapped command keeps its
+normal syntax.
 
 Initial design scope:
 
