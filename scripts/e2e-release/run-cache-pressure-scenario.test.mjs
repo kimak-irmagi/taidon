@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  buildConfigSetCommand,
   deriveCachePressureMaxBytes,
   validateCachePressureStatus
 } from "./run-cache-pressure-scenario.mjs";
@@ -13,6 +14,18 @@ function run(name, fn) {
     throw err;
   }
 }
+
+run("buildConfigSetCommand encodes string values as JSON literals", () => {
+  assert.deepEqual(
+    buildConfigSetCommand({
+      sqlrsPath: "/tmp/sqlrs",
+      workspaceDir: "/tmp/workspace",
+      pathName: "cache.capacity.minStateAge",
+      value: "0s"
+    }),
+    ["/tmp/sqlrs", "--workspace", "/tmp/workspace", "config", "set", "cache.capacity.minStateAge", "\"0s\""]
+  );
+});
 
 run("deriveCachePressureMaxBytes keeps headroom above one-state usage", () => {
   assert.equal(deriveCachePressureMaxBytes(100), 125);

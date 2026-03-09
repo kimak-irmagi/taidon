@@ -149,7 +149,7 @@ function buildStatusCommand({ sqlrsPath, workspaceDir }) {
 }
 
 function buildConfigSetCommand({ sqlrsPath, workspaceDir, pathName, value }) {
-  return [sqlrsPath, "--workspace", workspaceDir, "config", "set", pathName, String(value)];
+  return [sqlrsPath, "--workspace", workspaceDir, "config", "set", pathName, JSON.stringify(value)];
 }
 
 function deriveCachePressureMaxBytes(usageBytes) {
@@ -431,4 +431,4 @@ if (path.resolve(process.argv[1] || "") === __filename) {
   });
 }
 
-export { deriveCachePressureMaxBytes, validateCachePressureStatus };
+export { buildConfigSetCommand, deriveCachePressureMaxBytes, validateCachePressureStatus };
