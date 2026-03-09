@@ -167,7 +167,11 @@ Add `prepare.cacheEvictor` (or sibling package) that:
 - `prepare.snapshotOrchestrator` triggers eviction after successful snapshot
   materialization.
 - `deletion.Manager` remains the authority for safe state removal semantics.
-- `httpapi` and CLI diagnostics surface eviction outcomes.
+- `httpapi` exposes cache summary diagnostics and enriched state metadata.
+- CLI surfaces:
+  - `sqlrs status` for compact global cache summary;
+  - `sqlrs status --cache` for full global cache diagnostics;
+  - `sqlrs ls --states --cache-details` for per-state cache metadata.
 
 ## 10. Failure Semantics
 
@@ -211,7 +215,15 @@ Minimum operator-visible status should include:
 
 - current usage bytes,
 - configured max/high/low,
+- reserve and effective max,
+- pressure reasons,
 - last eviction run summary.
+
+Planned operator-visible commands:
+
+- `sqlrs status`
+- `sqlrs status --cache`
+- `sqlrs ls --states --cache-details`
 
 ## 12. Rollout Plan
 

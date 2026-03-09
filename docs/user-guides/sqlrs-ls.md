@@ -40,6 +40,7 @@ sqlrs ls [OPTIONS]
 --quiet          Suppress headers and explanatory text (table still printed)
 --no-header      Do not print table header (human output)
 --long           Show full ids in human output (default is 12 chars)
+--cache-details  Show additional cache metadata for state rows
 ```
 
 ### Optional filters
@@ -170,6 +171,16 @@ Columns:
 - `SIZE`
 - `REFCOUNT` (number of instances referencing this state)
 
+Optional columns with `--cache-details`:
+
+- `LAST_USED`
+- `USE_COUNT`
+- `MIN_RETENTION_UNTIL`
+
+`--cache-details` is valid only together with `--states` (or `--all`).
+It is intended for bounded-cache diagnostics rather than the default compact
+listing.
+
 #### States hierarchy (human output)
 
 The `STATE_ID` column is rendered as a compact tree. The prefix uses
@@ -264,11 +275,15 @@ Recommended fields:
 ### State object
 
 - `state_id`
+- `parent_state_id` (nullable)
 - `image_id`
 - `prepare_kind`
 - `prepare_args_normalized`
 - `created_at`
 - `size_bytes` (optional)
+- `last_used_at` (nullable)
+- `use_count` (nullable)
+- `min_retention_until` (nullable)
 - `refcount`
 
 ### Job object
@@ -322,6 +337,12 @@ List states only:
 
 ```bash
 sqlrs ls -s
+```
+
+List states with cache metadata:
+
+```bash
+sqlrs ls --states --cache-details
 ```
 
 List instances derived from a specific state:

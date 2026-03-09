@@ -167,7 +167,11 @@ Evictor обязательно логирует:
 
 - `prepare.snapshotOrchestrator` триггерит eviction после commit снапшота.
 - `deletion.Manager` остается источником истины по безопасному удалению state.
-- `httpapi` и CLI diagnostics публикуют результаты eviction.
+- `httpapi` публикует cache summary diagnostics и расширенные state-метаданные.
+- CLI-поверхности:
+  - `sqlrs status` для компактной глобальной cache summary;
+  - `sqlrs status --cache` для полной глобальной cache-диагностики;
+  - `sqlrs ls --states --cache-details` для per-state cache-метаданных.
 
 ## 10. Семантика Ошибок
 
@@ -211,7 +215,15 @@ Evictor обязательно логирует:
 
 - текущий usage в байтах,
 - настроенные max/high/low,
+- reserve и effective max,
+- pressure reasons,
 - summary последнего прогона eviction.
+
+Планируемые operator-visible команды:
+
+- `sqlrs status`
+- `sqlrs status --cache`
+- `sqlrs ls --states --cache-details`
 
 ## 12. План Внедрения
 

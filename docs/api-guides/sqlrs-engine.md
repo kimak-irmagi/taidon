@@ -211,6 +211,211 @@ Returns engine status. No auth required.
 This operation does not require authentication
 </aside>
 
+<h1 id="the-sqlrs-engine-api-cache">cache</h1>
+
+## getCacheStatus
+
+<a id="opIdgetCacheStatus"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/cache/status \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/cache/status HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/cache/status',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/cache/status',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/cache/status', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/cache/status', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/cache/status");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/cache/status", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/cache/status`
+
+*Get bounded-cache diagnostics*
+
+Returns current bounded-cache occupancy, policy thresholds, pressure
+reasons, and the latest completed eviction summary.
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "usage_bytes": 0,
+  "configured_max_bytes": 0,
+  "effective_max_bytes": 0,
+  "reserve_bytes": 0,
+  "high_watermark": 0,
+  "low_watermark": 0,
+  "min_state_age": "string",
+  "store_total_bytes": 0,
+  "store_free_bytes": 0,
+  "state_count": 0,
+  "reclaimable_bytes": 0,
+  "blocked_count": 0,
+  "pressure_reasons": [
+    "string"
+  ],
+  "last_eviction": {
+    "completed_at": "2019-08-24T14:15:22Z",
+    "trigger": "string",
+    "evicted_count": 0,
+    "freed_bytes": 0,
+    "blocked_count": 0,
+    "reclaimable_bytes": 0,
+    "usage_bytes_before": 0,
+    "usage_bytes_after": 0,
+    "free_bytes_before": 0,
+    "free_bytes_after": 0
+  }
+}
+```
+
+<h3 id="getcachestatus-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[CacheStatus](#schemacachestatus)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 <h1 id="the-sqlrs-engine-api-prepare">prepare</h1>
 
 ## listPrepareJobs
@@ -3899,6 +4104,9 @@ Returns states.
     "prepare_args_normalized": "string",
     "created_at": "2019-08-24T14:15:22Z",
     "size_bytes": 0,
+    "last_used_at": "2019-08-24T14:15:22Z",
+    "use_count": 0,
+    "min_retention_until": "2019-08-24T14:15:22Z",
     "refcount": 0
   }
 ]
@@ -4089,6 +4297,9 @@ Returns a single state.
   "prepare_args_normalized": "string",
   "created_at": "2019-08-24T14:15:22Z",
   "size_bytes": 0,
+  "last_used_at": "2019-08-24T14:15:22Z",
+  "use_count": 0,
+  "min_retention_until": "2019-08-24T14:15:22Z",
   "refcount": 0
 }
 ```
@@ -4340,6 +4551,132 @@ bearerAuth
 |version|string|true|none|Engine version string.|
 |instanceId|string|true|none|Unique engine instance identifier.|
 |pid|integer(int32)|true|none|Engine process id.|
+
+<h2 id="tocS_CacheEvictionSummary">CacheEvictionSummary</h2>
+<!-- backwards compatibility -->
+<a id="schemacacheevictionsummary"></a>
+<a id="schema_CacheEvictionSummary"></a>
+<a id="tocScacheevictionsummary"></a>
+<a id="tocscacheevictionsummary"></a>
+
+```json
+{
+  "completed_at": "2019-08-24T14:15:22Z",
+  "trigger": "string",
+  "evicted_count": 0,
+  "freed_bytes": 0,
+  "blocked_count": 0,
+  "reclaimable_bytes": 0,
+  "usage_bytes_before": 0,
+  "usage_bytes_after": 0,
+  "free_bytes_before": 0,
+  "free_bytes_after": 0
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|completed_at|string(date-time)|true|none|none|
+|trigger|string|true|none|Trigger that initiated the latest eviction run.|
+|evicted_count|integer(int32)|true|none|none|
+|freed_bytes|integer(int64)|true|none|none|
+|blocked_count|integer(int32)|true|none|none|
+|reclaimable_bytes|integer(int64)|true|none|none|
+|usage_bytes_before|integer(int64)|true|none|none|
+|usage_bytes_after|integer(int64)|true|none|none|
+|free_bytes_before|integer(int64)|true|none|none|
+|free_bytes_after|integer(int64)|true|none|none|
+
+<h2 id="tocS_CacheStatus">CacheStatus</h2>
+<!-- backwards compatibility -->
+<a id="schemacachestatus"></a>
+<a id="schema_CacheStatus"></a>
+<a id="tocScachestatus"></a>
+<a id="tocscachestatus"></a>
+
+```json
+{
+  "usage_bytes": 0,
+  "configured_max_bytes": 0,
+  "effective_max_bytes": 0,
+  "reserve_bytes": 0,
+  "high_watermark": 0,
+  "low_watermark": 0,
+  "min_state_age": "string",
+  "store_total_bytes": 0,
+  "store_free_bytes": 0,
+  "state_count": 0,
+  "reclaimable_bytes": 0,
+  "blocked_count": 0,
+  "pressure_reasons": [
+    "string"
+  ],
+  "last_eviction": {
+    "completed_at": "2019-08-24T14:15:22Z",
+    "trigger": "string",
+    "evicted_count": 0,
+    "freed_bytes": 0,
+    "blocked_count": 0,
+    "reclaimable_bytes": 0,
+    "usage_bytes_before": 0,
+    "usage_bytes_after": 0,
+    "free_bytes_before": 0,
+    "free_bytes_after": 0
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|usage_bytes|integer(int64)|true|none|none|
+|configured_max_bytes|any|false|none|Null when store-coupled mode is active.|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|integer(int64)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|effective_max_bytes|integer(int64)|true|none|none|
+|reserve_bytes|integer(int64)|true|none|none|
+|high_watermark|number|true|none|none|
+|low_watermark|number|true|none|none|
+|min_state_age|string|true|none|none|
+|store_total_bytes|integer(int64)|true|none|none|
+|store_free_bytes|integer(int64)|true|none|none|
+|state_count|integer(int32)|true|none|none|
+|reclaimable_bytes|integer(int64)|true|none|none|
+|blocked_count|integer(int32)|true|none|none|
+|pressure_reasons|[string]|true|none|none|
+|last_eviction|any|false|none|none|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|[CacheEvictionSummary](#schemacacheevictionsummary)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
 
 <h2 id="tocS_PrepareJobRequest">PrepareJobRequest</h2>
 <!-- backwards compatibility -->
@@ -5419,6 +5756,9 @@ continued
   "prepare_args_normalized": "string",
   "created_at": "2019-08-24T14:15:22Z",
   "size_bytes": 0,
+  "last_used_at": "2019-08-24T14:15:22Z",
+  "use_count": 0,
+  "min_retention_until": "2019-08-24T14:15:22Z",
   "refcount": 0
 }
 
@@ -5452,5 +5792,59 @@ continued
 |prepare_args_normalized|string|true|none|none|
 |created_at|string(date-time)|true|none|none|
 |size_bytes|integer(int64)|false|none|none|
+|last_used_at|any|false|none|none|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string(date-time)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|use_count|any|false|none|none|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|integer(int64)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|min_retention_until|any|false|none|none|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string(date-time)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
 |refcount|integer(int32)|true|none|none|
 
