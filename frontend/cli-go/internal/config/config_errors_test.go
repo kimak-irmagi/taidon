@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 func TestLookupDBMSImageReadError(t *testing.T) {

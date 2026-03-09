@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func TestDeleteInstanceReturnsNotFound(t *testing.T) {

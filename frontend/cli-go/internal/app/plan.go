@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"sqlrs/cli/internal/cli"
-	"sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/config"
 )
 
 func runPlan(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, output string) error {

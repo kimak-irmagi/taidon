@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 func TestLoadUsesSQLRSROOT(t *testing.T) {

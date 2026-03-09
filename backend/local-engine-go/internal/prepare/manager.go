@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"sqlrs/engine/internal/config"
-	"sqlrs/engine/internal/dbms"
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/prepare/queue"
-	"sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/statefs"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/config"
+	"github.com/sqlrs/engine-local/internal/dbms"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 const (
@@ -1352,6 +1352,10 @@ func relativizeLiquibaseHostPath(value string, base string) string {
 		return value
 	}
 	path = filepath.Clean(path)
+	base = filepath.Clean(base)
+	if resolved, err := filepath.EvalSymlinks(base); err == nil {
+		base = resolved
+	}
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
 	}

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"sqlrs/cli/internal/wsl"
+	"github.com/sqlrs/cli/internal/wsl"
 
 	"golang.org/x/term"
 )

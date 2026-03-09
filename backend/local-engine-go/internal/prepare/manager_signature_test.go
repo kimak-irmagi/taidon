@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"sqlrs/engine/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
 )
 
 func TestComputeJobSignatureFromPlanMissingImage(t *testing.T) {

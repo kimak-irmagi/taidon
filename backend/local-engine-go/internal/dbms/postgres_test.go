@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/runtime"
 )
 
 type fakeRuntime struct {

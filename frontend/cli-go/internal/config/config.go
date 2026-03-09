@@ -1,6 +1,6 @@
 package config
 
-import "sqlrs/cli/internal/paths"
+import "github.com/sqlrs/cli/internal/paths"
 
 type Config struct {
 	DefaultProfile string                   `yaml:"defaultProfile"`

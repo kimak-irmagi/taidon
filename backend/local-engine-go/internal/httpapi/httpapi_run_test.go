@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/registry"
-	"sqlrs/engine/internal/run"
-	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/store"
-	"sqlrs/engine/internal/store/sqlite"
+	"github.com/sqlrs/engine-local/internal/registry"
+	"github.com/sqlrs/engine-local/internal/run"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/store"
+	"github.com/sqlrs/engine-local/internal/store/sqlite"
 )
 
 type fakeRunRuntime struct {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/wsl"
+	"github.com/sqlrs/cli/internal/wsl"
 )
 
 type initWSLStubReply struct {

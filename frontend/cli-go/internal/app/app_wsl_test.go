@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sqlrs/cli/internal/config"
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 func TestWindowsToWSLPath(t *testing.T) {

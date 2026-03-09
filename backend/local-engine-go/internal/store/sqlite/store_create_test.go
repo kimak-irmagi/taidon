@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func TestStoreCreateAndDelete(t *testing.T) {

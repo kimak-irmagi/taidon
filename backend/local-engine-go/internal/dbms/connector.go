@@ -3,7 +3,7 @@ package dbms
 import (
 	"context"
 
-	"sqlrs/engine/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/runtime"
 )
 
 type Connector interface {

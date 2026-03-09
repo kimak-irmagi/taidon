@@ -19,12 +19,12 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/httpapi"
-	"sqlrs/engine/internal/prepare"
-	"sqlrs/engine/internal/prepare/queue"
-	runpkg "sqlrs/engine/internal/run"
-	"sqlrs/engine/internal/store/sqlite"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/httpapi"
+	"github.com/sqlrs/engine-local/internal/prepare"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
+	runpkg "github.com/sqlrs/engine-local/internal/run"
+	"github.com/sqlrs/engine-local/internal/store/sqlite"
 )
 
 func TestActivityTrackerIdleFor(t *testing.T) {

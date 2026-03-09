@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func TestSnapshotOrchestratorInvalidatesDirtyCachedState(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func TestRunLsInstancePrefixAmbiguous(t *testing.T) {

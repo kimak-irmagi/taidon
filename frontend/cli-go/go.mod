@@ -1,4 +1,4 @@
-module sqlrs/cli
+module github.com/sqlrs/cli
 
 go 1.22
 

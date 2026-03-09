@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/daemon"
-	"sqlrs/cli/internal/wsl"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/wsl"
 )
 
 type StatusOptions struct {

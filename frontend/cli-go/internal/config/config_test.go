@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/paths"
 )
 
 func TestParseDuration(t *testing.T) {

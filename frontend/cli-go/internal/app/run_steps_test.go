@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/cli"
 )
 
 func TestBuildPsqlRunStepsSharedArgsAndFiles(t *testing.T) {

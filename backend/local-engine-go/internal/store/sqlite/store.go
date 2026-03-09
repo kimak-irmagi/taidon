@@ -12,7 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 type Store struct {

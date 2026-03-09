@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/cli"
 )
 
 func TestParseWatchArgs(t *testing.T) {

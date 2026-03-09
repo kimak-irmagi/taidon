@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func TestPrintPlan(t *testing.T) {

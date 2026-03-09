@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func TestFormatPrepareEventVariants(t *testing.T) {

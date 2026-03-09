@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
-	engineRuntime "sqlrs/engine/internal/runtime"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
 )
 
 var execCommand = exec.CommandContext

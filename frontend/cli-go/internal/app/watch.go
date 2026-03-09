@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"sqlrs/cli/internal/cli"
-	"sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func parseWatchArgs(args []string) (string, bool, error) {

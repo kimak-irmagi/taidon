@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
 )
 
 func TestDeleteReturnsFalseWhenDeleteJobFails(t *testing.T) {

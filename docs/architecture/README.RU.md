@@ -36,6 +36,8 @@
   компонентная структура стриминга prepare events и watch-контролов.
 - [`prepare-manager-refactor.RU.md`](prepare-manager-refactor.RU.md) - разбиение
   prepare manager на coordinator/executor/snapshot роли.
+- [`local-engine-cli-maintainability-refactor.RU.md`][lecmr] -
+  предложенный следующий проход cleanup внутренних границ prepare/httpapi/CLI.
 - [`statefs-component-structure.RU.md`](statefs-component-structure.RU.md) - контракт
   StateFS и изоляция ФС-логики в engine.
 - [`local-engine-storage-schema.RU.md`](local-engine-storage-schema.RU.md) - схема
@@ -57,3 +59,4 @@
 [sda]: shared-deployment-architecture.RU.md
 [openAPI]: ../api-guides/sqlrs-engine.openapi.yaml
 [qawr]: query-analysis-workflow-review.RU.md
+[lecmr]: local-engine-cli-maintainability-refactor.RU.md

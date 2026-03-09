@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"os"
 
-	"sqlrs/cli/internal/client"
-	"sqlrs/cli/internal/util"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/util"
 )
 
 type EngineState struct {
@@ -30,10 +30,7 @@ func ReadEngineState(path string) (EngineState, error) {
 }
 
 func WriteEngineState(path string, state EngineState) error {
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
+	data, _ := json.MarshalIndent(state, "", "  ")
 	return util.AtomicWriteFile(path, data, 0o600)
 }
 
@@ -44,7 +41,7 @@ func IsEngineStateStale(state EngineState, health client.HealthResponse, healthE
 	if state.InstanceID != "" && health.InstanceID != "" && state.InstanceID != health.InstanceID {
 		return true
 	}
-	if state.PID > 0 && !pidRunning /*&& healthErr != nil*/ {
+	if state.PID > 0 && !pidRunning {
 		return true
 	}
 	return false

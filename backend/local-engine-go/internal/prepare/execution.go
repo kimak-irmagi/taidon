@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"sqlrs/engine/internal/prepare/queue"
-	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/statefs"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/statefs"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 type PsqlRunRequest struct {

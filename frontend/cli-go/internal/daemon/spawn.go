@@ -3,12 +3,11 @@ package daemon
 import (
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 )
 
-func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountUnit, mountFSType string, idleTimeout time.Duration, logPath string) (*exec.Cmd, error) {
+func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountUnit, mountFSType string, idleTimeout time.Duration, logPath string) *exec.Cmd {
 	args := []string{
 		"--run-dir", runDir,
 		"--listen", "127.0.0.1:0",
@@ -35,18 +34,11 @@ func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountUnit,
 		}
 		wslCmd = append(wslCmd, "nsenter", "-t", "1", "-m", "--", path)
 		wslCmd = append(wslCmd, args...)
-		if runtime.GOOS == "windows" {
-			cmdline := buildCmdLine("wsl.exe", wslCmd, "")
-			appendLogLine(logPath, "spawn wsl: "+cmdline)
-		}
 		cmd := exec.Command("wsl.exe", wslCmd...)
 		cmd.Stdin = nil
-		if runtime.GOOS == "windows" {
-			configureDetachedWSL(cmd)
-		} else {
-			configureDetached(cmd)
-		}
-		return cmd, nil
+		configureDetachedWSL(cmd)
+		appendLogLine(logPath, "spawn wsl: "+buildCmdLine("wsl.exe", wslCmd, ""))
+		return cmd
 	}
 	cmd := exec.Command(path, args...)
 	cmd.Stdin = nil
@@ -64,7 +56,7 @@ func buildDaemonCommand(path, runDir, statePath, wslDistro, storeDir, mountUnit,
 		cmd.Env = append(os.Environ(), envVars...)
 	}
 	configureDetached(cmd)
-	return cmd, nil
+	return cmd
 }
 
 func quotePowerShell(value string) string {

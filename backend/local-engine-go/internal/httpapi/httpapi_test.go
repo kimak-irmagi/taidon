@@ -13,12 +13,12 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"sqlrs/engine/internal/conntrack"
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/prepare/queue"
-	"sqlrs/engine/internal/registry"
-	"sqlrs/engine/internal/store"
-	"sqlrs/engine/internal/store/sqlite"
+	"github.com/sqlrs/engine-local/internal/conntrack"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
+	"github.com/sqlrs/engine-local/internal/registry"
+	"github.com/sqlrs/engine-local/internal/store"
+	"github.com/sqlrs/engine-local/internal/store/sqlite"
 )
 
 func TestAuthAndHealth(t *testing.T) {

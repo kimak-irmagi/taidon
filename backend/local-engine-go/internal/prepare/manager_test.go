@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"sqlrs/engine/internal/config"
-	"sqlrs/engine/internal/deletion"
-	"sqlrs/engine/internal/prepare/queue"
-	engineRuntime "sqlrs/engine/internal/runtime"
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/config"
+	"github.com/sqlrs/engine-local/internal/deletion"
+	"github.com/sqlrs/engine-local/internal/prepare/queue"
+	engineRuntime "github.com/sqlrs/engine-local/internal/runtime"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 type fakeStore struct {

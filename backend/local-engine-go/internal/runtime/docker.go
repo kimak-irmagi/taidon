@@ -410,34 +410,6 @@ func (r *DockerRuntime) ensureDataDirOwner(ctx context.Context, imageID string, 
 	return nil
 }
 
-func (r *DockerRuntime) ensureHostReadableDataDir(ctx context.Context, imageID string, dataDir string) error {
-	if runtime.GOOS != "linux" {
-		return nil
-	}
-	args := []string{
-		"run", "--rm",
-		"-v", dockerBindSpec(dataDir, PostgresDataDirRoot, false),
-		imageID,
-		"chmod", "-R", "a+rX", PostgresDataDir,
-	}
-	if err := r.runPermissionCommand(ctx, args); err != nil {
-		return err
-	}
-	return nil
-}
-
-func ensureHostDataDirAccess(dataDir string) {
-	if runtime.GOOS != "linux" {
-		return
-	}
-	info, err := os.Stat(dataDir)
-	if err != nil || !info.IsDir() {
-		return
-	}
-	// Best effort: allow container postgres user to traverse mounted base dir.
-	_ = os.Chmod(dataDir, 0o755)
-}
-
 func (r *DockerRuntime) runPermissionCommand(ctx context.Context, args []string) error {
 	output, err := r.run(ctx, args, nil)
 	if err != nil {
@@ -778,13 +750,6 @@ func normalizeDockerHostPath(hostPath string) string {
 		return converted
 	}
 	return hostPath
-}
-
-func useLinuxMountPathStyle() bool {
-	if runtime.GOOS != "windows" {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(os.Getenv(dockerHostPathStyleEnv)), dockerHostPathLinux)
 }
 
 func windowsDrivePathToLinux(hostPath string) (string, bool) {

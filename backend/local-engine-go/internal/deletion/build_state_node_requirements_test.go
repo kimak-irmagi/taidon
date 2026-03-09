@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"sqlrs/engine/internal/store"
+	"github.com/sqlrs/engine-local/internal/store"
 )
 
 func newDeletionManagerForBuildStateNodeTest(t *testing.T, st *fakeStore) *Manager {

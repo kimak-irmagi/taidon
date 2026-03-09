@@ -1,8 +1,28 @@
 # sqlrs CLI (Go)
 
-Status: MVP scaffold with `status` command, local connect-or-start, and config loading.
+Primary Go implementation of the `sqlrs` CLI for local and remote profiles.
 
-This CLI lives under `frontend/cli-go`. See `SPEC.md` for the full specification.
+Current command groups include:
+
+- `init`
+- `status`
+- `ls`
+- `rm`
+- `config`
+- `watch`
+- `plan:psql`, `plan:lb`
+- `prepare:psql`, `prepare:lb`
+- `run:psql`, `run:pgbench`
+
+The CLI loads workspace/global config, autostarts the local engine when needed,
+and supports Windows + WSL local mode.
+
+See also:
+
+- `SPEC.md`
+- `../../docs/architecture/cli-contract.md`
+- `../../docs/architecture/cli-component-structure.md`
+- `../../docs/architecture/local-engine-cli-maintainability-refactor.md`
 
 ## Build
 
@@ -31,7 +51,8 @@ node scripts/build-cli-go.mjs
 
 ## Release packaging (local variant)
 
-The local release bundles `sqlrs` + `sqlrs-engine` into archives under `dist/release/`.
+The local release bundles `sqlrs` and `sqlrs-engine` into archives under
+`dist/release/`.
 
 Provide a platform-specific engine binary per target, for example:
 
