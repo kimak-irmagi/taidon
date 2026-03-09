@@ -4,14 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/util"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"github.com/sqlrs/cli/internal/client"
-	"github.com/sqlrs/cli/internal/util"
 	"strings"
 	"sync"
 	"time"
@@ -156,7 +156,7 @@ LONG_PATH:
 	if daemonStatePath == "" {
 		daemonStatePath = enginePath
 	}
-	cmd, err := buildDaemonCommand(
+	cmd := buildDaemonCommand(
 		opts.DaemonPath,
 		daemonRunDir,
 		daemonStatePath,
@@ -167,17 +167,10 @@ LONG_PATH:
 		opts.IdleTimeout,
 		logPath,
 	)
-	if err != nil {
-		return ConnectResult{}, err
-	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 
-	tailer, err := startLogTail(logPath, os.Stderr)
-	if err != nil {
-		tailer = nil
-	}
-
+	tailer, _ := startLogTail(logPath, os.Stderr)
 	logVerbose(opts.Verbose, "starting engine: %s", opts.DaemonPath)
 	if err := cmd.Start(); err != nil {
 		if tailer != nil {
@@ -265,14 +258,15 @@ func loadHealthyStateWithReason(ctx context.Context, enginePath string, timeout 
 	if state.PID > 0 && !pidRunning {
 		return EngineState{}, false, fmt.Sprintf("engine pid not running (pid=%d)", state.PID)
 	}
-	if IsEngineStateStale(state, health, healthErr, pidRunning) {
-		return EngineState{}, false, "engine state is stale"
-	}
 	return state, true, ""
 }
 
 func cacheKey(opts ConnectOptions) string {
-	return filepath.Clean(strings.TrimSpace(opts.StateDir))
+	stateDir := strings.TrimSpace(opts.StateDir)
+	if stateDir == "" {
+		return ""
+	}
+	return filepath.Clean(stateDir)
 }
 
 func loadCachedEngineState(opts ConnectOptions) (EngineState, bool) {
