@@ -916,6 +916,45 @@ func TestRemoveRuntimeDirFallsBackWhenStateFSRemoveFails(t *testing.T) {
 	}
 }
 
+func TestRemoveRuntimeDirRenamesStaleDirWhenRemovalFails(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "runtime")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir runtime dir: %v", err)
+	}
+	fs := &fakeStateFS{removeErr: errors.New("statefs remove failed")}
+	manager := &Manager{statefs: fs}
+
+	oldRemoveAll := removeRuntimeDirAll
+	oldRename := renameRuntimeDir
+	oldNowUnixNano := nowUnixNano
+	removeRuntimeDirAll = func(path string) error {
+		if path == dir {
+			return errors.New("permission denied")
+		}
+		return os.RemoveAll(path)
+	}
+	renameRuntimeDir = os.Rename
+	nowUnixNano = func() int64 { return 42 }
+	defer func() {
+		removeRuntimeDirAll = oldRemoveAll
+		renameRuntimeDir = oldRename
+		nowUnixNano = oldNowUnixNano
+	}()
+
+	if err := manager.removeRuntimeDir(strPtr(dir)); err != nil {
+		t.Fatalf("removeRuntimeDir rename fallback: %v", err)
+	}
+	if len(fs.removeCalls) != 1 || fs.removeCalls[0] != dir {
+		t.Fatalf("expected statefs remove attempt for %s, got %+v", dir, fs.removeCalls)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("expected original runtime dir removed or renamed away, err=%v", err)
+	}
+	if _, err := os.Stat(dir + ".stale-42"); !os.IsNotExist(err) {
+		t.Fatalf("expected stale runtime dir cleanup, err=%v", err)
+	}
+}
+
 func TestRemoveRuntimeDirNoopGuards(t *testing.T) {
 	manager := &Manager{}
 	if err := manager.removeRuntimeDir(nil); err != nil {
