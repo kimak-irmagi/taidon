@@ -1,14 +1,27 @@
-# sqlrs cache capacity control (draft)
+# sqlrs cache capacity control
 
 This guide defines operator-facing cache capacity controls for local engine
 state snapshots.
 
-Status: draft design (not implemented yet).
+Status: core enforcement is implemented in the local engine. CLI/diagnostics
+surfacing and release cache-pressure coverage are still in progress.
 
 ## 1. Purpose
 
 Prevent unbounded growth of the local state cache by enforcing size limits and
 automatic eviction.
+
+Current implementation covers:
+
+- `cache.capacity.*` configuration via `sqlrs config`
+- strict enforcement around prepare/snapshot phases
+- deterministic eviction of unreferenced leaf states older than `minStateAge`
+- structured errors when the cache cannot be reclaimed enough
+
+Remaining work:
+
+- surface occupancy and eviction summaries in CLI/diagnostics output
+- add release e2e coverage for cache-pressure scenarios
 
 ## 2. Configuration Paths
 
@@ -60,7 +73,7 @@ effectiveMax = min(maxBytes, effectiveMaxFromStore)   (when maxBytes > 0)
 effectiveMax = effectiveMaxFromStore                  (when maxBytes is null/0)
 ```
 
-## 4. Error Codes (planned)
+## 4. Error Codes
 
 - `cache_enforcement_unavailable`
   - usage cannot be measured while strict capacity enforcement is enabled.

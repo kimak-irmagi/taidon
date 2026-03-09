@@ -70,7 +70,7 @@ gantt
 
 ---
 
-## Статус (на 2026-02-22)
+## Статус (на 2026-03-09)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
@@ -81,8 +81,13 @@ gantt
 - **Сделано (MVP command surface)**: локальный MVP-набор команд стабилен вокруг
   `init/config/ls/status/plan/prepare/run/rm`; legacy-нейминг команд в
   документации считается устаревшим.
-- **В работе**: ограничения ёмкости state-cache (макс. размер и политика eviction),
-  чтобы исключить неограниченный рост workspace в долгоживущих средах.
+- **Сделано (bounded cache core)**: локальный engine уже поддерживает
+  `cache.capacity.*` конфиг, strict enforcement перед/после snapshot-фаз,
+  детерминированный eviction неиспользуемых leaf-states и structured errors
+  при нехватке места.
+- **В работе (bounded cache hardening)**: операторская наблюдаемость bounded
+  cache ещё не доведена до конца: CLI/диагностика должны явно показывать
+  occupancy/eviction, а release e2e пока не покрывает cache-pressure сценарии.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
@@ -93,14 +98,14 @@ gantt
 
 ## Ближайший Следующий Шаг (Выбран)
 
-- **Направление**: внедрить bounded cache-поведение перед масштабированием team-контура.
+- **Направление**: довести bounded cache до операторски наблюдаемого состояния
+  перед переходом к git-aware CLI и team-контуру.
 - **Следующий PR-срез**:
-  - добавить конфигурируемые лимиты размера кэша (глобально и per-workspace profile);
-  - реализовать детерминированный eviction неиспользуемых states (TTL + pressure по размеру);
   - отразить заполненность кэша и решения eviction в CLI/диагностике;
   - расширить release e2e-проверки на сценарии cache-pressure.
-- **Почему сейчас**: локальный MVP уже рабочий и без drop-in proxy; главный
-  операционный риск сейчас - неограниченный рост кэша.
+  - синхронизировать operator-facing документацию со shipped bounded cache core.
+- **Почему сейчас**: bounded cache core уже работает в local engine, но без
+  явной диагностики и release-проверок операционный риск всё ещё плохо виден.
 
 ---
 
@@ -141,7 +146,8 @@ gantt
 - Локальный runtime (контейнеры) с lifecycle экземпляра — **сделано**
 - CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **сделано**
 - Cache v1 (prepare jobs + reuse state + retention) — **сделано (ядро)**
-- Ограничения ёмкости кэша (лимиты размера + eviction) — **в работе**
+- Ограничения ёмкости кэша (лимиты размера + eviction) — **сделано (ядро)**,
+  **в работе** (CLI/diagnostics + release cache-pressure coverage)
 - Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs), **в планах** (ZFS)
 - Liquibase адаптер (apply changelog) — **сделано (MVP scope)** (базовый локальный поток через `prepare:lb`/`plan:lb` реализован)
 - Release happy-path e2e gate — **сделано** (покрытие Linux/macOS/Windows WSL

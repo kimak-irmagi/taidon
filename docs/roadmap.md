@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-02-22)
+## Status (as of 2026-03-09)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -88,8 +88,14 @@ gantt
 - **Done (MVP command surface)**: local MVP command set is stable around
   `init/config/ls/status/plan/prepare/run/rm`; legacy command naming is
   deprecated in docs.
-- **In progress**: state-cache capacity controls (max size and eviction policy)
-  to prevent unbounded workspace growth in long-lived environments.
+- **Done (bounded cache core)**: the local engine already supports
+  `cache.capacity.*` configuration, strict enforcement before/after snapshot
+  phases, deterministic eviction of unreferenced leaf states, and structured
+  errors when space cannot be reclaimed.
+- **In progress (bounded cache hardening)**: operator-facing observability is
+  still incomplete: CLI/diagnostics should surface cache occupancy and eviction
+  decisions explicitly, and release e2e does not yet cover cache-pressure
+  scenarios.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
@@ -100,14 +106,15 @@ gantt
 
 ## Immediate Next Step (Selected)
 
-- **Direction**: add bounded cache behaviour before scaling team usage.
+- **Direction**: finish operator-facing bounded cache hardening before moving to
+  git-aware CLI and the team profile.
 - **Next PR slice**:
-  - introduce configurable cache size limits (global and per-workspace profile);
-  - implement deterministic eviction for unreferenced states (TTL + size pressure);
   - expose cache occupancy and eviction decisions in CLI/diagnostics output;
   - extend release e2e checks to verify cache-pressure behaviour.
-- **Rationale**: local MVP is already usable without a drop-in proxy; unbounded
-  cache growth is now the highest operational risk and should be addressed first.
+  - sync operator-facing docs with the shipped bounded cache core.
+- **Rationale**: bounded cache core already works in the local engine, but the
+  remaining diagnostics and release validation still leave the operational risk
+  poorly visible.
 
 ---
 
@@ -150,7 +157,8 @@ gantt
   `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`,
   `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **Done**
 - Cache v1 (prepare jobs + state reuse + retention) — **Done (core)**
-- Cache capacity guardrails (size limits + eviction) — **In progress**
+- Cache capacity guardrails (size limits + eviction) — **Done (core)**,
+  **In progress** (CLI/diagnostics + release cache-pressure coverage)
 - Filesystem snapshot backends — **Done** (overlayfs copy stub, Btrfs),
   **Planned** (ZFS)
 - Liquibase adapter (apply changelog) — **Done (MVP scope)** (local flow via
