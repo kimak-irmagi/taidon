@@ -21,7 +21,7 @@ Current implementation covers:
 
 Remaining work:
 
-- surface occupancy and eviction summaries in CLI/diagnostics output
+- persist `size_bytes` for newly materialized states so `sqlrs ls --states` and cache ranking use stored snapshot sizes by default
 - add release e2e coverage for cache-pressure scenarios
 
 ## 1.1 Planned Operator Diagnostics
@@ -150,11 +150,13 @@ Planned additional detailed fields:
 
 ### 5.3 `sqlrs ls --states --cache-details`
 
-Planned additional state metadata:
+Per-state cache metadata exposed by `sqlrs ls --states --cache-details`:
 
+- `size_bytes`
+  - persisted snapshot size in bytes for states created after size tracking is enabled;
+  - older states may omit this field until they are rebuilt or explicitly remeasured;
 - `last_used_at`
 - `use_count`
 - `min_retention_until`
 
-These fields explain why a state is likely to be retained or become reclaimable,
-without introducing a separate cache-only state object.
+Eviction uses `size_bytes` as the primary ranking signal. If a state has no stored size yet, the engine may fall back to a live filesystem measurement during eviction so strict capacity enforcement still works for legacy cache entries.

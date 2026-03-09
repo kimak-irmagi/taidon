@@ -145,6 +145,12 @@ State metadata must be extended to support deterministic policy decisions:
 
 `size_bytes` already exists and is retained as the primary per-state size signal.
 
+Semantics of `size_bytes`:
+
+- after a state snapshot is materialized successfully, the engine measures the resulting state directory and persists that byte count into state metadata;
+- `sqlrs ls --states` and cache diagnostics read this persisted value directly;
+- eviction is metadata-first, but may fall back to a live state-directory measurement when `size_bytes` is still missing or zero for a legacy entry.
+
 To handle "single-state too large" corner cases, the engine also keeps rolling
 observations for required build space per `(image_id, prepare_kind)`:
 

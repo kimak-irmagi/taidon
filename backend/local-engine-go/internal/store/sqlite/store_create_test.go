@@ -87,6 +87,45 @@ func TestStoreCreateAndDelete(t *testing.T) {
 	}
 }
 
+func TestUpdateStateSizeBackfillsLegacyMetadataOnly(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+
+	exec(t, st, `INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"state-nil", "state-nil", "image-1", "psql", "args", now, "active")
+	exec(t, st, `INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-zero", "state-zero", "image-1", "psql", "args", now, 0, "active")
+	exec(t, st, `INSERT INTO states (state_id, state_fingerprint, image_id, prepare_kind, prepare_args_normalized, created_at, size_bytes, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		"state-sized", "state-sized", "image-1", "psql", "args", now, 99, "active")
+
+	if err := st.UpdateStateSize(ctx, "state-nil", 123); err != nil {
+		t.Fatalf("UpdateStateSize nil: %v", err)
+	}
+	if err := st.UpdateStateSize(ctx, "state-zero", 456); err != nil {
+		t.Fatalf("UpdateStateSize zero: %v", err)
+	}
+	if err := st.UpdateStateSize(ctx, "state-sized", 777); err != nil {
+		t.Fatalf("UpdateStateSize sized: %v", err)
+	}
+
+	stateNil, ok, err := st.GetState(ctx, "state-nil")
+	if err != nil || !ok || stateNil.SizeBytes == nil || *stateNil.SizeBytes != 123 {
+		t.Fatalf("expected size_bytes backfilled for nil state, got %+v err=%v ok=%v", stateNil, err, ok)
+	}
+	stateZero, ok, err := st.GetState(ctx, "state-zero")
+	if err != nil || !ok || stateZero.SizeBytes == nil || *stateZero.SizeBytes != 456 {
+		t.Fatalf("expected size_bytes backfilled for zero state, got %+v err=%v ok=%v", stateZero, err, ok)
+	}
+	stateSized, ok, err := st.GetState(ctx, "state-sized")
+	if err != nil || !ok || stateSized.SizeBytes == nil || *stateSized.SizeBytes != 99 {
+		t.Fatalf("expected existing size_bytes preserved, got %+v err=%v ok=%v", stateSized, err, ok)
+	}
+}
+
 func TestCreateInstanceInsertError(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()

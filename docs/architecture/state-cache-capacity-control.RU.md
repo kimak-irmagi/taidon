@@ -146,6 +146,12 @@ Evictor обязательно логирует:
 
 Поле `size_bytes` уже существует и остается основным сигналом размера state.
 
+Семантика `size_bytes`:
+
+- после успешной материализации snapshot engine измеряет итоговую директорию state и сохраняет этот размер в metadata;
+- `sqlrs ls --states` и cache diagnostics читают именно это сохраненное значение;
+- eviction работает в режиме metadata-first, но для legacy entry с отсутствующим или нулевым `size_bytes` может временно fallback-нуться к live-измерению директории state.
+
 Для corner-case "даже один state не помещается" engine хранит скользящие
 наблюдения required build space по `(image_id, prepare_kind)`:
 

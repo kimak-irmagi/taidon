@@ -53,6 +53,13 @@ func TestRegistryRoutesRegisterExpectedHandlers(t *testing.T) {
 		if resp.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
 		}
+		var payload map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if payload["size_bytes"] != float64(10) {
+			t.Fatalf("expected size_bytes=10, got %+v", payload["size_bytes"])
+		}
 	})
 
 	t.Run("instance delete dry run", func(t *testing.T) {

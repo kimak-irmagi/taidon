@@ -217,6 +217,138 @@ func TestExecuteStateTaskMapsNoSpaceFromSnapshotHooksAndMetadataCommit(t *testin
 	})
 }
 
+func TestExecuteStateTaskPersistsMeasuredStateSize(t *testing.T) {
+	store := &fakeStore{}
+	mgr := newManager(t, store)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			OutputStateID: outputID,
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	oldUsage := storeUsageFn
+	storeUsageFn = func(path string) (int64, error) {
+		if strings.Contains(path, outputID) {
+			return 123, nil
+		}
+		return 0, nil
+	}
+	t.Cleanup(func() { storeUsageFn = oldUsage })
+
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if len(store.states) != 1 {
+		t.Fatalf("expected one created state, got %+v", store.states)
+	}
+	if store.states[0].SizeBytes == nil || *store.states[0].SizeBytes != 123 {
+		t.Fatalf("expected persisted size_bytes=123, got %+v", store.states[0].SizeBytes)
+	}
+}
+
+func TestExecuteStateTaskBackfillsCachedStateSizeForLegacyState(t *testing.T) {
+	stateStore := &fakeStore{}
+	mgr := newManager(t, stateStore)
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	stateStore.statesByID = map[string]store.StateEntry{
+		outputID: {
+			StateID:     outputID,
+			ImageID:     "image-1",
+			PrepareKind: "psql",
+			PrepareArgs: "-c select 1",
+			CreatedAt:   "2026-01-01T00:00:00Z",
+		},
+	}
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			OutputStateID: outputID,
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	oldUsage := storeUsageFn
+	storeUsageFn = func(path string) (int64, error) {
+		if strings.Contains(path, outputID) {
+			return 321, nil
+		}
+		return 0, nil
+	}
+	t.Cleanup(func() { storeUsageFn = oldUsage })
+
+	gotStateID, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp != nil {
+		t.Fatalf("executeStateTask: %+v", errResp)
+	}
+	if gotStateID != outputID {
+		t.Fatalf("expected cached state %s, got %s", outputID, gotStateID)
+	}
+	if len(stateStore.states) != 0 {
+		t.Fatalf("expected no new state create on cache hit, got %+v", stateStore.states)
+	}
+	entry, ok := stateStore.statesByID[outputID]
+	if !ok || entry.SizeBytes == nil || *entry.SizeBytes != 321 {
+		t.Fatalf("expected backfilled size_bytes=321, got %+v", entry)
+	}
+}
+
+func TestExecuteStateTaskReturnsMetadataCommitErrorWhenStateSizeMeasurementFails(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	prepared, err := mgr.prepareRequest(Request{
+		PrepareKind: "psql",
+		ImageID:     "image-1",
+		PsqlArgs:    []string{"-c", "select 1"},
+	})
+	if err != nil {
+		t.Fatalf("prepareRequest: %v", err)
+	}
+	outputID := psqlOutputStateID(t, mgr, prepared, TaskInput{Kind: "image", ID: "image-1"})
+	task := taskState{
+		PlanTask: PlanTask{
+			TaskID:        "execute-0",
+			OutputStateID: outputID,
+			Input:         &TaskInput{Kind: "image", ID: "image-1"},
+		},
+	}
+	oldUsage := storeUsageFn
+	storeUsageFn = func(path string) (int64, error) {
+		if strings.Contains(path, outputID) {
+			return 0, errors.New("usage boom")
+		}
+		return 0, nil
+	}
+	t.Cleanup(func() { storeUsageFn = oldUsage })
+
+	_, errResp := mgr.executeStateTask(context.Background(), "job-1", prepared, task)
+	if errResp == nil || errResp.Code != "internal_error" || !strings.Contains(errResp.Message, "cannot measure state size") {
+		t.Fatalf("expected state size measurement error, got %+v", errResp)
+	}
+	if !strings.Contains(errResp.Details, `"phase":"metadata_commit"`) {
+		t.Fatalf("expected metadata_commit phase in details, got %+v", errResp)
+	}
+	if !strings.Contains(errResp.Details, "usage boom") {
+		t.Fatalf("expected measurement error details, got %+v", errResp)
+	}
+}
+
 func TestExecuteStateTaskPathAndCapacityBranches(t *testing.T) {
 	t.Run("missing effective image id", func(t *testing.T) {
 		mgr := newManagerWithDeps(t, &fakeStore{}, newQueueStore(t), nil)

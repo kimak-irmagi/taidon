@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS states (
 - `state_fingerprint` может совпадать с `state_id`; он нужен для name binding
   даже при эвикшне state.
 - `status` зарезервирован для будущего использования (например, `success`, `failed`).
+- `size_bytes` хранит сохраненный размер snapshot в байтах для материализованной директории state; для legacy rows, созданных до включения size tracking, поле может быть NULL.
 
 ### 3.2 `instances`
 

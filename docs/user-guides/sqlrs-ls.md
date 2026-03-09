@@ -168,8 +168,10 @@ Columns:
 - `PREPARE_KIND`
 - `PREPARE_ARGS` (short, normalized)
 - `CREATED`
-- `SIZE`
+- `SIZE` (persisted snapshot size in bytes; may be empty for legacy states that were created before size tracking)
 - `REFCOUNT` (number of instances referencing this state)
+
+`SIZE` is reported from persisted state metadata, not from a live recursive disk walk performed by the CLI. This keeps `ls` fast and deterministic. When size metadata is still missing for an older state, the column is left empty.
 
 Optional columns with `--cache-details`:
 

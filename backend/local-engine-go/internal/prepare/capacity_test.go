@@ -742,13 +742,69 @@ func TestEnsureCacheCapacityReturnsNilAfterSuccessfulEviction(t *testing.T) {
 			if usageCalls == 1 {
 				return 950, nil
 			}
-			return 700, nil
+			return 550, nil
 		},
 	)
 
 	errResp := mgr.ensureCacheCapacity(context.Background(), "job-1", "prepare_step")
 	if errResp != nil {
 		t.Fatalf("expected nil after successful eviction, got %+v", errResp)
+	}
+}
+func TestEnsureCacheCapacityRecordsLastEvictionSummary(t *testing.T) {
+	st := &fakeStore{
+		listStates: []store.StateEntry{{
+			StateID:   "state-1",
+			ImageID:   "image-1",
+			CreatedAt: "2026-02-22T10:00:00Z",
+			SizeBytes: int64Ptr(100),
+		}},
+	}
+	mgr := newManagerWithDeps(t, st, newQueueStore(t), &testDeps{
+		config: &fakeConfigStore{values: map[string]any{
+			"cache.capacity.maxBytes":      int64(1000),
+			"cache.capacity.reserveBytes":  int64(300),
+			"cache.capacity.highWatermark": 0.90,
+			"cache.capacity.lowWatermark":  0.80,
+			"cache.capacity.minStateAge":   "0s",
+		}},
+	})
+	usageCalls := 0
+	freeCalls := 0
+	overrideCapacitySignals(t,
+		func(string) (int64, int64, error) {
+			freeCalls++
+			switch freeCalls {
+			case 1:
+				return 1000, 100, nil
+			default:
+				return 1000, 400, nil
+			}
+		},
+		func(path string) (int64, error) {
+			if strings.Contains(path, "state-1") {
+				return 100, nil
+			}
+			usageCalls++
+			if usageCalls == 1 {
+				return 950, nil
+			}
+			return 550, nil
+		},
+	)
+
+	if errResp := mgr.ensureCacheCapacity(context.Background(), "job-1", "prepare_step"); errResp != nil {
+		t.Fatalf("expected nil after successful eviction, got %+v", errResp)
+	}
+	got := mgr.lastCacheEviction()
+	if got == nil {
+		t.Fatalf("expected last eviction summary")
+	}
+	if got.Trigger != "prepare_step" || got.EvictedCount != 1 || got.FreedBytes != 100 {
+		t.Fatalf("unexpected eviction summary header: %+v", got)
+	}
+	if got.UsageBytesBefore != 950 || got.UsageBytesAfter != 550 || got.FreeBytesBefore != 100 || got.FreeBytesAfter != 400 {
+		t.Fatalf("unexpected before/after metrics: %+v", got)
 	}
 }
 
@@ -1268,6 +1324,94 @@ func TestListEvictionCandidatesAdditionalBranches(t *testing.T) {
 		}
 		if candidates[0].StateID != "state-a" || candidates[1].StateID != "state-b" {
 			t.Fatalf("expected state id tie-break ordering, got %+v", candidates)
+		}
+	})
+
+	t.Run("uses stored size without live measurement", func(t *testing.T) {
+		created := time.Date(2026, 2, 22, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+		mgr := newManagerWithDeps(t, &fakeStore{
+			listStates: []store.StateEntry{{StateID: "state-1", ImageID: "image-1", CreatedAt: created, SizeBytes: int64Ptr(55)}},
+		}, newQueueStore(t), nil)
+		oldUsage := storeUsageFn
+		called := false
+		storeUsageFn = func(path string) (int64, error) {
+			called = true
+			return 999, nil
+		}
+		t.Cleanup(func() { storeUsageFn = oldUsage })
+		candidates, blocked, reclaimable, err := mgr.listEvictionCandidates(context.Background(), capacitySettings{})
+		if err != nil {
+			t.Fatalf("listEvictionCandidates: %v", err)
+		}
+		if blocked != 0 || len(candidates) != 1 {
+			t.Fatalf("unexpected result blocked=%d candidates=%d", blocked, len(candidates))
+		}
+		if called {
+			t.Fatalf("did not expect live measurement when size_bytes is stored")
+		}
+		if reclaimable != 55 || candidates[0].SizeBytes != 55 {
+			t.Fatalf("expected stored size 55, got reclaimable=%d candidate=%+v", reclaimable, candidates[0])
+		}
+	})
+
+	t.Run("falls back to live measurement when size is missing", func(t *testing.T) {
+		created := time.Date(2026, 2, 22, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+		mgr := newManagerWithDeps(t, &fakeStore{
+			listStates: []store.StateEntry{{StateID: "state-1", ImageID: "image-1", CreatedAt: created, SizeBytes: nil}},
+		}, newQueueStore(t), nil)
+		oldUsage := storeUsageFn
+		called := false
+		storeUsageFn = func(path string) (int64, error) {
+			if strings.Contains(path, "state-1") {
+				called = true
+				return 77, nil
+			}
+			return 0, nil
+		}
+		t.Cleanup(func() { storeUsageFn = oldUsage })
+		candidates, blocked, reclaimable, err := mgr.listEvictionCandidates(context.Background(), capacitySettings{})
+		if err != nil {
+			t.Fatalf("listEvictionCandidates: %v", err)
+		}
+		if blocked != 0 || len(candidates) != 1 {
+			t.Fatalf("unexpected result blocked=%d candidates=%d", blocked, len(candidates))
+		}
+		if !called {
+			t.Fatalf("expected live measurement fallback for missing size_bytes")
+		}
+		if reclaimable != 77 || candidates[0].SizeBytes != 77 {
+			t.Fatalf("expected measured size 77, got reclaimable=%d candidate=%+v", reclaimable, candidates[0])
+		}
+	})
+
+	t.Run("falls back to live measurement when size is zero", func(t *testing.T) {
+		created := time.Date(2026, 2, 22, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+		zero := int64(0)
+		mgr := newManagerWithDeps(t, &fakeStore{
+			listStates: []store.StateEntry{{StateID: "state-1", ImageID: "image-1", CreatedAt: created, SizeBytes: &zero}},
+		}, newQueueStore(t), nil)
+		oldUsage := storeUsageFn
+		called := false
+		storeUsageFn = func(path string) (int64, error) {
+			if strings.Contains(path, "state-1") {
+				called = true
+				return 88, nil
+			}
+			return 0, nil
+		}
+		t.Cleanup(func() { storeUsageFn = oldUsage })
+		candidates, blocked, reclaimable, err := mgr.listEvictionCandidates(context.Background(), capacitySettings{})
+		if err != nil {
+			t.Fatalf("listEvictionCandidates: %v", err)
+		}
+		if blocked != 0 || len(candidates) != 1 {
+			t.Fatalf("unexpected result blocked=%d candidates=%d", blocked, len(candidates))
+		}
+		if !called {
+			t.Fatalf("expected live measurement fallback for zero size_bytes")
+		}
+		if reclaimable != 88 || candidates[0].SizeBytes != 88 {
+			t.Fatalf("expected measured size 88, got reclaimable=%d candidate=%+v", reclaimable, candidates[0])
 		}
 	})
 }

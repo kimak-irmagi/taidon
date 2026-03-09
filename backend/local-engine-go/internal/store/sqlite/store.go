@@ -317,6 +317,17 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	return err
 }
 
+func (s *Store) UpdateStateSize(ctx context.Context, stateID string, sizeBytes int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE states
+		 SET size_bytes = ?
+		 WHERE state_id = ? AND (size_bytes IS NULL OR size_bytes <= 0)`,
+		sizeBytes,
+		stateID,
+	)
+	return err
+}
+
 func (s *Store) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
 	insertQuery := `
 INSERT INTO instances (instance_id, state_id, image_id, created_at, expires_at, runtime_id, runtime_dir, status)

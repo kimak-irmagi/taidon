@@ -50,6 +50,10 @@ func (e *errorStore) CreateState(ctx context.Context, entry store.StateCreate) e
 	return nil
 }
 
+func (e *errorStore) UpdateStateSize(ctx context.Context, stateID string, sizeBytes int64) error {
+	return nil
+}
+
 func (e *errorStore) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
 	return nil
 }

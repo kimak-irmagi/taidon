@@ -116,6 +116,20 @@ func (f *fakeStore) CreateState(ctx context.Context, entry store.StateCreate) er
 	return nil
 }
 
+func (f *fakeStore) UpdateStateSize(ctx context.Context, stateID string, sizeBytes int64) error {
+	entry, ok := f.statesByID[stateID]
+	if !ok {
+		return nil
+	}
+	if entry.SizeBytes != nil && *entry.SizeBytes > 0 {
+		return nil
+	}
+	value := sizeBytes
+	entry.SizeBytes = &value
+	f.statesByID[stateID] = entry
+	return nil
+}
+
 func (f *fakeStore) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
 	if f.createInstanceErr != nil {
 		return f.createInstanceErr

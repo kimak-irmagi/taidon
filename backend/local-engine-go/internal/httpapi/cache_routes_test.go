@@ -82,9 +82,12 @@ func TestStatesListIncludesCacheMetadataFields(t *testing.T) {
 	if found == nil {
 		t.Fatalf("expected state-1 in payload, got %+v", entries)
 	}
-	for _, key := range []string{"last_used_at", "use_count", "min_retention_until"} {
+	for _, key := range []string{"size_bytes", "last_used_at", "use_count", "min_retention_until"} {
 		if _, ok := found[key]; !ok {
 			t.Fatalf("expected %q in state payload, got %+v", key, found)
 		}
+	}
+	if found["size_bytes"] != float64(10) {
+		t.Fatalf("expected size_bytes=10, got %+v", found["size_bytes"])
 	}
 }

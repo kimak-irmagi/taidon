@@ -98,6 +98,7 @@ type Store interface {
 	ListStates(ctx context.Context, filters StateFilters) ([]StateEntry, error)
 	GetState(ctx context.Context, stateID string) (StateEntry, bool, error)
 	CreateState(ctx context.Context, entry StateCreate) error
+	UpdateStateSize(ctx context.Context, stateID string, sizeBytes int64) error
 	CreateInstance(ctx context.Context, entry InstanceCreate) error
 	DeleteInstance(ctx context.Context, instanceID string) error
 	DeleteState(ctx context.Context, stateID string) error
