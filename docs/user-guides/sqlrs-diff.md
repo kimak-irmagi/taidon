@@ -1,166 +1,207 @@
 # sqlrs diff
 
-Russian: [sqlrs-diff.RU.md](sqlrs-diff.RU.md)
-
 ## Overview
 
-**Status: design / future.** This command is part of the git-aware passive feature set
-described in [`docs/architecture/git-aware-passive.md`](../architecture/git-aware-passive.md).
+**Status: design / future.** This command is part of the git-aware passive
+feature set described in
+[`docs/architecture/git-aware-passive.md`](../architecture/git-aware-passive.md).
 It is not implemented in the current MVP CLI.
 
-`sqlrs diff` reports **what changed in the prepare context** between two inputs:
-either two Git refs (e.g. base vs PR) or two local paths. Unlike plain `git diff`,
-it focuses on the **set of migration/script files** that would be used by `sqlrs run`
-with `--prepare <path>`, and produces a structured report (Added / Modified / Removed)
-with optional content snippets and a short summary.
+`sqlrs diff` is a **meta-command**: it wraps one existing content-aware sqlrs
+command, evaluates that command in two contexts, and reports the difference.
+The goal is to stay syntactically close to the main sqlrs command surface rather
+than introducing a separate `diff`-specific input DSL.
+
+In other words, the user writes the command they already know (`plan:*` or
+`prepare:*`) and inserts a `diff` block between `sqlrs` and that command.
 
 Use cases:
 
-- Review migration changes between branches or tags before running them.
-- Compare two local migration trees without Git.
-- CI: emit a machine-readable diff for approval or notifications.
-
----
-
-## Terminology
-
-- **Prepare context** — the set of files (migrations, scripts) under a path that
-  would be passed to `sqlrs run --prepare <path>` (or used with `--ref` in the
-  future). The same notion is used to define “from” and “to” for the diff.
-- **Changeset** — a single file-level change: Added, Modified, or Removed.
+- Review how a `plan:*` result changes between two branches.
+- Review how a `prepare:*` input graph or task body changes between revisions.
+- Compare two local trees with the same sqlrs command semantics, without Git.
 
 ---
 
 ## Command Syntax
 
-Two modes are mutually exclusive: **by refs** (Git) or **by paths** (local only).
-
-### Mode 1: Diff by Git refs and prepare context
-
 ```text
-sqlrs diff --from-ref <refA> --to-ref <refB> --prepare <path> [OPTIONS]
+sqlrs [global-options] diff (--from-ref <refA> --to-ref <refB> | --from-path <pathA> --to-path <pathB>) <sqlrs-command> [command-args...]
 ```
 
-- `<refA>`, `<refB>` — Git refs: `HEAD`, `origin/main`, commit hash, tag (e.g. `v1.2.3`),
-  or `refs/pull/123/head` if available locally.
-- `<path>` — Path to migrations/scripts **relative to the repository root** (file or
-  directory). Defines which files participate in the diff (same semantics as
-  `sqlrs run --prepare` in the future).
+Where:
 
-### Mode 2: Diff two local sets (no Git)
+- `diff` defines only the **comparison scope**.
+- `<sqlrs-command>` is one wrapped sqlrs command using its **normal syntax**.
+- Global flags such as `-v` and `--output` keep their existing meaning.
 
-```text
-sqlrs diff --from-path <pathA> --to-path <pathB> [OPTIONS]
-```
+Examples of wrapped commands:
 
-- `<pathA>`, `<pathB>` — Local paths (files or directories) to compare.
+- `plan:psql`
+- `plan:lb`
+- `prepare:psql`
+- `prepare:lb`
 
-You must not mix refs and paths: e.g. `--from-ref` and `--from-path` cannot both
-be set.
+Initial non-goals:
+
+- wrapping a composite `prepare ... run` invocation;
+- inventing command-specific output flags such as `--format`;
+- changing the syntax of the wrapped command.
 
 ---
 
-## Options
+## Scope Selection
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--format` | `text` | Output format: `text` or `json`. |
-| `--include-content` | `false` | Include content snippets for Modified (and optionally Added/Removed) in the report. |
-| `--limit` | (none) | Maximum number of change entries to list (for long diffs). |
-| `--ref-mode` | `blob` | (Ref mode only.) How to read files from Git: `blob` (read from Git objects only) or `worktree` (temporary worktree). Same semantics as in `sqlrs run --ref` (see git-aware-passive). |
-| `--workspace` | (config/cwd) | Workspace directory (repo root, etc.), same as for `sqlrs run`. |
+Exactly one scope mode must be used.
+
+### Mode 1: Compare two Git refs
+
+```text
+sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
+```
+
+- `<refA>`, `<refB>` may be `HEAD`, `origin/main`, a commit hash, a tag, or any
+  locally resolvable Git ref.
+- The wrapped command is evaluated separately at each ref.
+
+### Mode 2: Compare two local paths
+
+```text
+sqlrs diff --from-path <pathA> --to-path <pathB> <sqlrs-command> [command-args...]
+```
+
+- `<pathA>`, `<pathB>` define the left/right local context.
+- The wrapped command is evaluated separately against each local tree.
+
+You must not mix ref-based and path-based scope options.
+
+---
+
+## Wrapped Command Semantics
+
+`sqlrs diff` does not execute the wrapped command in the normal runtime sense.
+Instead, it builds the **derived representation** that matters for that command
+and compares the two sides.
+
+### `plan:*`
+
+Compare the derived task plan:
+
+- task ordering
+- task bodies / hashes
+- cacheability-relevant inputs
+- any resolved file graph that influences planning
+
+### `prepare:*`
+
+Compare the preparation payload:
+
+- resolved input files
+- expanded include graph
+- normalized task bodies / content-derived units
+
+### `run:*` (future / limited)
+
+`run:*` is a future extension and is only meaningful for **file-backed inputs**.
+Inline-only invocations such as `-c 'select 1'` may be rejected because the Git
+revision does not change the payload.
+
+---
+
+## Diff-Specific Options
+
+| Option | Description |
+|--------|-------------|
+| `--from-ref <ref>` | Left Git revision. |
+| `--to-ref <ref>` | Right Git revision. |
+| `--from-path <path>` | Left local context. |
+| `--to-path <path>` | Right local context. |
+| `--ref-mode blob\|worktree` | Ref mode only. How files are loaded from Git. |
+| `--include-content` | Include content snippets in human/json output. |
+| `--limit <n>` | Truncate listed entries for very large diffs. |
+
+Output selection is **not** a diff-local option:
+
+- `--output human|json` remains the global output selector.
+- `-v` / `--verbose` remains the global verbose flag.
 
 ---
 
 ## Output
 
-### Text format (`--format text`)
+### Human output (`--output human`)
 
-- A short header with the compared contexts (from/to refs or paths).
-- Sections: **Added**, **Modified**, **Removed**, each listing affected paths (and
-  optionally identifiers such as hash/size).
-- For **Modified**, with `--include-content`: unified-style snippets or short
-  fragments.
-- A **summary** line: counts of added, modified, and removed files (and optionally
-  lines).
-- Optionally a **DB impact** line: `yes` | `no` | `unknown` (heuristic: e.g. only
-  comments/whitespace → `no`; otherwise `unknown` or `yes` if migration semantics
-  can be inferred).
+- Header: compared scope and wrapped command.
+- Added / Modified / Removed sections.
+- Optional content snippets when `--include-content` is set.
+- Short summary counts.
+- Optional semantic hint such as `db_impact=yes|no|unknown` when available.
 
-### JSON format (`--format json`)
+### JSON output (`--output json`)
 
-A single JSON object with stable structure for scripting and CI:
+A single JSON object with stable top-level fields such as:
 
-- `from`, `to` — identifiers of the “from” and “to” contexts (ref or path).
-- `added` — array of entries (path and optional content/hash).
-- `modified` — array of entries (path, optional old/new hash, optional content).
-- `removed` — array of entries (path and optional content).
-- `summary` — object with counts (e.g. `added_count`, `modified_count`, `removed_count`).
-- `db_impact` — optional string: `yes` | `no` | `unknown`.
+- `scope`
+- `command`
+- `added`
+- `modified`
+- `removed`
+- `summary`
+- `db_impact` (optional)
 
-When `--limit` is set, the arrays may be truncated; the summary still reflects
-total counts when known.
+When `--limit` is used, listed entries may be truncated while summary counts
+should still represent the full diff when known.
 
 ---
 
 ## Validation and Errors
 
-- **Not a git repository** — When using `--from-ref`/`--to-ref`, the current
-  workspace must be inside a Git repo. Otherwise the CLI exits with an error and
-  suggests using `--from-path`/`--to-path`.
-- **Invalid or unresolved ref** — If a ref does not resolve to a commit/tree, the
-  command fails with a clear message.
-- **Conflicting mode** — If both ref-based and path-based options are given (e.g.
-  `--from-ref` and `--from-path`), the command fails.
-- **Missing path** — In path mode, both `--from-path` and `--to-path` must exist
-  (file or directory).
+- **Missing or conflicting scope** — exactly one of ref mode or path mode must be
+  selected.
+- **Invalid wrapped command** — `diff` requires one wrapped sqlrs command.
+- **Unsupported wrapped form** — nested composite `prepare ... run` is rejected in
+  the first slice.
+- **Ref resolution failure** — one of the refs does not resolve locally.
+- **Not a Git repository** — ref mode requires a Git repository context.
+- **No revision-dependent payload** — for future `run:*` support, inline-only
+  inputs may be rejected as non-diffable.
 
 ---
 
 ## Examples
 
-### Diff between branch and base (ref mode)
+### Compare two refs with `plan:psql`
 
 ```bash
-sqlrs diff --from-ref origin/main --to-ref HEAD --prepare migrations/
+sqlrs diff --from-ref origin/main --to-ref HEAD plan:psql -- -f ./prepare.sql
 ```
 
-### Diff between two tags
+### Compare two refs with `prepare:lb`
 
 ```bash
-sqlrs diff --from-ref v1.0 --to-ref v2.0 --prepare db/scripts
+sqlrs diff --from-ref origin/main --to-ref HEAD prepare:lb -- \
+  update --changelog-file db/changelog.xml
 ```
 
-### JSON output with content and limit
+### Compare two local trees with `prepare:psql`
 
 ```bash
-sqlrs diff --from-ref main --to-ref feature/schema --prepare migrations/ \
-  --format json --include-content --limit 50
-```
-
-### Diff two local directories (no Git)
-
-```bash
-sqlrs diff --from-path ./migrations-v1 --to-path ./migrations-v2
-```
-
-```bash
-sqlrs diff --from-path ./old.sql --to-path ./new.sql --format json
+sqlrs --output json diff --from-path ./left --to-path ./right prepare:psql -- -f ./prepare.sql
 ```
 
 ---
 
-## Implementation Notes (for implementers)
+## Implementation Notes
 
-Algorithm (from design):
+1. Parse global flags first, exactly as in a normal sqlrs invocation.
+2. Parse the `diff` scope block.
+3. Parse the wrapped command using the same grammar and validation rules as the
+   main CLI.
+4. Evaluate the wrapped command independently on both sides.
+5. Perform file discovery and include expansion in each side's own context.
+6. Compare the derived representations.
+7. Render human or JSON output according to the global `--output` flag.
 
-1. Load context files from `from-ref`/`to-ref` or `from-path`/`to-path` (using blob
-   or worktree as per `--ref-mode` when in ref mode).
-2. Normalize the input set (e.g. directory → ordered set of files).
-3. Compute hashes and compare: Added/Removed by path, Modified by hash.
-4. Optionally build a semantic hint (e.g. comments/whitespace only → low or no
-   DB impact).
-5. Emit the report in the requested format.
-
-This command does not start an engine, run migrations, or touch the cache; it only
-compares file sets and content.
+This command does not start an engine or execute SQL in the first design slice;
+it compares the sqlrs-relevant inputs and derived artefacts of the wrapped
+command.

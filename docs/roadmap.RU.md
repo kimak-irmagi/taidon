@@ -294,7 +294,7 @@ gantt
 - GitHub App / webhook receiver
 - PR slash commands:
   - `/taidon warmup --prepare <path>`
-  - `/taidon diff --from-ref base --to-ref head --prepare <path>`
+  - `/taidon diff --from-ref base --to-ref head <sqlrs-command> [command-args...]`
   - `/taidon compare --from-ref base --from-prepare <path> --to-ref head --to-prepare <path> --run "..."`
 - Check Runs:
   - статус warmup

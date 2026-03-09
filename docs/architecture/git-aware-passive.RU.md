@@ -92,49 +92,46 @@ sqlrs run --ref <ref> --ref-mode blob --prepare migrations/ -- <cmd>
 
 ---
 
-## Сценарий P3. Taidon-aware diff по явному контексту: `diff`
+## Сценарий P3. Taidon-aware diff через оборачивание существующей sqlrs-команды: `diff`
 
 ### Мотивация
 
-Обычный `git diff` показывает текст, но пользователю нужен ответ “что изменилось **в БД**, учитывая **ровно те файлы**, которые мы запускаем”.
+Обычный `git diff` показывает текст, но пользователю нужен ответ “что изменилось
+**с точки зрения реальной sqlrs-команды**”, оставаясь синтаксически близким к основному CLI.
 
 ### UX / CLI
 
-### 3.1 Diff по ref-ам и prepare-контексту
+Вместо отдельного mini-DSL вида `--prepare <path>` команда `diff` оборачивает
+одну существующую content-aware команду sqlrs и вычисляет её в двух контекстах.
 
 ```bash
-sqlrs diff --from-ref <refA> --to-ref <refB> --prepare <path>
+sqlrs diff --from-ref <refA> --to-ref <refB> plan:psql -- -f ./prepare.sql
+sqlrs diff --from-ref <refA> --to-ref <refB> prepare:lb -- update --changelog-file db/changelog.xml
+sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sql
 ```
 
-Вывод (предлагаемый):
+Правила:
 
-- список changeset-ов: Added/Modified/Removed
-- порядок исполнения (если применимо)
-- краткая сводка (количество миграций/строк)
-- (опционально) "DB impact: yes/no/unknown"
+- diff-опции идут до оборачиваемой команды;
+- оборачиваемая команда сохраняет свой текущий синтаксис без изменений;
+- глобальный `-v` остаётся флагом подробного вывода, а глобальный `--output` — переключателем text/json;
+- первый срез реализации поддерживает ровно одну оборачиваемую команду `plan:*` или `prepare:*`;
+- вложенный composite `prepare ... run` в первый срез не входит;
+- будущая поддержка `run:*` возможна только для file-backed входов, потому что inline-only вызовы могут не иметь payload, зависящего от ревизии.
 
-Опции:
+Что именно сравнивает `diff`:
 
-- `--format text|json`
-- `--include-content` (показывать фрагменты)
-- `--limit N`
-
-### 3.2 Diff двух локальных наборов (без Git)
-
-```bash
-sqlrs diff --from-path <pathA> --to-path <pathB>
-```
+- `plan:*` -> производный task plan;
+- `prepare:*` -> тела prepare-задач плюс resolved input graph;
+- `run:*` -> только revision-sensitive file inputs, но не instance resolution и не DSN injection.
 
 ### Алгоритм реализации
 
-1. Загрузить файлы контекста из `from-ref`/`to-ref` или `from-path`/`to-path` (blob/worktree).
-2. Нормализовать список входов (каталог, то есть упорядоченный набор файлов).
-3. Посчитать хеши и сравнить:
-   - Added/Removed по пути
-   - Modified по хешу
-4. (Опционально) Построить семантическую подсказку:
-   - если только комментарии/whitespace (эвристика) — "низкое влияние"
-5. Сформировать отчёт.
+1. Разобрать diff-scope (`from/to ref` или `from/to path`).
+2. Разобрать оборачиваемую команду по той же грамматике CLI, что и основной invocation.
+3. Для каждой стороны независимо разрешить файлы/includes согласно её собственной ревизии или path-контексту.
+4. Построить производное представление для оборачиваемой команды.
+5. Сравнить два производных представления и отрендерить отчёт.
 
 ---
 
@@ -240,7 +237,7 @@ sqlrs cache explain --ref <ref> --prepare <path>
 ## Минимальный MVP пассивных функций
 
 1. `--ref` (blob-mode) + zero-copy cache hit
-2. `sqlrs diff --from-ref/--to-ref --prepare <path>`
+2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` для одной команды `plan:*` или `prepare:*`
 3. provenance (write)
 4. `cache explain` (простая версия)
 

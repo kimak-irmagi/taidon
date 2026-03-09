@@ -55,6 +55,16 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
+Exception: `sqlrs diff` acts as a meta-command and wraps exactly one existing
+content-aware sqlrs command:
+
+```text
+sqlrs diff <diff-scope> <verb>[:<kind>] [subject] [options] [-- <command>...]
+```
+
+This keeps the nested command syntax aligned with the main CLI surface instead of
+introducing a separate `diff`-specific input DSL.
+
 ## ID Prefix Rules
 
 Where the CLI expects a **state or instance id**, users may supply a hex prefix
@@ -190,9 +200,16 @@ See:
 
 ### 3.9 `sqlrs diff`
 
-Compare the prepare context (migration/script files) between two Git refs or two
-local paths. Reports Added / Modified / Removed with optional content and summary.
-Part of the git-aware passive feature set; not in MVP.
+`sqlrs diff` compares two contexts by **wrapping one existing content-aware sqlrs
+command** and evaluating it on both sides. Diff-specific options define the
+comparison scope; the wrapped command keeps its normal syntax.
+
+Initial design scope:
+
+- wrapped commands: `plan:*`, `prepare:*`
+- future extension: `run:*` for file-backed inputs only
+- no nested composite `prepare ... run` in the first slice
+- global `-v` and `--output` keep their existing meaning
 
 See:
 

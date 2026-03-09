@@ -57,6 +57,16 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` не использует `:<kind>` и не принимает `-- <command>...`.
 
+Исключение: `sqlrs diff` работает как meta-command и оборачивает ровно одну
+существующую content-aware команду sqlrs:
+
+```text
+sqlrs diff <diff-scope> <verb>[:<kind>] [subject] [options] [-- <command>...]
+```
+
+Это сохраняет синтаксис вложенной команды совместимым с основным CLI-контрактом
+вместо введения отдельного `diff`-DSL для входных файлов.
+
 ## Правила префиксов id
 
 Там, где CLI ожидает **id состояния или инстанса**, пользователь может передать
@@ -180,13 +190,20 @@ sqlrs watch <job_id>
 
 ### 3.9 `sqlrs diff`
 
-Сравнивает контекст prepare (файлы миграций/скриптов) между двумя Git ref'ами
-или двумя локальными путями. Выводит отчёт Added / Modified / Removed с
-опциональным содержимым и сводкой. Часть набора git-aware passive; в MVP не входит.
+`sqlrs diff` сравнивает два контекста через **оборачивание одной существующей
+content-aware команды sqlrs** и её вычисление на обеих сторонах. Diff-опции
+задают только область сравнения; синтаксис вложенной команды остаётся обычным.
+
+Начальный объём дизайна:
+
+- вложенные команды: `plan:*`, `prepare:*`
+- расширение на будущее: `run:*` только для file-backed входов
+- без вложенного composite `prepare ... run` в первом срезе
+- глобальные `-v` и `--output` сохраняют текущую семантику
 
 См.:
 
-- [`docs/user-guides/sqlrs-diff.RU.md`](../user-guides/sqlrs-diff.RU.md)
+- [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
 - [`docs/architecture/git-aware-passive.RU.md`](git-aware-passive.RU.md) (сценарий P3)
 
 ---
