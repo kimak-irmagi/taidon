@@ -262,7 +262,6 @@ Columns:
 - `STATUS` (queued / running / succeeded / failed)
 - `KIND` (human-readable header; values use short sqlrs kind aliases such as `psql` and `lb`)
 - `IMAGE_ID`
-- `PREPARE_ARGS` (normalized; compact by default in human output)
 - `PLAN_ONLY` (true / false)
 - `CREATED`
 - `STARTED`
@@ -272,7 +271,6 @@ In human-readable output, `jobs` follow the same compact formatting rules as
 `states` for the overlapping fields:
 
 - `IMAGE_ID` uses the same compact digest formatting as `states`;
-- `PREPARE_ARGS` uses the same compact/wide behavior as `states`;
 - `CREATED`, `STARTED`, and `FINISHED` use relative forms in compact output and
   switch to absolute UTC timestamps with second precision under `--long`;
 - compact `jobs` tables also use a one-character inter-column gap.

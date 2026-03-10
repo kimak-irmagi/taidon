@@ -1,21 +1,22 @@
-# ADR: `sqlrs ls` jobs alignment and deferred task `ARGS`
+# ADR: `sqlrs ls` compact jobs layout and deferred API-driven columns
 
 Status: Accepted
 Date: 2026-03-10
 
-## Decision Record 1: align `jobs` with compact state-table rules
+## Decision Record 1: align `jobs` with compact state-table rules without extending API
 
 - Timestamp: 2026-03-10T00:00:00Z
 - User: @evilguest
 - Agent: Codex (GPT-5)
-- Question: How should the human-readable `jobs` table relate to the compact formatting rules already adopted for `states`?
+- Question: How should the human-readable `jobs` table relate to the compact formatting rules already adopted for `states`, given that `PrepareJobEntry` does not currently expose `prepare_args_normalized`?
 - Alternatives:
   - Keep the current `jobs` table mostly independent from `states`.
-  - Align `jobs` with the `states` compact policy for `KIND`, `IMAGE_ID`, `PREPARE_ARGS`, and timestamp formatting.
+  - Align `jobs` with the `states` compact policy only where the current API already provides the required fields.
+  - Extend the API now so `jobs` can also expose `PREPARE_ARGS` in the same slice.
 - Decision:
-  - Human-readable `jobs` output follows the same compact policy as `states` for `KIND`, `IMAGE_ID`, `PREPARE_ARGS`, and `--long` timestamp behavior.
+  - Human-readable `jobs` output follows the same compact policy as `states` for `KIND`, `IMAGE_ID`, and `--long` timestamp behavior.
   - `jobs` also uses a one-character inter-column gap in compact output.
-- Rationale: `jobs` describes the same prepare signature surface as `states`, so different formatting rules would create unnecessary inconsistency and wasted width.
+- Rationale: `jobs` describes the same prepare signature surface as `states`, so matching headers, id formatting, timestamps, and spacing improves consistency. `PREPARE_ARGS` is deferred because adding it to `jobs` requires an API/client contract extension that should be handled as a separate feature for both `jobs` and `tasks`.
 
 ## Decision Record 2: improve `tasks` layout now, defer task-specific `ARGS`
 
