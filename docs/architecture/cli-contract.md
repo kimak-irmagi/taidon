@@ -94,11 +94,15 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 ### 3.2 `sqlrs status`
 
-Check local or remote engine health and report status details.
+See the user guide for the authoritative, up-to-date command semantics:
 
-```bash
-sqlrs status [options]
-```
+- [`docs/user-guides/sqlrs-status.md`](../user-guides/sqlrs-status.md)
+
+Current design direction:
+
+- `status` remains the engine health command and includes a compact cache
+  summary by default;
+- `status --cache` expands that summary into full bounded-cache diagnostics.
 
 ---
 
@@ -107,6 +111,12 @@ sqlrs status [options]
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-ls.md`](../user-guides/sqlrs-ls.md)
+
+Current design direction:
+
+- `ls --states` stays the primary state inventory command;
+- `ls --states --cache-details` adds operator-facing cache metadata for state
+  rows without introducing a new top-level cache command in the MVP surface.
 
 ---
 

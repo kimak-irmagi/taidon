@@ -276,6 +276,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 	}
 	if cached {
 		m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
+		e.backfillCachedStateSizeIfMissing(ctx, jobID, outputStateID)
 		// Cached states are trusted after marker/metadata checks above; defer
 		// runtime startup to prepare-instance to avoid per-step container churn.
 		if runner.getRuntime() != nil {
@@ -322,6 +323,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 			}
 			if cached {
 				m.logTask(jobID, task.TaskID, "cached output_state=%s", outputStateID)
+				e.backfillCachedStateSizeIfMissing(ctx, jobID, outputStateID)
 				return nil
 			}
 		}
@@ -401,6 +403,17 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 
 		parentID := parentStateID(task.Input)
 		createdAt := m.now().UTC().Format(time.RFC3339Nano)
+		stateSize, measureErr := storeUsageFn(paths.stateDir)
+		if measureErr != nil {
+			errResp = capacityError("internal_error", "cannot measure state size", map[string]any{
+				"phase": "metadata_commit",
+				"error": measureErr.Error(),
+			})
+			return errStateBuildFailed
+		}
+		if stateSize < 0 {
+			stateSize = 0
+		}
 		entry := store.StateCreate{
 			StateID:               outputStateID,
 			ParentStateID:         parentID,
@@ -409,6 +422,7 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 			PrepareKind:           prepared.request.PrepareKind,
 			PrepareArgsNormalized: prepared.argsNormalized,
 			CreatedAt:             createdAt,
+			SizeBytes:             &stateSize,
 		}
 		if err := m.store.CreateState(ctx, entry); err != nil {
 			if ctx.Err() != nil {
@@ -447,6 +461,38 @@ func (e *taskExecutor) executeStateTask(ctx context.Context, jobID string, prepa
 		return "", errorResponse("internal_error", "cannot acquire state build lock", lockErr.Error())
 	}
 	return outputStateID, nil
+}
+
+func (e *taskExecutor) backfillCachedStateSizeIfMissing(ctx context.Context, jobID string, stateID string) {
+	m := e.m
+	entry, ok, err := m.store.GetState(ctx, stateID)
+	if err != nil {
+		m.logInfoJob(jobID, "cached state size backfill skipped state=%s reason=get_state_failed err=%v", stateID, err)
+		return
+	}
+	if !ok || strings.TrimSpace(entry.ImageID) == "" {
+		return
+	}
+	if entry.SizeBytes != nil && *entry.SizeBytes > 0 {
+		return
+	}
+	paths, err := resolveStatePaths(m.stateStoreRoot, entry.ImageID, stateID, m.statefs)
+	if err != nil {
+		m.logInfoJob(jobID, "cached state size backfill skipped state=%s reason=resolve_paths_failed err=%v", stateID, err)
+		return
+	}
+	sizeBytes, err := storeUsageFn(paths.stateDir)
+	if err != nil {
+		m.logInfoJob(jobID, "cached state size backfill skipped state=%s reason=measure_failed err=%v", stateID, err)
+		return
+	}
+	if sizeBytes < 0 {
+		sizeBytes = 0
+	}
+	if err := m.store.UpdateStateSize(ctx, stateID, sizeBytes); err != nil {
+		m.logInfoJob(jobID, "cached state size backfill skipped state=%s reason=store_update_failed err=%v", stateID, err)
+		return
+	}
 }
 
 func (e *taskExecutor) executePrepareStep(ctx context.Context, jobID string, prepared preparedRequest, rt *jobRuntime, task taskState) *ErrorResponse {

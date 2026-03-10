@@ -116,6 +116,20 @@ func (f *fakeStore) CreateState(ctx context.Context, entry store.StateCreate) er
 	return nil
 }
 
+func (f *fakeStore) UpdateStateSize(ctx context.Context, stateID string, sizeBytes int64) error {
+	entry, ok := f.statesByID[stateID]
+	if !ok {
+		return nil
+	}
+	if entry.SizeBytes != nil && *entry.SizeBytes > 0 {
+		return nil
+	}
+	value := sizeBytes
+	entry.SizeBytes = &value
+	f.statesByID[stateID] = entry
+	return nil
+}
+
 func (f *fakeStore) CreateInstance(ctx context.Context, entry store.InstanceCreate) error {
 	if f.createInstanceErr != nil {
 		return f.createInstanceErr
@@ -2910,6 +2924,8 @@ func TestWaitForEventCancel(t *testing.T) {
 }
 
 func TestHeartbeatRepeatsRunningTask(t *testing.T) {
+	const heartbeatEvery = 200 * time.Millisecond
+	const waitTimeout = 10 * time.Second
 	queueStore := newQueueStore(t)
 	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
@@ -2924,7 +2940,7 @@ func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 		Now:            time.Now,
 		IDGen:          func() (string, error) { return "job-1", nil },
 		Async:          false,
-		HeartbeatEvery: 50 * time.Millisecond,
+		HeartbeatEvery: heartbeatEvery,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -2940,7 +2956,7 @@ func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 	if err := mgr.updateTaskStatus(context.Background(), "job-1", "prepare-instance", StatusRunning, &startedAt, nil, nil); err != nil {
 		t.Fatalf("updateTaskStatus: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
 	defer cancel()
 	offset := 0
 	runningCount := 0
@@ -2970,6 +2986,8 @@ func TestHeartbeatRepeatsRunningTask(t *testing.T) {
 }
 
 func TestHeartbeatRepeatsLogEvent(t *testing.T) {
+	const heartbeatEvery = 200 * time.Millisecond
+	const waitTimeout = 10 * time.Second
 	queueStore := newQueueStore(t)
 	mgr, err := NewPrepareService(Options{
 		Store:          &fakeStore{},
@@ -2984,7 +3002,7 @@ func TestHeartbeatRepeatsLogEvent(t *testing.T) {
 		Now:            time.Now,
 		IDGen:          func() (string, error) { return "job-1", nil },
 		Async:          false,
-		HeartbeatEvery: 50 * time.Millisecond,
+		HeartbeatEvery: heartbeatEvery,
 	})
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

@@ -96,11 +96,15 @@ sqlrs
 
 ### 3.2 `sqlrs status`
 
-Проверяет здоровье локального или удаленного engine и выводит детали статуса.
+См. user guide с авторитетным и актуальным описанием команды:
 
-```bash
-sqlrs status [options]
-```
+- [`docs/user-guides/sqlrs-status.md`](../user-guides/sqlrs-status.md)
+
+Текущее направление дизайна:
+
+- `status` остаётся командой health/engine-диагностики и по умолчанию
+  включает компактную cache summary;
+- `status --cache` разворачивает эту summary в полные bounded-cache diagnostics.
 
 ---
 
@@ -109,6 +113,12 @@ sqlrs status [options]
 Актуальная семантика команды описана в user guide:
 
 - [`docs/user-guides/sqlrs-ls.md`](../user-guides/sqlrs-ls.md)
+
+Текущее направление дизайна:
+
+- `ls --states` остаётся основной командой инвентаризации состояний;
+- `ls --states --cache-details` добавляет операторские cache-метаданные к
+  строкам состояний без введения новой top-level cache-команды в MVP-поверхность.
 
 ---
 

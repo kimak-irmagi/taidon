@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -359,6 +360,25 @@ func TestPrintLsStatesTable(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "psql") || !strings.Contains(out, "42") {
 		t.Fatalf("unexpected output: %q", out)
+	}
+}
+func TestPrintLsStatesTableLeavesLegacySizeEmpty(t *testing.T) {
+	result := LsResult{
+		States: &[]client.StateEntry{{
+			StateID:     "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+			ImageID:     "image-legacy",
+			PrepareKind: "psql",
+			PrepareArgs: "args",
+			CreatedAt:   "created",
+			RefCount:    7,
+		}},
+	}
+
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{NoHeader: true, LongIDs: true})
+	out := strings.TrimSpace(buf.String())
+	if !regexp.MustCompile(`created\s+7$`).MatchString(out) {
+		t.Fatalf("expected empty SIZE column before refcount, got %q", out)
 	}
 }
 

@@ -3,8 +3,10 @@ package deletion
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sqlrs/engine-local/internal/conntrack"
 	"github.com/sqlrs/engine-local/internal/runtime"
@@ -38,6 +40,12 @@ type Manager struct {
 	statefs        statefs.StateFS
 	stateStoreRoot string
 }
+
+var (
+	removeRuntimeDirAll = os.RemoveAll
+	renameRuntimeDir    = os.Rename
+	nowUnixNano         = func() int64 { return time.Now().UnixNano() }
+)
 
 type DeleteOptions struct {
 	Recurse bool
@@ -161,9 +169,9 @@ func (m *Manager) DeleteState(ctx context.Context, stateID string, opts DeleteOp
 		if opts.DryRun {
 			return result, true, nil
 		}
-	if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
-		return DeleteResult{}, true, err
-	}
+		if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
+			return DeleteResult{}, true, err
+		}
 		if err := m.store.DeleteState(ctx, stateID); err != nil {
 			return DeleteResult{}, true, err
 		}
@@ -278,10 +286,10 @@ func (m *Manager) deleteTree(ctx context.Context, node DeleteNode) error {
 		}
 		return m.store.DeleteInstance(ctx, node.ID)
 	case "state":
-			if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
-				return err
-			}
-			return m.store.DeleteState(ctx, node.ID)
+		if err := m.removeStateDir(node.ImageID, node.ID); err != nil {
+			return err
+		}
+		return m.store.DeleteState(ctx, node.ID)
 	default:
 		return nil
 	}
@@ -323,12 +331,28 @@ func (m *Manager) removeRuntimeDir(runtimeDir *string) error {
 	if dir == "" {
 		return nil
 	}
+	var removeErr error
 	if m.statefs != nil {
-		if err := m.statefs.RemovePath(context.Background(), dir); err == nil {
+		if err := m.statefs.RemovePath(context.Background(), dir); err == nil || errors.Is(err, os.ErrNotExist) {
 			return nil
+		} else {
+			removeErr = err
 		}
 	}
-	return os.RemoveAll(dir)
+	if err := removeRuntimeDirAll(dir); err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if removeErr == nil {
+		removeErr = err
+	}
+
+	staleDir := fmt.Sprintf("%s.stale-%d", dir, nowUnixNano())
+	if err := renameRuntimeDir(dir, staleDir); err == nil {
+		_ = removeRuntimeDirAll(staleDir)
+		return nil
+	} else if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return removeErr
 }
 
 func (m *Manager) removeStateDir(imageID *string, stateID string) error {

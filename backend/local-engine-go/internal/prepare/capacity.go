@@ -120,6 +120,19 @@ func (m *PrepareService) ensureCacheCapacity(ctx context.Context, jobID string, 
 			"error": freeErr.Error(),
 		})
 	}
+	m.recordCacheEviction(CacheEvictionSummary{
+		CompletedAt:      nowUTCFn().Format(time.RFC3339Nano),
+		Trigger:          phase,
+		EvictedCount:     eviction.EvictedCount,
+		FreedBytes:       eviction.FreedBytes,
+		BlockedCount:     eviction.BlockedCount,
+		ReclaimableBytes: eviction.ReclaimableBytes,
+		UsageBytesBefore: usageBytes,
+		UsageBytesAfter:  usageAfter,
+		FreeBytesBefore:  freeBytes,
+		FreeBytesAfter:   freeAfter,
+	})
+
 	if !isCapacityPressure(usageAfter, freeAfter, settings) {
 		return nil
 	}

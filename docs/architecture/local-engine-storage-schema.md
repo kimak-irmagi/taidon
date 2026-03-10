@@ -47,6 +47,7 @@ Notes:
 - `parent_state_id` is nullable and models state ancestry for recursive deletes.
 - `state_fingerprint` may equal `state_id`; it is stored for name bindings even
   if the state is evicted.
+- `size_bytes` stores the persisted snapshot size in bytes for the materialized state directory; it may be NULL for legacy rows created before size tracking was enabled.
 - `status` is reserved for future use (e.g., `success`, `failed`).
 
 ### 3.2 `instances`

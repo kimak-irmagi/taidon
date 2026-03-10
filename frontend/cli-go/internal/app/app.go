@@ -129,28 +129,7 @@ func Run(args []string) error {
 			if len(commands) > 1 {
 				return fmt.Errorf("status cannot be combined with other commands")
 			}
-			if len(cmd.Args) > 0 {
-				return fmt.Errorf("status does not accept arguments")
-			}
-
-			result, err := cli.RunStatus(context.Background(), cmdCtx.statusOptions())
-			if err != nil {
-				return err
-			}
-
-			result.Client = Version
-			result.Workspace = cmdCtx.workspaceRoot
-			if cmdCtx.output == "json" {
-				if err := writeJSON(os.Stdout, result); err != nil {
-					return err
-				}
-			} else {
-				cli.PrintStatus(os.Stdout, result)
-			}
-			if !result.OK {
-				return fmt.Errorf("service unhealthy")
-			}
-			return nil
+			return runStatus(os.Stdout, cmdCtx.statusOptions(), cmdCtx.workspaceRoot, cmdCtx.output, cmd.Args)
 		case "watch":
 			if len(commands) > 1 {
 				return fmt.Errorf("watch cannot be combined with other commands")

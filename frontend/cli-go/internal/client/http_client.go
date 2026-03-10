@@ -64,6 +64,14 @@ func (c *Client) Health(ctx context.Context) (HealthResponse, error) {
 	return out, nil
 }
 
+func (c *Client) GetCacheStatus(ctx context.Context) (CacheStatus, error) {
+	var out CacheStatus
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/cache/status", true, &out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 func (c *Client) ListNames(ctx context.Context, filters ListFilters) ([]NameEntry, error) {
 	var out []NameEntry
 	query := url.Values{}

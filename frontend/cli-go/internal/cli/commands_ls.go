@@ -48,9 +48,10 @@ type LsOptions struct {
 	FilterKind     string
 	FilterImage    string
 
-	Quiet    bool
-	NoHeader bool
-	Long     bool
+	Quiet        bool
+	NoHeader     bool
+	Long         bool
+	CacheDetails bool
 }
 
 type LsResult struct {
@@ -62,9 +63,10 @@ type LsResult struct {
 }
 
 type LsPrintOptions struct {
-	Quiet    bool
-	NoHeader bool
-	LongIDs  bool
+	Quiet        bool
+	NoHeader     bool
+	LongIDs      bool
+	CacheDetails bool
 }
 
 func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
@@ -338,7 +340,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "States")
 		}
-		printStatesTable(w, *result.States, opts.NoHeader, opts.LongIDs)
+		printStatesTableWithOptions(w, *result.States, opts.NoHeader, opts.LongIDs, opts.CacheDetails)
 		sections++
 	}
 	if result.Jobs != nil {
@@ -404,9 +406,17 @@ func printInstancesTable(w io.Writer, rows []client.InstanceEntry, noHeader bool
 }
 
 func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool) {
+	printStatesTableWithOptions(w, rows, noHeader, longIDs, false)
+}
+
+func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool, cacheDetails bool) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {
-		fmt.Fprintln(tw, "STATE_ID\tIMAGE_ID\tPREPARE_KIND\tPREPARE_ARGS\tCREATED\tSIZE\tREFCOUNT")
+		if cacheDetails {
+			fmt.Fprintln(tw, "STATE_ID\tIMAGE_ID\tPREPARE_KIND\tPREPARE_ARGS\tCREATED\tSIZE\tREFCOUNT\tLAST_USED\tUSE_COUNT\tMIN_RETENTION_UNTIL")
+		} else {
+			fmt.Fprintln(tw, "STATE_ID\tIMAGE_ID\tPREPARE_KIND\tPREPARE_ARGS\tCREATED\tSIZE\tREFCOUNT")
+		}
 	}
 
 	type stateNode struct {
@@ -467,15 +477,30 @@ func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, long
 			stateID = compactTreePrefix(ancestorsHasNext, isLast) + stateID
 		}
 
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			stateID,
-			formatImageID(node.row.ImageID, longIDs),
-			node.row.PrepareKind,
-			node.row.PrepareArgs,
-			node.row.CreatedAt,
-			optionalInt64(node.row.SizeBytes),
-			strconv.Itoa(node.row.RefCount),
-		)
+		if cacheDetails {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				stateID,
+				formatImageID(node.row.ImageID, longIDs),
+				node.row.PrepareKind,
+				node.row.PrepareArgs,
+				node.row.CreatedAt,
+				optionalInt64(node.row.SizeBytes),
+				strconv.Itoa(node.row.RefCount),
+				optionalString(node.row.LastUsedAt),
+				optionalInt64(node.row.UseCount),
+				optionalString(node.row.MinRetentionUntil),
+			)
+		} else {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				stateID,
+				formatImageID(node.row.ImageID, longIDs),
+				node.row.PrepareKind,
+				node.row.PrepareArgs,
+				node.row.CreatedAt,
+				optionalInt64(node.row.SizeBytes),
+				strconv.Itoa(node.row.RefCount),
+			)
+		}
 
 		childAncestors := ancestorsHasNext
 		if depth > 0 {
@@ -499,7 +524,6 @@ func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, long
 
 	_ = tw.Flush()
 }
-
 func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {

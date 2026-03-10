@@ -34,6 +34,30 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
         "405":
           description: Method not allowed
+  /v1/cache/status:
+    get:
+      operationId: getCacheStatus
+      summary: Get bounded-cache diagnostics
+      description: |
+        Returns current bounded-cache occupancy, policy thresholds, pressure
+        reasons, and the latest completed eviction summary.
+      tags:
+        - cache
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheStatus"
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/prepare-jobs:
     get:
       operationId: listPrepareJobs
@@ -877,6 +901,112 @@ components:
           version: dev
           instanceId: 9f4d2d4b6c1a4a4ea2d39d1f7b0d8a21
           pid: 12345
+    CacheEvictionSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - completed_at
+        - trigger
+        - evicted_count
+        - freed_bytes
+        - blocked_count
+        - reclaimable_bytes
+        - usage_bytes_before
+        - usage_bytes_after
+        - free_bytes_before
+        - free_bytes_after
+      properties:
+        completed_at:
+          type: string
+          format: date-time
+        trigger:
+          type: string
+          description: Trigger that initiated the latest eviction run.
+        evicted_count:
+          type: integer
+          format: int32
+        freed_bytes:
+          type: integer
+          format: int64
+        blocked_count:
+          type: integer
+          format: int32
+        reclaimable_bytes:
+          type: integer
+          format: int64
+        usage_bytes_before:
+          type: integer
+          format: int64
+        usage_bytes_after:
+          type: integer
+          format: int64
+        free_bytes_before:
+          type: integer
+          format: int64
+        free_bytes_after:
+          type: integer
+          format: int64
+    CacheStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - usage_bytes
+        - effective_max_bytes
+        - reserve_bytes
+        - high_watermark
+        - low_watermark
+        - min_state_age
+        - store_total_bytes
+        - store_free_bytes
+        - state_count
+        - reclaimable_bytes
+        - blocked_count
+        - pressure_reasons
+      properties:
+        usage_bytes:
+          type: integer
+          format: int64
+        configured_max_bytes:
+          anyOf:
+            - type: integer
+              format: int64
+            - type: "null"
+          description: Null when store-coupled mode is active.
+        effective_max_bytes:
+          type: integer
+          format: int64
+        reserve_bytes:
+          type: integer
+          format: int64
+        high_watermark:
+          type: number
+        low_watermark:
+          type: number
+        min_state_age:
+          type: string
+        store_total_bytes:
+          type: integer
+          format: int64
+        store_free_bytes:
+          type: integer
+          format: int64
+        state_count:
+          type: integer
+          format: int32
+        reclaimable_bytes:
+          type: integer
+          format: int64
+        blocked_count:
+          type: integer
+          format: int32
+        pressure_reasons:
+          type: array
+          items:
+            type: string
+        last_eviction:
+          anyOf:
+            - $ref: "#/components/schemas/CacheEvictionSummary"
+            - type: "null"
     PrepareJobRequest:
       oneOf:
         - $ref: "#/components/schemas/PrepareJobRequestPsql"
@@ -1455,6 +1585,21 @@ components:
         size_bytes:
           type: integer
           format: int64
+        last_used_at:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
+        use_count:
+          anyOf:
+            - type: integer
+              format: int64
+            - type: "null"
+        min_retention_until:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: "null"
         refcount:
           type: integer
           format: int32

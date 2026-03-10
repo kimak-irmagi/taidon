@@ -405,6 +405,10 @@ func ensureWSLStoreMount(ctx context.Context, opts ConnectOptions) error {
 	}
 	out, err := runWSLCommandInInitNamespace(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
 	if err != nil {
+		if mountUnitErr == nil && shouldIgnoreWSLStoreMountVerificationError(opts, err) {
+			logVerbose(opts.Verbose, "ignoring transient WSL store verification failure: %v", err)
+			return nil
+		}
 		if mountUnitErr != nil {
 			return fmt.Errorf("%v; findmnt failed: %w", mountUnitErr, err)
 		}
@@ -431,6 +435,10 @@ func ensureWSLStoreMount(ctx context.Context, opts ConnectOptions) error {
 			}
 			out, err = runWSLCommandInInitNamespace(ctx, opts.WSLDistro, "findmnt", "-n", "-o", "FSTYPE", "-T", storeDir)
 			if err != nil {
+				if mountUnitErr == nil && shouldIgnoreWSLStoreMountVerificationError(opts, err) {
+					logVerbose(opts.Verbose, "ignoring transient WSL store verification retry failure: %v", err)
+					return nil
+				}
 				if mountUnitErr != nil {
 					return fmt.Errorf("%v; findmnt retry failed: %w", mountUnitErr, err)
 				}
@@ -489,10 +497,35 @@ func runWSLCommandInInitNamespace(ctx context.Context, distro string, args ...st
 	if err == nil {
 		return out, nil
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "command not found") {
+	if shouldFallbackFromInitNamespace(err) {
 		return runWSLCommandFn(ctx, distro, args...)
 	}
 	return out, err
+}
+
+func shouldFallbackFromInitNamespace(err error) bool {
+	if err == nil {
+		return false
+	}
+	normalized := normalizeVHDXAttachErrorText(err.Error())
+	return strings.Contains(normalized, "commandnotfound") || isTransientWSLServiceErrorNormalized(normalized)
+}
+
+func shouldIgnoreWSLStoreMountVerificationError(opts ConnectOptions, err error) bool {
+	return isWindows && strings.TrimSpace(opts.WSLVHDXPath) != "" && isTransientWSLServiceError(err)
+}
+
+func isTransientWSLServiceError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return isTransientWSLServiceErrorNormalized(normalizeVHDXAttachErrorText(err.Error()))
+}
+
+func isTransientWSLServiceErrorNormalized(normalized string) bool {
+	return strings.Contains(normalized, "wsl_service_e_unexpected") ||
+		strings.Contains(normalized, "wslserviceeunexpected") ||
+		strings.Contains(normalized, "catastrophicfailure")
 }
 
 func ensureWSLMountUnitActive(ctx context.Context, distro, unit string) error {

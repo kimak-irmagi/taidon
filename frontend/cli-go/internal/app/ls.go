@@ -24,9 +24,10 @@ type lsOptions struct {
 	FilterKind     string
 	FilterImage    string
 
-	Quiet    bool
-	NoHeader bool
-	LongIDs  bool
+	Quiet        bool
+	NoHeader     bool
+	LongIDs      bool
+	CacheDetails bool
 }
 
 func parseLsFlags(args []string) (lsOptions, bool, error) {
@@ -53,6 +54,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	quiet := fs.Bool("quiet", false, "suppress headers and explanatory text")
 	noHeader := fs.Bool("no-header", false, "do not print table header")
 	longIDs := fs.Bool("long", false, "show full ids")
+	cacheDetails := fs.Bool("cache-details", false, "show additional cache metadata for states")
 
 	name := fs.String("name", "", "filter by name")
 	instance := fs.String("instance", "", "filter by instance id")
@@ -92,6 +94,9 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 		opts.IncludeNames = true
 		opts.IncludeInstances = true
 	}
+	if *cacheDetails && !opts.IncludeStates {
+		return opts, false, ExitErrorf(2, "--cache-details requires --states or --all")
+	}
 
 	opts.FilterName = strings.TrimSpace(*name)
 	opts.FilterInstance = strings.TrimSpace(*instance)
@@ -102,6 +107,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	opts.Quiet = *quiet
 	opts.NoHeader = *noHeader
 	opts.LongIDs = *longIDs
+	opts.CacheDetails = *cacheDetails
 	return opts, false, nil
 }
 
@@ -129,6 +135,7 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	runOpts.Quiet = opts.Quiet
 	runOpts.NoHeader = opts.NoHeader
 	runOpts.Long = opts.LongIDs
+	runOpts.CacheDetails = opts.CacheDetails
 
 	result, err := cli.RunLs(context.Background(), runOpts)
 	if err != nil {
@@ -148,9 +155,10 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	}
 
 	cli.PrintLs(w, result, cli.LsPrintOptions{
-		Quiet:    opts.Quiet,
-		NoHeader: opts.NoHeader,
-		LongIDs:  opts.LongIDs,
+		Quiet:        opts.Quiet,
+		NoHeader:     opts.NoHeader,
+		LongIDs:      opts.LongIDs,
+		CacheDetails: opts.CacheDetails,
 	})
 	return nil
 }

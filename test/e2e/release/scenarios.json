@@ -64,6 +64,26 @@
           "^You are now connected to database .*"
         ]
       }
+    },
+    {
+      "id": "cache-pressure-chinook",
+      "example": "chinook",
+      "prepareArgs": [
+        "-f",
+        "prepare.sql"
+      ],
+      "runArgs": [
+        "-At",
+        "-f",
+        ".e2e-query.sql"
+      ],
+      "queryTemplate": "test/e2e/release/hp-psql-chinook/query.sql",
+      "image": "postgres:17",
+      "normalize": {
+        "dropLinePatterns": [
+          "^You are now connected to database .*"
+        ]
+      }
     }
   ]
 }

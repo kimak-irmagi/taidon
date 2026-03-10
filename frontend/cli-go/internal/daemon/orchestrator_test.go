@@ -13,8 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -69,7 +69,7 @@ func TestEnsureWSLStoreMountAlreadyMounted(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountUnit: "sqlrs-state-store.mount",
+		WSLMountUnit:   "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err != nil {
@@ -102,7 +102,7 @@ func TestEnsureWSLStoreMountWrongFSType(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountUnit: "sqlrs-state-store.mount",
+		WSLMountUnit:   "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err == nil || !strings.Contains(err.Error(), "expected btrfs") {
@@ -145,7 +145,7 @@ func TestEnsureWSLStoreMountStartsWhenInactive(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountUnit: "sqlrs-state-store.mount",
+		WSLMountUnit:   "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err != nil {
@@ -183,7 +183,7 @@ func TestEnsureWSLStoreMountInactiveVerificationFails(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountUnit: "sqlrs-state-store.mount",
+		WSLMountUnit:   "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err == nil {
@@ -214,7 +214,7 @@ func TestEnsureWSLStoreMountFindmntError(t *testing.T) {
 	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
 		WSLDistro:      "Ubuntu",
 		EngineStoreDir: "/mnt/sqlrs/store",
-		WSLMountUnit: "sqlrs-state-store.mount",
+		WSLMountUnit:   "sqlrs-state-store.mount",
 		WSLMountFSType: "btrfs",
 	})
 	if err == nil {
@@ -222,6 +222,100 @@ func TestEnsureWSLStoreMountFindmntError(t *testing.T) {
 	}
 }
 
+func TestShouldFallbackFromInitNamespace(t *testing.T) {
+	cases := []error{
+		errors.New("command not found"),
+		errors.New("exit status 0xffffffff (C a t a s t r o p h i c   f a i l u r e Error code: W s l / S e r v i c e / E _ U N E X P E C T E D)"),
+	}
+	for _, err := range cases {
+		if !shouldFallbackFromInitNamespace(err) {
+			t.Fatalf("expected fallback for %v", err)
+		}
+	}
+	if shouldFallbackFromInitNamespace(errors.New("permission denied")) {
+		t.Fatalf("did not expect fallback for unrelated error")
+	}
+}
+
+func TestEnsureWSLStoreMountFallsBackFromInitNamespaceServiceError(t *testing.T) {
+	prev := runWSLCommandFn
+	calls := 0
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		calls++
+		switch calls {
+		case 1:
+			if args[0] != "systemctl" || args[1] != "is-active" {
+				t.Fatalf("expected systemctl is-active, got %+v", args)
+			}
+			return "active\n", nil
+		case 2:
+			if args[0] != "nsenter" {
+				t.Fatalf("expected nsenter, got %+v", args)
+			}
+			return "", errors.New("exit status 0xffffffff (C a t a s t r o p h i c   f a i l u r e Error code: W s l / S e r v i c e / E _ U N E X P E C T E D)")
+		case 3:
+			if args[0] != "findmnt" {
+				t.Fatalf("expected direct findmnt fallback, got %+v", args)
+			}
+			return "btrfs\n", nil
+		default:
+			return "", nil
+		}
+	}
+	t.Cleanup(func() { runWSLCommandFn = prev })
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountUnit:   "sqlrs-state-store.mount",
+		WSLMountFSType: "btrfs",
+	})
+	if err != nil {
+		t.Fatalf("ensureWSLStoreMount: %v", err)
+	}
+}
+
+func TestIsTransientWSLServiceError(t *testing.T) {
+	if !isTransientWSLServiceError(errors.New("exit status 0xffffffff (C a t a s t r o p h i c   f a i l u r e Error code: W s l / S e r v i c e / E _ U N E X P E C T E D)")) {
+		t.Fatalf("expected transient WSL service error")
+	}
+	if isTransientWSLServiceError(errors.New("permission denied")) {
+		t.Fatalf("did not expect transient classification for unrelated error")
+	}
+}
+
+func TestEnsureWSLStoreMountIgnoresTransientFindmntServiceErrorOnWindowsWithVHDX(t *testing.T) {
+	prevWSL := runWSLCommandFn
+	prevWindows := isWindows
+	runWSLCommandFn = func(ctx context.Context, distro string, args ...string) (string, error) {
+		switch {
+		case len(args) >= 2 && args[0] == "systemctl" && args[1] == "is-active":
+			return "active\n", nil
+		case len(args) >= 1 && args[0] == "nsenter":
+			return "", errors.New("exit status 0xffffffff (C a t a s t r o p h i c   f a i l u r e Error code: W s l / S e r v i c e / E _ U N E X P E C T E D)")
+		case len(args) >= 1 && args[0] == "findmnt":
+			return "", errors.New("exit status 0xffffffff (C a t a s t r o p h i c   f a i l u r e Error code: W s l / S e r v i c e / E _ U N E X P E C T E D)")
+		default:
+			return "", nil
+		}
+	}
+	isWindows = true
+	t.Cleanup(func() {
+		runWSLCommandFn = prevWSL
+		isWindows = prevWindows
+	})
+
+	err := ensureWSLStoreMount(context.Background(), ConnectOptions{
+		WSLDistro:      "Ubuntu",
+		EngineStoreDir: "/mnt/sqlrs/store",
+		WSLMountUnit:   "sqlrs-state-store.mount",
+		WSLMountFSType: "btrfs",
+		WSLVHDXPath:    "C:\\temp\\store.vhdx",
+	})
+	if err != nil {
+		t.Fatalf("ensureWSLStoreMount: %v", err)
+	}
+}
 func TestConnectOrStartAutostartDisabled(t *testing.T) {
 	temp := t.TempDir()
 	_, err := ConnectOrStart(context.Background(), ConnectOptions{

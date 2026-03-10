@@ -133,3 +133,45 @@ run("release workflow includes macos podman probe with double flow run", () => {
   assert.match(String(runStep.run || ""), /--flow-runs "2"/);
   assert.match(String(runStep.run || ""), /hp-psql-chinook/);
 });
+
+run("happy e2e matrix includes linux-only cache-pressure cell", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["e2e-happy"];
+  const scenarios = job.strategy?.matrix?.scenario || [];
+  const excluded = job.strategy?.matrix?.exclude || [];
+  assert.ok(scenarios.includes("cache-pressure-chinook"), "missing cache-pressure scenario in matrix");
+  assert.ok(
+    excluded.some((entry) => entry.platform === "windows" && entry.scenario === "cache-pressure-chinook"),
+    "missing windows/cache-pressure exclusion"
+  );
+  assert.ok(
+    excluded.some(
+      (entry) =>
+        entry.platform === "linux" &&
+        entry.scenario === "cache-pressure-chinook" &&
+        entry.snapshot_backend === "btrfs"
+    ),
+    "missing linux btrfs/cache-pressure exclusion"
+  );
+});
+
+run("linux e2e step routes cache-pressure through dedicated runner", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["e2e-happy"];
+  const runStep = (job.steps || []).find((step) => step.name === "Run happy-path scenario (linux)");
+  assert.ok(runStep, "missing run step");
+  assert.match(String(runStep.run || ""), /cache-pressure-chinook\) scenario_timeout="30m"/);
+  assert.match(String(runStep.run || ""), /run-cache-pressure-scenario\.mjs/);
+  assert.match(String(runStep.run || ""), /cache-pressure-chinook\)/);
+});
+
+run("linux e2e diagnostics upload includes cache-pressure artifacts", () => {
+  const workflow = loadWorkflow();
+  const job = workflow.jobs?.["e2e-happy"];
+  const uploadStep = (job.steps || []).find((step) => step.name === "Upload Linux E2E diagnostics");
+  assert.ok(uploadStep, "missing upload step");
+  const pathSpec = String(uploadStep.with?.path || "");
+  assert.match(pathSpec, /command-config\*\.txt/);
+  assert.match(pathSpec, /status\*\.json/);
+  assert.match(pathSpec, /cache-pressure-summary\.json/);
+});

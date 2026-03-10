@@ -33,6 +33,7 @@ type healthResponse struct {
 func NewHandler(opts Options) http.Handler {
 	mux := http.NewServeMux()
 	registerHealthRoutes(mux, opts)
+	cacheRoutes{opts: opts}.register(mux)
 	configRoutes{opts: opts}.register(mux)
 	prepareRoutes{opts: opts}.register(mux)
 	runRoutes{opts: opts}.register(mux)
