@@ -137,9 +137,10 @@ sqlrs
 - compact human-readable таблица состояний использует межколоночный gap в один
   символ, чтобы уменьшить pressure от глубокого дерева состояний;
 - compact human-readable таблица `jobs` использует те же правила для `KIND`,
-  `IMAGE_ID`, `PREPARE_ARGS` и timestamps, что и `states`; при наличии и
-  requested, и resolved image reference human-readable `jobs` предпочитает
-  resolved image id;
+  `IMAGE_ID` и timestamps, что и `states`; при наличии и requested, и resolved
+  image reference human-readable `jobs` предпочитает resolved image id, а
+  `PREPARE_ARGS` ведёт себя как width-budgeted wide column по аналогии с task
+  `ARGS`;
 - compact human-readable таблица `tasks` сокращает префиксы kinds в `INPUT` и
   использует более короткий заголовок `OUTPUT_ID`, а также получает
   API-backed колонку task summary `ARGS`;

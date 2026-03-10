@@ -134,10 +134,11 @@ Current design direction:
   and budgets for the existing short sqlrs kind aliases;
 - compact human-readable state tables use a one-character inter-column gap to
   reduce width pressure from deep state trees;
-- compact human-readable `jobs` tables follow the same `KIND`, `IMAGE_ID`,
-  `PREPARE_ARGS`, and timestamp rules as `states`; when both requested and
-  resolved image references are available, human-readable `jobs` prefer the
-  resolved image id;
+- compact human-readable `jobs` tables follow the same `KIND`, `IMAGE_ID`, and
+  timestamp rules as `states`; when both requested and resolved image
+  references are available, human-readable `jobs` prefer the resolved image id,
+  while `PREPARE_ARGS` behaves as a width-budgeted wide column like task
+  `ARGS`;
 - compact human-readable `tasks` tables shorten `INPUT` kind prefixes, use the
   shorter header `OUTPUT_ID`, and expose an API-backed task summary column
   `ARGS`;

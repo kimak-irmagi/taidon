@@ -218,6 +218,9 @@ func TestPrintLsJobsTableHeaderUsesKind(t *testing.T) {
 	if strings.Contains(firstLine, "PREPARE_KIND") {
 		t.Fatalf("expected PREPARE_KIND header removed, got %q", firstLine)
 	}
+	if !strings.Contains(firstLine, "PREPARE_ARGS") {
+		t.Fatalf("expected PREPARE_ARGS header, got %q", firstLine)
+	}
 }
 
 func TestPrintLsJobsTableUsesRelativeTimestampsByDefault(t *testing.T) {
@@ -279,6 +282,52 @@ func TestPrintLsJobsTableCompactsImageIDLikeStates(t *testing.T) {
 	}
 }
 
+func TestPrintLsJobsTableFallsBackToRequestedImageID(t *testing.T) {
+	job := sampleJobEntry()
+	job.ResolvedImageID = ""
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, "postgres:17") {
+		t.Fatalf("expected fallback requested image id, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableTruncatesPrepareArgsByDefault(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 100)
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected prepare args truncation, got %q", out)
+	}
+	if strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected compact prepare args preview, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableUsesRemainingTTYWidthForPrepareArgs(t *testing.T) {
+	job := sampleJobEntry()
+	job.PrepareArgsNormalized = "-f prepare.sql --set some.long.option=value --tail finish.sql"
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 140)
+	if !strings.Contains(out, job.PrepareArgsNormalized) {
+		t.Fatalf("expected prepare args to use available tty width, got %q", out)
+	}
+	if strings.Contains(out, " ... ") {
+		t.Fatalf("expected no truncation when tty width still has budget, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableWideShowsFullPrepareArgs(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected full prepare args in wide output, got %q", out)
+	}
+}
+
 func TestPrintLsJobsTableUsesSingleSpaceGap(t *testing.T) {
 	createdAt := "2026-03-10T12:00:00Z"
 	startedAt := "2026-03-10T12:00:01Z"
@@ -306,6 +355,9 @@ func TestPrintLsTasksTableHeaderUsesOutputID(t *testing.T) {
 	var buf bytes.Buffer
 	PrintLs(&buf, result, LsPrintOptions{Quiet: true})
 	firstLine := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")[0]
+	if !strings.Contains(firstLine, "ARGS") {
+		t.Fatalf("expected ARGS header, got %q", firstLine)
+	}
 	if !strings.Contains(firstLine, "OUTPUT_ID") {
 		t.Fatalf("expected OUTPUT_ID header, got %q", firstLine)
 	}
@@ -324,7 +376,7 @@ func TestPrintLsTasksTableCompactsStateAndImageInputKinds(t *testing.T) {
 	if !strings.Contains(out, "s:abcdef123456") {
 		t.Fatalf("expected compact state input, got %q", out)
 	}
-	if !strings.Contains(out, "i:abcdef123456") {
+	if !strings.Contains(out, "i:postgres@0123456789ab") {
 		t.Fatalf("expected compact image input, got %q", out)
 	}
 	if strings.Contains(out, "state:") || strings.Contains(out, "image:") {
@@ -333,16 +385,78 @@ func TestPrintLsTasksTableCompactsStateAndImageInputKinds(t *testing.T) {
 }
 
 func TestPrintLsTasksTableLongShowsFullInputAndOutputIDs(t *testing.T) {
-	task := sampleTaskEntry("state")
+	task := sampleTaskEntry("image")
 	result := LsResult{Tasks: &[]client.TaskEntry{task}}
 	var buf bytes.Buffer
 	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
 	out := buf.String()
-	if !strings.Contains(out, "state:"+fullStateID()) {
-		t.Fatalf("expected full state input in long output, got %q", out)
+	if !strings.Contains(out, "image:"+fullImageID()) {
+		t.Fatalf("expected full image input in long output, got %q", out)
 	}
 	if !strings.Contains(out, fullOutputStateID()) {
 		t.Fatalf("expected full output state id in long output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableShowsArgsSummary(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = longPrepareArgs()
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 100)
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected compact args summary truncation, got %q", out)
+	}
+	if strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected task args summary truncation, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableUsesRemainingTTYWidthForArgs(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = "-f prepare.sql --set some.long.option=value --tail finish.sql"
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 140)
+	if !strings.Contains(out, task.ArgsSummary) {
+		t.Fatalf("expected args summary to use available tty width, got %q", out)
+	}
+	if strings.Contains(out, " ... ") {
+		t.Fatalf("expected no truncation when tty width still has budget, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableWideShowsFullArgsSummary(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = longPrepareArgs()
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected full task args summary in wide output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableLongStillTruncatesArgsSummary(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = longPrepareArgs()
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
+	out := buf.String()
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected task args summary to remain truncated in --long output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableLeavesArgsEmptyWhenSummaryMissing(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = ""
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, task.Type) {
+		t.Fatalf("expected aligned row even without args summary, got %q", out)
 	}
 }
 
@@ -405,24 +519,33 @@ func sampleStateEntry(args string) client.StateEntry {
 
 func sampleJobEntry() client.PrepareJobEntry {
 	return client.PrepareJobEntry{
-		JobID:       fullJobID(),
-		Status:      "running",
-		PrepareKind: "psql",
-		ImageID:     "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		PlanOnly:    false,
+		JobID:                 fullJobID(),
+		Status:                "running",
+		PrepareKind:           "psql",
+		ImageID:               "postgres:17",
+		ResolvedImageID:       fullImageID(),
+		PrepareArgsNormalized: longPrepareArgs(),
+		PlanOnly:              false,
 	}
 }
 
 func sampleTaskEntry(kind string) client.TaskEntry {
 	cached := true
+	inputID := fullStateID()
+	if kind == "image" {
+		inputID = fullImageID()
+	}
 	return client.TaskEntry{
-		TaskID: "task-12345678",
-		JobID:  fullJobID(),
-		Type:   "state_execute",
-		Status: "succeeded",
+		TaskID:          "task-12345678",
+		JobID:           fullJobID(),
+		Type:            "state_execute",
+		Status:          "succeeded",
+		ArgsSummary:     "-f prepare.sql",
+		ImageID:         "postgres:17",
+		ResolvedImageID: fullImageID(),
 		Input: &client.TaskInput{
 			Kind: kind,
-			ID:   fullStateID(),
+			ID:   inputID,
 		},
 		OutputStateID: fullOutputStateID(),
 		Cached:        &cached,
@@ -454,6 +577,10 @@ func fullJobID() string {
 
 func fullOutputStateID() string {
 	return "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
+}
+
+func fullImageID() string {
+	return "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 }
 
 func longPrepareArgs() string {

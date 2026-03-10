@@ -269,11 +269,14 @@ Columns:
 - `FINISHED`
 
 In human-readable output, `jobs` follow the same compact formatting rules as
-`states` for the overlapping fields:
+`states` for the overlapping fields, with one exception for the wide text
+column:
 
 - `IMAGE_ID` prefers the resolved image digest when available and falls back to
   the original requested image reference when resolution metadata is missing;
-- `PREPARE_ARGS` uses the same compact/wide behavior as `states`;
+- `PREPARE_ARGS` is rendered as a width-budgeted wide column in compact human
+  output; on a TTY it uses the remaining table width after the fixed columns are
+  rendered, and `--wide` disables truncation for it;
 - `CREATED`, `STARTED`, and `FINISHED` use relative forms in compact output and
   switch to absolute UTC timestamps with second precision under `--long`;
 - compact `jobs` tables also use a one-character inter-column gap.

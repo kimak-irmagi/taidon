@@ -16,6 +16,7 @@ Date: 2026-03-10
 - Decision:
   - `PrepareJobEntry` exposes the original requested `image_id`, optional `resolved_image_id`, and optional `prepare_args_normalized`.
   - Human-readable `ls --jobs` prefers `resolved_image_id` for `IMAGE_ID` when it is present, and falls back to `image_id` otherwise.
+  - Human-readable `ls --jobs` renders `PREPARE_ARGS` as a width-budgeted wide column in compact output and fully expands it under `--wide`.
 - Rationale: `states` and `jobs` describe the same preparation signature from different lifecycle stages. Showing only the requested image ref in `jobs` makes the table look consistent while actually representing a different semantic value than `states`.
 
 ## Decision Record 2: add an explicit task summary field instead of CLI heuristics

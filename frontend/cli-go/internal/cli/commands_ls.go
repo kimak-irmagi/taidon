@@ -351,7 +351,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Jobs")
 		}
-		printJobsTable(w, *result.Jobs, opts.NoHeader, opts.LongIDs)
+		printJobsTable(w, *result.Jobs, opts.NoHeader, opts.LongIDs, opts.Wide)
 		sections++
 	}
 	if result.Tasks != nil {
@@ -361,7 +361,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Tasks")
 		}
-		printTasksTable(w, *result.Tasks, opts.NoHeader, opts.LongIDs)
+		printTasksTable(w, *result.Tasks, opts.NoHeader, opts.LongIDs, opts.Wide)
 	}
 }
 
@@ -716,39 +716,111 @@ func maxInt(a int, b int) int {
 
 const compactTableColumnGap = 1
 
-func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool) {
-	headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
-	displayRows := make([][]string, 0, len(rows))
-	for _, row := range rows {
-		displayRows = append(displayRows, []string{
-			formatID(row.JobID, longIDs),
-			row.Status,
-			row.PrepareKind,
-			formatImageID(row.ImageID, longIDs),
-			formatBool(row.PlanOnly),
-			formatOptionalTimestamp(row.CreatedAt, longIDs),
-			formatOptionalTimestamp(row.StartedAt, longIDs),
-			formatOptionalTimestamp(row.FinishedAt, longIDs),
-		})
-	}
-	printAlignedTable(w, headers, displayRows, noHeader, compactTableColumnGap)
+type jobDisplayRow struct {
+	jobID       string
+	status      string
+	kind        string
+	imageID     string
+	prepareArgs string
+	planOnly    string
+	created     string
+	started     string
+	finished    string
 }
 
-func printTasksTable(w io.Writer, rows []client.TaskEntry, noHeader bool, longIDs bool) {
-	headers := []string{"TASK_ID", "JOB_ID", "TYPE", "STATUS", "INPUT", "OUTPUT_ID", "CACHED"}
-	displayRows := make([][]string, 0, len(rows))
+func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool, wide bool) {
+	headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PREPARE_ARGS", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
+	displayRows := make([]jobDisplayRow, 0, len(rows))
 	for _, row := range rows {
-		displayRows = append(displayRows, []string{
-			row.TaskID,
-			formatID(row.JobID, longIDs),
-			row.Type,
-			row.Status,
-			formatLSTaskInput(row.Input, longIDs),
-			formatID(row.OutputStateID, longIDs),
-			formatCached(row.Cached),
+		displayRows = append(displayRows, jobDisplayRow{
+			jobID:       formatID(row.JobID, longIDs),
+			status:      row.Status,
+			kind:        row.PrepareKind,
+			imageID:     formatJobImageID(row, longIDs),
+			prepareArgs: strings.TrimSpace(row.PrepareArgsNormalized),
+			planOnly:    formatBool(row.PlanOnly),
+			created:     formatOptionalTimestamp(row.CreatedAt, longIDs),
+			started:     formatOptionalTimestamp(row.StartedAt, longIDs),
+			finished:    formatOptionalTimestamp(row.FinishedAt, longIDs),
 		})
 	}
-	printAlignedTable(w, headers, displayRows, noHeader, compactTableColumnGap)
+
+	prepareBudget := statePrepareArgsMaxWidth
+	if !wide {
+		prepareBudget = jobsPrepareArgsBudget(w, displayRows, noHeader)
+	}
+
+	rowsOut := make([][]string, 0, len(displayRows))
+	for _, row := range displayRows {
+		prepareArgs := row.prepareArgs
+		if !wide {
+			prepareArgs = truncateMiddle(prepareArgs, prepareBudget)
+		}
+		rowsOut = append(rowsOut, []string{
+			row.jobID,
+			row.status,
+			row.kind,
+			row.imageID,
+			prepareArgs,
+			row.planOnly,
+			row.created,
+			row.started,
+			row.finished,
+		})
+	}
+	printAlignedTable(w, headers, rowsOut, noHeader, compactTableColumnGap)
+}
+
+type taskDisplayRow struct {
+	taskID   string
+	jobID    string
+	taskType string
+	status   string
+	input    string
+	args     string
+	outputID string
+	cached   string
+}
+
+func printTasksTable(w io.Writer, rows []client.TaskEntry, noHeader bool, longIDs bool, wide bool) {
+	headers := []string{"TASK_ID", "JOB_ID", "TYPE", "STATUS", "INPUT", "ARGS", "OUTPUT_ID", "CACHED"}
+	displayRows := make([]taskDisplayRow, 0, len(rows))
+	for _, row := range rows {
+		displayRows = append(displayRows, taskDisplayRow{
+			taskID:   row.TaskID,
+			jobID:    formatID(row.JobID, longIDs),
+			taskType: row.Type,
+			status:   row.Status,
+			input:    formatLSTaskInput(row.Input, longIDs),
+			args:     strings.TrimSpace(row.ArgsSummary),
+			outputID: formatID(row.OutputStateID, longIDs),
+			cached:   formatCached(row.Cached),
+		})
+	}
+
+	argsBudget := statePrepareArgsMaxWidth
+	if !wide {
+		argsBudget = tasksArgsBudget(w, displayRows, noHeader)
+	}
+
+	rowsOut := make([][]string, 0, len(displayRows))
+	for _, row := range displayRows {
+		args := row.args
+		if !wide {
+			args = truncateMiddle(args, argsBudget)
+		}
+		rowsOut = append(rowsOut, []string{
+			row.taskID,
+			row.jobID,
+			row.taskType,
+			row.status,
+			row.input,
+			args,
+			row.outputID,
+			row.cached,
+		})
+	}
+	printAlignedTable(w, headers, rowsOut, noHeader, compactTableColumnGap)
 }
 
 func optionalString(value *string) string {
@@ -779,6 +851,9 @@ func formatLSTaskInput(input *client.TaskInput, longIDs bool) string {
 		}
 	}
 	id := formatID(input.ID, longIDs)
+	if strings.EqualFold(strings.TrimSpace(input.Kind), "image") {
+		id = formatImageID(input.ID, longIDs)
+	}
 	if kind == "" {
 		return id
 	}
@@ -786,6 +861,78 @@ func formatLSTaskInput(input *client.TaskInput, longIDs bool) string {
 		return kind
 	}
 	return kind + ":" + id
+}
+
+func formatJobImageID(row client.PrepareJobEntry, longIDs bool) string {
+	value := strings.TrimSpace(row.ResolvedImageID)
+	if value == "" {
+		value = row.ImageID
+	}
+	return formatImageID(value, longIDs)
+}
+
+func jobsPrepareArgsBudget(w io.Writer, rows []jobDisplayRow, noHeader bool) int {
+	width, ok := terminalWidth(w)
+	if !ok {
+		return statePrepareArgsMaxWidth
+	}
+	return clampMinWideColumnWidth(width - jobsFixedColumnsWidth(rows, noHeader))
+}
+
+func jobsFixedColumnsWidth(rows []jobDisplayRow, noHeader bool) int {
+	widths := []int{0, 0, 0, 0, 0, 0, 0, 0}
+	for _, row := range rows {
+		widths[0] = maxInt(widths[0], runeLen(row.jobID))
+		widths[1] = maxInt(widths[1], runeLen(row.status))
+		widths[2] = maxInt(widths[2], runeLen(row.kind))
+		widths[3] = maxInt(widths[3], runeLen(row.imageID))
+		widths[4] = maxInt(widths[4], runeLen(row.planOnly))
+		widths[5] = maxInt(widths[5], runeLen(row.created))
+		widths[6] = maxInt(widths[6], runeLen(row.started))
+		widths[7] = maxInt(widths[7], runeLen(row.finished))
+	}
+	if !noHeader {
+		headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
+		for i, header := range headers {
+			widths[i] = maxInt(widths[i], len(header))
+		}
+	}
+	return sumInts(widths) + len(widths)*compactTableColumnGap
+}
+
+func tasksArgsBudget(w io.Writer, rows []taskDisplayRow, noHeader bool) int {
+	width, ok := terminalWidth(w)
+	if !ok {
+		return statePrepareArgsMaxWidth
+	}
+	return clampMinWideColumnWidth(width - tasksFixedColumnsWidth(rows, noHeader))
+}
+
+func tasksFixedColumnsWidth(rows []taskDisplayRow, noHeader bool) int {
+	widths := []int{0, 0, 0, 0, 0, 0, 0}
+	for _, row := range rows {
+		widths[0] = maxInt(widths[0], runeLen(row.taskID))
+		widths[1] = maxInt(widths[1], runeLen(row.jobID))
+		widths[2] = maxInt(widths[2], runeLen(row.taskType))
+		widths[3] = maxInt(widths[3], runeLen(row.status))
+		widths[4] = maxInt(widths[4], runeLen(row.input))
+		widths[5] = maxInt(widths[5], runeLen(row.outputID))
+		widths[6] = maxInt(widths[6], runeLen(row.cached))
+	}
+	if !noHeader {
+		headers := []string{"TASK_ID", "JOB_ID", "TYPE", "STATUS", "INPUT", "OUTPUT_ID", "CACHED"}
+		for i, header := range headers {
+			widths[i] = maxInt(widths[i], len(header))
+		}
+	}
+	return sumInts(widths) + len(widths)*compactTableColumnGap
+}
+
+func clampMinWideColumnWidth(width int) int {
+	if width < statePrepareArgsMinWidth {
+		return statePrepareArgsMinWidth
+	}
+	return width
 }
 
 func printAlignedTable(w io.Writer, headers []string, rows [][]string, noHeader bool, gap int) {
