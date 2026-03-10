@@ -115,6 +115,12 @@ See the user guide for the authoritative, up-to-date command semantics:
 Current design direction:
 
 - `ls --states` stays the primary state inventory command;
+- human-readable `ls --states` output remains one row per state and does not
+  hard-wrap table cells;
+- on a TTY, `PREPARE_ARGS` is width-budgeted against the current terminal and
+  truncated in the middle when needed;
+- `--wide` disables `PREPARE_ARGS` truncation in human output, while `--long`
+  continues to control id shortening independently;
 - `ls --states --cache-details` adds operator-facing cache metadata for state
   rows without introducing a new top-level cache command in the MVP surface.
 
