@@ -90,49 +90,46 @@ Note: if required blob objects are missing locally (`partial clone`/LFS), a `git
 
 ---
 
-## Scenario P3. Taidon-aware diff with explicit context: `diff`
+## Scenario P3. Taidon-aware diff by wrapping an existing sqlrs command: `diff`
 
 ### Motivation
 
-`git diff` shows text, but the user wants "what changed **in the DB**, given **exactly those files** we run".
+`git diff` shows text, but the user wants "what changed **from the perspective of
+an actual sqlrs command**" while staying syntactically close to the main CLI.
 
 ### UX / CLI
 
-### 3.1 Diff by refs and prepare context
+Instead of inventing a separate `--prepare <path>` mini-DSL, `diff` wraps one
+existing content-aware sqlrs command and evaluates it in two contexts.
 
 ```bash
-sqlrs diff --from-ref <refA> --to-ref <refB> --prepare <path>
+sqlrs diff --from-ref <refA> --to-ref <refB> plan:psql -- -f ./prepare.sql
+sqlrs diff --from-ref <refA> --to-ref <refB> prepare:lb -- update --changelog-file db/changelog.xml
+sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sql
 ```
 
-Output (proposed):
+Rules:
 
-- changesets: Added/Modified/Removed
-- execution order (if applicable)
-- short summary (migration/line counts)
-- (optional) "DB impact: yes/no/unknown"
+- diff-specific options come before the wrapped command;
+- the wrapped command keeps its current syntax unchanged;
+- global `-v` stays the verbose control and global `--output` stays the text/json selector;
+- the first implementation slice supports exactly one wrapped `plan:*` or `prepare:*` command;
+- nested composite `prepare ... run` is out of scope for the first slice;
+- future `run:*` support is possible only for file-backed inputs, because inline-only invocations may have no revision-dependent payload.
 
-Options:
+What `diff` compares:
 
-- `--format text|json`
-- `--include-content` (show fragments)
-- `--limit N`
-
-### 3.2 Diff of two local sets (no Git)
-
-```bash
-sqlrs diff --from-path <pathA> --to-path <pathB>
-```
+- `plan:*` -> the derived task plan;
+- `prepare:*` -> prepare task bodies plus the resolved input graph;
+- `run:*` -> only revision-sensitive file inputs, not instance resolution or DSN injection.
 
 ### Implementation
 
-1. Load context files from `from-ref`/`to-ref` or `from-path`/`to-path` (blob/worktree).
-2. Normalize input set (directory -> ordered file list).
-3. Compute hashes and compare:
-   - Added/Removed by path
-   - Modified by hash
-4. (Optional) semantic hint:
-   - only comments/whitespace (heuristic) -> "low impact"
-5. Produce a report.
+1. Parse the diff scope (`from/to ref` or `from/to path`).
+2. Parse the wrapped command using the same CLI grammar as the main invocation.
+3. For each side independently, resolve files/includes according to that side's own revision or path context.
+4. Build the derived representation for the wrapped command.
+5. Compare the two derived representations and render the report.
 
 ---
 
@@ -238,6 +235,6 @@ Output:
 ## Minimal MVP for passive features
 
 1. `--ref` (blob mode) + zero-copy cache hit
-2. `sqlrs diff --from-ref/--to-ref --prepare <path>`
+2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` for one `plan:*` or `prepare:*` command
 3. provenance (write)
 4. `cache explain` (simple version)

@@ -77,7 +77,7 @@ Not everyone needs warmup always. PR commands are the least intrusive: the user 
 ### UX (PR commands)
 
 - `/taidon warmup --prepare <path>`
-- `/taidon diff --from-ref base --to-ref head --prepare <path>`
+- `/taidon diff --from-ref base --to-ref head <sqlrs-command> [command-args...]`
 - `/taidon compare --from-ref base --from-prepare <path> --to-ref head --to-prepare <path> --run "psql -c ':'"` (limited)
 
 Security rules:
@@ -109,7 +109,7 @@ Trigger:
 
 Action:
 
-- `sqlrs diff --from-ref <base> --to-ref <head> --prepare <path>` for each context
+- `sqlrs diff --from-ref <base> --to-ref <head> <wrapped-command...>` for each configured diff command/context
 
 Result:
 

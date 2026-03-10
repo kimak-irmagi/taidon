@@ -55,6 +55,16 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
+Exception: `sqlrs diff` acts as a meta-command and wraps exactly one existing
+content-aware sqlrs command:
+
+```text
+sqlrs diff <diff-scope> <verb>[:<kind>] [subject] [options] [-- <command>...]
+```
+
+This keeps the nested command syntax aligned with the main CLI surface instead of
+introducing a separate `diff`-specific input DSL.
+
 ## ID Prefix Rules
 
 Where the CLI expects a **state or instance id**, users may supply a hex prefix
@@ -76,6 +86,7 @@ sqlrs
   watch
   plan
   run
+  diff
 ```
 
 Not all groups are required in MVP.
@@ -210,6 +221,34 @@ sqlrs watch <job_id>
 See:
 
 - [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
+
+---
+
+### 3.9 `sqlrs diff`
+
+`sqlrs diff` is a **group of composite commands**: the user inserts the diff scope
+between `sqlrs` and one content-aware command (`plan`, `prepare`, or `run`), and
+the same command syntax is used as in the main CLI. It compares two contexts by
+evaluating that command on both sides and reporting the difference.
+
+- `sqlrs diff ... plan ...` — difference in **task plans** for instance preparation.
+- `sqlrs diff ... prepare ...` — difference in **task bodies** for preparation.
+- `sqlrs diff ... run ...` — difference in **task bodies** for query execution (file-backed inputs).
+
+Diff-specific options define the comparison scope; the wrapped command keeps its
+normal syntax.
+
+Initial design scope:
+
+- wrapped commands: `plan:*`, `prepare:*`
+- future extension: `run:*` for file-backed inputs only
+- no nested composite `prepare ... run` in the first slice
+- global `-v` and `--output` keep their existing meaning
+
+See:
+
+- [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
+- [`docs/architecture/git-aware-passive.md`](git-aware-passive.md) (scenario P3)
 
 ---
 
