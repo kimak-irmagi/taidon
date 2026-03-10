@@ -124,14 +124,17 @@ Current design direction:
 - compact human-readable state tables use a one-character inter-column gap to
   reduce width pressure from deep state trees;
 - compact human-readable `jobs` tables follow the same `KIND`, `IMAGE_ID`,
-  and timestamp rules as `states`;
-- compact human-readable `tasks` tables shorten `INPUT` kind prefixes and use
-  the shorter header `OUTPUT_ID`, but do not yet expose a task-specific `ARGS`
-  column;
+  `PREPARE_ARGS`, and timestamp rules as `states`; when both requested and
+  resolved image references are available, human-readable `jobs` prefer the
+  resolved image id;
+- compact human-readable `tasks` tables shorten `INPUT` kind prefixes, use the
+  shorter header `OUTPUT_ID`, and expose an API-backed task summary column
+  `ARGS`;
 - on a TTY, `PREPARE_ARGS` is width-budgeted against the current terminal and
   truncated in the middle when needed;
-- `--wide` disables `PREPARE_ARGS` truncation in human output, while `--long`
-  expands ids and timestamps independently of `--wide`;
+- `--wide` disables truncation of wide text columns in human output (currently
+  `PREPARE_ARGS` and task `ARGS`), while `--long` expands ids and timestamps
+  independently of `--wide`;
 - `ls --states --cache-details` adds operator-facing cache metadata for state
   rows without introducing a new top-level cache command in the MVP surface.
 

@@ -126,14 +126,17 @@ sqlrs
 - compact human-readable таблица состояний использует межколоночный gap в один
   символ, чтобы уменьшить pressure от глубокого дерева состояний;
 - compact human-readable таблица `jobs` использует те же правила для `KIND`,
-  `IMAGE_ID` и timestamps, что и `states`;
+  `IMAGE_ID`, `PREPARE_ARGS` и timestamps, что и `states`; при наличии и
+  requested, и resolved image reference human-readable `jobs` предпочитает
+  resolved image id;
 - compact human-readable таблица `tasks` сокращает префиксы kinds в `INPUT` и
-  использует более короткий заголовок `OUTPUT_ID`, но пока не получает
-  отдельную колонку `ARGS`;
+  использует более короткий заголовок `OUTPUT_ID`, а также получает
+  API-backed колонку task summary `ARGS`;
 - на TTY поле `PREPARE_ARGS` получает budget относительно текущей ширины
   терминала и при необходимости усекается по середине;
-- `--wide` отключает усечение `PREPARE_ARGS` в human output, а `--long`
-  независимо от `--wide` разворачивает id и timestamps;
+- `--wide` отключает усечение широких текстовых колонок в human output
+  (сейчас это `PREPARE_ARGS` и task `ARGS`), а `--long` независимо от `--wide`
+  разворачивает id и timestamps;
 - `ls --states --cache-details` добавляет операторские cache-метаданные к
   строкам состояний без введения новой top-level cache-команды в MVP-поверхность.
 

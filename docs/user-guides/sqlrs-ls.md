@@ -40,7 +40,7 @@ sqlrs ls [OPTIONS]
 --quiet          Suppress headers and explanatory text (table still printed)
 --no-header      Do not print table header (human output)
 --long           Show full ids in human output (default is 12 chars)
---wide           Disable PREPARE_ARGS truncation in human output
+--wide           Disable truncation of wide text columns in human output
 --cache-details  Show additional cache metadata for state rows
 ```
 
@@ -262,6 +262,7 @@ Columns:
 - `STATUS` (queued / running / succeeded / failed)
 - `KIND` (human-readable header; values use short sqlrs kind aliases such as `psql` and `lb`)
 - `IMAGE_ID`
+- `PREPARE_ARGS` (normalized; compact by default in human output)
 - `PLAN_ONLY` (true / false)
 - `CREATED`
 - `STARTED`
@@ -270,10 +271,18 @@ Columns:
 In human-readable output, `jobs` follow the same compact formatting rules as
 `states` for the overlapping fields:
 
-- `IMAGE_ID` uses the same compact digest formatting as `states`;
+- `IMAGE_ID` prefers the resolved image digest when available and falls back to
+  the original requested image reference when resolution metadata is missing;
+- `PREPARE_ARGS` uses the same compact/wide behavior as `states`;
 - `CREATED`, `STARTED`, and `FINISHED` use relative forms in compact output and
   switch to absolute UTC timestamps with second precision under `--long`;
 - compact `jobs` tables also use a one-character inter-column gap.
+
+In JSON output, `jobs` expose both:
+
+- `image_id` as the original requested image reference;
+- `resolved_image_id` as the resolved digest-based image reference when
+  available.
 
 ### Tasks table
 
@@ -284,6 +293,7 @@ Columns:
 - `TYPE`
 - `STATUS` (queued / running / succeeded / failed)
 - `INPUT` (compact kind:id in human output)
+- `ARGS` (task-specific summary; compact by default in human output)
 - `OUTPUT_ID` (state_execute only)
 - `CACHED` (state_execute only)
 
@@ -292,12 +302,25 @@ For human-readable task tables:
 - `INPUT` uses the same id-shortening rules as the other `ls` tables;
 - in compact output, the `INPUT` kind prefixes may be shortened to one-letter
   aliases such as `i:` for image and `s:` for state;
+- `ARGS` is a task-specific summary field exposed by the engine:
+  - for psql `state_execute` tasks it identifies the corresponding `-f` or `-c`
+    step;
+  - for Liquibase `state_execute` tasks it identifies the corresponding
+    changeset;
+  - for task kinds without a meaningful argument summary, the column is empty;
+- `ARGS` is rendered as a width-budgeted wide column in compact human output;
+  `--wide` disables truncation for it just as it does for `PREPARE_ARGS`;
 - `OUTPUT_ID` is a human-readable header rename only; JSON remains
   `output_state_id`.
 
-A task-specific `ARGS` column is **not** part of this slice. It is deferred to a
-future feature because it requires an explicit API-level summary field for
-per-task parameters or subjects.
+In JSON output, `tasks` additionally expose engine-level metadata used for
+consistent rendering and tooling:
+
+- `image_id` (requested image ref, when relevant to the task)
+- `resolved_image_id` (resolved digest, when available)
+- `args_summary` (task-specific one-line summary for human-oriented listings)
+- Liquibase-specific `changeset_id`, `changeset_author`, `changeset_path` when
+  applicable
 
 ---
 
@@ -361,6 +384,8 @@ Recommended fields:
 - `status` (`queued` | `running` | `succeeded` | `failed`)
 - `prepare_kind`
 - `image_id`
+- `resolved_image_id` (optional)
+- `prepare_args_normalized` (optional)
 - `plan_only`
 - `created_at`
 - `started_at` (nullable)
@@ -373,10 +398,16 @@ Recommended fields:
 - `type`
 - `status` (`queued` | `running` | `succeeded` | `failed`)
 - `input` (object with `kind` and `id`)
+- `image_id` (optional)
+- `resolved_image_id` (optional)
+- `args_summary` (optional)
 - `task_hash` (optional)
 - `output_state_id` (optional)
 - `cached` (optional)
 - `instance_mode` (optional)
+- `changeset_id` (optional)
+- `changeset_author` (optional)
+- `changeset_path` (optional)
 
 ---
 
