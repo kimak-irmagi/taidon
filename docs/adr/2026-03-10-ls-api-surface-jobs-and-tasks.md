@@ -34,6 +34,21 @@ Date: 2026-03-10
   - The engine remains free to compute that summary from task-kind-specific metadata, but the CLI consumes one explicit stable field.
 - Rationale: Liquibase tasks already have structured changeset metadata, while psql step identity is currently planner-internal. A dedicated summary field avoids fragile CLI-side reverse engineering and gives one stable contract to human output and JSON tooling.
 
+## Decision Record 3: render image task inputs with the image formatter
+
+- Timestamp: 2026-03-10T00:00:00Z
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: How should compact `ls --tasks` render `INPUT` for image-based tasks when the input id is already a resolved image reference?
+- Alternatives:
+  - Shorten all task input ids with the generic opaque-id formatter.
+  - Use kind-aware formatting: generic id shortening for states and digest-aware image formatting for image inputs.
+- Decision:
+  - Compact task `INPUT` rendering is kind-aware.
+  - `state` inputs use the regular id shortener.
+  - `image` inputs use the same digest-aware formatter as `IMAGE_ID` columns.
+- Rationale: Image task inputs can already contain resolved digest references. Treating them like opaque ids collapses distinct digests from the same repository into nearly identical compact values and weakens debugging output.
+
 ## Contradiction check
 
 This ADR supersedes the "defer" direction from [2026-03-10-ls-jobs-and-tasks-scope.md](./2026-03-10-ls-jobs-and-tasks-scope.md) for `jobs PREPARE_ARGS` and task `ARGS`. The earlier ADR remains historically accurate for the pre-API-extension slice.

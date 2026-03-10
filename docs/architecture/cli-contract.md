@@ -130,6 +130,8 @@ Current design direction:
 - compact human-readable `tasks` tables shorten `INPUT` kind prefixes, use the
   shorter header `OUTPUT_ID`, and expose an API-backed task summary column
   `ARGS`;
+- for task `INPUT`, state ids use regular id shortening, while image inputs use
+  the same digest-aware compact formatter as `IMAGE_ID` columns;
 - on a TTY, `PREPARE_ARGS` is width-budgeted against the current terminal and
   truncated in the middle when needed;
 - `--wide` disables truncation of wide text columns in human output (currently

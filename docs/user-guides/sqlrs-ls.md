@@ -299,7 +299,11 @@ Columns:
 
 For human-readable task tables:
 
-- `INPUT` uses the same id-shortening rules as the other `ls` tables;
+- `INPUT` uses kind-aware shortening rules:
+  - state inputs use the same id-shortening rules as other state/id fields;
+  - image inputs use the same digest-aware compact formatting as `IMAGE_ID`
+    columns, so distinct resolved digests remain distinguishable in compact
+    output;
 - in compact output, the `INPUT` kind prefixes may be shortened to one-letter
   aliases such as `i:` for image and `s:` for state;
 - `ARGS` is a task-specific summary field exposed by the engine:

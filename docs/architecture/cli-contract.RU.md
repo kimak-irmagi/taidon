@@ -132,6 +132,9 @@ sqlrs
 - compact human-readable таблица `tasks` сокращает префиксы kinds в `INPUT` и
   использует более короткий заголовок `OUTPUT_ID`, а также получает
   API-backed колонку task summary `ARGS`;
+- для `INPUT` в `tasks` state id сокращаются по обычным правилам id, а image
+  inputs используют тот же digest-aware compact formatter, что и колонки
+  `IMAGE_ID`;
 - на TTY поле `PREPARE_ARGS` получает budget относительно текущей ширины
   терминала и при необходимости усекается по середине;
 - `--wide` отключает усечение широких текстовых колонок в human output
