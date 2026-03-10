@@ -119,6 +119,8 @@ Current design direction:
   hard-wrap table cells;
 - in compact human output, `CREATED` uses a relative representation, while
   `--long` switches it to an absolute UTC timestamp with second precision;
+- in human-readable state tables, the kind column uses the compact header `KIND`
+  and budgets for the existing short sqlrs kind aliases;
 - on a TTY, `PREPARE_ARGS` is width-budgeted against the current terminal and
   truncated in the middle when needed;
 - `--wide` disables `PREPARE_ARGS` truncation in human output, while `--long`
