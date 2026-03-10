@@ -97,7 +97,7 @@ When `--quiet` is set and multiple sections are printed, sections are separated
 by a blank line.
 
 IDs are printed in lowercase. By default, human output shortens ids to 12
-characters. Use `--long` to print full ids.
+characters. Use `--long` to print full ids and absolute timestamps.
 
 ### Human table width and wrapping
 
@@ -183,11 +183,18 @@ Columns:
 
 - `STATE_ID`
 - `IMAGE_ID`
-- `PREPARE_KIND`
+- `KIND` (human-readable header; values use short sqlrs kind aliases such as `psql` and `lb`)
 - `PREPARE_ARGS` (normalized; compact by default in human output)
 - `CREATED`
 - `SIZE` (persisted snapshot size in bytes; may be empty for legacy states that were created before size tracking)
 - `REFCOUNT` (number of instances referencing this state)
+
+In human-readable output, `CREATED` uses two display modes:
+
+- default compact mode uses a relative form such as `3d ago`, `5h ago`, or
+  `12m ago`;
+- `--long` switches `CREATED` to an absolute UTC timestamp with second
+  precision (RFC3339 without fractional seconds).
 
 In default human output, `PREPARE_ARGS` is rendered as a compact preview to
 keep the table readable.
@@ -203,9 +210,10 @@ keep the table readable.
   maximum budget without inspecting the eventual viewer width.
 
 Use `--wide` to print the full `PREPARE_ARGS` values in human output. `--wide`
-does not change id shortening; combine it with `--long` when both full ids and
-full `PREPARE_ARGS` are needed. JSON output always returns the full
-`prepare_args_normalized` value.
+does not change id or time formatting; combine it with `--long` when full ids,
+absolute timestamps, and full `PREPARE_ARGS` are needed. JSON output always
+returns the full `prepare_args_normalized` value, the machine field `prepare_kind`, and the original absolute
+`created_at` timestamp.
 
 `SIZE` is reported from persisted state metadata, not from a live recursive disk walk performed by the CLI. This keeps `ls` fast and deterministic. When size metadata is still missing for an older state, the column is left empty.
 
@@ -236,7 +244,7 @@ parent/child relationships visible (similar to `sqlrs rm --recurse` output).
 For example:
 
 ```text
-STATE_ID         IMAGE_ID             PREPARE_KIND  PREPARE_ARGS  CREATED  SIZE  REFCOUNT
+STATE_ID         IMAGE_ID             KIND          PREPARE_ARGS  CREATED  SIZE  REFCOUNT
 aaaaaaaaaaaa     postgres@7352e0c4d62b psql         ...          ...      ...   ...
 +bbbbbbbbbbbb   postgres@7352e0c4d62b psql         ...          ...      ...   ...
 `cccccccccccc   postgres@7352e0c4d62b psql         ...          ...      ...   ...
@@ -250,7 +258,7 @@ Columns:
 
 - `JOB_ID`
 - `STATUS` (queued / running / succeeded / failed)
-- `PREPARE_KIND`
+- `KIND` (human-readable header; values use short sqlrs kind aliases such as `psql` and `lb`)
 - `IMAGE_ID`
 - `PLAN_ONLY` (true / false)
 - `CREATED`

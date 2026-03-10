@@ -66,6 +66,7 @@ type LsPrintOptions struct {
 	Quiet        bool
 	NoHeader     bool
 	LongIDs      bool
+	Wide         bool
 	CacheDetails bool
 }
 
@@ -340,7 +341,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "States")
 		}
-		printStatesTableWithOptions(w, *result.States, opts.NoHeader, opts.LongIDs, opts.CacheDetails)
+		printStatesTableWithOptions(w, *result.States, opts.NoHeader, opts.LongIDs, opts.Wide, opts.CacheDetails)
 		sections++
 	}
 	if result.Jobs != nil {
@@ -406,16 +407,20 @@ func printInstancesTable(w io.Writer, rows []client.InstanceEntry, noHeader bool
 }
 
 func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool) {
-	printStatesTableWithOptions(w, rows, noHeader, longIDs, false)
+	printStatesTableWithOptions(w, rows, noHeader, longIDs, false, false)
 }
 
-func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool, cacheDetails bool) {
+func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool) {
+	printStatesTableWithOptions(w, rows, noHeader, longIDs, false, false)
+}
+
+func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool, wide bool, cacheDetails bool) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {
 		if cacheDetails {
-			fmt.Fprintln(tw, "STATE_ID\tIMAGE_ID\tPREPARE_KIND\tPREPARE_ARGS\tCREATED\tSIZE\tREFCOUNT\tLAST_USED\tUSE_COUNT\tMIN_RETENTION_UNTIL")
+			fmt.Fprintln(tw, "STATE_ID	IMAGE_ID	PREPARE_KIND	PREPARE_ARGS	CREATED	SIZE	REFCOUNT	LAST_USED	USE_COUNT	MIN_RETENTION_UNTIL")
 		} else {
-			fmt.Fprintln(tw, "STATE_ID\tIMAGE_ID\tPREPARE_KIND\tPREPARE_ARGS\tCREATED\tSIZE\tREFCOUNT")
+			fmt.Fprintln(tw, "STATE_ID	IMAGE_ID	PREPARE_KIND	PREPARE_ARGS	CREATED	SIZE	REFCOUNT")
 		}
 	}
 
@@ -424,6 +429,18 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 		row      client.StateEntry
 		parent   *stateNode
 		children []*stateNode
+	}
+	type stateDisplayRow struct {
+		stateID           string
+		imageID           string
+		prepareKind       string
+		prepareArgs       string
+		createdAt         string
+		size              string
+		refCount          string
+		lastUsed          string
+		useCount          string
+		minRetentionUntil string
 	}
 
 	nodes := make([]*stateNode, 0, len(rows))
@@ -461,13 +478,11 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 		}
 	}
 
+	displayRows := make([]stateDisplayRow, 0, len(nodes))
 	visited := make(map[string]bool, len(nodes))
 	var walk func(node *stateNode, ancestorsHasNext []bool, depth int, isLast bool)
 	walk = func(node *stateNode, ancestorsHasNext []bool, depth int, isLast bool) {
-		if node == nil {
-			return
-		}
-		if visited[node.key] {
+		if node == nil || visited[node.key] {
 			return
 		}
 		visited[node.key] = true
@@ -476,39 +491,25 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 		if depth > 0 {
 			stateID = compactTreePrefix(ancestorsHasNext, isLast) + stateID
 		}
-
-		if cacheDetails {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				stateID,
-				formatImageID(node.row.ImageID, longIDs),
-				node.row.PrepareKind,
-				node.row.PrepareArgs,
-				node.row.CreatedAt,
-				optionalInt64(node.row.SizeBytes),
-				strconv.Itoa(node.row.RefCount),
-				optionalString(node.row.LastUsedAt),
-				optionalInt64(node.row.UseCount),
-				optionalString(node.row.MinRetentionUntil),
-			)
-		} else {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				stateID,
-				formatImageID(node.row.ImageID, longIDs),
-				node.row.PrepareKind,
-				node.row.PrepareArgs,
-				node.row.CreatedAt,
-				optionalInt64(node.row.SizeBytes),
-				strconv.Itoa(node.row.RefCount),
-			)
-		}
+		displayRows = append(displayRows, stateDisplayRow{
+			stateID:           stateID,
+			imageID:           formatImageID(node.row.ImageID, longIDs),
+			prepareKind:       node.row.PrepareKind,
+			prepareArgs:       strings.TrimSpace(node.row.PrepareArgs),
+			createdAt:         node.row.CreatedAt,
+			size:              optionalInt64(node.row.SizeBytes),
+			refCount:          strconv.Itoa(node.row.RefCount),
+			lastUsed:          optionalString(node.row.LastUsedAt),
+			useCount:          optionalInt64(node.row.UseCount),
+			minRetentionUntil: optionalString(node.row.MinRetentionUntil),
+		})
 
 		childAncestors := ancestorsHasNext
 		if depth > 0 {
 			childAncestors = compactTreeNextAncestors(ancestorsHasNext, isLast)
 		}
 		for i, child := range node.children {
-			childLast := i == len(node.children)-1
-			walk(child, childAncestors, depth+1, childLast)
+			walk(child, childAncestors, depth+1, i == len(node.children)-1)
 		}
 	}
 
@@ -516,14 +517,164 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 		walk(root, nil, 0, true)
 	}
 	for _, node := range nodes {
-		if visited[node.key] {
-			continue
+		if !visited[node.key] {
+			walk(node, nil, 0, true)
 		}
-		walk(node, nil, 0, true)
+	}
+
+	prepareBudget := statePrepareArgsMaxWidth
+	if !wide {
+		prepareBudget = statePrepareArgsBudget(w, displayRows, noHeader, cacheDetails)
+	}
+
+	for _, row := range displayRows {
+		prepareArgs := row.prepareArgs
+		if !wide {
+			prepareArgs = truncateMiddle(prepareArgs, prepareBudget)
+		}
+		if cacheDetails {
+			fmt.Fprintf(tw, "%s	%s	%s	%s	%s	%s	%s	%s	%s	%s
+",
+				row.stateID,
+				row.imageID,
+				row.prepareKind,
+				prepareArgs,
+				row.createdAt,
+				row.size,
+				row.refCount,
+				row.lastUsed,
+				row.useCount,
+				row.minRetentionUntil,
+			)
+		} else {
+			fmt.Fprintf(tw, "%s	%s	%s	%s	%s	%s	%s
+",
+				row.stateID,
+				row.imageID,
+				row.prepareKind,
+				prepareArgs,
+				row.createdAt,
+				row.size,
+				row.refCount,
+			)
+		}
 	}
 
 	_ = tw.Flush()
 }
+
+const (
+	statePrepareArgsMinWidth  = 16
+	statePrepareArgsMaxWidth  = 48
+	stateTableColumnPadding   = 2
+	stateTableDefaultGapCount = 6
+	stateTableCacheGapCount   = 9
+	statePrepareArgsEllipsis  = " ... "
+)
+
+func statePrepareArgsBudget(w io.Writer, rows []stateDisplayRow, noHeader bool, cacheDetails bool) int {
+	budget := statePrepareArgsMaxWidth
+	width, ok := terminalWidth(w)
+	if !ok {
+		return budget
+	}
+	remaining := width - stateTableFixedColumnsWidth(rows, noHeader, cacheDetails)
+	return clampStatePrepareArgsWidth(remaining)
+}
+
+func stateTableFixedColumnsWidth(rows []stateDisplayRow, noHeader bool, cacheDetails bool) int {
+	widths := []int{0, 0, 0, 0, 0, 0}
+	if !cacheDetails {
+		for _, row := range rows {
+			widths[0] = maxInt(widths[0], runeLen(row.stateID))
+			widths[1] = maxInt(widths[1], runeLen(row.imageID))
+			widths[2] = maxInt(widths[2], runeLen(row.prepareKind))
+			widths[3] = maxInt(widths[3], runeLen(row.createdAt))
+			widths[4] = maxInt(widths[4], runeLen(row.size))
+			widths[5] = maxInt(widths[5], runeLen(row.refCount))
+		}
+		if !noHeader {
+			widths[0] = maxInt(widths[0], len("STATE_ID"))
+			widths[1] = maxInt(widths[1], len("IMAGE_ID"))
+			widths[2] = maxInt(widths[2], len("PREPARE_KIND"))
+			widths[3] = maxInt(widths[3], len("CREATED"))
+			widths[4] = maxInt(widths[4], len("SIZE"))
+			widths[5] = maxInt(widths[5], len("REFCOUNT"))
+		}
+		return sumInts(widths) + stateTableDefaultGapCount*stateTableColumnPadding
+	}
+
+	widths = append(widths, 0, 0, 0)
+	for _, row := range rows {
+		widths[0] = maxInt(widths[0], runeLen(row.stateID))
+		widths[1] = maxInt(widths[1], runeLen(row.imageID))
+		widths[2] = maxInt(widths[2], runeLen(row.prepareKind))
+		widths[3] = maxInt(widths[3], runeLen(row.createdAt))
+		widths[4] = maxInt(widths[4], runeLen(row.size))
+		widths[5] = maxInt(widths[5], runeLen(row.refCount))
+		widths[6] = maxInt(widths[6], runeLen(row.lastUsed))
+		widths[7] = maxInt(widths[7], runeLen(row.useCount))
+		widths[8] = maxInt(widths[8], runeLen(row.minRetentionUntil))
+	}
+	if !noHeader {
+		headers := []string{"STATE_ID", "IMAGE_ID", "PREPARE_KIND", "CREATED", "SIZE", "REFCOUNT", "LAST_USED", "USE_COUNT", "MIN_RETENTION_UNTIL"}
+		for i, header := range headers {
+			widths[i] = maxInt(widths[i], len(header))
+		}
+	}
+	return sumInts(widths) + stateTableCacheGapCount*stateTableColumnPadding
+}
+
+func clampStatePrepareArgsWidth(width int) int {
+	if width < statePrepareArgsMinWidth {
+		return statePrepareArgsMinWidth
+	}
+	if width > statePrepareArgsMaxWidth {
+		return statePrepareArgsMaxWidth
+	}
+	return width
+}
+
+func truncateMiddle(value string, width int) string {
+	if width <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value
+	}
+	ellipsisRunes := []rune(statePrepareArgsEllipsis)
+	if width <= len(ellipsisRunes)+2 {
+		if width > len(runes) {
+			return value
+		}
+		return string(runes[:width])
+	}
+	available := width - len(ellipsisRunes)
+	prefixLen := available / 2
+	suffixLen := available - prefixLen
+	return string(runes[:prefixLen]) + statePrepareArgsEllipsis + string(runes[len(runes)-suffixLen:])
+}
+
+func runeLen(value string) int {
+	return len([]rune(value))
+}
+
+func sumInts(values []int) int {
+	total := 0
+	for _, value := range values {
+		total += value
+	}
+	return total
+}
+
+func maxInt(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool) {
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {

@@ -27,6 +27,7 @@ type lsOptions struct {
 	Quiet        bool
 	NoHeader     bool
 	LongIDs      bool
+	Wide         bool
 	CacheDetails bool
 }
 
@@ -54,6 +55,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	quiet := fs.Bool("quiet", false, "suppress headers and explanatory text")
 	noHeader := fs.Bool("no-header", false, "do not print table header")
 	longIDs := fs.Bool("long", false, "show full ids")
+	wide := fs.Bool("wide", false, "disable prepare args truncation in human output")
 	cacheDetails := fs.Bool("cache-details", false, "show additional cache metadata for states")
 
 	name := fs.String("name", "", "filter by name")
@@ -107,6 +109,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	opts.Quiet = *quiet
 	opts.NoHeader = *noHeader
 	opts.LongIDs = *longIDs
+	opts.Wide = *wide
 	opts.CacheDetails = *cacheDetails
 	return opts, false, nil
 }
@@ -158,6 +161,7 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 		Quiet:        opts.Quiet,
 		NoHeader:     opts.NoHeader,
 		LongIDs:      opts.LongIDs,
+		Wide:         opts.Wide,
 		CacheDetails: opts.CacheDetails,
 	})
 	return nil

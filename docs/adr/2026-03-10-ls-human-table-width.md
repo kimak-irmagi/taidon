@@ -1,6 +1,6 @@
 # ADR: `sqlrs ls` human-readable state table width handling
 
-Status: Accepted
+Status: Obsolete (partially superseded by [2026-03-10-ls-compact-timestamps.md](./2026-03-10-ls-compact-timestamps.md))
 Date: 2026-03-10
 
 ## Decision Record 1: keep state rows single-line and truncate `PREPARE_ARGS` in the middle
@@ -19,9 +19,9 @@ Date: 2026-03-10
   - On a TTY, budget `PREPARE_ARGS` against the current terminal width, using the remaining width after the fixed columns with a minimum budget of 16 characters and a maximum budget of 48 characters.
   - If `PREPARE_ARGS` does not fit, truncate it in the middle using the form `prefix ... suffix`.
   - If stdout is not a TTY, do not try to infer the width of the eventual viewer; keep the compact default budget unless the user explicitly requests `--wide`.
-  - `--wide` disables `PREPARE_ARGS` truncation in human output, while `--long` continues to control id shortening independently.
+  - `--wide` disables `PREPARE_ARGS` truncation in human output; timestamp semantics for `--long` were later refined in [2026-03-10-ls-compact-timestamps.md](./2026-03-10-ls-compact-timestamps.md).
 - Rationale: Middle truncation preserves both the command prefix and the trailing arguments that often contain the most distinguishing details. Keeping one physical line per state row preserves table scanability, avoids layout breakage when the terminal is resized after the command exits, and makes redirected output predictable for later viewing in editors with horizontal scrolling.
 
 ## Contradiction check
 
-No existing ADR was marked obsolete. This decision refines human-readable `sqlrs ls` rendering and is compatible with ADR [2026-03-03-cli-compact-tree-and-image-ids.md](./2026-03-03-cli-compact-tree-and-image-ids.md), which already established compact tree prefixes and shortened `IMAGE_ID` values for readable state tables.
+This ADR is partially superseded by [2026-03-10-ls-compact-timestamps.md](./2026-03-10-ls-compact-timestamps.md) for `CREATED` and `--long` timestamp semantics. The remaining width and middle-truncation rules stay in effect and remain compatible with ADR [2026-03-03-cli-compact-tree-and-image-ids.md](./2026-03-03-cli-compact-tree-and-image-ids.md), which established compact tree prefixes and shortened `IMAGE_ID` values for readable state tables.

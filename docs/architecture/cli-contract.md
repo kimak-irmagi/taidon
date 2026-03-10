@@ -117,10 +117,12 @@ Current design direction:
 - `ls --states` stays the primary state inventory command;
 - human-readable `ls --states` output remains one row per state and does not
   hard-wrap table cells;
+- in compact human output, `CREATED` uses a relative representation, while
+  `--long` switches it to an absolute UTC timestamp with second precision;
 - on a TTY, `PREPARE_ARGS` is width-budgeted against the current terminal and
   truncated in the middle when needed;
 - `--wide` disables `PREPARE_ARGS` truncation in human output, while `--long`
-  continues to control id shortening independently;
+  expands ids and timestamps independently of `--wide`;
 - `ls --states --cache-details` adds operator-facing cache metadata for state
   rows without introducing a new top-level cache command in the MVP surface.
 
