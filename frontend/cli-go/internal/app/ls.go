@@ -54,7 +54,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 
 	quiet := fs.Bool("quiet", false, "suppress headers and explanatory text")
 	noHeader := fs.Bool("no-header", false, "do not print table header")
-	longIDs := fs.Bool("long", false, "show full ids")
+	longIDs := fs.Bool("long", false, "show full ids and absolute timestamps")
 	wide := fs.Bool("wide", false, "disable prepare args truncation in human output")
 	cacheDetails := fs.Bool("cache-details", false, "show additional cache metadata for states")
 

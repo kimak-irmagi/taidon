@@ -123,6 +123,13 @@ sqlrs
   а `--long` переключает его на абсолютный UTC timestamp с точностью до секунд;
 - в human-readable таблице состояний колонка kind использует компактный
   заголовок `KIND` и budget под существующие short sqlrs kind aliases;
+- compact human-readable таблица состояний использует межколоночный gap в один
+  символ, чтобы уменьшить pressure от глубокого дерева состояний;
+- compact human-readable таблица `jobs` использует те же правила для `KIND`,
+  `IMAGE_ID`, `PREPARE_ARGS` и timestamps, что и `states`;
+- compact human-readable таблица `tasks` сокращает префиксы kinds в `INPUT` и
+  использует более короткий заголовок `OUTPUT_ID`, но пока не получает
+  отдельную колонку `ARGS`;
 - на TTY поле `PREPARE_ARGS` получает budget относительно текущей ширины
   терминала и при необходимости усекается по середине;
 - `--wide` отключает усечение `PREPARE_ARGS` в human output, а `--long`

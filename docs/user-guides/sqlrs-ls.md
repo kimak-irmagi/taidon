@@ -199,6 +199,8 @@ In human-readable output, `CREATED` uses two display modes:
 In default human output, `PREPARE_ARGS` is rendered as a compact preview to
 keep the table readable.
 
+- The compact states table uses a **single-space** gap between columns instead
+  of the usual two-space visual padding.
 - On a TTY, `sqlrs` assigns `PREPARE_ARGS` the remaining table width after the
   fixed columns are rendered, with a minimum budget of 16 characters and a
   maximum budget of 48 characters.
@@ -260,10 +262,20 @@ Columns:
 - `STATUS` (queued / running / succeeded / failed)
 - `KIND` (human-readable header; values use short sqlrs kind aliases such as `psql` and `lb`)
 - `IMAGE_ID`
+- `PREPARE_ARGS` (normalized; compact by default in human output)
 - `PLAN_ONLY` (true / false)
 - `CREATED`
 - `STARTED`
 - `FINISHED`
+
+In human-readable output, `jobs` follow the same compact formatting rules as
+`states` for the overlapping fields:
+
+- `IMAGE_ID` uses the same compact digest formatting as `states`;
+- `PREPARE_ARGS` uses the same compact/wide behavior as `states`;
+- `CREATED`, `STARTED`, and `FINISHED` use relative forms in compact output and
+  switch to absolute UTC timestamps with second precision under `--long`;
+- compact `jobs` tables also use a one-character inter-column gap.
 
 ### Tasks table
 
@@ -273,9 +285,21 @@ Columns:
 - `JOB_ID`
 - `TYPE`
 - `STATUS` (queued / running / succeeded / failed)
-- `INPUT` (kind:id)
-- `OUTPUT_STATE_ID` (state_execute only)
+- `INPUT` (compact kind:id in human output)
+- `OUTPUT_ID` (state_execute only)
 - `CACHED` (state_execute only)
+
+For human-readable task tables:
+
+- `INPUT` uses the same id-shortening rules as the other `ls` tables;
+- in compact output, the `INPUT` kind prefixes may be shortened to one-letter
+  aliases such as `i:` for image and `s:` for state;
+- `OUTPUT_ID` is a human-readable header rename only; JSON remains
+  `output_state_id`.
+
+A task-specific `ARGS` column is **not** part of this slice. It is deferred to a
+future feature because it requires an explicit API-level summary field for
+per-task parameters or subjects.
 
 ---
 

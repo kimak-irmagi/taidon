@@ -406,8 +406,21 @@ func printInstancesTable(w io.Writer, rows []client.InstanceEntry, noHeader bool
 	_ = tw.Flush()
 }
 
-func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool) {
-	printStatesTableWithOptions(w, rows, noHeader, longIDs, false, false)
+type stateDisplayRow struct {
+	stateID           string
+	imageID           string
+	kind              string
+	prepareArgs       string
+	createdAt         string
+	size              string
+	refCount          string
+	lastUsed          string
+	useCount          string
+	minRetentionUntil string
+}
+
+var lsNow = func() time.Time {
+	return time.Now().UTC()
 }
 
 func printStatesTable(w io.Writer, rows []client.StateEntry, noHeader bool, longIDs bool) {
@@ -418,9 +431,9 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
 	if !noHeader {
 		if cacheDetails {
-			fmt.Fprintln(tw, "STATE_ID	IMAGE_ID	PREPARE_KIND	PREPARE_ARGS	CREATED	SIZE	REFCOUNT	LAST_USED	USE_COUNT	MIN_RETENTION_UNTIL")
+			fmt.Fprintln(tw, "STATE_ID	IMAGE_ID	KIND	PREPARE_ARGS	CREATED	SIZE	REFCOUNT	LAST_USED	USE_COUNT	MIN_RETENTION_UNTIL")
 		} else {
-			fmt.Fprintln(tw, "STATE_ID	IMAGE_ID	PREPARE_KIND	PREPARE_ARGS	CREATED	SIZE	REFCOUNT")
+			fmt.Fprintln(tw, "STATE_ID	IMAGE_ID	KIND	PREPARE_ARGS	CREATED	SIZE	REFCOUNT")
 		}
 	}
 
@@ -429,18 +442,6 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 		row      client.StateEntry
 		parent   *stateNode
 		children []*stateNode
-	}
-	type stateDisplayRow struct {
-		stateID           string
-		imageID           string
-		prepareKind       string
-		prepareArgs       string
-		createdAt         string
-		size              string
-		refCount          string
-		lastUsed          string
-		useCount          string
-		minRetentionUntil string
 	}
 
 	nodes := make([]*stateNode, 0, len(rows))
@@ -494,9 +495,9 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 		displayRows = append(displayRows, stateDisplayRow{
 			stateID:           stateID,
 			imageID:           formatImageID(node.row.ImageID, longIDs),
-			prepareKind:       node.row.PrepareKind,
+			kind:              node.row.PrepareKind,
 			prepareArgs:       strings.TrimSpace(node.row.PrepareArgs),
-			createdAt:         node.row.CreatedAt,
+			createdAt:         formatStateCreated(node.row.CreatedAt, longIDs),
 			size:              optionalInt64(node.row.SizeBytes),
 			refCount:          strconv.Itoa(node.row.RefCount),
 			lastUsed:          optionalString(node.row.LastUsedAt),
@@ -533,11 +534,10 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 			prepareArgs = truncateMiddle(prepareArgs, prepareBudget)
 		}
 		if cacheDetails {
-			fmt.Fprintf(tw, "%s	%s	%s	%s	%s	%s	%s	%s	%s	%s
-",
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				row.stateID,
 				row.imageID,
-				row.prepareKind,
+				row.kind,
 				prepareArgs,
 				row.createdAt,
 				row.size,
@@ -547,11 +547,10 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 				row.minRetentionUntil,
 			)
 		} else {
-			fmt.Fprintf(tw, "%s	%s	%s	%s	%s	%s	%s
-",
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				row.stateID,
 				row.imageID,
-				row.prepareKind,
+				row.kind,
 				prepareArgs,
 				row.createdAt,
 				row.size,
@@ -584,45 +583,85 @@ func statePrepareArgsBudget(w io.Writer, rows []stateDisplayRow, noHeader bool, 
 
 func stateTableFixedColumnsWidth(rows []stateDisplayRow, noHeader bool, cacheDetails bool) int {
 	widths := []int{0, 0, 0, 0, 0, 0}
+	for _, row := range rows {
+		widths[0] = maxInt(widths[0], runeLen(row.stateID))
+		widths[1] = maxInt(widths[1], runeLen(row.imageID))
+		widths[2] = maxInt(widths[2], runeLen(row.kind))
+		widths[3] = maxInt(widths[3], runeLen(row.createdAt))
+		widths[4] = maxInt(widths[4], runeLen(row.size))
+		widths[5] = maxInt(widths[5], runeLen(row.refCount))
+	}
+	if !noHeader {
+		widths[0] = maxInt(widths[0], len("STATE_ID"))
+		widths[1] = maxInt(widths[1], len("IMAGE_ID"))
+		widths[2] = maxInt(widths[2], len("KIND"))
+		widths[3] = maxInt(widths[3], len("CREATED"))
+		widths[4] = maxInt(widths[4], len("SIZE"))
+		widths[5] = maxInt(widths[5], len("REFCOUNT"))
+	}
 	if !cacheDetails {
-		for _, row := range rows {
-			widths[0] = maxInt(widths[0], runeLen(row.stateID))
-			widths[1] = maxInt(widths[1], runeLen(row.imageID))
-			widths[2] = maxInt(widths[2], runeLen(row.prepareKind))
-			widths[3] = maxInt(widths[3], runeLen(row.createdAt))
-			widths[4] = maxInt(widths[4], runeLen(row.size))
-			widths[5] = maxInt(widths[5], runeLen(row.refCount))
-		}
-		if !noHeader {
-			widths[0] = maxInt(widths[0], len("STATE_ID"))
-			widths[1] = maxInt(widths[1], len("IMAGE_ID"))
-			widths[2] = maxInt(widths[2], len("PREPARE_KIND"))
-			widths[3] = maxInt(widths[3], len("CREATED"))
-			widths[4] = maxInt(widths[4], len("SIZE"))
-			widths[5] = maxInt(widths[5], len("REFCOUNT"))
-		}
 		return sumInts(widths) + stateTableDefaultGapCount*stateTableColumnPadding
 	}
 
 	widths = append(widths, 0, 0, 0)
 	for _, row := range rows {
-		widths[0] = maxInt(widths[0], runeLen(row.stateID))
-		widths[1] = maxInt(widths[1], runeLen(row.imageID))
-		widths[2] = maxInt(widths[2], runeLen(row.prepareKind))
-		widths[3] = maxInt(widths[3], runeLen(row.createdAt))
-		widths[4] = maxInt(widths[4], runeLen(row.size))
-		widths[5] = maxInt(widths[5], runeLen(row.refCount))
 		widths[6] = maxInt(widths[6], runeLen(row.lastUsed))
 		widths[7] = maxInt(widths[7], runeLen(row.useCount))
 		widths[8] = maxInt(widths[8], runeLen(row.minRetentionUntil))
 	}
 	if !noHeader {
-		headers := []string{"STATE_ID", "IMAGE_ID", "PREPARE_KIND", "CREATED", "SIZE", "REFCOUNT", "LAST_USED", "USE_COUNT", "MIN_RETENTION_UNTIL"}
+		headers := []string{"LAST_USED", "USE_COUNT", "MIN_RETENTION_UNTIL"}
 		for i, header := range headers {
-			widths[i] = maxInt(widths[i], len(header))
+			widths[6+i] = maxInt(widths[6+i], len(header))
 		}
 	}
 	return sumInts(widths) + stateTableCacheGapCount*stateTableColumnPadding
+}
+
+func formatStateCreated(value string, long bool) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	ts, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return value
+	}
+	ts = ts.UTC()
+	if long {
+		return ts.Format(time.RFC3339)
+	}
+	return formatRelativeTime(lsNow().UTC(), ts)
+}
+
+func formatRelativeTime(now time.Time, ts time.Time) string {
+	delta := now.Sub(ts)
+	future := delta < 0
+	if future {
+		delta = -delta
+	}
+	value := 0
+	unit := "s"
+	switch {
+	case delta >= 24*time.Hour:
+		value = int(delta / (24 * time.Hour))
+		unit = "d"
+	case delta >= time.Hour:
+		value = int(delta / time.Hour)
+		unit = "h"
+	case delta >= time.Minute:
+		value = int(delta / time.Minute)
+		unit = "m"
+	default:
+		value = int(delta / time.Second)
+		if value <= 0 {
+			value = 0
+		}
+	}
+	if future {
+		return fmt.Sprintf("in %d%s", value, unit)
+	}
+	return fmt.Sprintf("%d%s ago", value, unit)
 }
 
 func clampStatePrepareArgsWidth(width int) int {

@@ -6,15 +6,61 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sqlrs/cli/internal/client"
 )
 
-func TestPrintLsUsageIncludesWide(t *testing.T) {
+func TestPrintLsUsageIncludesWideAndLongTimestampHint(t *testing.T) {
 	var buf bytes.Buffer
 	PrintLsUsage(&buf)
-	if !strings.Contains(buf.String(), "--wide") {
-		t.Fatalf("expected --wide in usage, got %q", buf.String())
+	out := buf.String()
+	if !strings.Contains(out, "--wide") {
+		t.Fatalf("expected --wide in usage, got %q", out)
+	}
+	if !strings.Contains(out, "absolute timestamps") {
+		t.Fatalf("expected --long timestamp hint in usage, got %q", out)
+	}
+}
+
+func TestPrintLsStatesTableHeaderUsesKind(t *testing.T) {
+	result := LsResult{States: &[]client.StateEntry{sampleStateEntry(longPrepareArgs())}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true}, 140)
+	firstLine := strings.Split(strings.TrimRight(out, "\n"), "\n")[0]
+	if !strings.Contains(firstLine, "KIND") {
+		t.Fatalf("expected KIND header, got %q", firstLine)
+	}
+	if strings.Contains(firstLine, "PREPARE_KIND") {
+		t.Fatalf("expected PREPARE_KIND header removed, got %q", firstLine)
+	}
+}
+
+func TestPrintLsStatesTableCreatedRelativeByDefault(t *testing.T) {
+	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
+		state := sampleStateEntry("-f prepare.sql")
+		state.CreatedAt = "2026-03-07T12:00:00Z"
+		result := LsResult{States: &[]client.StateEntry{state}}
+		var buf bytes.Buffer
+		PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+		out := buf.String()
+		if !strings.Contains(out, "3d ago") {
+			t.Fatalf("expected relative created time, got %q", out)
+		}
+	})
+}
+
+func TestPrintLsStatesTableLongShowsAbsoluteCreatedAtSeconds(t *testing.T) {
+	state := sampleStateEntry("-f prepare.sql")
+	state.CreatedAt = "2026-03-07T12:34:56.789Z"
+	result := LsResult{States: &[]client.StateEntry{state}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
+	out := buf.String()
+	if !strings.Contains(out, "2026-03-07T12:34:56Z") {
+		t.Fatalf("expected absolute second-precision created time, got %q", out)
+	}
+	if strings.Contains(out, ".789") {
+		t.Fatalf("expected fractional seconds omitted, got %q", out)
 	}
 }
 
@@ -48,16 +94,20 @@ func TestPrintLsStatesTableKeepsShortPrepareArgsOnTTY(t *testing.T) {
 }
 
 func TestPrintLsStatesTableUsesCompactBudgetWhenNotTTY(t *testing.T) {
-	result := LsResult{States: &[]client.StateEntry{sampleStateEntry(longPrepareArgs())}}
-	var buf bytes.Buffer
-	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
-	out := buf.String()
-	if !strings.Contains(out, " ... ") {
-		t.Fatalf("expected compact truncation outside tty, got %q", out)
-	}
-	if strings.Contains(out, longPrepareArgs()) {
-		t.Fatalf("expected truncated non-tty args, got %q", out)
-	}
+	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
+		state := sampleStateEntry(longPrepareArgs())
+		state.CreatedAt = "2026-03-09T12:00:00Z"
+		result := LsResult{States: &[]client.StateEntry{state}}
+		var buf bytes.Buffer
+		PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+		out := buf.String()
+		if !strings.Contains(out, " ... ") {
+			t.Fatalf("expected compact truncation outside tty, got %q", out)
+		}
+		if !strings.Contains(out, "1d ago") {
+			t.Fatalf("expected relative created time outside tty, got %q", out)
+		}
+	})
 }
 
 func TestPrintLsStatesTableKeepsSinglePhysicalLineOnNarrowTTY(t *testing.T) {
@@ -66,6 +116,21 @@ func TestPrintLsStatesTableKeepsSinglePhysicalLineOnNarrowTTY(t *testing.T) {
 	if strings.Count(out, "\n") != 1 {
 		t.Fatalf("expected single physical line plus trailing newline, got %q", out)
 	}
+}
+
+func TestPrintLsStatesTableFitsTTYWidth140WithDeepTree(t *testing.T) {
+	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
+		result := LsResult{States: buildDeepStateRows(12, longPrepareArgs())}
+		out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true}, 140)
+		for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if line == "" {
+				continue
+			}
+			if len([]rune(line)) > 140 {
+				t.Fatalf("expected line to fit width 140, got %d chars in %q", len([]rune(line)), line)
+			}
+		}
+	})
 }
 
 func TestPrintLsStatesTableWideShowsFullPrepareArgs(t *testing.T) {
@@ -82,12 +147,17 @@ func TestPrintLsStatesTableWideShowsFullPrepareArgs(t *testing.T) {
 }
 
 func TestPrintLsStatesTableLongStillTruncatesPrepareArgs(t *testing.T) {
-	result := LsResult{States: &[]client.StateEntry{sampleStateEntry(longPrepareArgs())}}
+	state := sampleStateEntry(longPrepareArgs())
+	state.CreatedAt = "2026-03-07T12:34:56.789Z"
+	result := LsResult{States: &[]client.StateEntry{state}}
 	var buf bytes.Buffer
 	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
 	out := buf.String()
 	if !strings.Contains(out, fullStateID()) {
 		t.Fatalf("expected full state id in long output, got %q", out)
+	}
+	if !strings.Contains(out, "2026-03-07T12:34:56Z") {
+		t.Fatalf("expected absolute created time in long output, got %q", out)
 	}
 	if !strings.Contains(out, " ... ") {
 		t.Fatalf("expected prepare args to remain truncated in --long output, got %q", out)
@@ -98,7 +168,9 @@ func TestPrintLsStatesTableLongStillTruncatesPrepareArgs(t *testing.T) {
 }
 
 func TestPrintLsStatesTableWideAndLongShowsFullIDsAndArgs(t *testing.T) {
-	result := LsResult{States: &[]client.StateEntry{sampleStateEntry(longPrepareArgs())}}
+	state := sampleStateEntry(longPrepareArgs())
+	state.CreatedAt = "2026-03-07T12:34:56.789Z"
+	result := LsResult{States: &[]client.StateEntry{state}}
 	var buf bytes.Buffer
 	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true, Wide: true})
 	out := buf.String()
@@ -107,6 +179,9 @@ func TestPrintLsStatesTableWideAndLongShowsFullIDsAndArgs(t *testing.T) {
 	}
 	if !strings.Contains(out, longPrepareArgs()) {
 		t.Fatalf("expected full args, got %q", out)
+	}
+	if !strings.Contains(out, "2026-03-07T12:34:56Z") {
+		t.Fatalf("expected absolute created time, got %q", out)
 	}
 }
 
@@ -168,6 +243,14 @@ func renderStatesToFakeTTY(t *testing.T, result LsResult, opts LsPrintOptions, w
 	return string(data)
 }
 
+func withLSNow(t *testing.T, now time.Time, fn func()) {
+	t.Helper()
+	old := lsNow
+	lsNow = func() time.Time { return now.UTC() }
+	defer func() { lsNow = old }()
+	fn()
+}
+
 func sampleStateEntry(args string) client.StateEntry {
 	size := int64(42)
 	return client.StateEntry{
@@ -179,6 +262,21 @@ func sampleStateEntry(args string) client.StateEntry {
 		SizeBytes:   &size,
 		RefCount:    2,
 	}
+}
+
+func buildDeepStateRows(depth int, args string) *[]client.StateEntry {
+	rows := make([]client.StateEntry, 0, depth)
+	var parent *string
+	for i := 0; i < depth; i++ {
+		id := fmt.Sprintf("%064x", i+1)
+		row := sampleStateEntry(args)
+		row.StateID = id
+		row.ParentStateID = parent
+		row.CreatedAt = "2026-03-07T12:00:00Z"
+		rows = append(rows, row)
+		parent = &rows[len(rows)-1].StateID
+	}
+	return &rows
 }
 
 func fullStateID() string {
