@@ -40,6 +40,7 @@ sqlrs ls [OPTIONS]
 --quiet          Suppress headers and explanatory text (table still printed)
 --no-header      Do not print table header (human output)
 --long           Show full ids in human output (default is 12 chars)
+--wide           Disable PREPARE_ARGS truncation in human output
 --cache-details  Show additional cache metadata for state rows
 ```
 
@@ -96,7 +97,24 @@ When `--quiet` is set and multiple sections are printed, sections are separated
 by a blank line.
 
 IDs are printed in lowercase. By default, human output shortens ids to 12
-characters. Use `--long` to print full ids.
+characters. Use `--long` to print full ids and absolute timestamps.
+
+### Human table width and wrapping
+
+Human-readable tables are rendered as **one row per object**. `sqlrs` emits
+explicit newline characters between rows and does not insert hard line wraps
+inside a table cell.
+
+When stdout is attached to a TTY, `sqlrs` uses the current terminal width to
+budget wide text columns. This sizing happens at render time only; if the user
+resizes the terminal after the command exits, previously printed output is not
+reflowed.
+
+When stdout is not a TTY (for example, when redirecting to a file), `sqlrs` does
+not try to guess the width of the eventual viewer or editor. In that case,
+default human output keeps the compact column budget, while `--wide` prints the
+full value for wide text columns so the result can be inspected with horizontal
+scrolling.
 
 ### IMAGE_ID formatting (human output)
 
@@ -165,11 +183,39 @@ Columns:
 
 - `STATE_ID`
 - `IMAGE_ID`
-- `PREPARE_KIND`
-- `PREPARE_ARGS` (short, normalized)
+- `KIND` (human-readable header; values use short sqlrs kind aliases such as `psql` and `lb`)
+- `PREPARE_ARGS` (normalized; compact by default in human output)
 - `CREATED`
 - `SIZE` (persisted snapshot size in bytes; may be empty for legacy states that were created before size tracking)
 - `REFCOUNT` (number of instances referencing this state)
+
+In human-readable output, `CREATED` uses two display modes:
+
+- default compact mode uses a relative form such as `3d ago`, `5h ago`, or
+  `12m ago`;
+- `--long` switches `CREATED` to an absolute UTC timestamp with second
+  precision (RFC3339 without fractional seconds).
+
+In default human output, `PREPARE_ARGS` is rendered as a compact preview to
+keep the table readable.
+
+- The compact states table uses a **single-space** gap between columns instead
+  of the usual two-space visual padding.
+- On a TTY, `sqlrs` assigns `PREPARE_ARGS` the remaining table width after the
+  fixed columns are rendered, with a minimum budget of 16 characters and a
+  maximum budget of 48 characters.
+- If the value does not fit, it is truncated in the middle using the form
+  `prefix ... suffix`.
+- If the terminal is still too narrow even with the minimum budget, `sqlrs`
+  keeps the row single-line and leaves any extra clipping to the terminal.
+- When stdout is not a TTY, the compact renderer uses the same 48-character
+  maximum budget without inspecting the eventual viewer width.
+
+Use `--wide` to print the full `PREPARE_ARGS` values in human output. `--wide`
+does not change id or time formatting; combine it with `--long` when full ids,
+absolute timestamps, and full `PREPARE_ARGS` are needed. JSON output always
+returns the full `prepare_args_normalized` value, the machine field `prepare_kind`, and the original absolute
+`created_at` timestamp.
 
 `SIZE` is reported from persisted state metadata, not from a live recursive disk walk performed by the CLI. This keeps `ls` fast and deterministic. When size metadata is still missing for an older state, the column is left empty.
 
@@ -181,7 +227,8 @@ Optional columns with `--cache-details`:
 
 `--cache-details` is valid only together with `--states` (or `--all`).
 It is intended for bounded-cache diagnostics rather than the default compact
-listing.
+listing. `--cache-details` can be combined with `--wide` when full `PREPARE_ARGS`
+visibility is needed in a human-readable table.
 
 #### States hierarchy (human output)
 
@@ -199,7 +246,7 @@ parent/child relationships visible (similar to `sqlrs rm --recurse` output).
 For example:
 
 ```text
-STATE_ID         IMAGE_ID             PREPARE_KIND  PREPARE_ARGS  CREATED  SIZE  REFCOUNT
+STATE_ID         IMAGE_ID             KIND          PREPARE_ARGS  CREATED  SIZE  REFCOUNT
 aaaaaaaaaaaa     postgres@7352e0c4d62b psql         ...          ...      ...   ...
 +bbbbbbbbbbbb   postgres@7352e0c4d62b psql         ...          ...      ...   ...
 `cccccccccccc   postgres@7352e0c4d62b psql         ...          ...      ...   ...
@@ -213,12 +260,20 @@ Columns:
 
 - `JOB_ID`
 - `STATUS` (queued / running / succeeded / failed)
-- `PREPARE_KIND`
+- `KIND` (human-readable header; values use short sqlrs kind aliases such as `psql` and `lb`)
 - `IMAGE_ID`
 - `PLAN_ONLY` (true / false)
 - `CREATED`
 - `STARTED`
 - `FINISHED`
+
+In human-readable output, `jobs` follow the same compact formatting rules as
+`states` for the overlapping fields:
+
+- `IMAGE_ID` uses the same compact digest formatting as `states`;
+- `CREATED`, `STARTED`, and `FINISHED` use relative forms in compact output and
+  switch to absolute UTC timestamps with second precision under `--long`;
+- compact `jobs` tables also use a one-character inter-column gap.
 
 ### Tasks table
 
@@ -228,9 +283,21 @@ Columns:
 - `JOB_ID`
 - `TYPE`
 - `STATUS` (queued / running / succeeded / failed)
-- `INPUT` (kind:id)
-- `OUTPUT_STATE_ID` (state_execute only)
+- `INPUT` (compact kind:id in human output)
+- `OUTPUT_ID` (state_execute only)
 - `CACHED` (state_execute only)
+
+For human-readable task tables:
+
+- `INPUT` uses the same id-shortening rules as the other `ls` tables;
+- in compact output, the `INPUT` kind prefixes may be shortened to one-letter
+  aliases such as `i:` for image and `s:` for state;
+- `OUTPUT_ID` is a human-readable header rename only; JSON remains
+  `output_state_id`.
+
+A task-specific `ARGS` column is **not** part of this slice. It is deferred to a
+future feature because it requires an explicit API-level summary field for
+per-task parameters or subjects.
 
 ---
 
@@ -345,6 +412,12 @@ List states with cache metadata:
 
 ```bash
 sqlrs ls --states --cache-details
+```
+
+List states with full prepare arguments in human output:
+
+```bash
+sqlrs ls --states --wide
 ```
 
 List instances derived from a specific state:

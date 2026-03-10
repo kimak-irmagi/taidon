@@ -67,6 +67,16 @@ func TestParseLsLong(t *testing.T) {
 	}
 }
 
+func TestParseLsWide(t *testing.T) {
+	opts, _, err := parseLsFlags([]string{"--wide"})
+	if err != nil {
+		t.Fatalf("parseLsFlags: %v", err)
+	}
+	if !opts.Wide {
+		t.Fatalf("expected wide flag true")
+	}
+}
+
 func TestParseLsJobsTasksAliases(t *testing.T) {
 	opts, _, err := parseLsFlags([]string{"-j", "-t"})
 	if err != nil {
