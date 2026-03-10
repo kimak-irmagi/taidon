@@ -207,6 +207,145 @@ func TestPrintLsStatesTableWithCacheDetailsWideShowsFullPrepareArgs(t *testing.T
 	}
 }
 
+func TestPrintLsJobsTableHeaderUsesKind(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true})
+	firstLine := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")[0]
+	if !strings.Contains(firstLine, "KIND") {
+		t.Fatalf("expected KIND header, got %q", firstLine)
+	}
+	if strings.Contains(firstLine, "PREPARE_KIND") {
+		t.Fatalf("expected PREPARE_KIND header removed, got %q", firstLine)
+	}
+}
+
+func TestPrintLsJobsTableUsesRelativeTimestampsByDefault(t *testing.T) {
+	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
+		job := sampleJobEntry()
+		createdAt := "2026-03-07T12:00:00Z"
+		startedAt := "2026-03-10T10:00:00Z"
+		finishedAt := "2026-03-10T11:45:00Z"
+		job.CreatedAt = &createdAt
+		job.StartedAt = &startedAt
+		job.FinishedAt = &finishedAt
+		result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+		var buf bytes.Buffer
+		PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+		out := buf.String()
+		for _, want := range []string{"3d ago", "2h ago", "15m ago"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("expected %q in output, got %q", want, out)
+			}
+		}
+	})
+}
+
+func TestPrintLsJobsTableLongShowsFullIDsAndAbsoluteTimestamps(t *testing.T) {
+	job := sampleJobEntry()
+	createdAt := "2026-03-07T12:34:56.789Z"
+	startedAt := "2026-03-07T12:35:57.654Z"
+	finishedAt := "2026-03-07T12:36:58.321Z"
+	job.CreatedAt = &createdAt
+	job.StartedAt = &startedAt
+	job.FinishedAt = &finishedAt
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
+	out := buf.String()
+	for _, want := range []string{
+		fullJobID(),
+		"postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"2026-03-07T12:34:56Z",
+		"2026-03-07T12:35:57Z",
+		"2026-03-07T12:36:58Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in output, got %q", want, out)
+		}
+	}
+	if strings.Contains(out, ".789") || strings.Contains(out, ".654") || strings.Contains(out, ".321") {
+		t.Fatalf("expected fractional seconds omitted, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableCompactsImageIDLikeStates(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, "postgres@0123456789ab") {
+		t.Fatalf("expected compact digest image id, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableUsesSingleSpaceGap(t *testing.T) {
+	createdAt := "2026-03-10T12:00:00Z"
+	startedAt := "2026-03-10T12:00:01Z"
+	finishedAt := "2026-03-10T12:00:02Z"
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{{
+		JobID:       "jobid-123456",
+		Status:      "running",
+		PrepareKind: "liquibase",
+		ImageID:     "postgres:17",
+		PlanOnly:    false,
+		CreatedAt:   &createdAt,
+		StartedAt:   &startedAt,
+		FinishedAt:  &finishedAt,
+	}}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
+	line := strings.TrimRight(buf.String(), "\n")
+	if strings.Contains(line, "  ") {
+		t.Fatalf("expected single-space column separators, got %q", line)
+	}
+}
+
+func TestPrintLsTasksTableHeaderUsesOutputID(t *testing.T) {
+	result := LsResult{Tasks: &[]client.TaskEntry{sampleTaskEntry("state")}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true})
+	firstLine := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")[0]
+	if !strings.Contains(firstLine, "OUTPUT_ID") {
+		t.Fatalf("expected OUTPUT_ID header, got %q", firstLine)
+	}
+	if strings.Contains(firstLine, "OUTPUT_STATE_ID") {
+		t.Fatalf("expected OUTPUT_STATE_ID header removed, got %q", firstLine)
+	}
+}
+
+func TestPrintLsTasksTableCompactsStateAndImageInputKinds(t *testing.T) {
+	stateTask := sampleTaskEntry("state")
+	imageTask := sampleTaskEntry("image")
+	result := LsResult{Tasks: &[]client.TaskEntry{stateTask, imageTask}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, "s:abcdef123456") {
+		t.Fatalf("expected compact state input, got %q", out)
+	}
+	if !strings.Contains(out, "i:abcdef123456") {
+		t.Fatalf("expected compact image input, got %q", out)
+	}
+	if strings.Contains(out, "state:") || strings.Contains(out, "image:") {
+		t.Fatalf("expected compact kind aliases in default output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableLongShowsFullInputAndOutputIDs(t *testing.T) {
+	task := sampleTaskEntry("state")
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
+	out := buf.String()
+	if !strings.Contains(out, "state:"+fullStateID()) {
+		t.Fatalf("expected full state input in long output, got %q", out)
+	}
+	if !strings.Contains(out, fullOutputStateID()) {
+		t.Fatalf("expected full output state id in long output, got %q", out)
+	}
+}
+
 func renderStatesToFakeTTY(t *testing.T, result LsResult, opts LsPrintOptions, width int) string {
 	t.Helper()
 	file, err := os.CreateTemp(t.TempDir(), "ls-tty-*.txt")
@@ -264,6 +403,32 @@ func sampleStateEntry(args string) client.StateEntry {
 	}
 }
 
+func sampleJobEntry() client.PrepareJobEntry {
+	return client.PrepareJobEntry{
+		JobID:       fullJobID(),
+		Status:      "running",
+		PrepareKind: "psql",
+		ImageID:     "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		PlanOnly:    false,
+	}
+}
+
+func sampleTaskEntry(kind string) client.TaskEntry {
+	cached := true
+	return client.TaskEntry{
+		TaskID: "task-12345678",
+		JobID:  fullJobID(),
+		Type:   "state_execute",
+		Status: "succeeded",
+		Input: &client.TaskInput{
+			Kind: kind,
+			ID:   fullStateID(),
+		},
+		OutputStateID: fullOutputStateID(),
+		Cached:        &cached,
+	}
+}
+
 func buildDeepStateRows(depth int, args string) *[]client.StateEntry {
 	rows := make([]client.StateEntry, 0, depth)
 	var parent *string
@@ -281,6 +446,14 @@ func buildDeepStateRows(depth int, args string) *[]client.StateEntry {
 
 func fullStateID() string {
 	return "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+}
+
+func fullJobID() string {
+	return "job-abcdef1234567890abcdef1234567890"
+}
+
+func fullOutputStateID() string {
+	return "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
 }
 
 func longPrepareArgs() string {

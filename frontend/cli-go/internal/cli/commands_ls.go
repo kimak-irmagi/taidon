@@ -714,43 +714,41 @@ func maxInt(a int, b int) int {
 	return b
 }
 
+const compactTableColumnGap = 1
+
 func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool) {
-	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
-	if !noHeader {
-		fmt.Fprintln(tw, "JOB_ID\tSTATUS\tPREPARE_KIND\tIMAGE_ID\tPLAN_ONLY\tCREATED\tSTARTED\tFINISHED")
-	}
+	headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
+	displayRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		displayRows = append(displayRows, []string{
 			formatID(row.JobID, longIDs),
 			row.Status,
 			row.PrepareKind,
 			formatImageID(row.ImageID, longIDs),
 			formatBool(row.PlanOnly),
-			optionalString(row.CreatedAt),
-			optionalString(row.StartedAt),
-			optionalString(row.FinishedAt),
-		)
+			formatOptionalTimestamp(row.CreatedAt, longIDs),
+			formatOptionalTimestamp(row.StartedAt, longIDs),
+			formatOptionalTimestamp(row.FinishedAt, longIDs),
+		})
 	}
-	_ = tw.Flush()
+	printAlignedTable(w, headers, displayRows, noHeader, compactTableColumnGap)
 }
 
 func printTasksTable(w io.Writer, rows []client.TaskEntry, noHeader bool, longIDs bool) {
-	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
-	if !noHeader {
-		fmt.Fprintln(tw, "TASK_ID\tJOB_ID\tTYPE\tSTATUS\tINPUT\tOUTPUT_STATE_ID\tCACHED")
-	}
+	headers := []string{"TASK_ID", "JOB_ID", "TYPE", "STATUS", "INPUT", "OUTPUT_ID", "CACHED"}
+	displayRows := make([][]string, 0, len(rows))
 	for _, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		displayRows = append(displayRows, []string{
 			row.TaskID,
 			formatID(row.JobID, longIDs),
 			row.Type,
 			row.Status,
-			formatTaskInput(row.Input),
+			formatLSTaskInput(row.Input, longIDs),
 			formatID(row.OutputStateID, longIDs),
 			formatCached(row.Cached),
-		)
+		})
 	}
-	_ = tw.Flush()
+	printAlignedTable(w, headers, displayRows, noHeader, compactTableColumnGap)
 }
 
 func optionalString(value *string) string {
@@ -758,6 +756,78 @@ func optionalString(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func formatOptionalTimestamp(value *string, long bool) string {
+	if value == nil {
+		return ""
+	}
+	return formatStateCreated(*value, long)
+}
+
+func formatLSTaskInput(input *client.TaskInput, longIDs bool) string {
+	if input == nil {
+		return "unknown"
+	}
+	kind := strings.TrimSpace(strings.ToLower(input.Kind))
+	if !longIDs {
+		switch kind {
+		case "state":
+			kind = "s"
+		case "image":
+			kind = "i"
+		}
+	}
+	id := formatID(input.ID, longIDs)
+	if kind == "" {
+		return id
+	}
+	if id == "" {
+		return kind
+	}
+	return kind + ":" + id
+}
+
+func printAlignedTable(w io.Writer, headers []string, rows [][]string, noHeader bool, gap int) {
+	widths := alignedTableWidths(headers, rows, noHeader)
+	if !noHeader {
+		writeAlignedRow(w, headers, widths, gap)
+	}
+	for _, row := range rows {
+		writeAlignedRow(w, row, widths, gap)
+	}
+}
+
+func alignedTableWidths(headers []string, rows [][]string, noHeader bool) []int {
+	widths := make([]int, len(headers))
+	if !noHeader {
+		for i, header := range headers {
+			widths[i] = runeLen(header)
+		}
+	}
+	for _, row := range rows {
+		for i := 0; i < len(row) && i < len(widths); i++ {
+			widths[i] = maxInt(widths[i], runeLen(row[i]))
+		}
+	}
+	return widths
+}
+
+func writeAlignedRow(w io.Writer, row []string, widths []int, gap int) {
+	for i, cell := range row {
+		if i > 0 {
+			io.WriteString(w, strings.Repeat(" ", gap))
+		}
+		io.WriteString(w, cell)
+		if i == len(row)-1 || i >= len(widths) {
+			continue
+		}
+		padding := widths[i] - runeLen(cell)
+		if padding > 0 {
+			io.WriteString(w, strings.Repeat(" ", padding))
+		}
+	}
+	io.WriteString(w, "\n")
 }
 
 func formatBool(value bool) string {
