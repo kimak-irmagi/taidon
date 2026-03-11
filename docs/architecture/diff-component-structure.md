@@ -102,21 +102,21 @@ adapter if the engine exposes a “file list for these args” helper later.
 
 ```mermaid
 flowchart TB
-  APP["internal/app\n(command dispatch)"]
-  RUN_DIFF["internal/cli\nRunDiff"]
-  RESOLVER["internal/diff\nScopeResolver"]
-  BUILDER["internal/diff\nFileListBuilder\n(psql, lb)"]
-  COMPARE["internal/diff\nComparator"]
-  RENDER["internal/diff\nRenderer\n(or cli)"]
+  APP["internal/app <br/> (диспетчер команд)"]
+  RUN_DIFF["internal/cli <br/> RunDiff"]
+  RESOLVER["internal/diff <br/> ScopeResolver"]
+  BUILDER["internal/diff <br/> FileListBuilder<br/>(psql, lb)"]
+  COMPARE["internal/diff <br/> Comparator"]
+  RENDER["internal/diff <br/> Renderer<br/>(или cli)"]
 
   APP --> RUN_DIFF
   RUN_DIFF --> RESOLVER
   RUN_DIFF --> BUILDER
   RUN_DIFF --> COMPARE
   RUN_DIFF --> RENDER
-  RESOLVER -.->|"fromContext, toContext"| BUILDER
-  BUILDER -.->|"fromList, toList"| COMPARE
-  COMPARE -.->|"DiffResult"| RENDER
+  RESOLVER -.->|fromContext, toContext| BUILDER
+  BUILDER -.->|fromList, toList| COMPARE
+  COMPARE -.->|DiffResult| RENDER
 ```
 
 ## 8. References
