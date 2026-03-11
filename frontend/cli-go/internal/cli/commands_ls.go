@@ -63,11 +63,12 @@ type LsResult struct {
 }
 
 type LsPrintOptions struct {
-	Quiet        bool
-	NoHeader     bool
-	LongIDs      bool
-	Wide         bool
-	CacheDetails bool
+	Quiet         bool
+	NoHeader      bool
+	LongIDs       bool
+	Wide          bool
+	ShowSignature bool
+	CacheDetails  bool
 }
 
 func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
@@ -351,7 +352,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Jobs")
 		}
-		printJobsTable(w, *result.Jobs, opts.NoHeader, opts.LongIDs, opts.Wide)
+		printJobsTable(w, *result.Jobs, opts.NoHeader, opts.LongIDs, opts.Wide, opts.ShowSignature)
 		sections++
 	}
 	if result.Tasks != nil {
@@ -722,14 +723,18 @@ type jobDisplayRow struct {
 	kind        string
 	imageID     string
 	prepareArgs string
+	signature   string
 	planOnly    string
 	created     string
 	started     string
 	finished    string
 }
 
-func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool, wide bool) {
+func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool, wide bool, showSignature bool) {
 	headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PREPARE_ARGS", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
+	if showSignature {
+		headers = append(headers, "SIGNATURE")
+	}
 	displayRows := make([]jobDisplayRow, 0, len(rows))
 	for _, row := range rows {
 		displayRows = append(displayRows, jobDisplayRow{
@@ -738,6 +743,7 @@ func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, l
 			kind:        row.PrepareKind,
 			imageID:     formatJobImageID(row, longIDs),
 			prepareArgs: strings.TrimSpace(row.PrepareArgsNormalized),
+			signature:   formatID(row.Signature, longIDs),
 			planOnly:    formatBool(row.PlanOnly),
 			created:     formatOptionalTimestamp(row.CreatedAt, longIDs),
 			started:     formatOptionalTimestamp(row.StartedAt, longIDs),
@@ -747,7 +753,7 @@ func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, l
 
 	prepareBudget := statePrepareArgsMaxWidth
 	if !wide {
-		prepareBudget = jobsPrepareArgsBudget(w, displayRows, noHeader)
+		prepareBudget = jobsPrepareArgsBudget(w, displayRows, noHeader, showSignature)
 	}
 
 	rowsOut := make([][]string, 0, len(displayRows))
@@ -767,6 +773,9 @@ func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, l
 			row.started,
 			row.finished,
 		})
+		if showSignature {
+			rowsOut[len(rowsOut)-1] = append(rowsOut[len(rowsOut)-1], row.signature)
+		}
 	}
 	printAlignedTable(w, headers, rowsOut, noHeader, compactTableColumnGap)
 }
@@ -871,15 +880,15 @@ func formatJobImageID(row client.PrepareJobEntry, longIDs bool) string {
 	return formatImageID(value, longIDs)
 }
 
-func jobsPrepareArgsBudget(w io.Writer, rows []jobDisplayRow, noHeader bool) int {
+func jobsPrepareArgsBudget(w io.Writer, rows []jobDisplayRow, noHeader bool, showSignature bool) int {
 	width, ok := terminalWidth(w)
 	if !ok {
 		return statePrepareArgsMaxWidth
 	}
-	return clampMinWideColumnWidth(width - jobsFixedColumnsWidth(rows, noHeader))
+	return clampMinWideColumnWidth(width - jobsFixedColumnsWidth(rows, noHeader, showSignature))
 }
 
-func jobsFixedColumnsWidth(rows []jobDisplayRow, noHeader bool) int {
+func jobsFixedColumnsWidth(rows []jobDisplayRow, noHeader bool, showSignature bool) int {
 	widths := []int{0, 0, 0, 0, 0, 0, 0, 0}
 	for _, row := range rows {
 		widths[0] = maxInt(widths[0], runeLen(row.jobID))
@@ -895,6 +904,15 @@ func jobsFixedColumnsWidth(rows []jobDisplayRow, noHeader bool) int {
 		headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
 		for i, header := range headers {
 			widths[i] = maxInt(widths[i], len(header))
+		}
+	}
+	if showSignature {
+		widths = append(widths, 0)
+		for _, row := range rows {
+			widths[8] = maxInt(widths[8], runeLen(row.signature))
+		}
+		if !noHeader {
+			widths[8] = maxInt(widths[8], len("SIGNATURE"))
 		}
 	}
 	return sumInts(widths) + len(widths)*compactTableColumnGap

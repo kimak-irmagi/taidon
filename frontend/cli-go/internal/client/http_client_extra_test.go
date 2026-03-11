@@ -124,7 +124,7 @@ func TestPrepareJobsAndTasks(t *testing.T) {
 		case "/v1/prepare-jobs":
 			jobsQuery = r.URL.Query()
 			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `[{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"postgres:17","resolved_image_id":"postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","prepare_args_normalized":"-f prepare.sql"}]`)
+			io.WriteString(w, `[{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"postgres:17","resolved_image_id":"postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","prepare_args_normalized":"-f prepare.sql","signature":"sig-job-1"}]`)
 		case "/v1/tasks":
 			tasksQuery = r.URL.Query()
 			w.Header().Set("Content-Type", "application/json")
@@ -151,7 +151,7 @@ func TestPrepareJobsAndTasks(t *testing.T) {
 	if len(jobs) != 1 || jobs[0].JobID != "job-1" {
 		t.Fatalf("unexpected jobs: %+v", jobs)
 	}
-	if jobs[0].ResolvedImageID == "" || jobs[0].PrepareArgsNormalized != "-f prepare.sql" {
+	if jobs[0].ResolvedImageID == "" || jobs[0].PrepareArgsNormalized != "-f prepare.sql" || jobs[0].Signature != "sig-job-1" {
 		t.Fatalf("expected resolved image id and prepare args, got %+v", jobs[0])
 	}
 	if jobsQuery.Get("job") != "job-1" {

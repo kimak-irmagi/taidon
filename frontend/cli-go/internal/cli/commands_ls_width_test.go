@@ -21,6 +21,9 @@ func TestPrintLsUsageIncludesWideAndLongTimestampHint(t *testing.T) {
 	if !strings.Contains(out, "absolute timestamps") {
 		t.Fatalf("expected --long timestamp hint in usage, got %q", out)
 	}
+	if !strings.Contains(out, "--signature") {
+		t.Fatalf("expected --signature in usage, got %q", out)
+	}
 }
 
 func TestPrintLsStatesTableHeaderUsesKind(t *testing.T) {
@@ -328,6 +331,49 @@ func TestPrintLsJobsTableWideShowsFullPrepareArgs(t *testing.T) {
 	}
 }
 
+func TestPrintLsJobsTableOmitsSignatureByDefault(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true})
+	out := buf.String()
+	if strings.Contains(out, "SIGNATURE") || strings.Contains(out, "sig-job-1") {
+		t.Fatalf("expected signature hidden by default, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableShowsSignatureWhenRequested(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, ShowSignature: true})
+	out := buf.String()
+	if !strings.Contains(out, "SIGNATURE") || !strings.Contains(out, "sig-job-1") {
+		t.Fatalf("expected signature column and value, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableShowsCompactAndLongSignature(t *testing.T) {
+	job := sampleJobEntry()
+	job.Signature = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+
+	var shortBuf bytes.Buffer
+	PrintLs(&shortBuf, result, LsPrintOptions{Quiet: true, NoHeader: true, ShowSignature: true})
+	shortOut := shortBuf.String()
+	if !strings.Contains(shortOut, "abcdef123456") {
+		t.Fatalf("expected compact signature, got %q", shortOut)
+	}
+	if strings.Contains(shortOut, job.Signature) {
+		t.Fatalf("expected compact rather than full signature, got %q", shortOut)
+	}
+
+	var longBuf bytes.Buffer
+	PrintLs(&longBuf, result, LsPrintOptions{Quiet: true, NoHeader: true, ShowSignature: true, LongIDs: true})
+	longOut := longBuf.String()
+	if !strings.Contains(longOut, job.Signature) {
+		t.Fatalf("expected full signature in --long, got %q", longOut)
+	}
+}
+
 func TestPrintLsJobsTableUsesSingleSpaceGap(t *testing.T) {
 	createdAt := "2026-03-10T12:00:00Z"
 	startedAt := "2026-03-10T12:00:01Z"
@@ -525,6 +571,7 @@ func sampleJobEntry() client.PrepareJobEntry {
 		ImageID:               "postgres:17",
 		ResolvedImageID:       fullImageID(),
 		PrepareArgsNormalized: longPrepareArgs(),
+		Signature:             "sig-job-1",
 		PlanOnly:              false,
 	}
 }

@@ -19,6 +19,7 @@ func TestPrepareJobsListIncludesPrepareArgsAndResolvedImageID(t *testing.T) {
 	defer cleanup()
 
 	args := "-f prepare.sql -X -v ON_ERROR_STOP=1"
+	signature := "sig-job-1"
 	reqJSON := mustMarshalPrepareRequest(t, prepare.Request{
 		PrepareKind: "psql",
 		ImageID:     "postgres:17",
@@ -32,6 +33,7 @@ func TestPrepareJobsListIncludesPrepareArgsAndResolvedImageID(t *testing.T) {
 		ImageID:               "postgres:17",
 		PlanOnly:              true,
 		PrepareArgsNormalized: strPtr(args),
+		Signature:             strPtr(signature),
 		RequestJSON:           strPtr(reqJSON),
 		CreatedAt:             "2026-03-10T00:00:00Z",
 	}); err != nil {
@@ -74,6 +76,9 @@ func TestPrepareJobsListIncludesPrepareArgsAndResolvedImageID(t *testing.T) {
 	}
 	if entries[0].PrepareArgsNormalized != args {
 		t.Fatalf("expected prepare args %q, got %+v", args, entries[0])
+	}
+	if entries[0].Signature != signature {
+		t.Fatalf("expected signature %q, got %+v", signature, entries[0])
 	}
 	if entries[0].ResolvedImageID == "" {
 		t.Fatalf("expected resolved image id, got %+v", entries[0])

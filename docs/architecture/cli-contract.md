@@ -139,6 +139,8 @@ Current design direction:
   references are available, human-readable `jobs` prefer the resolved image id,
   while `PREPARE_ARGS` behaves as a width-budgeted wide column like task
   `ARGS`;
+- diagnostic job `signature` is exposed in JSON as `signature` and is added to
+  the human-readable jobs table only with an explicit `--signature` flag;
 - compact human-readable `tasks` tables shorten `INPUT` kind prefixes, use the
   shorter header `OUTPUT_ID`, and expose an API-backed task summary column
   `ARGS`;

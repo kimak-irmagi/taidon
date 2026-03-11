@@ -24,11 +24,12 @@ type lsOptions struct {
 	FilterKind     string
 	FilterImage    string
 
-	Quiet        bool
-	NoHeader     bool
-	LongIDs      bool
-	Wide         bool
-	CacheDetails bool
+	Quiet         bool
+	NoHeader      bool
+	LongIDs       bool
+	Wide          bool
+	ShowSignature bool
+	CacheDetails  bool
 }
 
 func parseLsFlags(args []string) (lsOptions, bool, error) {
@@ -56,6 +57,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	noHeader := fs.Bool("no-header", false, "do not print table header")
 	longIDs := fs.Bool("long", false, "show full ids and absolute timestamps")
 	wide := fs.Bool("wide", false, "disable prepare args truncation in human output")
+	signature := fs.Bool("signature", false, "show diagnostic job signature in human output")
 	cacheDetails := fs.Bool("cache-details", false, "show additional cache metadata for states")
 
 	name := fs.String("name", "", "filter by name")
@@ -99,6 +101,9 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	if *cacheDetails && !opts.IncludeStates {
 		return opts, false, ExitErrorf(2, "--cache-details requires --states or --all")
 	}
+	if *signature && !opts.IncludeJobs {
+		return opts, false, ExitErrorf(2, "--signature requires --jobs or --all")
+	}
 
 	opts.FilterName = strings.TrimSpace(*name)
 	opts.FilterInstance = strings.TrimSpace(*instance)
@@ -110,6 +115,7 @@ func parseLsFlags(args []string) (lsOptions, bool, error) {
 	opts.NoHeader = *noHeader
 	opts.LongIDs = *longIDs
 	opts.Wide = *wide
+	opts.ShowSignature = *signature
 	opts.CacheDetails = *cacheDetails
 	return opts, false, nil
 }
@@ -158,11 +164,12 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	}
 
 	cli.PrintLs(w, result, cli.LsPrintOptions{
-		Quiet:        opts.Quiet,
-		NoHeader:     opts.NoHeader,
-		LongIDs:      opts.LongIDs,
-		Wide:         opts.Wide,
-		CacheDetails: opts.CacheDetails,
+		Quiet:         opts.Quiet,
+		NoHeader:      opts.NoHeader,
+		LongIDs:       opts.LongIDs,
+		Wide:          opts.Wide,
+		ShowSignature: opts.ShowSignature,
+		CacheDetails:  opts.CacheDetails,
 	})
 	return nil
 }

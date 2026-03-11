@@ -19,6 +19,23 @@ Date: 2026-03-10
   - Human-readable `ls --jobs` renders `PREPARE_ARGS` as a width-budgeted wide column in compact output and fully expands it under `--wide`.
 - Rationale: `states` and `jobs` describe the same preparation signature from different lifecycle stages. Showing only the requested image ref in `jobs` makes the table look consistent while actually representing a different semantic value than `states`.
 
+## Decision Record 4: expose job signature only as an explicit diagnostic surface
+
+- Timestamp: 2026-03-10T00:00:00Z
+- User: @evilguest
+- Agent: Codex (GPT-5)
+- Question: How should the engine-computed prepare-job signature be surfaced for diagnosing retention and drift mismatches without polluting the default `ls --jobs` table?
+- Alternatives:
+  - Keep `signature` internal and require direct DB inspection for diagnostics.
+  - Always add `SIGNATURE` to the default human-readable jobs table.
+  - Expose `signature` in JSON and add an explicit `--signature` flag for the human-readable jobs table.
+- Decision:
+  - `PrepareJobEntry` gains optional `signature`.
+  - `sqlrs --output json ls --jobs` exposes `signature` by default.
+  - Human-readable `ls --jobs` adds a `SIGNATURE` column only when `--signature` is set.
+  - `--long` does not imply `--signature`.
+- Rationale: signature is primarily an operator/debugging field. JSON exposure keeps it scriptable, while an explicit flag avoids widening the default jobs table for normal day-to-day usage.
+
 ## Decision Record 2: add an explicit task summary field instead of CLI heuristics
 
 - Timestamp: 2026-03-10T00:00:00Z

@@ -1275,6 +1275,9 @@ components:
         prepare_args_normalized:
           type: string
           description: Normalized prepare arguments when available for the job entry.
+        signature:
+          type: string
+          description: Engine-computed job signature used for retention and drift diagnostics when available.
         plan_only:
           type: boolean
           description: True when the job computes a plan only.

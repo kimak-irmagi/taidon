@@ -141,6 +141,8 @@ sqlrs
   image reference human-readable `jobs` предпочитает resolved image id, а
   `PREPARE_ARGS` ведёт себя как width-budgeted wide column по аналогии с task
   `ARGS`;
+- диагностический job `signature` доступен в JSON как `signature` и попадает в
+  human-readable таблицу `jobs` только по явному флагу `--signature`;
 - compact human-readable таблица `tasks` сокращает префиксы kinds в `INPUT` и
   использует более короткий заголовок `OUTPUT_ID`, а также получает
   API-backed колонку task summary `ARGS`;

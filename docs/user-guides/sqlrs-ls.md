@@ -217,6 +217,11 @@ absolute timestamps, and full `PREPARE_ARGS` are needed. JSON output always
 returns the full `prepare_args_normalized` value, the machine field `prepare_kind`, and the original absolute
 `created_at` timestamp.
 
+Use `--signature` to add a diagnostic `SIGNATURE` column to the human-readable
+jobs table. This flag is intended for retention/drift troubleshooting and is not
+enabled by `--long`. `--signature` is valid only together with `--jobs` (or
+`--all`).
+
 `SIZE` is reported from persisted state metadata, not from a live recursive disk walk performed by the CLI. This keeps `ls` fast and deterministic. When size metadata is still missing for an older state, the column is left empty.
 
 Optional columns with `--cache-details`:
@@ -286,6 +291,7 @@ In JSON output, `jobs` expose both:
 - `image_id` as the original requested image reference;
 - `resolved_image_id` as the resolved digest-based image reference when
   available.
+- `signature` as the engine-computed retention/drift signature when available.
 
 ### Tasks table
 

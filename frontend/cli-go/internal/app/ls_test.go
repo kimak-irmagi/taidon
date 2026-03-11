@@ -77,6 +77,30 @@ func TestParseLsWide(t *testing.T) {
 	}
 }
 
+func TestParseLsSignature(t *testing.T) {
+	opts, _, err := parseLsFlags([]string{"--jobs", "--signature"})
+	if err != nil {
+		t.Fatalf("parseLsFlags: %v", err)
+	}
+	if !opts.IncludeJobs || !opts.ShowSignature {
+		t.Fatalf("expected jobs+signature enabled, got %+v", opts)
+	}
+}
+
+func TestParseLsSignatureRequiresJobsOrAll(t *testing.T) {
+	_, _, err := parseLsFlags([]string{"--signature"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != 2 {
+		t.Fatalf("expected exit code 2, got %d", exitErr.Code)
+	}
+	if !strings.Contains(exitErr.Error(), "--jobs") || !strings.Contains(exitErr.Error(), "--all") {
+		t.Fatalf("expected jobs/all hint, got %v", exitErr)
+	}
+}
+
 func TestParseLsJobsTasksAliases(t *testing.T) {
 	opts, _, err := parseLsFlags([]string{"-j", "-t"})
 	if err != nil {

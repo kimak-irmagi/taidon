@@ -42,6 +42,7 @@ type JobEntry struct {
 	ImageID               string  `json:"image_id"`
 	ResolvedImageID       string  `json:"resolved_image_id,omitempty"`
 	PrepareArgsNormalized string  `json:"prepare_args_normalized,omitempty"`
+	Signature             string  `json:"signature,omitempty"`
 	PlanOnly              bool    `json:"plan_only,omitempty"`
 	CreatedAt             *string `json:"created_at,omitempty"`
 	StartedAt             *string `json:"started_at,omitempty"`

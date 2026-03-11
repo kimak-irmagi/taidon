@@ -319,6 +319,7 @@ func (m *PrepareService) ListJobs(jobID string) []JobEntry {
 			ImageID:               job.ImageID,
 			ResolvedImageID:       resolvedByJobID[job.JobID],
 			PrepareArgsNormalized: valueOrEmpty(job.PrepareArgsNormalized),
+			Signature:             valueOrEmpty(job.Signature),
 			PlanOnly:              job.PlanOnly,
 			CreatedAt:             strPtr(job.CreatedAt),
 			StartedAt:             job.StartedAt,
