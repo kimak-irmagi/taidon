@@ -141,19 +141,19 @@ sources:
     url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/fake-data/bank_account.csv
     out:
       path: examples/liquibase/jhipster-sample-app/config/liquibase/fake-data/bank_account.csv
-    sha256: cdbf752c2334bd5e831d00aceb4d0ae13c37ebf24277521f427fc51050c431ac
+    sha256: 61a8f0ca57a49bd40915adc27827412b3536d4ba39637b7f32493e1e5d7c9198
   liquibase-jhipster-fake-data-label:
     kind: single-file
     url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/fake-data/label.csv
     out:
       path: examples/liquibase/jhipster-sample-app/config/liquibase/fake-data/label.csv
-    sha256: 5795bd0f6df933115b44279c25379e907c102e86824ee1a84acea93b7ecabe20
+    sha256: 71f00a4aacb8fe834b736b0673be5b9902e91052ac81f9afa137c1b8b816d660
   liquibase-jhipster-fake-data-operation:
     kind: single-file
     url: https://raw.githubusercontent.com/jhipster/jhipster-sample-app/main/src/main/resources/config/liquibase/fake-data/operation.csv
     out:
       path: examples/liquibase/jhipster-sample-app/config/liquibase/fake-data/operation.csv
-    sha256: 5df71eee98ff402ec073ccd6d1c4921ecb247e957be327eba6c81dc0c9d20815
+    sha256: d15f0a243e13ca16c1027bf15b5a43ceebae6fe1e1d01c6d12e28991fcd6b0bd
   liquibase-github-action-samplechangelog-h2:
     kind: single-file
     url: https://raw.githubusercontent.com/liquibase/liquibase-github-action-example/main/example/changelogs/samplechangelog.h2.sql
