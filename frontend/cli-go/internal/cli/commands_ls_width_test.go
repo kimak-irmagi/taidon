@@ -623,6 +623,88 @@ func TestPrintLsTasksTableLeavesArgsEmptyWhenSummaryMissing(t *testing.T) {
 	}
 }
 
+func TestAlignedTableWidthsUsesHeadersAndRows(t *testing.T) {
+	headers := []string{"ID", "VALUE"}
+	rows := [][]string{{"a", "short"}, {"longer-id", "v"}}
+	widths := alignedTableWidths(headers, rows, false)
+	if len(widths) != 2 {
+		t.Fatalf("expected two widths, got %#v", widths)
+	}
+	if widths[0] != len("longer-id") || widths[1] != len("VALUE") {
+		t.Fatalf("unexpected widths: %#v", widths)
+	}
+}
+
+func TestWriteAlignedRowPadsIntermediateColumns(t *testing.T) {
+	var buf bytes.Buffer
+	writeAlignedRow(&buf, []string{"a", "bb", "ccc"}, []int{3, 2, 3}, 1)
+	if got := buf.String(); got != "a   bb ccc\n" {
+		t.Fatalf("unexpected aligned row: %q", got)
+	}
+}
+
+func TestPrintAlignedTableWritesHeaderAndRows(t *testing.T) {
+	var buf bytes.Buffer
+	printAlignedTable(&buf, []string{"ID", "VALUE"}, [][]string{{"a", "1"}, {"bb", "22"}}, false, 1)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected header plus two rows, got %q", buf.String())
+	}
+	if !strings.HasPrefix(lines[0], "ID") || !strings.Contains(lines[0], "VALUE") {
+		t.Fatalf("unexpected header row: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "a ") || !strings.Contains(lines[2], "bb") {
+		t.Fatalf("unexpected data rows: %q", buf.String())
+	}
+}
+
+func TestClampMinWideColumnWidthUsesStateMinimum(t *testing.T) {
+	if got := clampMinWideColumnWidth(1); got != statePrepareArgsMinWidth {
+		t.Fatalf("expected clamp to %d, got %d", statePrepareArgsMinWidth, got)
+	}
+	if got := clampMinWideColumnWidth(statePrepareArgsMinWidth + 5); got != statePrepareArgsMinWidth+5 {
+		t.Fatalf("expected width preserved, got %d", got)
+	}
+}
+
+func TestStateTableFixedColumnsWidthIncludesCacheHeaders(t *testing.T) {
+	rows := []stateDisplayRow{{
+		stateID:           "state-1",
+		imageID:           "postgres@0123456789ab",
+		kind:              "psql",
+		createdAt:         "3d ago",
+		size:              "42",
+		refCount:          "1",
+		lastUsed:          "2d ago",
+		useCount:          "7",
+		minRetentionUntil: "2026-03-09T12:10:00Z",
+	}}
+	got := stateTableFixedColumnsWidth(rows, false, true)
+	want := len("STATE_ID") +
+		len("postgres@0123456789ab") +
+		len("KIND") +
+		len("CREATED") +
+		len("SIZE") +
+		len("REFCOUNT") +
+		len("LAST_USED") +
+		len("USE_COUNT") +
+		len("2026-03-09T12:10:00Z") +
+		stateTableCacheGapCount*stateTableColumnPadding
+	if got != want {
+		t.Fatalf("unexpected cache width: got %d want %d", got, want)
+	}
+}
+
+func TestFormatRelativeTimeSupportsFutureAndSeconds(t *testing.T) {
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	if got := formatRelativeTime(now, now.Add(30*time.Second)); got != "in 30s" {
+		t.Fatalf("unexpected future relative time: %q", got)
+	}
+	if got := formatRelativeTime(now, now.Add(-30*time.Second)); got != "30s ago" {
+		t.Fatalf("unexpected seconds relative time: %q", got)
+	}
+}
+
 func renderStatesToFakeTTY(t *testing.T, result LsResult, opts LsPrintOptions, width int) string {
 	t.Helper()
 	file, err := os.CreateTemp(t.TempDir(), "ls-tty-*.txt")

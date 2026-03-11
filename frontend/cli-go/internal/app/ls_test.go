@@ -40,6 +40,17 @@ func TestParseLsInvalidArgs(t *testing.T) {
 	}
 }
 
+func TestParseLsUnknownFlag(t *testing.T) {
+	_, _, err := parseLsFlags([]string{"--unknown"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != 2 || !strings.Contains(exitErr.Error(), "Invalid arguments:") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestParseLsUnicodeDashHint(t *testing.T) {
 	_, _, err := parseLsFlags([]string{"—states"})
 	var exitErr *ExitError

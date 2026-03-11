@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/cli"
 )
 
 func TestRunCommandRemote(t *testing.T) {
@@ -69,5 +71,21 @@ func TestRunCommandMissingRunKind(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "missing run kind") {
 		t.Fatalf("expected missing run kind, got %v", err)
+	}
+}
+
+func TestRunWatchCannotBeCombined(t *testing.T) {
+	prev := parseArgsFn
+	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
+		return cli.GlobalOptions{}, []cli.Command{
+			{Name: "watch", Args: []string{"job-1"}},
+			{Name: "status"},
+		}, nil
+	}
+	t.Cleanup(func() { parseArgsFn = prev })
+
+	err := Run(nil)
+	if err == nil || !strings.Contains(err.Error(), "watch cannot be combined with other commands") {
+		t.Fatalf("expected watch combination error, got %v", err)
 	}
 }

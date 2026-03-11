@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sqlrs/cli/internal/client"
 )
 
 func TestRunStatusRemoteIncludesCacheSummary(t *testing.T) {
@@ -195,5 +197,41 @@ func TestPrintStatusIncludesCacheDetails(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in output, got %q", want, out)
 		}
+	}
+}
+
+func TestDetailedCacheStatusIncludesLastEviction(t *testing.T) {
+	details := detailedCacheStatus(client.CacheStatus{
+		ReserveBytes:     512,
+		HighWatermark:    0.9,
+		LowWatermark:     0.8,
+		MinStateAge:      "10m",
+		StoreTotalBytes:  8192,
+		ReclaimableBytes: 1024,
+		BlockedCount:     1,
+		LastEviction: &client.CacheEvictionSummary{
+			CompletedAt:      "2026-03-09T12:00:00Z",
+			Trigger:          "post_snapshot",
+			EvictedCount:     2,
+			FreedBytes:       256,
+			BlockedCount:     1,
+			ReclaimableBytes: 1024,
+			UsageBytesBefore: 2304,
+			UsageBytesAfter:  2048,
+			FreeBytesBefore:  5888,
+			FreeBytesAfter:   6144,
+		},
+	})
+	if details == nil || details.LastEviction == nil {
+		t.Fatalf("expected detailed cache status with last eviction, got %+v", details)
+	}
+	if details.LastEviction.Trigger != "post_snapshot" || details.LastEviction.FreeBytesAfter != 6144 {
+		t.Fatalf("unexpected last eviction details: %+v", details.LastEviction)
+	}
+}
+
+func TestFormatCacheSummaryWarningNil(t *testing.T) {
+	if got := formatCacheSummaryWarning(nil); got != "cache summary unavailable" {
+		t.Fatalf("unexpected warning: %q", got)
 	}
 }
