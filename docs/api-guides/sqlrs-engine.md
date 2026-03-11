@@ -588,6 +588,9 @@ Returns prepare jobs.
     "status": "queued",
     "prepare_kind": "string",
     "image_id": "string",
+    "resolved_image_id": "string",
+    "prepare_args_normalized": "string",
+    "signature": "string",
     "plan_only": true,
     "created_at": "2019-08-24T14:15:22Z",
     "started_at": "2019-08-24T14:15:22Z",
@@ -1937,7 +1940,11 @@ Returns task queue entries across jobs.
     "cached": true,
     "instance_mode": "ephemeral",
     "image_id": "string",
-    "resolved_image_id": "string"
+    "resolved_image_id": "string",
+    "args_summary": "string",
+    "changeset_id": "string",
+    "changeset_author": "string",
+    "changeset_path": "string"
   }
 ]
 ```
@@ -5224,6 +5231,9 @@ or
   "status": "queued",
   "prepare_kind": "string",
   "image_id": "string",
+  "resolved_image_id": "string",
+  "prepare_args_normalized": "string",
+  "signature": "string",
   "plan_only": true,
   "created_at": "2019-08-24T14:15:22Z",
   "started_at": "2019-08-24T14:15:22Z",
@@ -5239,7 +5249,10 @@ or
 |job_id|string|true|none|none|
 |status|string|true|none|none|
 |prepare_kind|string|true|none|none|
-|image_id|string|true|none|none|
+|image_id|string|true|none|Original requested image reference for the job.|
+|resolved_image_id|string|false|none|Resolved digest-based image reference when available.|
+|prepare_args_normalized|string|false|none|Normalized prepare arguments when available for the job entry.|
+|signature|string|false|none|Engine-computed job signature used for retention and drift diagnostics when available.|
 |plan_only|boolean|false|none|True when the job computes a plan only.|
 |created_at|string(date-time)|false|none|none|
 |started_at|string(date-time)|false|none|none|
@@ -5479,7 +5492,11 @@ or
   "cached": true,
   "instance_mode": "ephemeral",
   "image_id": "string",
-  "resolved_image_id": "string"
+  "resolved_image_id": "string",
+  "args_summary": "string",
+  "changeset_id": "string",
+  "changeset_author": "string",
+  "changeset_path": "string"
 }
 
 ```
@@ -5498,8 +5515,12 @@ or
 |output_state_id|string|false|none|none|
 |cached|boolean|false|none|none|
 |instance_mode|string|false|none|none|
-|image_id|string|false|none|none|
-|resolved_image_id|string|false|none|none|
+|image_id|string|false|none|Requested image reference relevant to the task, when applicable.|
+|resolved_image_id|string|false|none|Resolved digest-based image reference relevant to the task, when available.|
+|args_summary|string|false|none|Stable one-line summary for human-oriented task listings.|
+|changeset_id|string|false|none|none|
+|changeset_author|string|false|none|none|
+|changeset_path|string|false|none|none|
 
 #### Enumerated Values
 
