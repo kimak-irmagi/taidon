@@ -148,6 +148,8 @@ Current design direction:
   the same digest-aware compact formatter as `IMAGE_ID` columns;
 - on a TTY, `PREPARE_ARGS` is width-budgeted against the current terminal and
   truncated in the middle when needed;
+- when stdout is not a TTY, wide human-readable columns use a stable fallback
+  budget instead of guessing the eventual viewer width;
 - `--wide` disables truncation of wide text columns in human output (currently
   `PREPARE_ARGS` and task `ARGS`), while `--long` expands ids and timestamps
   independently of `--wide`;

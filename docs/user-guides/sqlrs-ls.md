@@ -208,8 +208,8 @@ keep the table readable.
   `prefix ... suffix`.
 - If the terminal is still too narrow even with the minimum budget, `sqlrs`
   keeps the row single-line and leaves any extra clipping to the terminal.
-- When stdout is not a TTY, the compact renderer uses the same 48-character
-  maximum budget without inspecting the eventual viewer width.
+- When stdout is not a TTY, the compact renderer uses a stable 96-character
+  fallback budget without inspecting the eventual viewer width.
 
 Use `--wide` to print the full `PREPARE_ARGS` values in human output. `--wide`
 does not change id or time formatting; combine it with `--long` when full ids,

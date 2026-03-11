@@ -566,6 +566,8 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 const (
 	statePrepareArgsMinWidth  = 16
 	statePrepareArgsMaxWidth  = 48
+	nonTTYWideColumnWidth     = 96
+	ttyWideColumnSafetyMargin = 1
 	stateTableColumnPadding   = 2
 	stateTableDefaultGapCount = 6
 	stateTableCacheGapCount   = 9
@@ -573,12 +575,12 @@ const (
 )
 
 func statePrepareArgsBudget(w io.Writer, rows []stateDisplayRow, noHeader bool, cacheDetails bool) int {
-	budget := statePrepareArgsMaxWidth
+	budget := nonTTYWideColumnWidth
 	width, ok := terminalWidth(w)
 	if !ok {
 		return budget
 	}
-	remaining := width - stateTableFixedColumnsWidth(rows, noHeader, cacheDetails)
+	remaining := width - stateTableFixedColumnsWidth(rows, noHeader, cacheDetails) - ttyWideColumnSafetyMargin
 	return clampStatePrepareArgsWidth(remaining)
 }
 
@@ -883,9 +885,9 @@ func formatJobImageID(row client.PrepareJobEntry, longIDs bool) string {
 func jobsPrepareArgsBudget(w io.Writer, rows []jobDisplayRow, noHeader bool, showSignature bool) int {
 	width, ok := terminalWidth(w)
 	if !ok {
-		return statePrepareArgsMaxWidth
+		return nonTTYWideColumnWidth
 	}
-	return clampMinWideColumnWidth(width - jobsFixedColumnsWidth(rows, noHeader, showSignature))
+	return clampMinWideColumnWidth(width - jobsFixedColumnsWidth(rows, noHeader, showSignature) - ttyWideColumnSafetyMargin)
 }
 
 func jobsFixedColumnsWidth(rows []jobDisplayRow, noHeader bool, showSignature bool) int {
@@ -921,9 +923,9 @@ func jobsFixedColumnsWidth(rows []jobDisplayRow, noHeader bool, showSignature bo
 func tasksArgsBudget(w io.Writer, rows []taskDisplayRow, noHeader bool) int {
 	width, ok := terminalWidth(w)
 	if !ok {
-		return statePrepareArgsMaxWidth
+		return nonTTYWideColumnWidth
 	}
-	return clampMinWideColumnWidth(width - tasksFixedColumnsWidth(rows, noHeader))
+	return clampMinWideColumnWidth(width - tasksFixedColumnsWidth(rows, noHeader) - ttyWideColumnSafetyMargin)
 }
 
 func tasksFixedColumnsWidth(rows []taskDisplayRow, noHeader bool) int {

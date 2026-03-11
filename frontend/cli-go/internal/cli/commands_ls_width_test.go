@@ -113,6 +113,33 @@ func TestPrintLsStatesTableUsesCompactBudgetWhenNotTTY(t *testing.T) {
 	})
 }
 
+func TestPrintLsStatesTableUses96CharFallbackBudgetWhenNotTTY(t *testing.T) {
+	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
+		fits := strings.Repeat("s", 90)
+		truncated := strings.Repeat("t", 120)
+		rows := []client.StateEntry{
+			sampleStateEntry(fits),
+			sampleStateEntry(truncated),
+		}
+		rows[0].CreatedAt = "2026-03-09T12:00:00Z"
+		rows[1].CreatedAt = "2026-03-09T12:00:00Z"
+		result := LsResult{States: &rows}
+
+		var buf bytes.Buffer
+		PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+		out := buf.String()
+		if !strings.Contains(out, fits) {
+			t.Fatalf("expected args fitting within 96 chars to remain untruncated, got %q", out)
+		}
+		if strings.Count(out, " ... ") == 0 {
+			t.Fatalf("expected longer args to remain truncated outside tty, got %q", out)
+		}
+		if strings.Contains(out, truncated) {
+			t.Fatalf("expected longer args not to fit full outside tty, got %q", out)
+		}
+	})
+}
+
 func TestPrintLsStatesTableKeepsSinglePhysicalLineOnNarrowTTY(t *testing.T) {
 	result := LsResult{States: &[]client.StateEntry{sampleStateEntry(longPrepareArgs())}}
 	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 48)
@@ -321,6 +348,27 @@ func TestPrintLsJobsTableUsesRemainingTTYWidthForPrepareArgs(t *testing.T) {
 	}
 }
 
+func TestPrintLsJobsTableUses96CharFallbackBudgetWhenNotTTY(t *testing.T) {
+	jobFits := sampleJobEntry()
+	jobFits.PrepareArgsNormalized = strings.Repeat("j", 90)
+	jobTruncated := sampleJobEntry()
+	jobTruncated.PrepareArgsNormalized = strings.Repeat("k", 120)
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{jobFits, jobTruncated}}
+
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, jobFits.PrepareArgsNormalized) {
+		t.Fatalf("expected job prepare args fitting within 96 chars to remain untruncated, got %q", out)
+	}
+	if strings.Count(out, " ... ") == 0 {
+		t.Fatalf("expected longer job prepare args to remain truncated outside tty, got %q", out)
+	}
+	if strings.Contains(out, jobTruncated.PrepareArgsNormalized) {
+		t.Fatalf("expected longer job prepare args not to fit full outside tty, got %q", out)
+	}
+}
+
 func TestPrintLsJobsTableWideShowsFullPrepareArgs(t *testing.T) {
 	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
 	var buf bytes.Buffer
@@ -328,6 +376,18 @@ func TestPrintLsJobsTableWideShowsFullPrepareArgs(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, longPrepareArgs()) {
 		t.Fatalf("expected full prepare args in wide output, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableWideShowsFullPrepareArgsWhenNotTTY(t *testing.T) {
+	job := sampleJobEntry()
+	job.PrepareArgsNormalized = strings.Repeat("w", 120)
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, job.PrepareArgsNormalized) || strings.Contains(out, " ... ") {
+		t.Fatalf("expected non-tty --wide to keep full job prepare args, got %q", out)
 	}
 }
 
@@ -348,6 +408,30 @@ func TestPrintLsJobsTableShowsSignatureWhenRequested(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "SIGNATURE") || !strings.Contains(out, "sig-job-1") {
 		t.Fatalf("expected signature column and value, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableReservesSafetyColumnOnTTYWhenShowingSignature(t *testing.T) {
+	job := sampleJobEntry()
+	job.PrepareArgsNormalized = strings.Repeat("p", 20)
+	displayRows := []jobDisplayRow{{
+		jobID:       formatID(job.JobID, false),
+		status:      job.Status,
+		kind:        job.PrepareKind,
+		imageID:     formatJobImageID(job, false),
+		prepareArgs: job.PrepareArgsNormalized,
+		signature:   formatID(job.Signature, false),
+		planOnly:    formatBool(job.PlanOnly),
+	}}
+	width := jobsFixedColumnsWidth(displayRows, true, true) + runeLen(job.PrepareArgsNormalized)
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true, ShowSignature: true}, width)
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected safety-margin truncation at terminal edge, got %q", out)
+	}
+	if strings.Contains(out, job.PrepareArgsNormalized) {
+		t.Fatalf("expected full args not to fit exactly at terminal edge, got %q", out)
 	}
 }
 
@@ -470,6 +554,27 @@ func TestPrintLsTasksTableUsesRemainingTTYWidthForArgs(t *testing.T) {
 	}
 }
 
+func TestPrintLsTasksTableUses96CharFallbackBudgetWhenNotTTY(t *testing.T) {
+	taskFits := sampleTaskEntry("state")
+	taskFits.ArgsSummary = strings.Repeat("a", 90)
+	taskTruncated := sampleTaskEntry("state")
+	taskTruncated.ArgsSummary = strings.Repeat("b", 120)
+	result := LsResult{Tasks: &[]client.TaskEntry{taskFits, taskTruncated}}
+
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, taskFits.ArgsSummary) {
+		t.Fatalf("expected task args fitting within 96 chars to remain untruncated, got %q", out)
+	}
+	if strings.Count(out, " ... ") == 0 {
+		t.Fatalf("expected longer task args to remain truncated outside tty, got %q", out)
+	}
+	if strings.Contains(out, taskTruncated.ArgsSummary) {
+		t.Fatalf("expected longer task args not to fit full outside tty, got %q", out)
+	}
+}
+
 func TestPrintLsTasksTableWideShowsFullArgsSummary(t *testing.T) {
 	task := sampleTaskEntry("state")
 	task.ArgsSummary = longPrepareArgs()
@@ -479,6 +584,18 @@ func TestPrintLsTasksTableWideShowsFullArgsSummary(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, longPrepareArgs()) {
 		t.Fatalf("expected full task args summary in wide output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableWideShowsFullArgsSummaryWhenNotTTY(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = strings.Repeat("q", 120)
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, task.ArgsSummary) || strings.Contains(out, " ... ") {
+		t.Fatalf("expected non-tty --wide to keep full task args summary, got %q", out)
 	}
 }
 
