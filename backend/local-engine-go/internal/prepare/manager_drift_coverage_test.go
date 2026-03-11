@@ -72,6 +72,73 @@ func TestHasPlanSignatureDriftCoverage(t *testing.T) {
 	}
 }
 
+func TestHasPlanSignatureDriftPsqlMatchAndMismatch(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	prepared := preparedRequest{
+		request:         Request{PrepareKind: "psql"},
+		resolvedImageID: "image-1@sha256:resolved",
+		psqlInputs:      []psqlInput{{kind: "command", value: "select 1"}},
+	}
+
+	signature, errResp := mgr.computeJobSignature(prepared)
+	if errResp != nil {
+		t.Fatalf("computeJobSignature: %+v", errResp)
+	}
+
+	drift, errResp := mgr.hasPlanSignatureDrift(prepared, queue.JobRecord{Signature: strPtr(signature)}, nil)
+	if errResp != nil {
+		t.Fatalf("hasPlanSignatureDrift match: %+v", errResp)
+	}
+	if drift {
+		t.Fatalf("expected no drift for matching psql signature")
+	}
+
+	drift, errResp = mgr.hasPlanSignatureDrift(prepared, queue.JobRecord{Signature: strPtr(signature + "-other")}, nil)
+	if errResp != nil {
+		t.Fatalf("hasPlanSignatureDrift mismatch: %+v", errResp)
+	}
+	if !drift {
+		t.Fatalf("expected drift for mismatching psql signature")
+	}
+}
+
+func TestHasPlanSignatureDriftLiquibaseMatchAndMismatch(t *testing.T) {
+	mgr := newManager(t, &fakeStore{})
+	prepared := preparedRequest{
+		request:         Request{PrepareKind: "lb"},
+		resolvedImageID: "image-1@sha256:resolved",
+	}
+	taskRecords := []queue.TaskRecord{
+		{
+			TaskID:   "execute-0",
+			Type:     "state_execute",
+			JobID:    "job-1",
+			TaskHash: strPtr("hash-1"),
+		},
+	}
+	planTasks := planTasksFromRecords(taskRecords)
+	signature, errResp := mgr.computeJobSignatureFromPlan(prepared, planTasks)
+	if errResp != nil {
+		t.Fatalf("computeJobSignatureFromPlan: %+v", errResp)
+	}
+
+	drift, errResp := mgr.hasPlanSignatureDrift(prepared, queue.JobRecord{Signature: strPtr(signature)}, taskRecords)
+	if errResp != nil {
+		t.Fatalf("hasPlanSignatureDrift lb match: %+v", errResp)
+	}
+	if drift {
+		t.Fatalf("expected no drift for matching lb signature")
+	}
+
+	drift, errResp = mgr.hasPlanSignatureDrift(prepared, queue.JobRecord{Signature: strPtr(signature + "-other")}, taskRecords)
+	if errResp != nil {
+		t.Fatalf("hasPlanSignatureDrift lb mismatch: %+v", errResp)
+	}
+	if !drift {
+		t.Fatalf("expected drift for mismatching lb signature")
+	}
+}
+
 func TestReplanTasksOnDriftReturnsEarlyForEmptyTaskRecords(t *testing.T) {
 	var coordinator jobCoordinator
 	replanned, tasks, stateID, errResp := coordinator.replanTasksOnDrift(context.Background(), "job-1", preparedRequest{}, nil)

@@ -298,17 +298,32 @@ func (m *PrepareService) ListJobs(jobID string) []JobEntry {
 	if err != nil {
 		return []JobEntry{}
 	}
+	resolvedByJobID := map[string]string{}
+	if tasks, err := m.queue.ListTasks(context.Background(), jobID); err == nil {
+		for _, task := range tasks {
+			resolved := strings.TrimSpace(valueOrEmpty(task.ResolvedImageID))
+			if resolved == "" {
+				continue
+			}
+			if _, ok := resolvedByJobID[task.JobID]; !ok {
+				resolvedByJobID[task.JobID] = resolved
+			}
+		}
+	}
 	entries := make([]JobEntry, 0, len(jobs))
 	for _, job := range jobs {
 		entry := JobEntry{
-			JobID:       job.JobID,
-			Status:      job.Status,
-			PrepareKind: job.PrepareKind,
-			ImageID:     job.ImageID,
-			PlanOnly:    job.PlanOnly,
-			CreatedAt:   strPtr(job.CreatedAt),
-			StartedAt:   job.StartedAt,
-			FinishedAt:  job.FinishedAt,
+			JobID:                 job.JobID,
+			Status:                job.Status,
+			PrepareKind:           job.PrepareKind,
+			ImageID:               job.ImageID,
+			ResolvedImageID:       resolvedByJobID[job.JobID],
+			PrepareArgsNormalized: valueOrEmpty(job.PrepareArgsNormalized),
+			Signature:             valueOrEmpty(job.Signature),
+			PlanOnly:              job.PlanOnly,
+			CreatedAt:             strPtr(job.CreatedAt),
+			StartedAt:             job.StartedAt,
+			FinishedAt:            job.FinishedAt,
 		}
 		entries = append(entries, entry)
 	}
@@ -320,9 +335,17 @@ func (m *PrepareService) ListTasks(jobID string) []TaskEntry {
 	if err != nil || len(tasks) == 0 {
 		return []TaskEntry{}
 	}
+	jobRecords, err := m.queue.ListJobs(context.Background(), jobID)
+	if err != nil {
+		jobRecords = nil
+	}
+	jobRequests := make(map[string]*Request, len(jobRecords))
+	for _, job := range jobRecords {
+		jobRequests[job.JobID] = decodeJobRequest(job)
+	}
 	entries := make([]TaskEntry, 0, len(tasks))
 	for _, task := range tasks {
-		entries = append(entries, taskEntryFromRecord(task))
+		entries = append(entries, taskEntryFromRecord(task, jobRequests[task.JobID]))
 	}
 	return entries
 }
@@ -1860,7 +1883,20 @@ func planTaskFromRecord(task queue.TaskRecord) PlanTask {
 	}
 }
 
-func taskEntryFromRecord(task queue.TaskRecord) TaskEntry {
+// decodeJobRequest reconstructs list-surface summaries from the persisted job request.
+// See docs/user-guides/sqlrs-ls.md and docs/architecture/cli-contract.md.
+func decodeJobRequest(job queue.JobRecord) *Request {
+	if job.RequestJSON == nil || strings.TrimSpace(*job.RequestJSON) == "" {
+		return nil
+	}
+	var req Request
+	if err := json.Unmarshal([]byte(*job.RequestJSON), &req); err != nil {
+		return nil
+	}
+	return &req
+}
+
+func taskEntryFromRecord(task queue.TaskRecord, req *Request) TaskEntry {
 	var input *TaskInput
 	if task.InputKind != nil && task.InputID != nil {
 		input = &TaskInput{
@@ -1877,6 +1913,7 @@ func taskEntryFromRecord(task queue.TaskRecord) TaskEntry {
 		Input:           input,
 		ImageID:         valueOrEmpty(task.ImageID),
 		ResolvedImageID: valueOrEmpty(task.ResolvedImageID),
+		ArgsSummary:     taskArgsSummary(task, req),
 		TaskHash:        valueOrEmpty(task.TaskHash),
 		OutputStateID:   valueOrEmpty(task.OutputStateID),
 		Cached:          task.Cached,
@@ -1884,6 +1921,52 @@ func taskEntryFromRecord(task queue.TaskRecord) TaskEntry {
 		ChangesetID:     valueOrEmpty(task.ChangesetID),
 		ChangesetAuthor: valueOrEmpty(task.ChangesetAuthor),
 		ChangesetPath:   valueOrEmpty(task.ChangesetPath),
+	}
+}
+
+func taskArgsSummary(task queue.TaskRecord, req *Request) string {
+	if strings.TrimSpace(task.Type) != "state_execute" {
+		return ""
+	}
+
+	if summary := liquibaseTaskArgsSummary(task); summary != "" {
+		return summary
+	}
+	return psqlTaskArgsSummary(task.TaskID, req)
+}
+
+func liquibaseTaskArgsSummary(task queue.TaskRecord) string {
+	id := strings.TrimSpace(valueOrEmpty(task.ChangesetID))
+	author := strings.TrimSpace(valueOrEmpty(task.ChangesetAuthor))
+	path := strings.TrimSpace(valueOrEmpty(task.ChangesetPath))
+	if id == "" || author == "" || path == "" {
+		return ""
+	}
+	return id + "::" + author + "::" + path
+}
+
+func psqlTaskArgsSummary(taskID string, req *Request) string {
+	if req == nil || strings.TrimSpace(strings.ToLower(req.PrepareKind)) != "psql" {
+		return ""
+	}
+	steps, err := buildPsqlSteps(req.PsqlArgs, req.Stdin)
+	if err != nil {
+		return ""
+	}
+	step, err := psqlStepForTask(steps, taskID)
+	if err != nil || len(step.inputs) == 0 {
+		return ""
+	}
+	input := step.inputs[0]
+	switch input.kind {
+	case "file":
+		return "-f " + input.value
+	case "stdin":
+		return "-f -"
+	case "command":
+		return "-c " + input.value
+	default:
+		return ""
 	}
 }
 

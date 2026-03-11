@@ -84,3 +84,39 @@ func TestRunLsStatesCacheDetailsJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestRunLsJobsJSONIncludesSignature(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `[{"job_id":"job-1","status":"succeeded","prepare_kind":"psql","image_id":"postgres:17","signature":"sig-job-1"}]`)
+	}))
+	defer server.Close()
+
+	out, err := runWithCapturedStdout(t, []string{"--mode=remote", "--endpoint", server.URL, "--output=json", "ls", "--jobs"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("decode json: %v", err)
+	}
+	jobs, ok := payload["jobs"].([]any)
+	if !ok || len(jobs) != 1 {
+		t.Fatalf("expected one job row, got %s", out)
+	}
+	job, ok := jobs[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected object row, got %#v", jobs[0])
+	}
+	if job["signature"] != "sig-job-1" {
+		t.Fatalf("expected signature in json output, got %s", out)
+	}
+}

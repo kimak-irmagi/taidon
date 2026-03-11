@@ -1268,6 +1268,16 @@ components:
           type: string
         image_id:
           type: string
+          description: Original requested image reference for the job.
+        resolved_image_id:
+          type: string
+          description: Resolved digest-based image reference when available.
+        prepare_args_normalized:
+          type: string
+          description: Normalized prepare arguments when available for the job entry.
+        signature:
+          type: string
+          description: Engine-computed job signature used for retention and drift diagnostics when available.
         plan_only:
           type: boolean
           description: True when the job computes a plan only.
@@ -1437,7 +1447,18 @@ components:
           enum: [ephemeral]
         image_id:
           type: string
+          description: Requested image reference relevant to the task, when applicable.
         resolved_image_id:
+          type: string
+          description: Resolved digest-based image reference relevant to the task, when available.
+        args_summary:
+          type: string
+          description: Stable one-line summary for human-oriented task listings.
+        changeset_id:
+          type: string
+        changeset_author:
+          type: string
+        changeset_path:
           type: string
     DeleteResult:
       type: object

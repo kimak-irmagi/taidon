@@ -21,6 +21,9 @@ func TestPrintLsUsageIncludesWideAndLongTimestampHint(t *testing.T) {
 	if !strings.Contains(out, "absolute timestamps") {
 		t.Fatalf("expected --long timestamp hint in usage, got %q", out)
 	}
+	if !strings.Contains(out, "--signature") {
+		t.Fatalf("expected --signature in usage, got %q", out)
+	}
 }
 
 func TestPrintLsStatesTableHeaderUsesKind(t *testing.T) {
@@ -106,6 +109,33 @@ func TestPrintLsStatesTableUsesCompactBudgetWhenNotTTY(t *testing.T) {
 		}
 		if !strings.Contains(out, "1d ago") {
 			t.Fatalf("expected relative created time outside tty, got %q", out)
+		}
+	})
+}
+
+func TestPrintLsStatesTableUses96CharFallbackBudgetWhenNotTTY(t *testing.T) {
+	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
+		fits := strings.Repeat("s", 90)
+		truncated := strings.Repeat("t", 120)
+		rows := []client.StateEntry{
+			sampleStateEntry(fits),
+			sampleStateEntry(truncated),
+		}
+		rows[0].CreatedAt = "2026-03-09T12:00:00Z"
+		rows[1].CreatedAt = "2026-03-09T12:00:00Z"
+		result := LsResult{States: &rows}
+
+		var buf bytes.Buffer
+		PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+		out := buf.String()
+		if !strings.Contains(out, fits) {
+			t.Fatalf("expected args fitting within 96 chars to remain untruncated, got %q", out)
+		}
+		if strings.Count(out, " ... ") == 0 {
+			t.Fatalf("expected longer args to remain truncated outside tty, got %q", out)
+		}
+		if strings.Contains(out, truncated) {
+			t.Fatalf("expected longer args not to fit full outside tty, got %q", out)
 		}
 	})
 }
@@ -218,6 +248,9 @@ func TestPrintLsJobsTableHeaderUsesKind(t *testing.T) {
 	if strings.Contains(firstLine, "PREPARE_KIND") {
 		t.Fatalf("expected PREPARE_KIND header removed, got %q", firstLine)
 	}
+	if !strings.Contains(firstLine, "PREPARE_ARGS") {
+		t.Fatalf("expected PREPARE_ARGS header, got %q", firstLine)
+	}
 }
 
 func TestPrintLsJobsTableUsesRelativeTimestampsByDefault(t *testing.T) {
@@ -279,6 +312,152 @@ func TestPrintLsJobsTableCompactsImageIDLikeStates(t *testing.T) {
 	}
 }
 
+func TestPrintLsJobsTableFallsBackToRequestedImageID(t *testing.T) {
+	job := sampleJobEntry()
+	job.ResolvedImageID = ""
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, "postgres:17") {
+		t.Fatalf("expected fallback requested image id, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableTruncatesPrepareArgsByDefault(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 100)
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected prepare args truncation, got %q", out)
+	}
+	if strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected compact prepare args preview, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableUsesRemainingTTYWidthForPrepareArgs(t *testing.T) {
+	job := sampleJobEntry()
+	job.PrepareArgsNormalized = "-f prepare.sql --set some.long.option=value --tail finish.sql"
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 140)
+	if !strings.Contains(out, job.PrepareArgsNormalized) {
+		t.Fatalf("expected prepare args to use available tty width, got %q", out)
+	}
+	if strings.Contains(out, " ... ") {
+		t.Fatalf("expected no truncation when tty width still has budget, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableUses96CharFallbackBudgetWhenNotTTY(t *testing.T) {
+	jobFits := sampleJobEntry()
+	jobFits.PrepareArgsNormalized = strings.Repeat("j", 90)
+	jobTruncated := sampleJobEntry()
+	jobTruncated.PrepareArgsNormalized = strings.Repeat("k", 120)
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{jobFits, jobTruncated}}
+
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, jobFits.PrepareArgsNormalized) {
+		t.Fatalf("expected job prepare args fitting within 96 chars to remain untruncated, got %q", out)
+	}
+	if strings.Count(out, " ... ") == 0 {
+		t.Fatalf("expected longer job prepare args to remain truncated outside tty, got %q", out)
+	}
+	if strings.Contains(out, jobTruncated.PrepareArgsNormalized) {
+		t.Fatalf("expected longer job prepare args not to fit full outside tty, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableWideShowsFullPrepareArgs(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected full prepare args in wide output, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableWideShowsFullPrepareArgsWhenNotTTY(t *testing.T) {
+	job := sampleJobEntry()
+	job.PrepareArgsNormalized = strings.Repeat("w", 120)
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, job.PrepareArgsNormalized) || strings.Contains(out, " ... ") {
+		t.Fatalf("expected non-tty --wide to keep full job prepare args, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableOmitsSignatureByDefault(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true})
+	out := buf.String()
+	if strings.Contains(out, "SIGNATURE") || strings.Contains(out, "sig-job-1") {
+		t.Fatalf("expected signature hidden by default, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableShowsSignatureWhenRequested(t *testing.T) {
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{sampleJobEntry()}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, ShowSignature: true})
+	out := buf.String()
+	if !strings.Contains(out, "SIGNATURE") || !strings.Contains(out, "sig-job-1") {
+		t.Fatalf("expected signature column and value, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableReservesSafetyColumnOnTTYWhenShowingSignature(t *testing.T) {
+	job := sampleJobEntry()
+	job.PrepareArgsNormalized = strings.Repeat("p", 20)
+	displayRows := []jobDisplayRow{{
+		jobID:       formatID(job.JobID, false),
+		status:      job.Status,
+		kind:        job.PrepareKind,
+		imageID:     formatJobImageID(job, false),
+		prepareArgs: job.PrepareArgsNormalized,
+		signature:   formatID(job.Signature, false),
+		planOnly:    formatBool(job.PlanOnly),
+	}}
+	width := jobsFixedColumnsWidth(displayRows, true, true) + runeLen(job.PrepareArgsNormalized)
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true, ShowSignature: true}, width)
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected safety-margin truncation at terminal edge, got %q", out)
+	}
+	if strings.Contains(out, job.PrepareArgsNormalized) {
+		t.Fatalf("expected full args not to fit exactly at terminal edge, got %q", out)
+	}
+}
+
+func TestPrintLsJobsTableShowsCompactAndLongSignature(t *testing.T) {
+	job := sampleJobEntry()
+	job.Signature = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	result := LsResult{Jobs: &[]client.PrepareJobEntry{job}}
+
+	var shortBuf bytes.Buffer
+	PrintLs(&shortBuf, result, LsPrintOptions{Quiet: true, NoHeader: true, ShowSignature: true})
+	shortOut := shortBuf.String()
+	if !strings.Contains(shortOut, "abcdef123456") {
+		t.Fatalf("expected compact signature, got %q", shortOut)
+	}
+	if strings.Contains(shortOut, job.Signature) {
+		t.Fatalf("expected compact rather than full signature, got %q", shortOut)
+	}
+
+	var longBuf bytes.Buffer
+	PrintLs(&longBuf, result, LsPrintOptions{Quiet: true, NoHeader: true, ShowSignature: true, LongIDs: true})
+	longOut := longBuf.String()
+	if !strings.Contains(longOut, job.Signature) {
+		t.Fatalf("expected full signature in --long, got %q", longOut)
+	}
+}
+
 func TestPrintLsJobsTableUsesSingleSpaceGap(t *testing.T) {
 	createdAt := "2026-03-10T12:00:00Z"
 	startedAt := "2026-03-10T12:00:01Z"
@@ -306,6 +485,9 @@ func TestPrintLsTasksTableHeaderUsesOutputID(t *testing.T) {
 	var buf bytes.Buffer
 	PrintLs(&buf, result, LsPrintOptions{Quiet: true})
 	firstLine := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")[0]
+	if !strings.Contains(firstLine, "ARGS") {
+		t.Fatalf("expected ARGS header, got %q", firstLine)
+	}
 	if !strings.Contains(firstLine, "OUTPUT_ID") {
 		t.Fatalf("expected OUTPUT_ID header, got %q", firstLine)
 	}
@@ -324,7 +506,7 @@ func TestPrintLsTasksTableCompactsStateAndImageInputKinds(t *testing.T) {
 	if !strings.Contains(out, "s:abcdef123456") {
 		t.Fatalf("expected compact state input, got %q", out)
 	}
-	if !strings.Contains(out, "i:abcdef123456") {
+	if !strings.Contains(out, "i:postgres@0123456789ab") {
 		t.Fatalf("expected compact image input, got %q", out)
 	}
 	if strings.Contains(out, "state:") || strings.Contains(out, "image:") {
@@ -333,16 +515,193 @@ func TestPrintLsTasksTableCompactsStateAndImageInputKinds(t *testing.T) {
 }
 
 func TestPrintLsTasksTableLongShowsFullInputAndOutputIDs(t *testing.T) {
-	task := sampleTaskEntry("state")
+	task := sampleTaskEntry("image")
 	result := LsResult{Tasks: &[]client.TaskEntry{task}}
 	var buf bytes.Buffer
 	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
 	out := buf.String()
-	if !strings.Contains(out, "state:"+fullStateID()) {
-		t.Fatalf("expected full state input in long output, got %q", out)
+	if !strings.Contains(out, "image:"+fullImageID()) {
+		t.Fatalf("expected full image input in long output, got %q", out)
 	}
 	if !strings.Contains(out, fullOutputStateID()) {
 		t.Fatalf("expected full output state id in long output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableShowsArgsSummary(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = longPrepareArgs()
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 100)
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected compact args summary truncation, got %q", out)
+	}
+	if strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected task args summary truncation, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableUsesRemainingTTYWidthForArgs(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = "-f prepare.sql --set some.long.option=value --tail finish.sql"
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 140)
+	if !strings.Contains(out, task.ArgsSummary) {
+		t.Fatalf("expected args summary to use available tty width, got %q", out)
+	}
+	if strings.Contains(out, " ... ") {
+		t.Fatalf("expected no truncation when tty width still has budget, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableUses96CharFallbackBudgetWhenNotTTY(t *testing.T) {
+	taskFits := sampleTaskEntry("state")
+	taskFits.ArgsSummary = strings.Repeat("a", 90)
+	taskTruncated := sampleTaskEntry("state")
+	taskTruncated.ArgsSummary = strings.Repeat("b", 120)
+	result := LsResult{Tasks: &[]client.TaskEntry{taskFits, taskTruncated}}
+
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, taskFits.ArgsSummary) {
+		t.Fatalf("expected task args fitting within 96 chars to remain untruncated, got %q", out)
+	}
+	if strings.Count(out, " ... ") == 0 {
+		t.Fatalf("expected longer task args to remain truncated outside tty, got %q", out)
+	}
+	if strings.Contains(out, taskTruncated.ArgsSummary) {
+		t.Fatalf("expected longer task args not to fit full outside tty, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableWideShowsFullArgsSummary(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = longPrepareArgs()
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, longPrepareArgs()) {
+		t.Fatalf("expected full task args summary in wide output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableWideShowsFullArgsSummaryWhenNotTTY(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = strings.Repeat("q", 120)
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, Wide: true})
+	out := buf.String()
+	if !strings.Contains(out, task.ArgsSummary) || strings.Contains(out, " ... ") {
+		t.Fatalf("expected non-tty --wide to keep full task args summary, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableLongStillTruncatesArgsSummary(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = longPrepareArgs()
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true, LongIDs: true})
+	out := buf.String()
+	if !strings.Contains(out, " ... ") {
+		t.Fatalf("expected task args summary to remain truncated in --long output, got %q", out)
+	}
+}
+
+func TestPrintLsTasksTableLeavesArgsEmptyWhenSummaryMissing(t *testing.T) {
+	task := sampleTaskEntry("state")
+	task.ArgsSummary = ""
+	result := LsResult{Tasks: &[]client.TaskEntry{task}}
+	var buf bytes.Buffer
+	PrintLs(&buf, result, LsPrintOptions{Quiet: true, NoHeader: true})
+	out := buf.String()
+	if !strings.Contains(out, task.Type) {
+		t.Fatalf("expected aligned row even without args summary, got %q", out)
+	}
+}
+
+func TestAlignedTableWidthsUsesHeadersAndRows(t *testing.T) {
+	headers := []string{"ID", "VALUE"}
+	rows := [][]string{{"a", "short"}, {"longer-id", "v"}}
+	widths := alignedTableWidths(headers, rows, false)
+	if len(widths) != 2 {
+		t.Fatalf("expected two widths, got %#v", widths)
+	}
+	if widths[0] != len("longer-id") || widths[1] != len("VALUE") {
+		t.Fatalf("unexpected widths: %#v", widths)
+	}
+}
+
+func TestWriteAlignedRowPadsIntermediateColumns(t *testing.T) {
+	var buf bytes.Buffer
+	writeAlignedRow(&buf, []string{"a", "bb", "ccc"}, []int{3, 2, 3}, 1)
+	if got := buf.String(); got != "a   bb ccc\n" {
+		t.Fatalf("unexpected aligned row: %q", got)
+	}
+}
+
+func TestPrintAlignedTableWritesHeaderAndRows(t *testing.T) {
+	var buf bytes.Buffer
+	printAlignedTable(&buf, []string{"ID", "VALUE"}, [][]string{{"a", "1"}, {"bb", "22"}}, false, 1)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected header plus two rows, got %q", buf.String())
+	}
+	if !strings.HasPrefix(lines[0], "ID") || !strings.Contains(lines[0], "VALUE") {
+		t.Fatalf("unexpected header row: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "a ") || !strings.Contains(lines[2], "bb") {
+		t.Fatalf("unexpected data rows: %q", buf.String())
+	}
+}
+
+func TestClampMinWideColumnWidthUsesStateMinimum(t *testing.T) {
+	if got := clampMinWideColumnWidth(1); got != statePrepareArgsMinWidth {
+		t.Fatalf("expected clamp to %d, got %d", statePrepareArgsMinWidth, got)
+	}
+	if got := clampMinWideColumnWidth(statePrepareArgsMinWidth + 5); got != statePrepareArgsMinWidth+5 {
+		t.Fatalf("expected width preserved, got %d", got)
+	}
+}
+
+func TestStateTableFixedColumnsWidthIncludesCacheHeaders(t *testing.T) {
+	rows := []stateDisplayRow{{
+		stateID:           "state-1",
+		imageID:           "postgres@0123456789ab",
+		kind:              "psql",
+		createdAt:         "3d ago",
+		size:              "42",
+		refCount:          "1",
+		lastUsed:          "2d ago",
+		useCount:          "7",
+		minRetentionUntil: "2026-03-09T12:10:00Z",
+	}}
+	got := stateTableFixedColumnsWidth(rows, false, true)
+	want := len("STATE_ID") +
+		len("postgres@0123456789ab") +
+		len("KIND") +
+		len("CREATED") +
+		len("SIZE") +
+		len("REFCOUNT") +
+		len("LAST_USED") +
+		len("USE_COUNT") +
+		len("2026-03-09T12:10:00Z") +
+		stateTableCacheGapCount*stateTableColumnPadding
+	if got != want {
+		t.Fatalf("unexpected cache width: got %d want %d", got, want)
+	}
+}
+
+func TestFormatRelativeTimeSupportsFutureAndSeconds(t *testing.T) {
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	if got := formatRelativeTime(now, now.Add(30*time.Second)); got != "in 30s" {
+		t.Fatalf("unexpected future relative time: %q", got)
+	}
+	if got := formatRelativeTime(now, now.Add(-30*time.Second)); got != "30s ago" {
+		t.Fatalf("unexpected seconds relative time: %q", got)
 	}
 }
 
@@ -405,24 +764,34 @@ func sampleStateEntry(args string) client.StateEntry {
 
 func sampleJobEntry() client.PrepareJobEntry {
 	return client.PrepareJobEntry{
-		JobID:       fullJobID(),
-		Status:      "running",
-		PrepareKind: "psql",
-		ImageID:     "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		PlanOnly:    false,
+		JobID:                 fullJobID(),
+		Status:                "running",
+		PrepareKind:           "psql",
+		ImageID:               "postgres:17",
+		ResolvedImageID:       fullImageID(),
+		PrepareArgsNormalized: longPrepareArgs(),
+		Signature:             "sig-job-1",
+		PlanOnly:              false,
 	}
 }
 
 func sampleTaskEntry(kind string) client.TaskEntry {
 	cached := true
+	inputID := fullStateID()
+	if kind == "image" {
+		inputID = fullImageID()
+	}
 	return client.TaskEntry{
-		TaskID: "task-12345678",
-		JobID:  fullJobID(),
-		Type:   "state_execute",
-		Status: "succeeded",
+		TaskID:          "task-12345678",
+		JobID:           fullJobID(),
+		Type:            "state_execute",
+		Status:          "succeeded",
+		ArgsSummary:     "-f prepare.sql",
+		ImageID:         "postgres:17",
+		ResolvedImageID: fullImageID(),
 		Input: &client.TaskInput{
 			Kind: kind,
-			ID:   fullStateID(),
+			ID:   inputID,
 		},
 		OutputStateID: fullOutputStateID(),
 		Cached:        &cached,
@@ -454,6 +823,10 @@ func fullJobID() string {
 
 func fullOutputStateID() string {
 	return "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"
+}
+
+func fullImageID() string {
+	return "postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 }
 
 func longPrepareArgs() string {

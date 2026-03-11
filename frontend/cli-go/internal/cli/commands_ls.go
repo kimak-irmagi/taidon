@@ -63,11 +63,12 @@ type LsResult struct {
 }
 
 type LsPrintOptions struct {
-	Quiet        bool
-	NoHeader     bool
-	LongIDs      bool
-	Wide         bool
-	CacheDetails bool
+	Quiet         bool
+	NoHeader      bool
+	LongIDs       bool
+	Wide          bool
+	ShowSignature bool
+	CacheDetails  bool
 }
 
 func RunLs(ctx context.Context, opts LsOptions) (LsResult, error) {
@@ -351,7 +352,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Jobs")
 		}
-		printJobsTable(w, *result.Jobs, opts.NoHeader, opts.LongIDs)
+		printJobsTable(w, *result.Jobs, opts.NoHeader, opts.LongIDs, opts.Wide, opts.ShowSignature)
 		sections++
 	}
 	if result.Tasks != nil {
@@ -361,7 +362,7 @@ func PrintLs(w io.Writer, result LsResult, opts LsPrintOptions) {
 		if !opts.Quiet {
 			fmt.Fprintln(w, "Tasks")
 		}
-		printTasksTable(w, *result.Tasks, opts.NoHeader, opts.LongIDs)
+		printTasksTable(w, *result.Tasks, opts.NoHeader, opts.LongIDs, opts.Wide)
 	}
 }
 
@@ -438,7 +439,8 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 	}
 
 	type stateNode struct {
-		key      string
+		visitKey string
+		stateKey string
 		row      client.StateEntry
 		parent   *stateNode
 		children []*stateNode
@@ -446,14 +448,20 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 
 	nodes := make([]*stateNode, 0, len(rows))
 	byID := make(map[string]*stateNode, len(rows))
-	for _, row := range rows {
-		key := strings.ToLower(strings.TrimSpace(row.StateID))
-		if key == "" {
+	for i, row := range rows {
+		stateKey := strings.ToLower(strings.TrimSpace(row.StateID))
+		if stateKey == "" {
 			continue
 		}
-		node := &stateNode{key: key, row: row}
+		node := &stateNode{
+			visitKey: fmt.Sprintf("%s#%d", stateKey, i),
+			stateKey: stateKey,
+			row:      row,
+		}
 		nodes = append(nodes, node)
-		byID[key] = node
+		if _, exists := byID[stateKey]; !exists {
+			byID[stateKey] = node
+		}
 	}
 
 	for _, node := range nodes {
@@ -461,7 +469,7 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 			continue
 		}
 		parentKey := strings.ToLower(strings.TrimSpace(*node.row.ParentStateID))
-		if parentKey == "" || parentKey == node.key {
+		if parentKey == "" || parentKey == node.stateKey {
 			continue
 		}
 		parent, ok := byID[parentKey]
@@ -483,10 +491,10 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 	visited := make(map[string]bool, len(nodes))
 	var walk func(node *stateNode, ancestorsHasNext []bool, depth int, isLast bool)
 	walk = func(node *stateNode, ancestorsHasNext []bool, depth int, isLast bool) {
-		if node == nil || visited[node.key] {
+		if node == nil || visited[node.visitKey] {
 			return
 		}
-		visited[node.key] = true
+		visited[node.visitKey] = true
 
 		stateID := formatID(node.row.StateID, longIDs)
 		if depth > 0 {
@@ -518,7 +526,7 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 		walk(root, nil, 0, true)
 	}
 	for _, node := range nodes {
-		if !visited[node.key] {
+		if !visited[node.visitKey] {
 			walk(node, nil, 0, true)
 		}
 	}
@@ -565,6 +573,8 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 const (
 	statePrepareArgsMinWidth  = 16
 	statePrepareArgsMaxWidth  = 48
+	nonTTYWideColumnWidth     = 96
+	ttyWideColumnSafetyMargin = 1
 	stateTableColumnPadding   = 2
 	stateTableDefaultGapCount = 6
 	stateTableCacheGapCount   = 9
@@ -572,12 +582,12 @@ const (
 )
 
 func statePrepareArgsBudget(w io.Writer, rows []stateDisplayRow, noHeader bool, cacheDetails bool) int {
-	budget := statePrepareArgsMaxWidth
+	budget := nonTTYWideColumnWidth
 	width, ok := terminalWidth(w)
 	if !ok {
 		return budget
 	}
-	remaining := width - stateTableFixedColumnsWidth(rows, noHeader, cacheDetails)
+	remaining := width - stateTableFixedColumnsWidth(rows, noHeader, cacheDetails) - ttyWideColumnSafetyMargin
 	return clampStatePrepareArgsWidth(remaining)
 }
 
@@ -716,39 +726,109 @@ func maxInt(a int, b int) int {
 
 const compactTableColumnGap = 1
 
-func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool) {
-	headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
-	displayRows := make([][]string, 0, len(rows))
-	for _, row := range rows {
-		displayRows = append(displayRows, []string{
-			formatID(row.JobID, longIDs),
-			row.Status,
-			row.PrepareKind,
-			formatImageID(row.ImageID, longIDs),
-			formatBool(row.PlanOnly),
-			formatOptionalTimestamp(row.CreatedAt, longIDs),
-			formatOptionalTimestamp(row.StartedAt, longIDs),
-			formatOptionalTimestamp(row.FinishedAt, longIDs),
-		})
-	}
-	printAlignedTable(w, headers, displayRows, noHeader, compactTableColumnGap)
+type jobDisplayRow struct {
+	jobID       string
+	status      string
+	kind        string
+	imageID     string
+	prepareArgs string
+	signature   string
+	planOnly    string
+	created     string
+	started     string
+	finished    string
 }
 
-func printTasksTable(w io.Writer, rows []client.TaskEntry, noHeader bool, longIDs bool) {
-	headers := []string{"TASK_ID", "JOB_ID", "TYPE", "STATUS", "INPUT", "OUTPUT_ID", "CACHED"}
-	displayRows := make([][]string, 0, len(rows))
+func printJobsTable(w io.Writer, rows []client.PrepareJobEntry, noHeader bool, longIDs bool, wide bool, showSignature bool) {
+	headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID", "PREPARE_ARGS", "PLAN_ONLY", "CREATED", "STARTED", "FINISHED"}
+	if showSignature {
+		headers = append(headers, "SIGNATURE")
+	}
+	displayRows := make([]jobDisplayRow, 0, len(rows))
 	for _, row := range rows {
-		displayRows = append(displayRows, []string{
-			row.TaskID,
-			formatID(row.JobID, longIDs),
-			row.Type,
-			row.Status,
-			formatLSTaskInput(row.Input, longIDs),
-			formatID(row.OutputStateID, longIDs),
-			formatCached(row.Cached),
+		displayRows = append(displayRows, jobDisplayRow{
+			jobID:       formatID(row.JobID, longIDs),
+			status:      row.Status,
+			kind:        row.PrepareKind,
+			imageID:     formatJobImageID(row, longIDs),
+			prepareArgs: strings.TrimSpace(row.PrepareArgsNormalized),
+			signature:   formatID(row.Signature, longIDs),
+			planOnly:    formatBool(row.PlanOnly),
+			created:     formatOptionalTimestamp(row.CreatedAt, longIDs),
+			started:     formatOptionalTimestamp(row.StartedAt, longIDs),
+			finished:    formatOptionalTimestamp(row.FinishedAt, longIDs),
 		})
 	}
-	printAlignedTable(w, headers, displayRows, noHeader, compactTableColumnGap)
+
+	rowsOut := make([][]string, 0, len(displayRows))
+	for _, row := range displayRows {
+		prepareArgs := row.prepareArgs
+		if !wide {
+			prepareArgs = truncateMiddle(prepareArgs, jobsPrepareArgsBudget(w, row, noHeader))
+		}
+		rowsOut = append(rowsOut, []string{
+			row.jobID,
+			row.status,
+			row.kind,
+			row.imageID,
+			prepareArgs,
+			row.planOnly,
+			row.created,
+			row.started,
+			row.finished,
+		})
+		if showSignature {
+			rowsOut[len(rowsOut)-1] = append(rowsOut[len(rowsOut)-1], row.signature)
+		}
+	}
+	printCompactTable(w, headers, rowsOut, noHeader, compactTableColumnGap)
+}
+
+type taskDisplayRow struct {
+	taskID   string
+	jobID    string
+	taskType string
+	status   string
+	input    string
+	args     string
+	outputID string
+	cached   string
+}
+
+func printTasksTable(w io.Writer, rows []client.TaskEntry, noHeader bool, longIDs bool, wide bool) {
+	headers := []string{"TASK_ID", "JOB_ID", "TYPE", "STATUS", "INPUT", "ARGS", "OUTPUT_ID", "CACHED"}
+	displayRows := make([]taskDisplayRow, 0, len(rows))
+	for _, row := range rows {
+		displayRows = append(displayRows, taskDisplayRow{
+			taskID:   formatID(row.TaskID, longIDs),
+			jobID:    formatID(row.JobID, longIDs),
+			taskType: row.Type,
+			status:   row.Status,
+			input:    formatLSTaskInput(row.Input, longIDs),
+			args:     strings.TrimSpace(row.ArgsSummary),
+			outputID: formatID(row.OutputStateID, longIDs),
+			cached:   formatCached(row.Cached),
+		})
+	}
+
+	rowsOut := make([][]string, 0, len(displayRows))
+	for _, row := range displayRows {
+		args := row.args
+		if !wide {
+			args = truncateMiddle(args, tasksArgsBudget(w, row, noHeader))
+		}
+		rowsOut = append(rowsOut, []string{
+			row.taskID,
+			row.jobID,
+			row.taskType,
+			row.status,
+			row.input,
+			args,
+			row.outputID,
+			row.cached,
+		})
+	}
+	printCompactTable(w, headers, rowsOut, noHeader, compactTableColumnGap)
 }
 
 func optionalString(value *string) string {
@@ -779,6 +859,9 @@ func formatLSTaskInput(input *client.TaskInput, longIDs bool) string {
 		}
 	}
 	id := formatID(input.ID, longIDs)
+	if strings.EqualFold(strings.TrimSpace(input.Kind), "image") {
+		id = formatImageID(input.ID, longIDs)
+	}
 	if kind == "" {
 		return id
 	}
@@ -788,6 +871,72 @@ func formatLSTaskInput(input *client.TaskInput, longIDs bool) string {
 	return kind + ":" + id
 }
 
+func formatJobImageID(row client.PrepareJobEntry, longIDs bool) string {
+	value := strings.TrimSpace(row.ResolvedImageID)
+	if value == "" {
+		value = row.ImageID
+	}
+	return formatImageID(value, longIDs)
+}
+
+func jobsPrepareArgsBudget(w io.Writer, row jobDisplayRow, noHeader bool) int {
+	width, ok := terminalWidth(w)
+	if !ok {
+		return nonTTYWideColumnWidth
+	}
+	return clampMinWideColumnWidth(width - jobsFixedColumnsWidth([]jobDisplayRow{row}, noHeader, false) - ttyWideColumnSafetyMargin)
+}
+
+func jobsFixedColumnsWidth(rows []jobDisplayRow, noHeader bool, showSignature bool) int {
+	widths := []int{0, 0, 0, 0}
+	for _, row := range rows {
+		widths[0] = maxInt(widths[0], runeLen(row.jobID))
+		widths[1] = maxInt(widths[1], runeLen(row.status))
+		widths[2] = maxInt(widths[2], runeLen(row.kind))
+		widths[3] = maxInt(widths[3], runeLen(row.imageID))
+	}
+	if !noHeader {
+		headers := []string{"JOB_ID", "STATUS", "KIND", "IMAGE_ID"}
+		for i, header := range headers {
+			widths[i] = maxInt(widths[i], len(header))
+		}
+	}
+	return sumInts(widths) + len(widths)*compactTableColumnGap
+}
+
+func tasksArgsBudget(w io.Writer, row taskDisplayRow, noHeader bool) int {
+	width, ok := terminalWidth(w)
+	if !ok {
+		return nonTTYWideColumnWidth
+	}
+	return clampMinWideColumnWidth(width - tasksFixedColumnsWidth([]taskDisplayRow{row}, noHeader) - ttyWideColumnSafetyMargin)
+}
+
+func tasksFixedColumnsWidth(rows []taskDisplayRow, noHeader bool) int {
+	widths := []int{0, 0, 0, 0, 0}
+	for _, row := range rows {
+		widths[0] = maxInt(widths[0], runeLen(row.taskID))
+		widths[1] = maxInt(widths[1], runeLen(row.jobID))
+		widths[2] = maxInt(widths[2], runeLen(row.taskType))
+		widths[3] = maxInt(widths[3], runeLen(row.status))
+		widths[4] = maxInt(widths[4], runeLen(row.input))
+	}
+	if !noHeader {
+		headers := []string{"TASK_ID", "JOB_ID", "TYPE", "STATUS", "INPUT"}
+		for i, header := range headers {
+			widths[i] = maxInt(widths[i], len(header))
+		}
+	}
+	return sumInts(widths) + len(widths)*compactTableColumnGap
+}
+
+func clampMinWideColumnWidth(width int) int {
+	if width < statePrepareArgsMinWidth {
+		return statePrepareArgsMinWidth
+	}
+	return width
+}
+
 func printAlignedTable(w io.Writer, headers []string, rows [][]string, noHeader bool, gap int) {
 	widths := alignedTableWidths(headers, rows, noHeader)
 	if !noHeader {
@@ -795,6 +944,15 @@ func printAlignedTable(w io.Writer, headers []string, rows [][]string, noHeader 
 	}
 	for _, row := range rows {
 		writeAlignedRow(w, row, widths, gap)
+	}
+}
+
+func printCompactTable(w io.Writer, headers []string, rows [][]string, noHeader bool, gap int) {
+	if !noHeader {
+		writeCompactRow(w, headers, gap, false)
+	}
+	for _, row := range rows {
+		writeCompactRow(w, row, gap, true)
 	}
 }
 
@@ -826,6 +984,21 @@ func writeAlignedRow(w io.Writer, row []string, widths []int, gap int) {
 		if padding > 0 {
 			io.WriteString(w, strings.Repeat(" ", padding))
 		}
+	}
+	io.WriteString(w, "\n")
+}
+
+func writeCompactRow(w io.Writer, row []string, gap int, skipEmpty bool) {
+	wroteCell := false
+	for _, cell := range row {
+		if skipEmpty && cell == "" {
+			continue
+		}
+		if wroteCell {
+			io.WriteString(w, strings.Repeat(" ", gap))
+		}
+		io.WriteString(w, cell)
+		wroteCell = true
 	}
 	io.WriteString(w, "\n")
 }

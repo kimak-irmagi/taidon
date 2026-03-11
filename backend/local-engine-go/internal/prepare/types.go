@@ -36,14 +36,17 @@ type Status struct {
 }
 
 type JobEntry struct {
-	JobID       string  `json:"job_id"`
-	Status      string  `json:"status"`
-	PrepareKind string  `json:"prepare_kind"`
-	ImageID     string  `json:"image_id"`
-	PlanOnly    bool    `json:"plan_only,omitempty"`
-	CreatedAt   *string `json:"created_at,omitempty"`
-	StartedAt   *string `json:"started_at,omitempty"`
-	FinishedAt  *string `json:"finished_at,omitempty"`
+	JobID                 string  `json:"job_id"`
+	Status                string  `json:"status"`
+	PrepareKind           string  `json:"prepare_kind"`
+	ImageID               string  `json:"image_id"`
+	ResolvedImageID       string  `json:"resolved_image_id,omitempty"`
+	PrepareArgsNormalized string  `json:"prepare_args_normalized,omitempty"`
+	Signature             string  `json:"signature,omitempty"`
+	PlanOnly              bool    `json:"plan_only,omitempty"`
+	CreatedAt             *string `json:"created_at,omitempty"`
+	StartedAt             *string `json:"started_at,omitempty"`
+	FinishedAt            *string `json:"finished_at,omitempty"`
 }
 
 type Event struct {
@@ -95,6 +98,7 @@ type TaskEntry struct {
 	Input           *TaskInput `json:"input,omitempty"`
 	ImageID         string     `json:"image_id,omitempty"`
 	ResolvedImageID string     `json:"resolved_image_id,omitempty"`
+	ArgsSummary     string     `json:"args_summary,omitempty"`
 	TaskHash        string     `json:"task_hash,omitempty"`
 	OutputStateID   string     `json:"output_state_id,omitempty"`
 	Cached          *bool      `json:"cached,omitempty"`

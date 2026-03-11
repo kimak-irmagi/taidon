@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,5 +124,71 @@ func TestRunLsWritesHuman(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "Names") || !strings.Contains(out, "dev") {
 		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestRunLsJobsHumanForwardsSignatureWideLongAndQuietFlags(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"job_id":"job-abcdef1234567890abcdef1234567890","status":"succeeded","prepare_kind":"psql","image_id":"postgres:17","resolved_image_id":"postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","prepare_args_normalized":"-f /workspace/sql/prepare.sql -X -v ON_ERROR_STOP=1","signature":"sig-job-1","created_at":"2026-03-07T12:34:56.789Z","started_at":"2026-03-07T12:35:57.654Z","finished_at":"2026-03-07T12:36:58.321Z"}]`))
+	}))
+	defer server.Close()
+
+	runOpts := cli.LsOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}
+
+	var buf bytes.Buffer
+	if err := runLs(&buf, runOpts, []string{"--jobs", "--signature", "--wide", "--long", "--no-header", "--quiet"}, "human"); err != nil {
+		t.Fatalf("runLs: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		"job-abcdef1234567890abcdef1234567890",
+		"postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"-f /workspace/sql/prepare.sql -X -v ON_ERROR_STOP=1",
+		"sig-job-1",
+		"2026-03-07T12:34:56Z",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in output, got %q", want, out)
+		}
+	}
+	if strings.Contains(out, "Jobs\n") || strings.Contains(out, "JOB_ID") {
+		t.Fatalf("expected quiet no-header output, got %q", out)
+	}
+}
+
+func TestRunLsReturnsUnhandledRunError(t *testing.T) {
+	runOpts := cli.LsOptions{
+		Mode:     "remote",
+		Endpoint: "http://127.0.0.1:1",
+		Timeout:  time.Second,
+	}
+	err := runLs(&bytes.Buffer{}, runOpts, []string{"--jobs"}, "human")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	var exitErr *ExitError
+	if errors.As(err, &exitErr) {
+		t.Fatalf("expected raw error, got ExitError %v", err)
+	}
+}
+
+func TestRunLsReturnsParseError(t *testing.T) {
+	runOpts := cli.LsOptions{}
+	err := runLs(&bytes.Buffer{}, runOpts, []string{"--unknown"}, "human")
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.Code != 2 {
+		t.Fatalf("expected exit code 2, got %d", exitErr.Code)
 	}
 }

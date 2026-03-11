@@ -124,11 +124,11 @@ func TestPrepareJobsAndTasks(t *testing.T) {
 		case "/v1/prepare-jobs":
 			jobsQuery = r.URL.Query()
 			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `[{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"img"}]`)
+			io.WriteString(w, `[{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"postgres:17","resolved_image_id":"postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","prepare_args_normalized":"-f prepare.sql","signature":"sig-job-1"}]`)
 		case "/v1/tasks":
 			tasksQuery = r.URL.Query()
 			w.Header().Set("Content-Type", "application/json")
-			io.WriteString(w, `[{"task_id":"task-1","job_id":"job-1","type":"psql","status":"running"}]`)
+			io.WriteString(w, `[{"task_id":"task-1","job_id":"job-1","type":"state_execute","status":"running","image_id":"postgres:17","resolved_image_id":"postgres@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","args_summary":"-c select 1","changeset_id":"1","changeset_author":"dev","changeset_path":"config/liquibase/master.xml"}]`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -151,6 +151,9 @@ func TestPrepareJobsAndTasks(t *testing.T) {
 	if len(jobs) != 1 || jobs[0].JobID != "job-1" {
 		t.Fatalf("unexpected jobs: %+v", jobs)
 	}
+	if jobs[0].ResolvedImageID == "" || jobs[0].PrepareArgsNormalized != "-f prepare.sql" || jobs[0].Signature != "sig-job-1" {
+		t.Fatalf("expected resolved image id and prepare args, got %+v", jobs[0])
+	}
 	if jobsQuery.Get("job") != "job-1" {
 		t.Fatalf("unexpected jobs query: %+v", jobsQuery)
 	}
@@ -161,6 +164,9 @@ func TestPrepareJobsAndTasks(t *testing.T) {
 	}
 	if len(tasks) != 1 || tasks[0].TaskID != "task-1" {
 		t.Fatalf("unexpected tasks: %+v", tasks)
+	}
+	if tasks[0].ArgsSummary != "-c select 1" || tasks[0].ChangesetID != "1" || tasks[0].ResolvedImageID == "" {
+		t.Fatalf("expected decoded task extras, got %+v", tasks[0])
 	}
 	if tasksQuery.Get("job") != "job-1" {
 		t.Fatalf("unexpected tasks query: %+v", tasksQuery)

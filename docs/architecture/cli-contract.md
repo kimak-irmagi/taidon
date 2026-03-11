@@ -134,15 +134,25 @@ Current design direction:
   and budgets for the existing short sqlrs kind aliases;
 - compact human-readable state tables use a one-character inter-column gap to
   reduce width pressure from deep state trees;
-- compact human-readable `jobs` tables follow the same `KIND`, `IMAGE_ID`,
-  and timestamp rules as `states`;
-- compact human-readable `tasks` tables shorten `INPUT` kind prefixes and use
-  the shorter header `OUTPUT_ID`, but do not yet expose a task-specific `ARGS`
-  column;
+- compact human-readable `jobs` tables follow the same `KIND`, `IMAGE_ID`, and
+  timestamp rules as `states`; when both requested and resolved image
+  references are available, human-readable `jobs` prefer the resolved image id,
+  while `PREPARE_ARGS` behaves as a width-budgeted wide column like task
+  `ARGS`;
+- diagnostic job `signature` is exposed in JSON as `signature` and is added to
+  the human-readable jobs table only with an explicit `--signature` flag;
+- compact human-readable `tasks` tables shorten `INPUT` kind prefixes, use the
+  shorter header `OUTPUT_ID`, and expose an API-backed task summary column
+  `ARGS`;
+- for task `INPUT`, state ids use regular id shortening, while image inputs use
+  the same digest-aware compact formatter as `IMAGE_ID` columns;
 - on a TTY, `PREPARE_ARGS` is width-budgeted against the current terminal and
   truncated in the middle when needed;
-- `--wide` disables `PREPARE_ARGS` truncation in human output, while `--long`
-  expands ids and timestamps independently of `--wide`;
+- when stdout is not a TTY, wide human-readable columns use a stable fallback
+  budget instead of guessing the eventual viewer width;
+- `--wide` disables truncation of wide text columns in human output (currently
+  `PREPARE_ARGS` and task `ARGS`), while `--long` expands ids and timestamps
+  independently of `--wide`;
 - `ls --states --cache-details` adds operator-facing cache metadata for state
   rows without introducing a new top-level cache command in the MVP surface.
 

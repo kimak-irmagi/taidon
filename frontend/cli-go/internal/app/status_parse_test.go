@@ -53,6 +53,23 @@ func TestParseStatusFlagsInvalidFlag(t *testing.T) {
 	}
 }
 
+func TestParseStatusFlagsRejectsArguments(t *testing.T) {
+	_, _, err := parseStatusFlags([]string{"extra"})
+	if err == nil {
+		t.Fatalf("expected positional argument error")
+	}
+	if !strings.Contains(err.Error(), "status does not accept arguments") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseStatusFlagsUnicodeDashHint(t *testing.T) {
+	_, _, err := parseStatusFlags([]string{"—cache"})
+	if err == nil || !strings.Contains(err.Error(), "Use ASCII '-' instead") {
+		t.Fatalf("expected unicode dash hint, got %v", err)
+	}
+}
+
 func TestRunStatusHelp(t *testing.T) {
 	var out strings.Builder
 	if err := runStatus(&out, cli.StatusOptions{}, t.TempDir(), "text", []string{"--help"}); err != nil {

@@ -23,7 +23,8 @@ func PrintLsUsage(w io.Writer) {
 	io.WriteString(w, "  --quiet           Suppress section titles\n")
 	io.WriteString(w, "  --no-header       Suppress table header\n")
 	io.WriteString(w, "  --long            Show full ids and absolute timestamps\n")
-	io.WriteString(w, "  --wide            Disable PREPARE_ARGS truncation\n")
+	io.WriteString(w, "  --wide            Disable PREPARE_ARGS and ARGS truncation\n")
+	io.WriteString(w, "  --signature       Show diagnostic job signature for jobs\n")
 	io.WriteString(w, "  --cache-details   Show additional cache metadata for state rows\n")
 	io.WriteString(w, "  -h, --help        Show help\n")
 }

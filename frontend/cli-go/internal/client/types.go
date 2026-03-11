@@ -121,14 +121,17 @@ type PrepareJobStatus struct {
 }
 
 type PrepareJobEntry struct {
-	JobID       string  `json:"job_id"`
-	Status      string  `json:"status"`
-	PrepareKind string  `json:"prepare_kind"`
-	ImageID     string  `json:"image_id"`
-	PlanOnly    bool    `json:"plan_only,omitempty"`
-	CreatedAt   *string `json:"created_at,omitempty"`
-	StartedAt   *string `json:"started_at,omitempty"`
-	FinishedAt  *string `json:"finished_at,omitempty"`
+	JobID                 string  `json:"job_id"`
+	Status                string  `json:"status"`
+	PrepareKind           string  `json:"prepare_kind"`
+	ImageID               string  `json:"image_id"`
+	ResolvedImageID       string  `json:"resolved_image_id,omitempty"`
+	PrepareArgsNormalized string  `json:"prepare_args_normalized,omitempty"`
+	Signature             string  `json:"signature,omitempty"`
+	PlanOnly              bool    `json:"plan_only,omitempty"`
+	CreatedAt             *string `json:"created_at,omitempty"`
+	StartedAt             *string `json:"started_at,omitempty"`
+	FinishedAt            *string `json:"finished_at,omitempty"`
 }
 
 type PrepareJobEvent struct {
@@ -190,16 +193,22 @@ type PlanTask struct {
 }
 
 type TaskEntry struct {
-	TaskID        string     `json:"task_id"`
-	JobID         string     `json:"job_id"`
-	Type          string     `json:"type"`
-	Status        string     `json:"status"`
-	PlannerKind   string     `json:"planner_kind,omitempty"`
-	Input         *TaskInput `json:"input,omitempty"`
-	TaskHash      string     `json:"task_hash,omitempty"`
-	OutputStateID string     `json:"output_state_id,omitempty"`
-	Cached        *bool      `json:"cached,omitempty"`
-	InstanceMode  string     `json:"instance_mode,omitempty"`
+	TaskID          string     `json:"task_id"`
+	JobID           string     `json:"job_id"`
+	Type            string     `json:"type"`
+	Status          string     `json:"status"`
+	PlannerKind     string     `json:"planner_kind,omitempty"`
+	Input           *TaskInput `json:"input,omitempty"`
+	ImageID         string     `json:"image_id,omitempty"`
+	ResolvedImageID string     `json:"resolved_image_id,omitempty"`
+	ArgsSummary     string     `json:"args_summary,omitempty"`
+	TaskHash        string     `json:"task_hash,omitempty"`
+	OutputStateID   string     `json:"output_state_id,omitempty"`
+	Cached          *bool      `json:"cached,omitempty"`
+	InstanceMode    string     `json:"instance_mode,omitempty"`
+	ChangesetID     string     `json:"changeset_id,omitempty"`
+	ChangesetAuthor string     `json:"changeset_author,omitempty"`
+	ChangesetPath   string     `json:"changeset_path,omitempty"`
 }
 
 type ErrorResponse struct {

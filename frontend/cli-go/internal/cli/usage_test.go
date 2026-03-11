@@ -27,6 +27,7 @@ func TestPrintCommandUsage(t *testing.T) {
 		{name: "watch", fn: func(b *bytes.Buffer) { PrintWatchUsage(b) }},
 		{name: "config", fn: func(b *bytes.Buffer) { PrintConfigUsage(b) }},
 		{name: "rm", fn: func(b *bytes.Buffer) { PrintRmUsage(b) }},
+		{name: "status", fn: func(b *bytes.Buffer) { PrintStatusUsage(b) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
