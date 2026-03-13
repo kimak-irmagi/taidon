@@ -33,6 +33,8 @@ Entry points for Taidon architecture and service design.
   monitoring flow for prepare jobs.
 - [`prepare-job-events-component-structure.md`][pjecs] -
   component structure for prepare events streaming and watch controls.
+- [`diff-component-structure.md`](diff-component-structure.md) - component
+  structure and call flow for `sqlrs diff` (after CLI contract).
 - [`prepare-manager-refactor.md`](prepare-manager-refactor.md) - prepare manager
   split into coordinator/executor/snapshot roles.
 - [`local-engine-cli-maintainability-refactor.md`][lecmr] -

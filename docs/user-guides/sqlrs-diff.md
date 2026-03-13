@@ -284,3 +284,6 @@ it compares the sqlrs-relevant file sets and their contents. Compatibility with
 the main CLI (syntax, global `-v`, `--output`) is intentional so that users can
 reuse the same command line they use for `plan` or `prepare`, only inserting the
 `diff` scope.
+
+For **component structure and call flow** (who builds file lists, who calls whom),
+see [`docs/architecture/diff-component-structure.md`](../architecture/diff-component-structure.md).
