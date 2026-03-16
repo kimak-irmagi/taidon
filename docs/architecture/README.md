@@ -52,6 +52,8 @@ Entry points for Taidon architecture and service design.
 - [`git-aware-passive.md`](git-aware-passive.md) — notes on the `git` interaction
   scenarios, initiated
   by user via the local CLI commands
+- [`m2-local-developer-experience-plan.md`](m2-local-developer-experience-plan.md) -
+  approved implementation slices for the public/local M2 developer-experience work.
 - [`git-aware-active.md`](git-aware-active.md) — notes on the github interaction
   scenarios that require
   a running service/API endpoint

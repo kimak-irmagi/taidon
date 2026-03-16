@@ -52,6 +52,8 @@
   заметки по workflow анализа запросов.
 - [`git-aware-passive.RU.md`](git-aware-passive.RU.md) - сценарии работы с git,
   инициируемые локальным CLI.
+- [`m2-local-developer-experience-plan.RU.md`](m2-local-developer-experience-plan.RU.md) -
+  утвержденные реализационные срезы для публичного/local M2 по developer experience.
 - [`git-aware-active.RU.md`](git-aware-active.RU.md) - сценарии github-интеграции,
   требующие сервисного API.
 
