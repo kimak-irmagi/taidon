@@ -3,9 +3,9 @@
 This guide defines operator-facing cache capacity controls for local engine
 state snapshots.
 
-Status: core enforcement is implemented in the local engine. The operator-facing
-diagnostics contract below is the planned hardening slice; release
-cache-pressure coverage is still in progress.
+Status: core enforcement, operator-facing diagnostics, persisted `size_bytes`
+metadata, and release cache-pressure coverage are implemented for the current
+local profile. Broader matrix expansion remains optional future hardening.
 
 ## 1. Purpose
 
@@ -18,13 +18,17 @@ Current implementation covers:
 - strict enforcement around prepare/snapshot phases
 - deterministic eviction of unreferenced leaf states older than `minStateAge`
 - structured errors when the cache cannot be reclaimed enough
+- `sqlrs status` compact cache summary and `sqlrs status --cache` detailed diagnostics
+- `sqlrs ls --states --cache-details` per-state cache metadata
+- persisted `size_bytes` metadata for newly materialized states
+- dedicated release cache-pressure scenario coverage for the local profile
 
 Remaining work:
 
-- persist `size_bytes` for newly materialized states so `sqlrs ls --states` and cache ranking use stored snapshot sizes by default
-- add release e2e coverage for cache-pressure scenarios
+- expand cache-pressure release coverage to more platform/backend combinations
+  if that becomes operationally important
 
-## 1.1 Planned Operator Diagnostics
+## 1.1 Operator Diagnostics
 
 The bounded-cache hardening slice introduces three operator-facing views:
 
@@ -34,7 +38,7 @@ sqlrs status --cache
 sqlrs ls --states --cache-details
 ```
 
-Planned semantics:
+Current semantics:
 
 - `sqlrs status`
   - shows a compact cache summary together with the normal health report;
@@ -110,11 +114,11 @@ effectiveMax = effectiveMaxFromStore                  (when maxBytes is null/0)
 - `cache_limit_too_small`
   - effective cache limit is too small to materialize even one prepare state.
 
-## 5. Planned Diagnostics Fields
+## 5. Diagnostics Fields
 
 ### 5.1 `sqlrs status`
 
-Planned compact cache summary fields:
+Compact cache summary fields:
 
 - `usageBytes`
 - `effectiveMaxBytes`
@@ -124,7 +128,7 @@ Planned compact cache summary fields:
 
 ### 5.2 `sqlrs status --cache`
 
-Planned additional detailed fields:
+Additional detailed fields:
 
 - `reserveBytes`
 - `highWatermark`
@@ -135,7 +139,7 @@ Planned additional detailed fields:
 - `blockedCount`
 - `lastEviction`
 
-`lastEviction` is planned as an object containing:
+`lastEviction` is returned as an object containing:
 
 - `completedAt`
 - `trigger`

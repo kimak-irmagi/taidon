@@ -36,22 +36,22 @@ gantt
     Filesystem snapshot backend (overlayfs)    :done, a2fs, after a2, 20d
     Filesystem snapshot backend (Btrfs)        :done, a2b, after a2fs, 30d
     Filesystem snapshot backend (ZFS)          :a2z, after a2b, 30d
-    Liquibase adapter (apply migrations)       :active, a3, after a2b, 30d
+    Liquibase adapter (apply migrations)       :done, a3, after a2b, 30d
 
     section Product MVP (Local)
     CLI UX + deterministic runs                :done, b2, after a2, 45d
     State cache v1 (reuse states)              :done, b3, after a3, 45d
-    State cache guardrails (size + eviction)   :active, b3g, after b3, 30d
+    State cache guardrails (size + eviction)   :done, b3g, after b3, 30d
     Git-aware CLI (ref/diff/provenance)        :b4, after b3, 30d
 
     section Team (On-Prem)
-    Orchestrator + quotas + TTL                :c1, after b2, 45d
-    Drop-in connection (proxy/adapter)         :c0, after c1, 45d
-    K8s gateway + controller topology          :c6, after c1, 30d
-    Artifact store (S3/fs) + audit log         :c2, after c1, 45d
+    Shared control plane + policy baseline     :c1, after b2, 45d
+    Team connectivity and workflow adoption    :c0, after c1, 45d
+    Team deployment gateway baseline           :c6, after c1, 30d
+    Artifact handling + audit baseline         :c2, after c1, 45d
     CI/CD integration templates                :active, c3, after c1, 30d
-    Auth (OIDC) + RBAC (basic)                 :c4, after c1, 45d
-    Autoscaling (instances + cache workers)    :c5, after c2, 30d
+    Auth + tenant access baseline              :c4, after c1, 45d
+    Shared capacity scaling                    :c5, after c2, 30d
 
     section Cloud (Sharing)
     Sharing artefacts (immutable runs)         :d1, after c2, 45d
@@ -59,8 +59,8 @@ gantt
     Anti-abuse limits (rate/quota)             :d3, after d1, 30d
 
     section Research / Optional
-    Cloud Git repo integration (VCS sync)      :o1, after d2, 45d
-    GitHub PR automation (warmup/diff checks)  :o2, after o1, 45d
+    Git-backed workspace integration           :o1, after d2, 45d
+    PR automation and warmup workflows         :o2, after o1, 45d
 
     section Education
     Course/Assignment/Submission model         :e1, after d2, 45d
@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-09)
+## Status (as of 2026-03-16)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -92,29 +92,32 @@ gantt
   `cache.capacity.*` configuration, strict enforcement before/after snapshot
   phases, deterministic eviction of unreferenced leaf states, and structured
   errors when space cannot be reclaimed.
-- **In progress (bounded cache hardening)**: operator-facing observability is
-  still incomplete: CLI/diagnostics should surface cache occupancy and eviction
-  decisions explicitly, and release e2e does not yet cover cache-pressure
-  scenarios.
+- **Done (bounded cache hardening)**: local operator-facing diagnostics now ship
+  in the public CLI surface via `sqlrs status`, `sqlrs status --cache`, and
+  `sqlrs ls --states --cache-details`; persisted `size_bytes` metadata and a
+  dedicated release cache-pressure scenario are also in place for the local
+  profile.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Planned**: git-aware CLI, team on-prem orchestration (including drop-in
-  proxy/adapter), cloud sharing, education.
+- **Next public local focus**: developer-experience follow-up in M2, especially
+  config conventions and git-aware CLI (`--ref`, `diff`, provenance, cache explain).
+- **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
+  baseline, cloud sharing, education.
 
 ---
 
 ## Immediate Next Step (Selected)
 
-- **Direction**: finish operator-facing bounded cache hardening before moving to
-  git-aware CLI and the team profile.
+- **Direction**: move from local MVP hardening to M2 developer experience while
+  keeping the public roadmap focused on open/local deliverables.
 - **Next PR slice**:
-  - expose cache occupancy and eviction decisions in CLI/diagnostics output;
-  - extend release e2e checks to verify cache-pressure behaviour.
-  - sync operator-facing docs with the shipped bounded cache core.
-- **Rationale**: bounded cache core already works in the local engine, but the
-  remaining diagnostics and release validation still leave the operational risk
-  poorly visible.
+  - keep public docs aligned with the shipped local cache diagnostics and release coverage;
+  - start the first M2 slice around repo/workspace conventions for local workflows;
+  - begin git-aware CLI in small public slices (`--ref`, `diff`, provenance, cache explain).
+- **Rationale**: the local MVP surface and cache hardening are now usable enough
+  that the biggest remaining public value is reducing repository friction and
+  improving reproducibility diagnostics for developers.
 
 ---
 
@@ -157,14 +160,16 @@ gantt
   `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`,
   `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **Done**
 - Cache v1 (prepare jobs + state reuse + retention) — **Done (core)**
-- Cache capacity guardrails (size limits + eviction) — **Done (core)**,
-  **In progress** (CLI/diagnostics + release cache-pressure coverage)
+- Cache capacity guardrails (size limits + eviction) — **Done** (core
+  enforcement, CLI diagnostics, persisted size metadata, release
+  cache-pressure coverage for the local profile)
 - Filesystem snapshot backends — **Done** (overlayfs copy stub, Btrfs),
   **Planned** (ZFS)
 - Liquibase adapter (apply changelog) — **Done (MVP scope)** (local flow via
   `prepare:lb`/`plan:lb` is implemented)
 - Release happy-path e2e gate — **Done** (Linux/macOS/Windows WSL coverage for
-  Chinook/Sakila scenarios, with Btrfs included in matrix validation)
+  Chinook/Sakila scenarios, with Btrfs in matrix validation and a dedicated
+  local cache-pressure scenario in release checks)
 
 **Optional (nice-to-have)**:
 
@@ -179,8 +184,8 @@ gantt
 - A warm start reuses cached state and is significantly faster
 - Migrations are deterministic and reproducible
 
-**Status**: Done (MVP baseline). Ongoing hardening continues via cache capacity
-controls and observability improvements.
+**Status**: Done (MVP baseline). Remaining public local follow-up now sits
+primarily in M2 developer experience and optional runtime extensions such as ZFS.
 
 ---
 
@@ -212,37 +217,21 @@ controls and observability improvements.
 
 ### M3. Team On-Prem (Scenario A2)
 
-**Primary scenario**: shared Taidon for a team/department.
+**Primary scenario**: shared Taidon for a team or department.
 
 **Target use cases**:
 
 - UC-5 Integrate with CI/CD
-- UC-4 Cache and reuse database states (shared)
-- UC-1..UC-3 at scale
+- UC-1..UC-4 in a shared authenticated deployment
 
 **Deliverables**:
 
-- Orchestrator service:
-  - job queue
-  - quotas
-  - TTL policies
-- K8s shared deployment baseline:
-  - single entrypoint Gateway (TCP)
-  - Controller-managed DB runner pods
-- Artifact store:
-  - logs, reports, exports
-  - retention policies
-- Auth and RBAC (basic):
-  - OIDC login
-  - organisation/team scopes
-- CI templates:
-  - GitHub Actions / GitLab CI examples
-- Drop-in connection strategy (team deployment profile):
-  - Proxy/adapter compatible with shared orchestrator networking and policy
-  - Includes connection detection/visibility for ephemeral instances
-- Autoscaling controller (instances + cache workers):
-  - HPA/VPA profiles using backlog/cache metrics
-  - Warm pool for fast start; graceful drain on scale-in
+- Shared control-plane baseline for authenticated multi-user deployments
+- Team deployment gateway and service entrypoint baseline
+- Shared state, artifact, and audit handling with retention controls
+- Basic auth, tenant access, quotas, and policy enforcement
+- CI/CD integration templates and operator deployment path
+- Team workflow compatibility and capacity scaling baseline
 
 **Exit criteria**:
 
@@ -280,16 +269,16 @@ controls and observability improvements.
 
 ---
 
-### R1. Cloud Git Integration (Optional / Research)
+### R1. Hosted Git Integration (Optional / Research)
 
-**Purpose**: connect the cloud instance with Git repositories.
+**Purpose**: connect hosted or shared environments to repository revisions
+without making local workflows dependent on hosted infrastructure.
 
 **Deliverables**:
 
-- VCS/Git connector (API) with private-repo support
-- Bind project to branch/commit; start instance from the selected revision
-- One-time tokens/SSO for Git (secrets managed in cloud)
-- Optional auto-sync/pull to refresh instance state
+- Git-backed project integration for hosted/shared environments
+- Start or refresh workloads from a selected repository revision
+- Secure repository access and provenance-aware refresh flow
 
 **Exit criteria**:
 
@@ -298,23 +287,17 @@ controls and observability improvements.
 
 ---
 
-### R2. GitHub PR Automation (Optional / Research)
+### R2. PR Automation (Optional / Research)
 
-**Purpose**: automate warmup and diffs around PRs without leaking secrets.
+**Purpose**: automate warmup and diff workflows around PRs without exposing
+credentials or runtime connection details.
 
 **Deliverables**:
 
-- GitHub App / webhook receiver
-- PR slash commands:
-  - `/taidon warmup --prepare <path>`
-  - `/taidon diff --from-ref base --to-ref head <sqlrs-command> [command-args...]`
-  - `/taidon compare --from-ref base --from-prepare <path> --to-ref head --to-prepare
-    <path> --run "..."`
-- Check Runs:
-  - warmup status
-  - Taidon-aware diff summary
-- Warmup via `sqlrs run` in prepare-only mode (no DSN in PR)
-- Eviction hints from Git events (merge/tag/PR closed)
+- Hosted automation path for PR-triggered warmup and diff workflows
+- Integration surface for checks, callbacks, or bot-driven review signals
+- Reproducible PR summaries without exposing credentials or DSNs
+- Lifecycle hooks for refreshing or retiring prepared backend state
 
 **Exit criteria**:
 
@@ -401,3 +384,4 @@ controls and observability improvements.
   warmup/diff checks)
 - [`k8s-architecture.md`](architecture/k8s-architecture.md) (single entry gateway
   in k8s)
+

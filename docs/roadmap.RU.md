@@ -35,22 +35,22 @@ gantt
     Бэкенд snapshot ФС (overlayfs)            :done, a2fs, after a2, 20d
     Бэкенд snapshot ФС (Btrfs)                :done, a2b, after a2fs, 30d
     Бэкенд snapshot ФС (ZFS)                  :a2z, after a2b, 30d
-    Адаптер Liquibase (применение миграций)   :active, a3, after a2b, 30d
+    Адаптер Liquibase (применение миграций)   :done, a3, after a2b, 30d
 
     section Продуктовый MVP (локальный)
     CLI UX + детерминированные запуски        :done, b2, after a2, 45d
     Кэш состояний v1 (reuse states)           :done, b3, after a3, 45d
-    Ограничения кэша (размер + eviction)      :active, b3g, after b3, 30d
+    Ограничения кэша (размер + eviction)      :done, b3g, after b3, 30d
     Git-aware CLI (ref/diff/provenance)       :b4, after b3, 30d
 
     section Team (On-Prem)
-    Оркестратор + квоты + TTL                 :c1, after b2, 45d
-    Drop-in подключение (proxy/adapter)       :c0, after c1, 45d
-    K8s gateway + topology контроллеров       :c6, after c1, 30d
-    Хранилище артефактов (S3/fs) + audit log  :c2, after c1, 45d
+    Базовый shared control plane + policy      :c1, after b2, 45d
+    Team connectivity и workflow adoption      :c0, after c1, 45d
+    Базовый team deployment gateway            :c6, after c1, 30d
+    Базовая работа с artefacts и audit         :c2, after c1, 45d
     Шаблоны интеграции CI/CD                  :active, c3, after c1, 30d
-    Auth (OIDC) + RBAC (basic)                :c4, after c1, 45d
-    Автомасштабирование (instances + cache)   :c5, after c2, 30d
+    Базовый auth + tenant access               :c4, after c1, 45d
+    Масштабирование shared capacity            :c5, after c2, 30d
 
     section Облако (Sharing)
     Шаринг артефактов (immutable runs)        :d1, after c2, 45d
@@ -58,8 +58,8 @@ gantt
     Anti-abuse ограничения (rate/quota)       :d3, after d1, 30d
 
     section Исследования / Опционально
-    Интеграция Git в облаке (VCS sync)        :o1, after d2, 45d
-    Автоматизация GitHub PR (warmup/diff)     :o2, after o1, 45d
+    Git-backed интеграция workspace            :o1, after d2, 45d
+    PR automation и warmup workflows           :o2, after o1, 45d
 
     section Образование
     Модель курс/задание/сдача                 :e1, after d2, 45d
@@ -70,7 +70,7 @@ gantt
 
 ---
 
-## Статус (на 2026-03-09)
+## Статус (на 2026-03-16)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
@@ -85,27 +85,34 @@ gantt
   `cache.capacity.*` конфиг, strict enforcement перед/после snapshot-фаз,
   детерминированный eviction неиспользуемых leaf-states и structured errors
   при нехватке места.
-- **В работе (bounded cache hardening)**: операторская наблюдаемость bounded
-  cache ещё не доведена до конца: CLI/диагностика должны явно показывать
-  occupancy/eviction, а release e2e пока не покрывает cache-pressure сценарии.
+- **Сделано (bounded cache hardening)**: операторская диагностика для local
+  профиля уже входит в публичную CLI-поверхность через `sqlrs status`,
+  `sqlrs status --cache` и `sqlrs ls --states --cache-details`; persisted
+  `size_bytes` metadata и отдельный release cache-pressure сценарий тоже уже
+  на месте.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
-- **Запланировано**: git-aware CLI, team on-prem оркестрация (включая drop-in
-  proxy/adapter), облачный sharing, образование.
+- **Следующий публичный local-фокус**: M2 Developer Experience, в первую
+  очередь config conventions и git-aware CLI (`--ref`, `diff`, provenance,
+  cache explain).
+- **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
+  team on-prem baseline, облачный sharing, образование.
 
 ---
 
 ## Ближайший Следующий Шаг (Выбран)
 
-- **Направление**: довести bounded cache до операторски наблюдаемого состояния
-  перед переходом к git-aware CLI и team-контуру.
+- **Направление**: перейти от hardening локального MVP к M2 developer
+  experience, сохраняя roadmap сфокусированным на публичных open/local
+  deliverables.
 - **Следующий PR-срез**:
-  - отразить заполненность кэша и решения eviction в CLI/диагностике;
-  - расширить release e2e-проверки на сценарии cache-pressure.
-  - синхронизировать operator-facing документацию со shipped bounded cache core.
-- **Почему сейчас**: bounded cache core уже работает в local engine, но без
-  явной диагностики и release-проверок операционный риск всё ещё плохо виден.
+  - держать публичную документацию синхронной с уже shipped local cache diagnostics и release coverage;
+  - начать первый M2-срез вокруг repo/workspace conventions для локальных сценариев;
+  - двигать git-aware CLI небольшими публичными срезами (`--ref`, `diff`, provenance, cache explain).
+- **Почему сейчас**: local MVP surface и bounded cache hardening уже достаточно
+  зрелые; следующая наибольшая публичная ценность теперь в снижении трения
+  вокруг репозитория и в лучшей диагностике воспроизводимости для разработчиков.
 
 ---
 
@@ -146,12 +153,14 @@ gantt
 - Локальный runtime (контейнеры) с lifecycle экземпляра — **сделано**
 - CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **сделано**
 - Cache v1 (prepare jobs + reuse state + retention) — **сделано (ядро)**
-- Ограничения ёмкости кэша (лимиты размера + eviction) — **сделано (ядро)**,
-  **в работе** (CLI/diagnostics + release cache-pressure coverage)
+- Ограничения ёмкости кэша (лимиты размера + eviction) — **сделано**
+  (core enforcement, CLI diagnostics, persisted size metadata, release
+  cache-pressure coverage для локального профиля)
 - Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs), **в планах** (ZFS)
 - Liquibase адаптер (apply changelog) — **сделано (MVP scope)** (базовый локальный поток через `prepare:lb`/`plan:lb` реализован)
 - Release happy-path e2e gate — **сделано** (покрытие Linux/macOS/Windows WSL
-  для сценариев Chinook/Sakila, включая Btrfs в матрице валидации)
+  для сценариев Chinook/Sakila, включая Btrfs в матрице валидации и отдельный
+  local cache-pressure сценарий в release-проверках)
 
 **Опционально (nice-to-have)**:
 
@@ -166,8 +175,9 @@ gantt
 - Warm start переиспользует кэшированное состояние и значительно быстрее
 - Миграции детерминированы и воспроизводимы
 
-**Статус**: сделано (MVP baseline). Дальнейший hardening идёт через
-ограничения ёмкости кэша и улучшение наблюдаемости.
+**Статус**: сделано (MVP baseline). Оставшийся публичный local follow-up теперь
+в основном находится в M2 developer experience и в опциональных runtime
+расширениях вроде ZFS.
 
 ---
 
@@ -199,37 +209,21 @@ gantt
 
 ### M3. Team On-Prem (сценарий A2)
 
-**Основной сценарий**: общий Taidon для команды/департамента.
+**Основной сценарий**: общий Taidon для команды или подразделения.
 
 **Целевые use cases**:
 
 - UC-5 Интеграция с CI/CD
-- UC-4 Кэширование и переиспользование состояний БД (shared)
-- UC-1..UC-3 в масштабе
+- UC-1..UC-4 в общем аутентифицированном deployment
 
 **Deliverables**:
 
-- Orchestrator service:
-  - job queue
-  - quotas
-  - TTL политики
-- K8s shared deployment baseline:
-  - единый entrypoint Gateway (TCP)
-  - controller-managed DB runner pods
-- Artifact store:
-  - логи, отчеты, экспорты
-  - retention политики
-- Auth и RBAC (basic):
-  - OIDC login
-  - organisation/team scopes
-- CI шаблоны:
-  - GitHub Actions / GitLab CI примеры
-- Drop-in стратегия подключения (team deployment profile):
-  - proxy/adapter, совместимый с networking/policy оркестратора
-  - включает detection/visibility подключений для эфемерных инстансов
-- Autoscaling controller (instances + cache workers):
-  - HPA/VPA профили по backlog/cache метрикам
-  - warm pool для быстрого старта; graceful drain на scale-in
+- Shared control-plane baseline для аутентифицированных multi-user deployment
+- Team deployment gateway и service entrypoint baseline
+- Shared state, artifact и audit handling с retention controls
+- Базовый auth, tenant access, quotas и policy enforcement
+- CI/CD integration templates и operator deployment path
+- Baseline для team workflow compatibility и shared capacity scaling
 
 **Exit criteria**:
 
@@ -267,16 +261,16 @@ gantt
 
 ---
 
-### R1. Cloud Git Integration (Optional / Research)
+### R1. Hosted Git Integration (опционально / research)
 
-**Цель**: связать облачный экземпляр с Git-репозиториями.
+**Цель**: связать hosted/shared окружения с ревизиями репозитория, не делая
+локальные открытые workflow зависимыми от hosted-инфраструктуры.
 
 **Deliverables**:
 
-- VCS/Git connector (API) с поддержкой private repo
-- Привязка проекта к ветке/коммиту; запуск экземпляра из выбранной ревизии
-- One-time tokens/SSO для Git (секреты хранятся в облаке)
-- Опциональный auto-sync/pull для обновления состояния экземпляра
+- Git-backed project integration для hosted/shared environments
+- Запуск или refresh workloads из выбранной ревизии репозитория
+- Secure repository access и provenance-aware refresh flow
 
 **Exit criteria**:
 
@@ -285,22 +279,17 @@ gantt
 
 ---
 
-### R2. GitHub PR Automation (Optional / Research)
+### R2. PR Automation (опционально / research)
 
-**Цель**: автоматизировать warmup и diff вокруг PR без утечки секретов.
+**Цель**: автоматизировать warmup и diff workflow вокруг PR без раскрытия
+credentials или runtime connection details.
 
 **Deliverables**:
 
-- GitHub App / webhook receiver
-- PR slash commands:
-  - `/taidon warmup --prepare <path>`
-  - `/taidon diff --from-ref base --to-ref head <sqlrs-command> [command-args...]`
-  - `/taidon compare --from-ref base --from-prepare <path> --to-ref head --to-prepare <path> --run "..."`
-- Check Runs:
-  - статус warmup
-  - Taidon-aware summary diff
-- Warmup через `sqlrs run` в prepare-only режиме (без DSN в PR)
-- Eviction hints из Git событий (merge/tag/PR closed)
+- Hosted automation path для PR-triggered warmup и diff workflows
+- Integration surface для checks, callbacks или bot-driven review signals
+- Reproducible PR summaries без раскрытия credentials или DSN
+- Lifecycle hooks для refresh или retire подготовленного backend state
 
 **Exit criteria**:
 

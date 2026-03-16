@@ -13,8 +13,8 @@ The bounded-cache hardening slice extends `status` in two layers:
 Current status:
 
 - base health/status output is implemented;
-- compact cache summary and `--cache` expansion are the planned diagnostics
-  extension for bounded cache hardening.
+- compact cache summary and `--cache` expansion are implemented in the current
+  local CLI.
 
 ---
 
