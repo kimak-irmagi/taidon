@@ -89,6 +89,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  init     Initialize a workspace")
 	fmt.Fprintln(w, "  ls       List names, instances, or states")
 	fmt.Fprintln(w, "  rm       Remove an instance or state")
+	fmt.Fprintln(w, "  diff     Compare file sets between two paths (plan/prepare)")
 	fmt.Fprintln(w, "  run:psql  Run a command against an instance (psql)")
 	fmt.Fprintln(w, "  run:pgbench  Run a command against an instance (pgbench)")
 	fmt.Fprintln(w, "  plan:psql  Compute a prepare plan with psql")
@@ -146,7 +147,7 @@ func findRunIndex(args []string) int {
 
 func isCommandToken(value string) bool {
 	switch value {
-	case "init", "ls", "rm", "plan", "prepare", "run", "watch", "status", "config":
+	case "init", "ls", "rm", "diff", "plan", "prepare", "run", "watch", "status", "config":
 		return true
 	}
 	if strings.HasPrefix(value, "prepare:") {
