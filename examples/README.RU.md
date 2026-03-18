@@ -36,6 +36,10 @@
 
 ```text
 examples/
+  chinook.prep.s9s.yaml
+  flights.prep.s9s.yaml
+  flights-multi-step.prep.s9s.yaml
+  sakila.prep.s9s.yaml
   chinook/
     Chinook_PostgreSql.sql
   sakila/
@@ -64,7 +68,11 @@ examples/
     liquibase-github-action-example/
       samplechangelog.h2.sql
 
-Перечисленные файлы в examples/ являются сгенерированными артефактами и могут быть перезаписаны при повторной загрузке.
+SQL- и Liquibase-файлы внутри `examples/*/` являются сгенерированными
+артефактами и могут быть перезаписаны при повторной загрузке.
+
+Верхнеуровневые `*.prep.s9s.yaml` являются поддерживаемыми в репозитории
+prepare aliases для `sqlrs`.
 
 ## Загрузка файлов примеров
 
@@ -142,6 +150,17 @@ docker run --rm -it \
 
 Эти примеры рассчитаны на использование в качестве `--prepare` для `sqlrs`.
 
+Если использовать `examples/` как workspace, repo-tracked aliases можно вызывать
+напрямую:
+
+```bash
+cd examples
+sqlrs prepare chinook
+sqlrs prepare flights
+sqlrs prepare flights-multi-step
+sqlrs prepare sakila
+```
+
 Пример:
 
 ```bash
@@ -155,7 +174,9 @@ sqlrs \
 ## Примечания по обновлениям и воспроизводимости
 
 - Источники могут эволюционировать - контрольные суммы предотвращают незаметные изменения.
-- `examples/` рассматривается как производные данные, а не вручную поддерживаемый код.
+- скачанные датасеты внутри `examples/*/` рассматриваются как производные данные.
+- верхнеуровневые `*.prep.s9s.yaml` aliases поддерживаются вручную и должны
+  ревьюиться как обычный код репозитория.
 - Чтобы обновить датасет из источника:
   1. Обновите URL / ревизию в `manifest.yaml`
   2. Выполните `pnpm fetch:sql --write-sha`

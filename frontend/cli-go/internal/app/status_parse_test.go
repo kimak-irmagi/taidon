@@ -79,3 +79,21 @@ func TestRunStatusHelp(t *testing.T) {
 		t.Fatalf("expected status usage, got %q", out.String())
 	}
 }
+
+func TestRunStatusShortHelp(t *testing.T) {
+	var out strings.Builder
+	if err := runStatus(&out, cli.StatusOptions{}, t.TempDir(), "text", []string{"-h"}); err != nil {
+		t.Fatalf("runStatus: %v", err)
+	}
+	if !strings.Contains(out.String(), "sqlrs status [--cache]") {
+		t.Fatalf("expected status usage, got %q", out.String())
+	}
+}
+
+func TestRunStatusRejectsArguments(t *testing.T) {
+	var out strings.Builder
+	err := runStatus(&out, cli.StatusOptions{}, t.TempDir(), "text", []string{"extra"})
+	if err == nil || !strings.Contains(err.Error(), "status does not accept arguments") {
+		t.Fatalf("expected positional argument error, got %v", err)
+	}
+}

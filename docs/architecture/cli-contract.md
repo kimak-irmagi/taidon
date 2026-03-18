@@ -82,6 +82,8 @@ sqlrs
   status
   ls
   rm
+  discover
+  alias
   prepare
   watch
   plan
@@ -187,6 +189,7 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 Current behavior:
 
+- `prepare <prepare-ref>` resolves a repo-tracked `*.prep.s9s.yaml` file.
 - `prepare` supports `--watch` (default) and `--no-watch`.
 - `prepare --no-watch` returns `job_id` and stream/status references.
 - In watch mode, `Ctrl+C` opens a control prompt:
@@ -195,8 +198,6 @@ Current behavior:
   - `[Esc/Enter] continue`.
 - For composite `prepare ... run ...`, `detach` detaches from `prepare` and
   skips the subsequent `run` phase in the current CLI process.
-
-TODO (future):
 
 - Add named instances and name binding flags (`--name`, `--reuse`, `--fresh`, `--rebind`).
 
@@ -210,6 +211,10 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 The CLI must expose `plan:<kind>` for every supported `prepare:<kind>`.
 
+Current alias mode:
+
+- `sqlrs plan <prepare-ref>` resolves a repo-tracked prepare alias file.
+
 ---
 
 ### 3.7 `sqlrs run`
@@ -217,6 +222,11 @@ The CLI must expose `plan:<kind>` for every supported `prepare:<kind>`.
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
+
+Future alias mode:
+
+- `sqlrs run <run-ref> --instance <id|name>` resolves a repo-tracked
+  `*.run.s9s.yaml` file while keeping runtime instance selection explicit.
 
 ---
 
@@ -259,6 +269,49 @@ See:
 
 - [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
 - [`docs/architecture/git-aware-passive.md`](git-aware-passive.md) (scenario P3)
+
+---
+
+### 3.10 `sqlrs discover`
+
+Post-MVP local design introduces `discover` as an **advisory workspace-analysis
+verb**:
+
+```text
+sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
+```
+
+Design rules:
+
+- `discover` is read-only by default;
+- execution commands never depend on prior discovery output;
+- `--aliases` is the first planned analyzer;
+- follow-up analyzers may suggest repository hygiene or cache-shaping
+  improvements.
+
+See:
+
+- [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
+
+---
+
+### 3.11 `sqlrs alias`
+
+Post-MVP local design also introduces explicit alias-management commands for
+repo-tracked workflow recipes:
+
+```text
+sqlrs alias ls
+sqlrs alias show <ref>
+sqlrs alias validate [<ref>]
+```
+
+These commands inspect or validate alias files; they do not replace runtime
+`names`.
+
+See:
+
+- [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
 
 ---
 

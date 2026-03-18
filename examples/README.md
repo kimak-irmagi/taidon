@@ -36,6 +36,10 @@ After fetching, the layout looks like this:
 
 ```text
 examples/
+  chinook.prep.s9s.yaml
+  flights.prep.s9s.yaml
+  flights-multi-step.prep.s9s.yaml
+  sakila.prep.s9s.yaml
   chinook/
     Chinook_PostgreSql.sql
   sakila/
@@ -64,7 +68,10 @@ examples/
     liquibase-github-action-example/
       samplechangelog.h2.sql
 
-The listed files under examples/ are generated artifacts and may be overwritten by re-fetching.
+The fetched SQL and Liquibase source files under `examples/*/` are generated artifacts
+and may be overwritten by re-fetching.
+
+The top-level `*.prep.s9s.yaml` files are repo-maintained `sqlrs` prepare aliases.
 
 ## Fetching the example files
 
@@ -142,6 +149,17 @@ docker run --rm -it \
 
 These examples are designed to be used as `--prepare` inputs for `sqlrs`.
 
+If you use `examples/` itself as the workspace, the repo-tracked aliases can be
+invoked directly:
+
+```bash
+cd examples
+sqlrs prepare chinook
+sqlrs prepare flights
+sqlrs prepare flights-multi-step
+sqlrs prepare sakila
+```
+
 Example:
 
 ```bash
@@ -155,7 +173,9 @@ sqlrs \
 ## Notes on updates and reproducibility
 
 - Upstream sources may evolve — checksums prevent silent changes.
-- `examples/` is treated as derived data, not hand-maintained code.
+- fetched dataset files under `examples/*/` are treated as derived data.
+- top-level `*.prep.s9s.yaml` aliases are hand-maintained wrappers and should be
+  reviewed like normal repo code.
 - To update an upstream dataset:
   1. Update URL / revision in `manifest.yaml`
   2. Run `pnpm fetch:sql --write-sha`

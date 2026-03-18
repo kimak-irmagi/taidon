@@ -1,0 +1,5 @@
+kind: psql
+image: postgres:17
+args:
+  - -f
+  - sakila/prepare.sql

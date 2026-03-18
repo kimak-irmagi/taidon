@@ -10,6 +10,9 @@ func TestPrepareUsageIncludesLiquibase(t *testing.T) {
 	var buf bytes.Buffer
 	PrintPrepareUsage(&buf)
 	out := buf.String()
+	if !strings.Contains(out, "sqlrs prepare [--watch|--no-watch] <ref>") {
+		t.Fatalf("expected alias-mode prepare usage, got:\n%s", out)
+	}
 	if !strings.Contains(out, "prepare:psql") {
 		t.Fatalf("expected prepare:psql in usage, got:\n%s", out)
 	}

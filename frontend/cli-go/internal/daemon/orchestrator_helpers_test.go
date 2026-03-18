@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,49 @@ func TestHelperProcessExit(t *testing.T) {
 	}
 	code, _ := strconv.Atoi(os.Getenv("HELPER_EXIT_CODE"))
 	os.Exit(code)
+}
+
+func TestHelperProcessCommandOutput(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "command-output" {
+		return
+	}
+	fmt.Fprint(os.Stdout, os.Getenv("HELPER_STDOUT"))
+	fmt.Fprint(os.Stderr, os.Getenv("HELPER_STDERR"))
+	code, _ := strconv.Atoi(os.Getenv("HELPER_EXIT_CODE"))
+	os.Exit(code)
+}
+
+func TestRunCommandWithSplitOutputIgnoresStderrOnSuccess(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "command-output")
+	t.Setenv("HELPER_STDOUT", "active\n")
+	t.Setenv("HELPER_STDERR", "wsl: localhost proxy warning\n")
+	t.Setenv("HELPER_EXIT_CODE", "0")
+
+	out, err := runCommandWithSplitOutput(context.Background(), os.Args[0], "-test.run=TestHelperProcessCommandOutput", "--")
+	if err != nil {
+		t.Fatalf("runCommandWithSplitOutput: %v", err)
+	}
+	if out != "active\n" {
+		t.Fatalf("expected clean stdout, got %q", out)
+	}
+}
+
+func TestRunCommandWithSplitOutputKeepsStdoutOnFailure(t *testing.T) {
+	t.Setenv("GO_WANT_HELPER_PROCESS", "command-output")
+	t.Setenv("HELPER_STDOUT", "inactive\n")
+	t.Setenv("HELPER_STDERR", "wsl: localhost proxy warning\n")
+	t.Setenv("HELPER_EXIT_CODE", "3")
+
+	out, err := runCommandWithSplitOutput(context.Background(), os.Args[0], "-test.run=TestHelperProcessCommandOutput", "--")
+	if err == nil {
+		t.Fatalf("expected command error")
+	}
+	if out != "inactive\n" {
+		t.Fatalf("expected stdout to be preserved, got %q", out)
+	}
+	if !strings.Contains(err.Error(), "localhost proxy warning") {
+		t.Fatalf("expected stderr detail in error, got %v", err)
+	}
 }
 
 func TestEnsureWSLMountUnitActive(t *testing.T) {

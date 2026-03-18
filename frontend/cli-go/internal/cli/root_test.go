@@ -97,3 +97,42 @@ func TestParseArgsMultipleCommands(t *testing.T) {
 		t.Fatalf("unexpected commands: %+v", cmds)
 	}
 }
+
+func TestParseArgsPrepareAliasMode(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"prepare", "chinook"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "prepare" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if len(cmds[0].Args) != 1 || cmds[0].Args[0] != "chinook" {
+		t.Fatalf("unexpected prepare args: %+v", cmds[0].Args)
+	}
+}
+
+func TestParseArgsPlanAliasMode(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"plan", "path/chinook"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "plan" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if len(cmds[0].Args) != 1 || cmds[0].Args[0] != "path/chinook" {
+		t.Fatalf("unexpected plan args: %+v", cmds[0].Args)
+	}
+}
+
+func TestParseArgsPrepareAliasExactFileMode(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"prepare", "chinook.txt."})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "prepare" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if len(cmds[0].Args) != 1 || cmds[0].Args[0] != "chinook.txt." {
+		t.Fatalf("unexpected prepare args: %+v", cmds[0].Args)
+	}
+}

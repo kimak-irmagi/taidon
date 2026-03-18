@@ -26,16 +26,21 @@ All reproducibility guarantees in sqlrs rely on `prepare`.
 ## Command Syntax
 
 ```text
+sqlrs prepare [--watch|--no-watch] <ref>
 sqlrs prepare:<kind> [--watch|--no-watch] [--image <image-id>] [--] [tool-args...]
 ```
 
 Where:
 
+- bare `prepare <ref>` resolves a repo-tracked prepare alias file
+  (`<workspace>/<ref>.prep.s9s.yaml`);
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
 - `--watch` keeps the CLI attached to the job until terminal status (default).
 - `--no-watch` submits the job and exits immediately with job references.
 - `--image <image-id>` overrides the base DB image.
 - `tool-args` are forwarded to the underlying tool for the selected kind.
+
+Alias-mode details are described in [`sqlrs-aliases.md`](sqlrs-aliases.md).
 
 ### Variant docs
 

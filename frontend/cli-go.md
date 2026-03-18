@@ -3,7 +3,8 @@
 Path in monorepo: `frontend/cli-go`  
 Legacy prototype: `frontend/cli` (mjs)
 
-Goal: implement a cross-platform, fast-starting, low-dependency CLI for `sqlrs` that can:
+Goal: implement a cross-platform, fast-starting, low-dependency CLI for `sqlrs`
+  that can:
 
 - work with a remote `sqlrs service` via HTTP(S)+JSON
 - work with a local _ephemeral_ `sqlrs service` (connect-or-start orchestration)
@@ -184,7 +185,8 @@ The application MUST internally resolve and expose:
 - StateDir
 - CacheDir
 
-All other paths (runDir, logs, engine.json, lock files) MUST be derived from these directories.
+All other paths (runDir, logs, engine.json, lock files) MUST be derived from
+  these directories.
 
 ### 5.2 Project-local config override
 
@@ -193,7 +195,8 @@ Local override file: `./.sqlrs/config.yaml`
 Discovery algorithm:
 
 - Starting from current working directory, walk up parents until filesystem root.
-- If a directory `.sqlrs` is found and contains `config.yaml`, use it as project override.
+- If a directory `.sqlrs` is found and contains `config.yaml`, use it as project
+  override.
 - Only one override (the nearest up the tree).
 
 ### 5.3 Merge rules
@@ -293,7 +296,8 @@ Rules:
 
 - Written atomically: write to temp + rename.
 - Permissions:
-  - best-effort restrict to current user (platform-specific; acceptable to note as TODO).
+  - best-effort restrict to current user (platform-specific; acceptable to note
+    as TODO).
 - CLI treats file as stale if:
   - endpoint not reachable or /v1/health fails within timeout
   - or instanceId mismatch (if available)
@@ -325,7 +329,8 @@ Implementation:
 
 - Use a cross-platform file lock abstraction.
 - If lock is held:
-  - wait with timeout (e.g. up to orchestrator.startupTimeout) OR exit with message “daemon start in progress”.
+  - wait with timeout (e.g. up to orchestrator.startupTimeout) OR exit with
+    message “daemon start in progress”.
 - Lock is held only during start attempt and initial health check.
 
 ### 6.3 Connect-or-start algorithm
@@ -450,7 +455,8 @@ Client behavior:
   - in remote mode: fail fast, suggest `--profile` / `--endpoint`
 - NDJSON parsing:
   - tolerate blank lines
-  - if a line is not valid JSON, treat as log line with level=warn (human) or emit a synthetic event (json) depending on simplicity (pick one and keep consistent)
+  - if a line is not valid JSON, treat as log line with level=warn (human) or
+    emit a synthetic event (json) depending on simplicity (pick one and keep consistent)
 
 ## 9. Security notes (MVP)
 
@@ -503,8 +509,10 @@ Integration tests (optional for MVP):
 - Use a single YAML library for config:
   - preferred: `gopkg.in/yaml.v3` (small, widely used)
 - CLI arg parsing:
-  - prefer minimal; acceptable to use a small, stable library if it reduces code (but do not pull huge dependency trees)
-  - If using a library, keep it limited to one (e.g., `spf13/cobra` is popular but heavier; prefer smaller if possible)
+  - prefer minimal; acceptable to use a small, stable library if it reduces code
+    (but do not pull huge dependency trees)
+  - If using a library, keep it limited to one (e.g., `spf13/cobra` is popular
+    but heavier; prefer smaller if possible)
 
 ## 13. Milestones
 

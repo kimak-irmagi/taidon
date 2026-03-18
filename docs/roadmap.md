@@ -100,8 +100,9 @@ gantt
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: developer-experience follow-up in M2, especially
-  config conventions and git-aware CLI (`--ref`, `diff`, provenance, cache explain).
+- **Next public local focus**: explicit repo-tracked workflow aliases,
+  advisory discovery tooling, and the later Git-aware CLI follow-up
+  (`diff`, `--ref`, provenance, cache explain).
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -111,10 +112,15 @@ gantt
 
 - **Direction**: move from local MVP hardening to M2 developer experience while
   keeping the public roadmap focused on open/local deliverables.
+- **Selected first PR**: file-based prepare aliases for `sqlrs plan <ref>` and
+  `sqlrs prepare <ref>`.
 - **Next PR slice**:
-  - keep public docs aligned with the shipped local cache diagnostics and release coverage;
-  - start the first M2 slice around repo/workspace conventions for local workflows;
-  - begin git-aware CLI in small public slices (`--ref`, `diff`, provenance, cache explain).
+  - keep public docs aligned with the shipped local cache diagnostics and
+    release coverage;
+  - define repo-tracked prepare alias files (`*.prep.s9s.yaml`) and alias-ref
+    resolution rules;
+  - keep alias files separate from `.sqlrs/config.yaml` and runtime `names`;
+  - update user guides and tests around alias-based local execution.
 - **Rationale**: the local MVP surface and cache hardening are now usable enough
   that the biggest remaining public value is reducing repository friction and
   improving reproducibility diagnostics for developers.
@@ -199,19 +205,22 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 
 **Deliverables**:
 
-- Config conventions:
-  - discover migrations from repo layout
-  - profiles (dev/test) and secrets handling
+- Project-tracked workflow aliases:
+  - `*.prep.s9s.yaml` and `*.run.s9s.yaml`
+  - explicit alias-ref resolution for `plan`, `prepare`, and `run`
+- Advisory discovery tooling:
+  - `sqlrs discover --aliases`
+  - follow-up analyzers for `.gitignore`, `.vscode`, and prepare shaping
 - Git-aware CLI (passive):
-  - `--ref` (blob/worktree), `diff`, provenance, cache explain
+  - `diff`, `--ref` (blob/worktree), provenance, cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - open SQL editor (via existing VS Code DB tooling)
 
 **Exit criteria**:
 
-- A developer can run common workflows with minimal config and clear cache
-  provenance diagnostics.
+- A developer can run common workflows using explicit repo-tracked recipes with
+  low local setup friction and clear cache provenance diagnostics.
 
 ---
 
@@ -384,4 +393,3 @@ credentials or runtime connection details.
   warmup/diff checks)
 - [`k8s-architecture.md`](architecture/k8s-architecture.md) (single entry gateway
   in k8s)
-

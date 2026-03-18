@@ -15,11 +15,14 @@ produces.
 ## Command Syntax
 
 ```text
+sqlrs plan <ref>
 sqlrs plan:<kind> [--image <image-id>] [--] [tool-args...]
 ```
 
 Where:
 
+- bare `plan <ref>` resolves a repo-tracked prepare alias file
+  (`<workspace>/<ref>.prep.s9s.yaml`);
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
 - `--image <image-id>` overrides the base container image.
 - `tool-args` are forwarded to the underlying tool for the selected kind.
@@ -27,6 +30,8 @@ Where:
 If `--` is omitted, all remaining arguments are treated as `tool-args`.
 To pass tool flags that would clash with sqlrs flags (for example `-v`),
 use `--` explicitly.
+
+Alias-mode details are described in [`sqlrs-aliases.md`](sqlrs-aliases.md).
 
 ---
 

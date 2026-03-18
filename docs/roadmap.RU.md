@@ -93,9 +93,9 @@ gantt
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
-- **Следующий публичный local-фокус**: M2 Developer Experience, в первую
-  очередь config conventions и git-aware CLI (`--ref`, `diff`, provenance,
-  cache explain).
+- **Следующий публичный local-фокус**: explicit repo-tracked workflow aliases,
+  advisory discovery tooling и последующий Git-aware CLI
+  (`diff`, `--ref`, provenance, cache explain).
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -106,10 +106,13 @@ gantt
 - **Направление**: перейти от hardening локального MVP к M2 developer
   experience, сохраняя roadmap сфокусированным на публичных open/local
   deliverables.
+- **Выбранный первый PR**: file-based prepare aliases для
+  `sqlrs plan <ref>` и `sqlrs prepare <ref>`.
 - **Следующий PR-срез**:
   - держать публичную документацию синхронной с уже shipped local cache diagnostics и release coverage;
-  - начать первый M2-срез вокруг repo/workspace conventions для локальных сценариев;
-  - двигать git-aware CLI небольшими публичными срезами (`--ref`, `diff`, provenance, cache explain).
+  - определить repo-tracked prepare alias files (`*.prep.s9s.yaml`) и правила alias-ref resolution;
+  - держать alias files отдельно от `.sqlrs/config.yaml` и runtime `names`;
+  - обновить user guides и тесты вокруг alias-based local execution.
 - **Почему сейчас**: local MVP surface и bounded cache hardening уже достаточно
   зрелые; следующая наибольшая публичная ценность теперь в снижении трения
   вокруг репозитория и в лучшей диагностике воспроизводимости для разработчиков.
@@ -191,19 +194,23 @@ gantt
 
 **Deliverables**:
 
-- Конвенции конфигурации:
-  - обнаружение миграций по layout репозитория
-  - профили (dev/test) и обработка секретов
+- Project-tracked workflow aliases:
+  - `*.prep.s9s.yaml` и `*.run.s9s.yaml`
+  - явное alias-ref resolution для `plan`, `prepare` и `run`
+- Advisory discovery tooling:
+  - `sqlrs discover --aliases`
+  - последующие analyzers для `.gitignore`, `.vscode` и prepare shaping
 - Git-aware CLI (passive):
-  - `--ref` (blob/worktree), `diff`, provenance, cache explain
+  - `diff`, `--ref` (blob/worktree), provenance, cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - открыть SQL редактор (через существующие DB инструменты VS Code)
 
 **Exit criteria**:
 
-- Разработчик может выполнять типовые сценарии с минимальной конфигурацией и
-  понятной диагностикой происхождения/содержимого кэша.
+- Разработчик может выполнять типовые сценарии через явные repo-tracked recipes
+  с низким локальным setup friction и понятной диагностикой происхождения/
+  содержимого кэша.
 
 ---
 
