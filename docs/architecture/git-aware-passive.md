@@ -113,9 +113,18 @@ Rules:
 - diff-specific options come before the wrapped command;
 - the wrapped command keeps its current syntax unchanged;
 - global `-v` stays the verbose control and global `--output` stays the text/json selector;
-- the first implementation slice supports exactly one wrapped `plan:*` or `prepare:*` command;
-- nested composite `prepare ... run` is out of scope for the first slice;
-- future `run:*` support is possible only for file-backed inputs, because inline-only invocations may have no revision-dependent payload.
+- the first implementation slice supports either one wrapped `plan:*` or `prepare:*`
+  command, or one normal two-stage `prepare ... run` composite;
+- wrapped composites may mix raw and alias stages exactly as in the main CLI;
+- future standalone `run:*` support is possible only for file-backed inputs,
+  because inline-only invocations may have no revision-dependent payload.
+
+Examples of the accepted composite shape:
+
+```bash
+sqlrs diff --from-ref <refA> --to-ref <refB> prepare chinook run:psql -- -f ./queries.sql
+sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sql run smoke
+```
 
 What `diff` compares:
 
@@ -128,8 +137,10 @@ What `diff` compares:
 1. Parse the diff scope (`from/to ref` or `from/to path`).
 2. Parse the wrapped command using the same CLI grammar as the main invocation.
 3. For each side independently, resolve files/includes according to that side's own revision or path context.
-4. Build the derived representation for the wrapped command.
-5. Compare the two derived representations and render the report.
+4. Build the derived representation for the wrapped command, or for each phase
+   independently if the wrapped form is `prepare ... run`.
+5. Compare the derived representations and render the report, keeping `prepare`
+   and `run` as separate diff phases for wrapped composites.
 
 ---
 

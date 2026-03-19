@@ -157,6 +157,7 @@ func Run(args []string) error {
 			if err != nil {
 				return err
 			}
+			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
 			aliasArgs := buildPrepareAliasCommandArgs(alias, invocation)
 			prepareOpts := cmdCtx.prepareOptions(len(commands) > 1)
 			switch alias.Kind {
@@ -207,9 +208,34 @@ func Run(args []string) error {
 			if err != nil {
 				return err
 			}
+			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
 			return runPlanKind(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, buildPlanAliasCommandArgs(alias), cmdCtx.output, alias.Kind)
 		case "run":
-			return fmt.Errorf("missing run kind (consider run:psql)")
+			invocation, showHelp, err := parseRunAliasArgs(cmd.Args, prepared == nil)
+			if err != nil {
+				return err
+			}
+			if showHelp {
+				cli.PrintRunUsage(os.Stdout)
+				return nil
+			}
+			aliasPath, err := resolveRunAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
+			if err != nil {
+				return err
+			}
+			alias, err := loadRunAlias(aliasPath)
+			if err != nil {
+				return err
+			}
+			alias.Args = rebaseRunAliasArgs(alias.Kind, alias.Args, aliasPath)
+			runOpts := cmdCtx.runOptions()
+			if prepared != nil {
+				runOpts.InstanceRef = prepared.InstanceID
+				defer cleanupPreparedInstance(context.Background(), os.Stderr, runOpts, prepared.InstanceID, cmdCtx.verbose)
+			}
+			if err := runRun(os.Stdout, os.Stderr, runOpts, alias.Kind, buildRunAliasCommandArgs(alias, invocation), cmdCtx.workspaceRoot, cmdCtx.cwd); err != nil {
+				return err
+			}
 		default:
 			if strings.HasPrefix(cmd.Name, "prepare:") {
 				kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "prepare:"))

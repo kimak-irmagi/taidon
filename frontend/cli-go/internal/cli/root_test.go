@@ -136,3 +136,92 @@ func TestParseArgsPrepareAliasExactFileMode(t *testing.T) {
 		t.Fatalf("unexpected prepare args: %+v", cmds[0].Args)
 	}
 }
+
+func TestParseArgsCompositePrepareAliasRunRaw(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{
+		"prepare", "chinook",
+		"run:psql", "--", "-f", "queries.sql",
+	})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %+v", cmds)
+	}
+	if cmds[0].Name != "prepare" || len(cmds[0].Args) != 1 || cmds[0].Args[0] != "chinook" {
+		t.Fatalf("unexpected first command: %+v", cmds[0])
+	}
+	if cmds[1].Name != "run:psql" || len(cmds[1].Args) != 3 || cmds[1].Args[0] != "--" || cmds[1].Args[1] != "-f" || cmds[1].Args[2] != "queries.sql" {
+		t.Fatalf("unexpected second command: %+v", cmds[1])
+	}
+}
+
+func TestParseArgsCompositePrepareAliasParentRefRunRaw(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{
+		"prepare", "../chinook",
+		"run:psql", "--", "-f", "queries.sql",
+	})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %+v", cmds)
+	}
+	if cmds[0].Name != "prepare" || len(cmds[0].Args) != 1 || cmds[0].Args[0] != "../chinook" {
+		t.Fatalf("unexpected first command: %+v", cmds[0])
+	}
+	if cmds[1].Name != "run:psql" || len(cmds[1].Args) != 3 || cmds[1].Args[0] != "--" || cmds[1].Args[1] != "-f" || cmds[1].Args[2] != "queries.sql" {
+		t.Fatalf("unexpected second command: %+v", cmds[1])
+	}
+}
+
+func TestParseArgsCompositePrepareRawRunAlias(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{
+		"prepare:psql", "--", "-f", "prepare.sql",
+		"run", "smoke",
+	})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %+v", cmds)
+	}
+	if cmds[0].Name != "prepare:psql" || len(cmds[0].Args) != 3 || cmds[0].Args[0] != "--" || cmds[0].Args[1] != "-f" || cmds[0].Args[2] != "prepare.sql" {
+		t.Fatalf("unexpected first command: %+v", cmds[0])
+	}
+	if cmds[1].Name != "run" || len(cmds[1].Args) != 1 || cmds[1].Args[0] != "smoke" {
+		t.Fatalf("unexpected second command: %+v", cmds[1])
+	}
+}
+
+func TestParseArgsCompositePrepareAliasRunAlias(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{
+		"prepare", "chinook",
+		"run", "smoke",
+	})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %+v", cmds)
+	}
+	if cmds[0].Name != "prepare" || len(cmds[0].Args) != 1 || cmds[0].Args[0] != "chinook" {
+		t.Fatalf("unexpected first command: %+v", cmds[0])
+	}
+	if cmds[1].Name != "run" || len(cmds[1].Args) != 1 || cmds[1].Args[0] != "smoke" {
+		t.Fatalf("unexpected second command: %+v", cmds[1])
+	}
+}
+
+func TestParseArgsRunAliasStandalone(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"run", "smoke", "--instance", "dev"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "run" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "smoke|--instance|dev" {
+		t.Fatalf("unexpected run args: %q", got)
+	}
+}

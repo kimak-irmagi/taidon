@@ -80,14 +80,19 @@ func parsePlanAliasArgs(args []string) (string, bool, error) {
 }
 
 func resolvePrepareAliasPath(workspaceRoot string, cwd string, ref string) (string, error) {
-	base := strings.TrimSpace(workspaceRoot)
+	base := strings.TrimSpace(cwd)
 	if base == "" {
-		base = strings.TrimSpace(cwd)
+		base = strings.TrimSpace(workspaceRoot)
 	}
 	if base == "" {
 		return "", ExitErrorf(2, "workspace root is required to resolve prepare aliases")
 	}
 	base = filepath.Clean(base)
+	boundary := strings.TrimSpace(workspaceRoot)
+	if boundary == "" {
+		boundary = base
+	}
+	boundary = filepath.Clean(boundary)
 
 	cleanedRef := strings.TrimSpace(ref)
 	if cleanedRef == "" {
@@ -107,7 +112,7 @@ func resolvePrepareAliasPath(workspaceRoot string, cwd string, ref string) (stri
 		relativePath += prepareAliasSuffix
 	}
 
-	resolved, _, err := normalizeFilePath(relativePath, base, base, nil)
+	resolved, _, err := normalizeFilePath(relativePath, boundary, base, nil)
 	if err != nil {
 		return "", err
 	}

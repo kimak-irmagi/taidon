@@ -39,7 +39,7 @@ M2 должен уменьшить трение при локальном onboar
 Утвержден следующий порядок реализации:
 
 1. file-based prepare aliases
-2. run aliases и alias inspection
+2. run aliases, alias inspection и mixed `prepare ... run` composition
 3. `discover --aliases`
 4. generic discover analyzers
 5. shared local input graph primitives
@@ -59,7 +59,8 @@ local workspace config.
 
 **Основной результат**:
 
-- `sqlrs plan <prepare-ref>` резолвит `<prepare-ref>.prep.s9s.yaml`
+- `sqlrs plan <prepare-ref>` резолвит `<prepare-ref>.prep.s9s.yaml` от
+  текущего рабочего каталога
 - `sqlrs prepare <prepare-ref>` резолвит тот же класс alias files
 - поддерживается exact-file escape через trailing `.`
 - runtime names остаются отдельными от alias refs
@@ -67,7 +68,8 @@ local workspace config.
 **Ожидаемая работа**:
 
 - определить формат prepare alias files
-- реализовать workspace-root-relative alias-ref resolution
+- реализовать alias-ref resolution от текущего рабочего каталога
+- резолвить file-bearing alias arguments относительно директории alias file
 - добавить alias-mode dispatch для `plan` и `prepare`
 - задокументировать взаимодействие с `--name`
 
@@ -85,13 +87,16 @@ local workspace config.
 - diff
 - Git refs
 
-### 4.2 PR2: Run Aliases и Alias Inspection
+### 4.2 PR2: Run Aliases, Alias Inspection и Mixed Composition
 
-**Цель**: завершить явную alias execution surface и добавить inspection tools.
+**Цель**: завершить явную alias execution surface и заставить обычные
+`prepare ... run` pipeline работать через raw и alias modes.
 
 **Основной результат**:
 
-- `sqlrs run <run-ref> --instance <id|name>` резолвит `<run-ref>.run.s9s.yaml`
+- standalone `sqlrs run <run-ref> --instance <id|name>` резолвит
+  `<run-ref>.run.s9s.yaml` от текущего рабочего каталога
+- `prepare ... run ...` принимает смешанные raw/alias комбинации
 - `sqlrs alias ls`
 - `sqlrs alias show <ref>`
 - `sqlrs alias validate [<ref>]`
@@ -100,15 +105,20 @@ local workspace config.
 
 - определить формат run alias files
 - добавить run alias-mode dispatch
+- разрешить смешивание raw/alias стадий в composite `prepare ... run`
+- запретить `--instance`, если target instance уже выбран предшествующим
+  `prepare`
 - реализовать alias listing/show/validation commands
 - сохранить raw `run:<kind>` mode рядом с alias mode
 
 **Ожидаемые тесты**:
 
 - тесты run alias resolution
+- тесты composite grammar для смешанных raw/alias стадий
 - тесты alias inspection commands
 - тесты валидации kind-specific constraints
-- negative tests для missing `--instance` и wrong alias type
+- negative tests для missing `--instance`, conflicting composite `--instance`
+  и wrong alias type
 
 **Вне scope**:
 
@@ -210,13 +220,16 @@ local inputs.
 **Основной результат**:
 
 - `sqlrs diff --from-path/--to-path ...` работает для одного wrapped `plan:*`
-  или `prepare:*` command
+  или `prepare:*` command, а также для обычной двухстадийной grammar
+  `prepare ... run`
 
 **Ожидаемая работа**:
 
 - добавить dispatch команды `diff`
 - отдельно парсить diff scope и wrapped command
 - переиспользовать input-graph builders из PR5
+- отдельно вычислять wrapped `prepare` и `run` фазы, если используется
+  composite
 - реализовать human и JSON rendering
 
 **Ожидаемые тесты**:
@@ -224,6 +237,7 @@ local inputs.
 - тесты парсинга аргументов
 - path-mode compare tests для `plan:psql`
 - path-mode compare tests для `prepare:lb`
+- path-mode compare tests для mixed raw/alias `prepare ... run`
 - тесты JSON shape
 
 ### 4.7 PR7: Git Ref Execution Baseline
@@ -277,7 +291,10 @@ revision без изменения working tree.
 - Каждый slice должен нести самостоятельную пользовательскую ценность.
 - Discovery остается advisory, если только явно не выбран определенный write mode.
 - Execution commands никогда не должны зависеть от предыдущего `discover`.
-- Alias refs должны оставаться workspace-root relative и детерминированными.
+- Alias refs должны оставаться детерминированными и зависеть от текущего
+  рабочего каталога.
+- File-bearing paths внутри alias files должны резолвиться от директории самого
+  alias file.
 - Names остаются runtime handles и не заменяют aliases.
 - Если slice меняет command semantics, в том же PR нужно обновлять релевантные
   user guide и architecture/contract docs.

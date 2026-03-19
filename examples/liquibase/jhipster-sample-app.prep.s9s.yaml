@@ -1,0 +1,6 @@
+kind: lb
+image: postgres:17
+args:
+  - update
+  - --changelog-file
+  - jhipster-sample-app/config/liquibase/master.xml

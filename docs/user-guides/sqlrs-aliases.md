@@ -11,9 +11,10 @@ Current local CLI support includes:
 - `*.prep.s9s.yaml` prepare alias files
 - exact-file escape via a trailing `.`
 
-Still planned:
+Approved next slice:
 
-- `sqlrs run <run-ref> --instance <id|name>`
+- `sqlrs run <run-ref> [--instance <id|name>]`
+- mixed `prepare ... run ...` composite invocations across raw and alias modes
 - explicit `sqlrs alias ...` management commands
 - `sqlrs discover ...`
 - alias-driven name binding flags such as `--name`
@@ -71,7 +72,13 @@ from `.sqlrs/config.yaml`, which remains local-only and developer-specific.
 
 ## Alias Reference Resolution
 
-Alias refs are **workspace-root relative logical stems**.
+Alias refs are **current-working-directory-relative logical stems**.
+
+Workspace discovery still matters, but only as a **boundary and config root**:
+
+- alias refs are resolved from the caller's current working directory;
+- the resolved alias file must still stay within the active workspace;
+- execution does not silently rebase alias refs against the workspace root.
 
 ### Prepare / plan resolution
 
@@ -82,35 +89,53 @@ sqlrs prepare <ref>
 
 Resolution rule:
 
-- `sqlrs prepare chinook` -> `<workspace>/chinook.prep.s9s.yaml`
-- `sqlrs prepare path/chinook` -> `<workspace>/path/chinook.prep.s9s.yaml`
+- `sqlrs prepare chinook` -> `<cwd>/chinook.prep.s9s.yaml`
+- `sqlrs prepare path/chinook` -> `<cwd>/path/chinook.prep.s9s.yaml`
+- if `pwd = <workspace>/examples/chinook`, then
+  `sqlrs prepare ../chinook` -> `<workspace>/examples/chinook.prep.s9s.yaml`
 
 ### Run resolution
 
 ```text
-sqlrs run <ref> --instance <id|name>
+sqlrs run <ref> [--instance <id|name>]
 ```
 
 Resolution rule:
 
-- `sqlrs run smoke` -> `<workspace>/smoke.run.s9s.yaml`
-- `sqlrs run path/smoke` -> `<workspace>/path/smoke.run.s9s.yaml`
+- `sqlrs run smoke` -> `<cwd>/smoke.run.s9s.yaml`
+- `sqlrs run path/smoke` -> `<cwd>/path/smoke.run.s9s.yaml`
 
 ### Exact-file escape
 
 If the ref ends with a trailing `.`, sqlrs disables suffix inference and uses
 the path literally after stripping the final dot:
 
-- `sqlrs prepare chinook.txt.` -> `<workspace>/chinook.txt`
+- `sqlrs prepare chinook.txt.` -> `<cwd>/chinook.txt`
 
 This is an escape hatch for explicit files. It is not the primary happy path.
+
+### Paths inside alias files
+
+Alias-file payloads are resolved relative to the alias file itself.
+
+Examples:
+
+- if `examples/chinook.prep.s9s.yaml` contains `- -f` / `- chinook/prepare.sql`,
+  then `chinook/prepare.sql` resolves from `examples/`, not from the caller's
+  current working directory;
+- if `db/app.prep.s9s.yaml` contains `- --changelog-file` / `- changelog.xml`,
+  then `changelog.xml` resolves to `db/changelog.xml`.
+
+This rule applies only to paths read from the alias file. Raw command stages
+such as `prepare:psql -- -f queries.sql` or `run:psql -- -f queries.sql` keep
+their normal current-working-directory-relative path semantics.
 
 ### Non-goals of alias resolution
 
 Alias resolution must not:
 
 - scan the workspace recursively looking for a matching basename;
-- depend on the current working directory once the workspace root is known;
+- silently reinterpret the requested ref as workspace-root relative;
 - fall back to heuristics when the requested ref is missing.
 
 If the resolved file does not exist, the command fails explicitly.
@@ -138,7 +163,7 @@ Alias mode uses the bare verb plus an alias ref as the subject:
 ```text
 sqlrs plan <prepare-ref>
 sqlrs prepare <prepare-ref>
-sqlrs run <run-ref> --instance <id|name>
+sqlrs run <run-ref> [--instance <id|name>]
 ```
 
 Examples:
@@ -152,11 +177,9 @@ sqlrs run smoke --instance dev
 ### Alias mode rules
 
 - `plan <prepare-ref>` and `prepare <prepare-ref>` load a prepare alias file.
-- `run <run-ref> --instance <id|name>` loads a run alias file and targets an
-  existing instance or instance name.
+- `run <run-ref>` loads a run alias file.
 - In alias mode, the tool kind and tool arguments come from the alias file.
-- Alias mode does **not** accept inline tool arguments in the first design
-  slice.
+- An alias stage does **not** accept inline tool arguments of its own.
 - Only orchestration flags remain valid in alias mode:
   - for `prepare`: `--watch`, `--no-watch`
   - future follow-up for `prepare`: `--name`, later `--reuse`, `--fresh`,
@@ -165,6 +188,39 @@ sqlrs run smoke --instance dev
 
 This keeps the alias file as the canonical recipe instead of turning it into a
 partial preset layered with ad-hoc command-line overrides.
+
+### Mixed composite `prepare ... run`
+
+The approved next slice allows the normal two-stage `prepare ... run`
+invocation to mix raw and alias modes freely:
+
+```text
+sqlrs prepare <prepare-ref> run <run-ref>
+sqlrs prepare <prepare-ref> run:<kind> [--instance <id|name>] [-- <command>] [args...]
+sqlrs prepare:<kind> ... run <run-ref>
+sqlrs prepare:<kind> ... run:<kind> [--instance <id|name>] [-- <command>] [args...]
+```
+
+Examples:
+
+```bash
+sqlrs prepare chinook run:psql -- -f queries.sql
+sqlrs prepare:psql -- -f prepare.sql run smoke
+sqlrs prepare chinook run smoke
+```
+
+Composite rules:
+
+- A composite invocation still contains exactly two stages: one `prepare`
+  stage and one `run` stage.
+- The `prepare` stage may use alias mode or raw mode.
+- The `run` stage may use alias mode or raw mode.
+- If a `run` stage follows `prepare` in the same invocation, the target
+  instance is the instance produced by that `prepare`.
+- In that composite case, `--instance` must not be used on the `run` stage;
+  providing it is an explicit ambiguity error.
+- `--no-watch` or interactive `detach` still skip the subsequent `run` stage,
+  regardless of whether that stage is raw or alias-backed.
 
 ---
 
@@ -301,7 +357,8 @@ This design optimizes for low surprise:
 
 - repo-tracked workflows are explicit files;
 - local-only settings stay local;
-- alias refs are deterministic and workspace-root relative;
+- alias refs are deterministic and cwd-relative;
+- file-bearing paths inside alias files stay local to the alias file;
 - `discover` helps authors improve a workspace but never becomes execution-time
   magic;
 - runtime handles (`names`) stay distinct from repo-tracked recipes.

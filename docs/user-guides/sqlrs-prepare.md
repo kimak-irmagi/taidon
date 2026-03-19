@@ -33,14 +33,48 @@ sqlrs prepare:<kind> [--watch|--no-watch] [--image <image-id>] [--] [tool-args..
 Where:
 
 - bare `prepare <ref>` resolves a repo-tracked prepare alias file
-  (`<workspace>/<ref>.prep.s9s.yaml`);
+  from the current working directory (`<cwd>/<ref>.prep.s9s.yaml`);
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
 - `--watch` keeps the CLI attached to the job until terminal status (default).
 - `--no-watch` submits the job and exits immediately with job references.
 - `--image <image-id>` overrides the base DB image.
 - `tool-args` are forwarded to the underlying tool for the selected kind.
 
+For alias mode, paths read from the alias file itself are resolved relative to
+the alias file directory, not relative to the caller's current working
+directory.
+
 Alias-mode details are described in [`sqlrs-aliases.md`](sqlrs-aliases.md).
+
+Status note:
+
+- standalone `prepare <ref>` is already implemented;
+- mixed `prepare ... run ...` forms that combine alias mode and raw mode are an
+  approved next-slice extension and follow the syntax below.
+
+### Composite `prepare ... run`
+
+`prepare` may be the first stage of a normal two-stage composite invocation:
+
+```text
+sqlrs prepare <prepare-ref> run <run-ref>
+sqlrs prepare <prepare-ref> run:<kind> [--instance <id|name>] [-- <command>] [args...]
+sqlrs prepare:<kind> [--watch|--no-watch] [--image <image-id>] [--] [tool-args...] run <run-ref>
+sqlrs prepare:<kind> [--watch|--no-watch] [--image <image-id>] [--] [tool-args...] run:<kind> [--instance <id|name>] [-- <command>] [args...]
+```
+
+Rules:
+
+- the `prepare` stage may use alias mode or raw mode;
+- the `run` stage may use alias mode or raw mode;
+- the composite still has exactly one `prepare` stage and one `run` stage;
+- if the `run` stage follows `prepare` in the same invocation, it targets the
+  prepared instance and must not also specify `--instance`;
+- alias stages keep their kind and tool args inside the alias file and do not
+  accept per-stage inline tool arguments.
+- raw-stage file paths keep their normal current-working-directory-relative
+  semantics, while alias-stage file paths are resolved relative to the alias
+  file used by that stage.
 
 ### Variant docs
 
@@ -197,7 +231,8 @@ Rules:
 For composite invocation `prepare ... run ...`, `detach` means:
 
 - disconnect from `prepare`,
-- skip the subsequent `run` phase in this CLI process,
+- skip the subsequent `run` phase in this CLI process, whether that phase is
+  raw or alias-backed,
 - exit successfully after printing the `job_id` and a message that `run` was skipped.
 
 ---

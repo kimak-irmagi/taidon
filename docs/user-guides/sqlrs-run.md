@@ -2,7 +2,8 @@
 
 ## Overview
 
-`sqlrs run` executes an external command against an **existing database instance**.
+`sqlrs run` executes an external command or alias-backed preset against an
+**existing database instance**.
 
 Unlike `prepare`, `run` **never constructs or restores database state**.
 It only consumes an already available instance and injects its DSN into
@@ -26,24 +27,40 @@ and test runners.
 ## Command Syntax
 
 ```text
-sqlrs run[:kind] [OPTIONS] [-- <command> ] [args...]
+sqlrs run <run-ref> [--instance <id|name>]
+sqlrs run:<kind> [--instance <id|name>] [-- <command> ] [args...]
 ```
 
 Where:
 
-- `:kind` defines how the DSN is passed to the command.
-- `<command>` is executed verbatim after `--` (optional).
+- bare `run <run-ref>` resolves a repo-tracked run alias file
+  from the current working directory (`<cwd>/<run-ref>.run.s9s.yaml`);
+- `:kind` selects raw mode and defines how the DSN is passed to the command;
+- `<command>` is executed verbatim after `--` (optional);
 - `OPTIONS` control instance resolution.
+
+For alias mode, paths read from the run alias file itself are resolved relative
+to that alias file directory.
 
 If `<command>` is omitted, `run:<kind>` uses its default command. In that case,
 `--` may be omitted as well, and any remaining arguments apply to the default
 command.
 
+Status note:
+
+- raw `run:<kind>` is implemented today;
+- alias-mode `run <run-ref>` and mixed `prepare ... run ...` composites are the
+  approved next slice and are documented here as the intended CLI contract.
+
 ---
 
-## run[:kind] Concept
+## Run Modes
 
-`run[:kind]` defines:
+`run` has two complementary modes.
+
+### Raw mode: `run:<kind>`
+
+`run:<kind>` defines:
 
 1. **DSN injection mechanism**
 2. The **default command**, if none is provided
@@ -56,6 +73,17 @@ Built-in kinds include:
 
 Additional run kinds may be declared declaratively in
 `.sqlrs/config.yaml`.
+
+### Alias mode: `run <run-ref>`
+
+`run <run-ref>` resolves a repo-tracked run alias file and loads:
+
+1. the underlying run kind
+2. the tool arguments or default command shape
+3. any future run-specific metadata that belongs to the repository contract
+
+Alias mode keeps the tool recipe versioned with the repository while leaving the
+target instance selection explicit.
 
 ---
 
@@ -104,7 +132,7 @@ Before executing the command, `run` must resolve a target instance.
 Resolution order:
 
 1. Instance produced by a preceding `prepare` in the same invocation
-2. `--instance <id>`
+2. `--instance <id|name>`
 
 If resolution fails, `run` terminates with an error.
 
@@ -113,6 +141,13 @@ explicit ambiguity error.
 
 `--instance` accepts either an instance id or a name. If multiple candidates are
 found, `run` fails with an ambiguity error.
+
+For alias mode:
+
+- standalone `sqlrs run <run-ref>` requires `--instance <id|name>`;
+- in a composite `prepare ... run <run-ref>` invocation, the run alias consumes
+  the instance produced by the preceding `prepare`;
+- that composite form must not also pass `--instance`.
 
 ---
 
@@ -125,6 +160,18 @@ sqlrs prepare:psql -- -f init.sql run:psql -- -c "select 1"
 - A temporary instance is created by `prepare`
 - `run` executes against it
 - Instance is discarded immediately after `run` finishes
+
+The same two-stage shape may mix raw and alias modes:
+
+```bash
+sqlrs prepare chinook run:psql -- -f queries.sql
+sqlrs prepare:psql -- -f prepare.sql run smoke
+sqlrs prepare chinook run smoke
+```
+
+In those mixed forms, alias-stage file paths are resolved relative to the alias
+file used by that stage, while raw-stage file paths keep normal
+current-working-directory-relative semantics.
 
 ---
 
@@ -230,6 +277,12 @@ sqlrs prepare:psql -- -f init.sql run:psql -- -c "select count(*) from users"
 
 ```bash
 sqlrs run:pgbench --instance my-instance -- -c 10 -T 30
+```
+
+### Run an alias against an explicit instance
+
+```bash
+sqlrs run smoke --instance dev
 ```
 
 ---

@@ -1,9 +1,14 @@
 # 2026-03-16 File-Based Aliases and Discover Command
 
+Status: Obsolete. Superseded by
+[`2026-03-18-mixed-alias-composite-grammar.md`](2026-03-18-mixed-alias-composite-grammar.md)
+and
+[`2026-03-19-alias-path-resolution-bases.md`](2026-03-19-alias-path-resolution-bases.md).
+
 - Conversation timestamp: 2026-03-16T18:05:00+07:00
 - GitHub user id: @evilguest
 - Agent name/version: Codex / GPT-5
-- Status: Accepted
+- Status: Obsolete
 
 ## Decision Record 1: repo-tracked alias storage and resolution
 
@@ -196,9 +201,20 @@ preserving explicitness and leaving space for later Git-aware capabilities.
 
 ## Contradiction check
 
-`docs/adr/2026-03-16-m2-local-dx-slice-order.md` is superseded by this ADR and
-should be marked obsolete.
+This ADR is obsolete.
 
-This ADR does not change the accepted `sqlrs diff` command shape from
-`2026-03-09-git-diff-command-shape.md`. It changes the local M2 execution model
-that precedes the later Git-aware slices.
+It introduced the accepted file-based alias storage model and the broad
+`discover` verb, but its alias-consumption and slice-order sections were later
+revised:
+
+- standalone/composite `run` alias semantics were expanded;
+- mixed raw/alias `prepare ... run` composition was accepted;
+- `sqlrs diff` gained bounded parity with the same two-stage composite shape;
+- the next M2 execution slice was reframed around run aliases plus composite
+  support.
+
+The current source of truth is
+[`2026-03-18-mixed-alias-composite-grammar.md`](2026-03-18-mixed-alias-composite-grammar.md)
+for alias/run grammar and
+[`2026-03-19-alias-path-resolution-bases.md`](2026-03-19-alias-path-resolution-bases.md)
+for alias path-resolution semantics.

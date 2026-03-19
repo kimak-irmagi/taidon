@@ -572,8 +572,8 @@ func printStatesTableWithOptions(w io.Writer, rows []client.StateEntry, noHeader
 
 const (
 	statePrepareArgsMinWidth  = 16
-	statePrepareArgsMaxWidth  = 48
 	nonTTYWideColumnWidth     = 96
+	statePrepareArgsMaxWidth  = nonTTYWideColumnWidth
 	ttyWideColumnSafetyMargin = 1
 	stateTableColumnPadding   = 2
 	stateTableDefaultGapCount = 6

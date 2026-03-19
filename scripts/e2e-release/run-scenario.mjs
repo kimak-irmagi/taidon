@@ -48,6 +48,81 @@ function loadScenario(scenariosPath, scenarioId) {
   return scenario;
 }
 
+function normalizeScenarioRelativePath(raw, label) {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (value === "") {
+    throw new Error(`Scenario ${label} is required`);
+  }
+  const normalized = path.posix.normalize(value.replaceAll("\\", "/"));
+  if (
+    normalized === "." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../") ||
+    path.posix.isAbsolute(normalized)
+  ) {
+    throw new Error(`Scenario ${label} must stay within examples/: ${value}`);
+  }
+  return normalized;
+}
+
+function resolveScenarioExampleRef(scenario) {
+  return normalizeScenarioRelativePath(scenario.example, "example");
+}
+
+function resolvePrepareConfig(scenario, scenarioId) {
+  const prepareAlias =
+    typeof scenario.prepareAlias === "string" && scenario.prepareAlias.trim() !== ""
+      ? normalizeScenarioRelativePath(scenario.prepareAlias, "prepareAlias")
+      : "";
+  const hasRawPrepare = typeof scenario.prepareCmd === "string" || Array.isArray(scenario.prepareArgs);
+  if (prepareAlias !== "" && hasRawPrepare) {
+    throw new Error(`Scenario ${scenarioId} must use either prepareAlias or raw prepareCmd/prepareArgs`);
+  }
+  if (prepareAlias !== "") {
+    return { mode: "alias", prepareAlias };
+  }
+  const prepareCmd = typeof scenario.prepareCmd === "string" && scenario.prepareCmd.trim() !== "" ? scenario.prepareCmd : "prepare:psql";
+  const prepareArgs = Array.isArray(scenario.prepareArgs)
+    ? scenario.prepareArgs
+    : prepareCmd === "prepare:psql"
+      ? ["-f", "prepare.sql"]
+      : null;
+  if (!prepareArgs) {
+    throw new Error(`Scenario ${scenarioId} must define prepareArgs for ${prepareCmd}`);
+  }
+  return { mode: "raw", prepareCmd, prepareArgs };
+}
+
+function stageScenarioWorkspace({ repoRoot, workspaceDir, scenario }) {
+  const exampleRef = resolveScenarioExampleRef(scenario);
+  const exampleDir = path.join(repoRoot, "examples", exampleRef);
+  if (!fs.existsSync(exampleDir)) {
+    throw new Error(`Example directory not found: ${exampleDir}`);
+  }
+
+  const stagedExampleDir = path.join(workspaceDir, exampleRef);
+  ensureDir(path.dirname(stagedExampleDir));
+  fs.cpSync(exampleDir, stagedExampleDir, { recursive: true });
+
+  const nestedWorkspaceMarkerDir = path.join(stagedExampleDir, ".sqlrs");
+  if (fs.existsSync(nestedWorkspaceMarkerDir)) {
+    fs.rmSync(nestedWorkspaceMarkerDir, { recursive: true, force: true });
+  }
+
+  const prepare = resolvePrepareConfig(scenario, scenario.id || "unknown");
+  if (prepare.mode === "alias") {
+    const aliasSource = path.join(repoRoot, "examples", `${prepare.prepareAlias}.prep.s9s.yaml`);
+    if (!fs.existsSync(aliasSource)) {
+      throw new Error(`Prepare alias file not found: ${aliasSource}`);
+    }
+    const aliasTarget = path.join(workspaceDir, `${prepare.prepareAlias}.prep.s9s.yaml`);
+    ensureDir(path.dirname(aliasTarget));
+    fs.copyFileSync(aliasSource, aliasTarget);
+  }
+
+  return { exampleRef, exampleDir, stagedExampleDir, prepare };
+}
+
 function commandToString(cmd) {
   return cmd.map((part) => (part.includes(" ") ? `"${part}"` : part)).join(" ");
 }
@@ -205,6 +280,26 @@ export function buildRuntimeConfigCommand({ sqlrsPath, workspaceDir, containerRu
   return [sqlrsPath, "--workspace", workspaceDir, "config", "set", "container.runtime", containerRuntime];
 }
 
+export function buildPrepareFlowCommandPrefix({ sqlrsPath, workspaceDir, timeout, scenario }) {
+  const prepare = resolvePrepareConfig(scenario, scenario.id || "unknown");
+  if (prepare.mode === "alias") {
+    return [sqlrsPath, "--timeout", timeout, "--workspace", workspaceDir, "prepare", prepare.prepareAlias];
+  }
+  const image = typeof scenario.image === "string" && scenario.image.trim() !== "" ? scenario.image : "postgres:17";
+  return [
+    sqlrsPath,
+    "--timeout",
+    timeout,
+    "--workspace",
+    workspaceDir,
+    prepare.prepareCmd,
+    "--image",
+    image,
+    "--",
+    ...prepare.prepareArgs
+  ];
+}
+
 export function resolveStorePlan(snapshotBackend, outDir) {
   if (snapshotBackend === "btrfs") {
     const mountDir = path.join(outDir, "btrfs-store");
@@ -287,10 +382,6 @@ async function main() {
   }
 
   const scenario = loadScenario(scenariosPath, scenarioId);
-  const exampleDir = path.join(repoRoot, "examples", scenario.example);
-  if (!fs.existsSync(exampleDir)) {
-    throw new Error(`Example directory not found: ${exampleDir}`);
-  }
 
   const queryTemplatePath = path.join(repoRoot, scenario.queryTemplate);
   if (!fs.existsSync(queryTemplatePath)) {
@@ -302,11 +393,7 @@ async function main() {
 
   const workspaceDir = path.join(outDir, "workspace");
   ensureDir(workspaceDir);
-  fs.cpSync(exampleDir, workspaceDir, { recursive: true });
-  const workspaceMarkerDir = path.join(workspaceDir, ".sqlrs");
-  if (fs.existsSync(workspaceMarkerDir)) {
-    fs.rmSync(workspaceMarkerDir, { recursive: true, force: true });
-  }
+  stageScenarioWorkspace({ repoRoot, workspaceDir, scenario: { ...scenario, id: scenarioId } });
   const storePlan = resolveStorePlan(snapshotBackend, outDir);
   let cleanupStore = () => {};
   cleanupStore = setupStorePlan(storePlan);
@@ -327,34 +414,8 @@ async function main() {
     containerRuntime
   });
 
-  const prepareCmd = typeof scenario.prepareCmd === "string" && scenario.prepareCmd.trim() !== "" ? scenario.prepareCmd : "prepare:psql";
-  const prepareArgs = Array.isArray(scenario.prepareArgs)
-    ? scenario.prepareArgs
-    : prepareCmd === "prepare:psql"
-      ? ["-f", "prepare.sql"]
-      : null;
-  if (!prepareArgs) {
-    throw new Error(`Scenario ${scenarioId} must define prepareArgs for ${prepareCmd}`);
-  }
-
   const runArgs = Array.isArray(scenario.runArgs) ? scenario.runArgs : ["-At", "-f", ".e2e-query.sql"];
-  const image = typeof scenario.image === "string" && scenario.image.trim() !== "" ? scenario.image : "postgres:17";
-
-  const flowCmd = [
-    sqlrsPath,
-    "--timeout",
-    runTimeout,
-    "--workspace",
-    workspaceDir,
-    prepareCmd,
-    "--image",
-    image,
-    "--",
-    ...prepareArgs,
-    "run:psql",
-    "--",
-    ...runArgs
-  ];
+  const flowCmd = [...buildPrepareFlowCommandPrefix({ sqlrsPath, workspaceDir, timeout: runTimeout, scenario: { ...scenario, id: scenarioId } }), "run:psql", "--", ...runArgs];
 
   fs.writeFileSync(path.join(outDir, "command-init.txt"), `${commandToString(initCmd)}\n`, "utf8");
   if (runtimeConfigCmd) {
@@ -435,3 +496,5 @@ if (path.resolve(process.argv[1] || "") === __filename) {
     process.exit(1);
   });
 }
+
+export { loadScenario, resolvePrepareConfig, resolveScenarioExampleRef, stageScenarioWorkspace };

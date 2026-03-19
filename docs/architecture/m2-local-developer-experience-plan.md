@@ -39,7 +39,7 @@ The expected public outcome is:
 The approved implementation order is:
 
 1. file-based prepare aliases
-2. run aliases and alias inspection
+2. run aliases, alias inspection, and mixed `prepare ... run` composition
 3. `discover --aliases`
 4. generic discover analyzers
 5. shared local input graph primitives
@@ -59,7 +59,8 @@ local workspace config.
 
 **Primary outcome**:
 
-- `sqlrs plan <prepare-ref>` resolves `<prepare-ref>.prep.s9s.yaml`
+- `sqlrs plan <prepare-ref>` resolves `<prepare-ref>.prep.s9s.yaml` from the
+  current working directory
 - `sqlrs prepare <prepare-ref>` resolves the same alias class
 - exact-file escape via trailing `.` is supported
 - runtime names remain separate from alias refs
@@ -67,7 +68,8 @@ local workspace config.
 **Expected work**:
 
 - define prepare alias-file format
-- implement workspace-root-relative alias-ref resolution
+- implement current-working-directory-relative alias-ref resolution
+- resolve file-bearing alias arguments relative to the alias file directory
 - add alias-mode dispatch for `plan` and `prepare`
 - document interaction with `--name`
 
@@ -85,13 +87,16 @@ local workspace config.
 - diff
 - Git refs
 
-### 4.2 PR2: Run Aliases and Alias Inspection
+### 4.2 PR2: Run Aliases, Alias Inspection, and Mixed Composition
 
-**Goal**: complete the explicit alias execution surface and add inspection tools.
+**Goal**: complete the explicit alias execution surface and make normal
+`prepare ... run` pipelines work across raw and alias modes.
 
 **Primary outcome**:
 
-- `sqlrs run <run-ref> --instance <id|name>` resolves `<run-ref>.run.s9s.yaml`
+- standalone `sqlrs run <run-ref> --instance <id|name>` resolves
+  `<run-ref>.run.s9s.yaml` from the current working directory
+- `prepare ... run ...` accepts mixed raw/alias combinations
 - `sqlrs alias ls`
 - `sqlrs alias show <ref>`
 - `sqlrs alias validate [<ref>]`
@@ -100,15 +105,20 @@ local workspace config.
 
 - define run alias-file format
 - add run alias-mode dispatch
+- allow raw/alias stage mixing in composite `prepare ... run`
+- forbid `--instance` when the target instance is already selected by a
+  preceding `prepare`
 - implement alias listing/show/validation commands
 - keep raw `run:<kind>` mode intact alongside alias mode
 
 **Tests expected**:
 
 - run alias resolution tests
+- composite grammar tests for mixed raw/alias stages
 - alias inspection command tests
 - validation tests for kind-specific constraints
-- negative tests for missing `--instance` and wrong alias type
+- negative tests for missing `--instance`, conflicting composite `--instance`,
+  and wrong alias type
 
 **Out of scope**:
 
@@ -210,13 +220,16 @@ object access yet.
 **Primary outcome**:
 
 - `sqlrs diff --from-path/--to-path ...` works for one wrapped `plan:*` or
-  `prepare:*` command
+  `prepare:*` command, and for the normal two-stage `prepare ... run`
+  composite grammar
 
 **Expected work**:
 
 - add `diff` command dispatch
 - parse diff scope separately from the wrapped command
 - reuse PR5 input-graph builders
+- evaluate wrapped `prepare` and `run` phases separately when a composite is
+  used
 - implement human and JSON rendering
 
 **Tests expected**:
@@ -224,6 +237,7 @@ object access yet.
 - argument parsing tests
 - path-mode compare tests for `plan:psql`
 - path-mode compare tests for `prepare:lb`
+- path-mode compare tests for mixed raw/alias `prepare ... run`
 - JSON shape tests
 
 ### 4.7 PR7: Git Ref Execution Baseline
@@ -277,7 +291,9 @@ without touching the working tree.
 - Each slice must deliver standalone user value.
 - Discovery remains advisory unless a specific write mode is explicitly selected.
 - Execution commands must never depend on prior `discover` output.
-- Alias refs stay workspace-root relative and deterministic.
+- Alias refs stay deterministic and current-working-directory relative.
+- File-bearing paths inside alias files stay relative to the alias file
+  directory.
 - Names remain runtime handles and do not replace aliases.
 - When a slice changes command semantics, update the relevant user guide and
   architecture/contract docs in the same PR.

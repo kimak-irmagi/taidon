@@ -14,9 +14,13 @@ import (
 
 func TestResolvePrepareAliasPathFromStem(t *testing.T) {
 	workspace := t.TempDir()
-	expected := writePrepareAliasFile(t, workspace, "chinook.prep.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
+	cwd := filepath.Join(workspace, "nested")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("mkdir cwd: %v", err)
+	}
+	expected := writePrepareAliasFile(t, cwd, "chinook.prep.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
 
-	path, err := resolvePrepareAliasPath(workspace, filepath.Join(workspace, "nested"), "chinook")
+	path, err := resolvePrepareAliasPath(workspace, cwd, "chinook")
 	if err != nil {
 		t.Fatalf("resolvePrepareAliasPath: %v", err)
 	}
@@ -25,11 +29,15 @@ func TestResolvePrepareAliasPathFromStem(t *testing.T) {
 	}
 }
 
-func TestResolvePrepareAliasPathNestedPath(t *testing.T) {
+func TestResolvePrepareAliasPathParentRefFromCWD(t *testing.T) {
 	workspace := t.TempDir()
-	expected := writePrepareAliasFile(t, workspace, filepath.Join("path", "chinook.prep.s9s.yaml"), "kind: psql\nargs:\n  - -c\n  - select 1\n")
+	cwd := filepath.Join(workspace, "examples", "chinook")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("mkdir cwd: %v", err)
+	}
+	expected := writePrepareAliasFile(t, workspace, filepath.Join("examples", "chinook.prep.s9s.yaml"), "kind: psql\nargs:\n  - -c\n  - select 1\n")
 
-	path, err := resolvePrepareAliasPath(workspace, workspace, "path/chinook")
+	path, err := resolvePrepareAliasPath(workspace, cwd, "../chinook")
 	if err != nil {
 		t.Fatalf("resolvePrepareAliasPath: %v", err)
 	}
@@ -40,9 +48,13 @@ func TestResolvePrepareAliasPathNestedPath(t *testing.T) {
 
 func TestResolvePrepareAliasPathExactFileEscape(t *testing.T) {
 	workspace := t.TempDir()
-	expected := writePrepareAliasFile(t, workspace, "chinook.txt", "kind: psql\nargs:\n  - -c\n  - select 1\n")
+	cwd := filepath.Join(workspace, "nested")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("mkdir cwd: %v", err)
+	}
+	expected := writePrepareAliasFile(t, cwd, "chinook.txt", "kind: psql\nargs:\n  - -c\n  - select 1\n")
 
-	path, err := resolvePrepareAliasPath(workspace, workspace, "chinook.txt.")
+	path, err := resolvePrepareAliasPath(workspace, cwd, "chinook.txt.")
 	if err != nil {
 		t.Fatalf("resolvePrepareAliasPath: %v", err)
 	}
@@ -53,8 +65,12 @@ func TestResolvePrepareAliasPathExactFileEscape(t *testing.T) {
 
 func TestResolvePrepareAliasPathRejectsMissingFile(t *testing.T) {
 	workspace := t.TempDir()
+	cwd := filepath.Join(workspace, "nested")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("mkdir cwd: %v", err)
+	}
 
-	_, err := resolvePrepareAliasPath(workspace, workspace, "missing")
+	_, err := resolvePrepareAliasPath(workspace, cwd, "missing")
 	if err == nil || !strings.Contains(err.Error(), "prepare alias file not found") {
 		t.Fatalf("expected missing file error, got %v", err)
 	}
@@ -62,9 +78,13 @@ func TestResolvePrepareAliasPathRejectsMissingFile(t *testing.T) {
 
 func TestResolvePrepareAliasPathRejectsOutsideWorkspace(t *testing.T) {
 	workspace := t.TempDir()
-	outside := filepath.Join(workspace, "..", "outside.prep.s9s.yaml")
+	cwd := filepath.Join(workspace, "examples", "chinook")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("mkdir cwd: %v", err)
+	}
 
-	_, err := resolvePrepareAliasPath(workspace, workspace, outside+".")
+	ref := filepath.ToSlash(filepath.Join("..", "..", "..", "outside.prep.s9s.yaml")) + "."
+	_, err := resolvePrepareAliasPath(workspace, cwd, ref)
 	if err == nil || !strings.Contains(err.Error(), "within workspace root") {
 		t.Fatalf("expected workspace boundary error, got %v", err)
 	}
@@ -154,6 +174,7 @@ func TestRunPrepareAliasCommand(t *testing.T) {
 
 	workspace := writeAliasWorkspace(t, temp, server.URL)
 	writePrepareAliasFile(t, workspace, "chinook.prep.s9s.yaml", "kind: psql\nimage: image\nargs:\n  - -c\n  - select 1\n")
+	withWorkingDir(t, workspace)
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -197,6 +218,7 @@ func TestRunPrepareAliasNoWatchCommand(t *testing.T) {
 
 	workspace := writeAliasWorkspace(t, temp, server.URL)
 	writePrepareAliasFile(t, workspace, "chinook.prep.s9s.yaml", "kind: psql\nimage: image\nargs:\n  - -c\n  - select 1\n")
+	withWorkingDir(t, workspace)
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -261,6 +283,7 @@ func TestRunPlanAliasCommandJSON(t *testing.T) {
 
 	workspace := writeAliasWorkspace(t, temp, server.URL)
 	writePrepareAliasFile(t, workspace, "chinook.prep.s9s.yaml", "kind: psql\nimage: image\nargs:\n  - -c\n  - select 1\n")
+	withWorkingDir(t, workspace)
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -314,6 +337,7 @@ func TestRunPlanAliasLiquibaseCommand(t *testing.T) {
 
 	workspace := writeAliasWorkspace(t, temp, server.URL)
 	writePrepareAliasFile(t, workspace, "liquibase.prep.s9s.yaml", "kind: lb\nimage: image\nargs:\n  - update\n")
+	withWorkingDir(t, workspace)
 
 	if err := Run([]string{"--workspace", workspace, "--output=json", "plan", "liquibase"}); err != nil {
 		t.Fatalf("Run: %v", err)

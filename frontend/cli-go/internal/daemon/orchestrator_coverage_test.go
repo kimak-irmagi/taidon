@@ -308,7 +308,7 @@ func writeDaemonScript(t *testing.T, dir, mode string) string {
 		content := "@echo off\r\n"
 		switch mode {
 		case "sleep":
-			content += "ping -n 2 127.0.0.1 >nul\r\n"
+			content += "timeout /t 1 /nobreak >nul\r\n"
 		case "exit":
 			content += "exit /b 7\r\n"
 		default:

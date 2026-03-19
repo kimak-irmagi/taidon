@@ -732,6 +732,10 @@ func isKnownStoreType(value string) bool {
 }
 
 func resolveStoreType(snapshot string, storeType string) (string, error) {
+	return resolveStoreTypeForPlatform(snapshot, storeType, runtime.GOOS, defaultStoreRoot, isBtrfsPath)
+}
+
+func resolveStoreTypeForPlatform(snapshot string, storeType string, goos string, resolveDefaultStoreRoot func() (string, error), isBtrfsStoreRoot func(string) (bool, error)) (string, error) {
 	normalized := normalizeStoreType(storeType)
 	if normalized != "" {
 		return normalized, nil
@@ -740,15 +744,15 @@ func resolveStoreType(snapshot string, storeType string) (string, error) {
 	case "copy", "overlay":
 		return "dir", nil
 	case "btrfs":
-		switch runtime.GOOS {
+		switch goos {
 		case "windows":
 			return "image", nil
 		case "linux":
-			root, err := defaultStoreRoot()
+			root, err := resolveDefaultStoreRoot()
 			if err != nil {
 				return "image", nil
 			}
-			ok, err := isBtrfsPath(root)
+			ok, err := isBtrfsStoreRoot(root)
 			if err == nil && ok {
 				return "dir", nil
 			}
@@ -757,7 +761,7 @@ func resolveStoreType(snapshot string, storeType string) (string, error) {
 			return "dir", nil
 		}
 	case "auto":
-		if runtime.GOOS == "windows" {
+		if goos == "windows" {
 			return "image", nil
 		}
 		return "dir", nil

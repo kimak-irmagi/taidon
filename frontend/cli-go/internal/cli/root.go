@@ -90,6 +90,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  ls       List names, instances, or states")
 	fmt.Fprintln(w, "  rm       Remove an instance or state")
 	fmt.Fprintln(w, "  prepare  Prepare a database state from a repo alias")
+	fmt.Fprintln(w, "  run      Run a repo alias against an instance")
 	fmt.Fprintln(w, "  run:psql  Run a command against an instance (psql)")
 	fmt.Fprintln(w, "  run:pgbench  Run a command against an instance (pgbench)")
 	fmt.Fprintln(w, "  plan     Compute a prepare plan from a repo alias")
@@ -115,35 +116,76 @@ func splitCommands(args []string) ([]Command, error) {
 	if len(args) == 0 {
 		return nil, errors.New("missing command")
 	}
-	if isCompositePrepareRun(args) {
-		runIdx := findRunIndex(args)
-		if runIdx > 0 {
-			return []Command{
-				{Name: args[0], Args: args[1:runIdx]},
-				{Name: args[runIdx], Args: args[runIdx+1:]},
-			}, nil
-		}
+	if runIdx := compositePrepareRunIndex(args); runIdx > 0 {
+		return []Command{
+			{Name: args[0], Args: args[1:runIdx]},
+			{Name: args[runIdx], Args: args[runIdx+1:]},
+		}, nil
 	}
 	return []Command{{Name: args[0], Args: args[1:]}}, nil
+}
+
+func compositePrepareRunIndex(args []string) int {
+	if !isCompositePrepareRun(args) {
+		return -1
+	}
+	if args[0] == "prepare" {
+		return findPrepareAliasRunIndex(args)
+	}
+	return findRunIndex(args)
 }
 
 func isCompositePrepareRun(args []string) bool {
 	if len(args) < 2 {
 		return false
 	}
-	if !strings.HasPrefix(args[0], "prepare:") {
+	switch {
+	case args[0] == "prepare":
+		return findPrepareAliasRunIndex(args) > 0
+	case strings.HasPrefix(args[0], "prepare:"):
+		return findRunIndex(args) > 0
+	default:
 		return false
 	}
-	return findRunIndex(args) > 0
 }
 
 func findRunIndex(args []string) int {
 	for i := 1; i < len(args); i++ {
-		if strings.HasPrefix(args[i], "run:") {
+		if isRunCommandToken(args[i]) {
 			return i
 		}
 	}
 	return -1
+}
+
+func findPrepareAliasRunIndex(args []string) int {
+	hasRef := false
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--watch", "--no-watch", "--help", "-h":
+			continue
+		case "--":
+			return -1
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return -1
+			}
+			if !hasRef {
+				hasRef = true
+				continue
+			}
+			if isRunCommandToken(arg) {
+				return i
+			}
+			return -1
+		}
+	}
+	return -1
+}
+
+func isRunCommandToken(value string) bool {
+	return value == "run" || strings.HasPrefix(value, "run:")
 }
 
 func isCommandToken(value string) bool {

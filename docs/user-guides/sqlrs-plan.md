@@ -22,10 +22,13 @@ sqlrs plan:<kind> [--image <image-id>] [--] [tool-args...]
 Where:
 
 - bare `plan <ref>` resolves a repo-tracked prepare alias file
-  (`<workspace>/<ref>.prep.s9s.yaml`);
+  from the current working directory (`<cwd>/<ref>.prep.s9s.yaml`);
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
 - `--image <image-id>` overrides the base container image.
 - `tool-args` are forwarded to the underlying tool for the selected kind.
+
+For alias mode, paths read from the alias file itself are resolved relative to
+the alias file directory.
 
 If `--` is omitted, all remaining arguments are treated as `tool-args`.
 To pass tool flags that would clash with sqlrs flags (for example `-v`),

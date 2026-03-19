@@ -15,6 +15,9 @@ import (
 	"github.com/sqlrs/cli/internal/config"
 )
 
+var runPrepareFn = cli.RunPrepare
+var submitPrepareFn = cli.SubmitPrepare
+
 type prepareArgs struct {
 	Image          string
 	PsqlArgs       []string
@@ -129,7 +132,7 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 	runOpts.PrepareKind = "psql"
 
 	if !parsed.Watch {
-		accepted, err := cli.SubmitPrepare(context.Background(), runOpts)
+		accepted, err := submitPrepareFn(context.Background(), runOpts)
 		if err != nil {
 			return client.PrepareJobResult{}, false, err
 		}
@@ -140,7 +143,7 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		return client.PrepareJobResult{}, true, nil
 	}
 
-	result, err := cli.RunPrepare(context.Background(), runOpts)
+	result, err := runPrepareFn(context.Background(), runOpts)
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
@@ -217,7 +220,7 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 	runOpts.PrepareKind = "lb"
 
 	if !parsed.Watch {
-		accepted, err := cli.SubmitPrepare(context.Background(), runOpts)
+		accepted, err := submitPrepareFn(context.Background(), runOpts)
 		if err != nil {
 			return client.PrepareJobResult{}, false, err
 		}
@@ -228,7 +231,7 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 		return client.PrepareJobResult{}, true, nil
 	}
 
-	result, err := cli.RunPrepare(context.Background(), runOpts)
+	result, err := runPrepareFn(context.Background(), runOpts)
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {

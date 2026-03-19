@@ -69,8 +69,8 @@ func TestRunCommandMissingRunKind(t *testing.T) {
 		"--endpoint", "http://127.0.0.1:1",
 		"run",
 	})
-	if err == nil || !strings.Contains(err.Error(), "missing run kind") {
-		t.Fatalf("expected missing run kind, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing run alias ref") {
+		t.Fatalf("expected missing run alias ref, got %v", err)
 	}
 }
 

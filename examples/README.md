@@ -50,6 +50,7 @@ examples/
   flights/
     demo-small-en-20170815.sql
   liquibase/
+    jhipster-sample-app.prep.s9s.yaml
     jhipster-sample-app/
       config/
         liquibase/
@@ -71,7 +72,7 @@ examples/
 The fetched SQL and Liquibase source files under `examples/*/` are generated artifacts
 and may be overwritten by re-fetching.
 
-The top-level `*.prep.s9s.yaml` files are repo-maintained `sqlrs` prepare aliases.
+The repo-tracked `*.prep.s9s.yaml` files are maintained `sqlrs` prepare aliases.
 
 ## Fetching the example files
 
@@ -158,6 +159,7 @@ sqlrs prepare chinook
 sqlrs prepare flights
 sqlrs prepare flights-multi-step
 sqlrs prepare sakila
+sqlrs prepare liquibase/jhipster-sample-app
 ```
 
 Example:
@@ -174,7 +176,7 @@ sqlrs \
 
 - Upstream sources may evolve — checksums prevent silent changes.
 - fetched dataset files under `examples/*/` are treated as derived data.
-- top-level `*.prep.s9s.yaml` aliases are hand-maintained wrappers and should be
+- repo-tracked `*.prep.s9s.yaml` aliases are hand-maintained wrappers and should be
   reviewed like normal repo code.
 - To update an upstream dataset:
   1. Update URL / revision in `manifest.yaml`

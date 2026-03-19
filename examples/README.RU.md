@@ -50,6 +50,7 @@ examples/
   flights/
     demo-small-en-20170815.sql
   liquibase/
+    jhipster-sample-app.prep.s9s.yaml
     jhipster-sample-app/
       config/
         liquibase/
@@ -71,7 +72,7 @@ examples/
 SQL- и Liquibase-файлы внутри `examples/*/` являются сгенерированными
 артефактами и могут быть перезаписаны при повторной загрузке.
 
-Верхнеуровневые `*.prep.s9s.yaml` являются поддерживаемыми в репозитории
+Версионируемые `*.prep.s9s.yaml` являются поддерживаемыми в репозитории
 prepare aliases для `sqlrs`.
 
 ## Загрузка файлов примеров
@@ -159,6 +160,7 @@ sqlrs prepare chinook
 sqlrs prepare flights
 sqlrs prepare flights-multi-step
 sqlrs prepare sakila
+sqlrs prepare liquibase/jhipster-sample-app
 ```
 
 Пример:
@@ -175,7 +177,7 @@ sqlrs \
 
 - Источники могут эволюционировать - контрольные суммы предотвращают незаметные изменения.
 - скачанные датасеты внутри `examples/*/` рассматриваются как производные данные.
-- верхнеуровневые `*.prep.s9s.yaml` aliases поддерживаются вручную и должны
+- версионируемые `*.prep.s9s.yaml` aliases поддерживаются вручную и должны
   ревьюиться как обычный код репозитория.
 - Чтобы обновить датасет из источника:
   1. Обновите URL / ревизию в `manifest.yaml`
