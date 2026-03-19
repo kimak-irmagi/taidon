@@ -60,7 +60,7 @@ When working on this project, follow these rules:
 5. Use in-line and doc-comments where appropriate to describe each
    function/class/type/member purpose and behavior (requrements on the input
    parameters, return values, invariants maintained, etc). Make sure to reference
-   the architecture documents from which these requirements are derived.  
+   the architecture documents from which these requirements are derived.
 6. Once the code is written, run the tests, fix any issues, and measure the code
    coverage. Target value is 100% coverage, with the acceptable minimum is 95%.
    The coverage deficiencies should be addressed as follows:
@@ -74,11 +74,15 @@ When working on this project, follow these rules:
        and adding the tests that test these requirements (not the undocumented
        implementation details!)
      - if there are no actual requirements, consider the uncovered lines to be
-       a dead code and plan it for removal 
+       a dead code and plan it for removal
    - The resulting plan for the test coverage increase should be approved by the
      user
    - once approved, proceed with the plan.
-   - once changes are applied, re-measure the coverage. 
+   - once changes are applied, re-measure the coverage.
    - if the coverage is still below target, ask the user for a permission to
      perform one more iteration
-   
+7. Once the code coverage meets the requirement, update the roadmap to reflect
+   the changes done.
+8. Finally prepare the PR description based
+   on all the changes in the current branch (if it is non-`main`) or the current
+   commit set (if we're on the `main` branch) in MD format, displayed in the chat.

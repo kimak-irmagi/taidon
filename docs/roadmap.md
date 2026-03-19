@@ -97,18 +97,24 @@ gantt
   `sqlrs ls --states --cache-details`; persisted `size_bytes` metadata and a
   dedicated release cache-pressure scenario are also in place for the local
   profile.
-- **Done (M2 PR1 baseline)**: repo-tracked prepare aliases now back
-  `sqlrs plan <ref>` and `sqlrs prepare <ref>` through `*.prep.s9s.yaml`
-  files, with deterministic alias-file loading and exact-file escape via
-  trailing `.`.
+- **Done (M2 alias execution baseline)**: repo-tracked prepare and run aliases
+  now back `sqlrs plan <ref>`, `sqlrs prepare <ref>`, and standalone
+  `sqlrs run <ref> --instance ...` through `*.prep.s9s.yaml` and
+  `*.run.s9s.yaml` files, with exact-file escape via trailing `.`, cwd-relative
+  alias-ref resolution, alias-file-relative file-bearing paths, and mixed raw
+  and alias `prepare ... run` composition with `--instance` guardrails.
+- **Done (release alias/workspace coverage)**: release/e2e scenarios now
+  exercise repo-tracked prepare aliases for Chinook, Sakila, and
+  Liquibase/JHipster examples, keeping alias/workspace conventions under
+  verification.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: alias path-resolution alignment
-  (cwd-relative alias refs plus alias-file-relative internal paths), run
-  aliases, mixed raw/alias `prepare ... run` composition, alias inspection,
-  advisory discovery tooling, and the later Git-aware CLI follow-up
-  (`diff`, `--ref`, provenance, cache explain).
+- **Next public local focus**: finish the remaining M2 local DX layers with
+  explicit alias inspection (`sqlrs alias ls/show/validate`), then
+  `sqlrs discover --aliases`, follow-up discover analyzers, shared input-graph
+  primitives, and `sqlrs diff` path mode before the later Git-aware CLI
+  follow-up (`--ref`, provenance, cache explain).
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -116,27 +122,28 @@ gantt
 
 ## Immediate Next Step (Selected)
 
-- **Direction**: move from local MVP hardening to M2 developer experience while
-  keeping the public roadmap focused on open/local deliverables.
-- **Selected next PR**: alias path-resolution alignment, run aliases, alias
-  inspection, and mixed raw/alias `prepare ... run` composition.
+- **Direction**: finish the remaining repository-guided M2 local DX surface now
+  that alias execution and workspace conventions have landed.
+- **Selected next PR**: alias inspection commands
+  (`sqlrs alias ls/show/validate`).
 - **Next PR slice**:
-  - realign alias refs to resolve from the caller's current working directory
-    while keeping workspace boundaries explicit;
-  - resolve file-bearing paths inside alias files relative to the alias file
-    directory;
-  - define `*.run.s9s.yaml` and standalone `sqlrs run <run-ref> --instance ...`;
-  - allow the normal two-stage `prepare ... run` pipeline to mix raw and alias
-    stages in any combination;
-  - add `sqlrs alias ls/show/validate`;
-  - keep `--instance` forbidden when a preceding `prepare` already selects the
-    target instance;
-  - update docs and tests around alias-based execution and composite parsing.
-- **Rationale**: the local MVP surface and cache hardening are now usable enough
-  that the next public value is completing the explicit alias execution surface,
-  including path semantics that behave naturally from nested working
-  directories, instead of leaving `prepare` aliases and `run` pipelines
-  artificially split.
+  - add `sqlrs alias ls` to enumerate `*.prep.s9s.yaml` and `*.run.s9s.yaml`
+    within the active workspace;
+  - add `sqlrs alias show <ref>` to print the resolved alias definition and the
+    concrete file it maps to;
+  - add `sqlrs alias validate [<ref>]` to check one or all alias files before
+    execution;
+  - reuse the same cwd-relative alias-ref resolution and exact-file escape rules
+    already used by `plan/prepare/run`;
+  - cover missing files, schema/kind errors, wrong alias type, and inspection
+    behaviour in docs and tests.
+- **Immediately after**: `sqlrs discover --aliases`, generic discover analyzers,
+  shared local input-graph primitives, `sqlrs diff` path mode, bounded local
+  `--ref`, then provenance and cache explain.
+- **Rationale**: alias execution is already usable and covered by release
+  scenarios; the highest remaining local DX gap is direct inspection and
+  validation of repo-tracked recipes before moving into advisory discovery and
+  Git-aware flows.
 
 ---
 
@@ -187,8 +194,9 @@ gantt
 - Liquibase adapter (apply changelog) — **Done (MVP scope)** (local flow via
   `prepare:lb`/`plan:lb` is implemented)
 - Release happy-path e2e gate — **Done** (Linux/macOS/Windows WSL coverage for
-  Chinook/Sakila scenarios, with Btrfs in matrix validation and a dedicated
-  local cache-pressure scenario in release checks)
+  Chinook, Sakila, and Liquibase/JHipster alias-driven scenarios, with Btrfs in
+  matrix validation and a dedicated local cache-pressure scenario in release
+  checks)
 
 **Optional (nice-to-have)**:
 
@@ -224,6 +232,7 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
   - alias-file-relative resolution for file-bearing paths stored inside alias
     files
   - normal `prepare ... run` composition across raw and alias modes
+  - explicit alias inspection via `sqlrs alias ls/show/validate`
 - Advisory discovery tooling:
   - `sqlrs discover --aliases`
   - follow-up analyzers for `.gitignore`, `.vscode`, and prepare shaping
@@ -237,6 +246,11 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 
 - A developer can run common workflows using explicit repo-tracked recipes with
   low local setup friction and clear cache provenance diagnostics.
+
+**Status**: In progress. Alias execution baseline is landed (`plan/prepare/run`
+aliases, cwd-relative refs, alias-file-relative payloads, mixed
+`prepare ... run`), with alias inspection, discovery, `diff` path mode,
+bounded `--ref`, and provenance/cache explain still ahead.
 
 ---
 

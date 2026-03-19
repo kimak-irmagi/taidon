@@ -90,18 +90,23 @@ gantt
   `sqlrs status --cache` и `sqlrs ls --states --cache-details`; persisted
   `size_bytes` metadata и отдельный release cache-pressure сценарий тоже уже
   на месте.
-- **Сделано (M2 PR1 baseline)**: repo-tracked prepare aliases теперь
-  обслуживают `sqlrs plan <ref>` и `sqlrs prepare <ref>` через
-  `*.prep.s9s.yaml` files с детерминированной загрузкой alias file и
-  exact-file escape через trailing `.`.
+- **Сделано (M2 alias execution baseline)**: repo-tracked prepare и run aliases
+  теперь обслуживают `sqlrs plan <ref>`, `sqlrs prepare <ref>` и standalone
+  `sqlrs run <ref> --instance ...` через `*.prep.s9s.yaml` и
+  `*.run.s9s.yaml` files, с exact-file escape через trailing `.`, cwd-relative
+  alias-ref resolution, alias-file-relative file-bearing paths и смешанной raw
+  и alias-композицией `prepare ... run` с guardrails вокруг `--instance`.
+- **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
+  гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
+  Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
-- **Следующий публичный local-фокус**: выравнивание path-resolution для
-  aliases (cwd-relative alias refs плюс alias-file-relative internal paths),
-  run aliases, смешанная raw/alias-композиция `prepare ... run`, alias
-  inspection, advisory discovery tooling и последующий Git-aware CLI
-  (`diff`, `--ref`, provenance, cache explain).
+- **Следующий публичный local-фокус**: закрыть оставшиеся M2 local DX слои через
+  явный alias inspection (`sqlrs alias ls/show/validate`), затем
+  `sqlrs discover --aliases`, последующие discover analyzers, shared
+  input-graph primitives и `sqlrs diff` в path mode перед более поздним
+  Git-aware CLI follow-up (`--ref`, provenance, cache explain).
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -109,28 +114,28 @@ gantt
 
 ## Ближайший Следующий Шаг (Выбран)
 
-- **Направление**: перейти от hardening локального MVP к M2 developer
-  experience, сохраняя roadmap сфокусированным на публичных open/local
-  deliverables.
-- **Выбранный следующий PR**: выравнивание path-resolution для aliases, run
-  aliases, alias inspection и смешанная raw/alias-композиция `prepare ... run`.
+- **Направление**: закрыть оставшуюся repository-guided M2 local DX surface
+  теперь, когда alias execution и workspace conventions уже влиты.
+- **Выбранный следующий PR**: команды alias inspection
+  (`sqlrs alias ls/show/validate`).
 - **Следующий PR-срез**:
-  - перевести alias refs на resolution от текущего рабочего каталога, сохранив
-    явные границы workspace;
-  - резолвить file-bearing paths внутри alias files относительно директории
-    самого alias file;
-  - определить `*.run.s9s.yaml` и standalone `sqlrs run <run-ref> --instance ...`;
-  - разрешить обычному двухстадийному pipeline `prepare ... run` смешивать raw-
-    и alias-стадии в любой комбинации;
-  - добавить `sqlrs alias ls/show/validate`;
-  - сохранить запрет `--instance`, если target instance уже выбран
-    предшествующим `prepare`;
-  - обновить docs и тесты вокруг alias-based execution и composite parsing.
-- **Почему сейчас**: local MVP surface и bounded cache hardening уже достаточно
-  зрелые; следующая публичная ценность теперь в завершении явной alias
-  execution surface, включая path semantics, естественные для nested working
-  directories, а не в том, чтобы оставлять `prepare` aliases и `run`
-  pipelines искусственно разделёнными.
+  - добавить `sqlrs alias ls`, чтобы перечислять `*.prep.s9s.yaml` и
+    `*.run.s9s.yaml` в пределах активного workspace;
+  - добавить `sqlrs alias show <ref>`, чтобы печатать resolved alias definition
+    и конкретный файл, в который он разворачивается;
+  - добавить `sqlrs alias validate [<ref>]`, чтобы проверять один alias file
+    или все найденные alias files до execution;
+  - переиспользовать те же cwd-relative alias-ref resolution и exact-file
+    escape rules, которые уже применяются в `plan/prepare/run`;
+  - покрыть missing files, schema/kind errors, wrong alias type и inspection
+    behaviour в docs и тестах.
+- **Сразу после этого**: `sqlrs discover --aliases`, generic discover
+  analyzers, shared local input-graph primitives, `sqlrs diff` в path mode,
+  bounded local `--ref`, затем provenance и cache explain.
+- **Почему сейчас**: alias execution уже пригоден к использованию и покрыт
+  release-сценариями; главный оставшийся local DX gap теперь в прямом
+  inspection и validation repo-tracked recipes перед переходом к advisory
+  discovery и Git-aware flow.
 
 ---
 
@@ -177,8 +182,9 @@ gantt
 - Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs), **в планах** (ZFS)
 - Liquibase адаптер (apply changelog) — **сделано (MVP scope)** (базовый локальный поток через `prepare:lb`/`plan:lb` реализован)
 - Release happy-path e2e gate — **сделано** (покрытие Linux/macOS/Windows WSL
-  для сценариев Chinook/Sakila, включая Btrfs в матрице валидации и отдельный
-  local cache-pressure сценарий в release-проверках)
+  для alias-driven сценариев Chinook, Sakila и Liquibase/JHipster, включая
+  Btrfs в матрице валидации и отдельный local cache-pressure сценарий в
+  release-проверках)
 
 **Опционально (nice-to-have)**:
 
@@ -215,6 +221,7 @@ gantt
   - alias-file-relative resolution для file-bearing paths, сохранённых внутри
     alias files
   - обычная композиция `prepare ... run` через raw и alias modes
+  - явный alias inspection через `sqlrs alias ls/show/validate`
 - Advisory discovery tooling:
   - `sqlrs discover --aliases`
   - последующие analyzers для `.gitignore`, `.vscode` и prepare shaping
@@ -229,6 +236,11 @@ gantt
 - Разработчик может выполнять типовые сценарии через явные repo-tracked recipes
   с низким локальным setup friction и понятной диагностикой происхождения/
   содержимого кэша.
+
+**Статус**: в работе. Базовый alias execution уже влит (`plan/prepare/run`
+aliases, cwd-relative refs, alias-file-relative payloads, смешанный
+`prepare ... run`), а alias inspection, discovery, `diff` в path mode,
+bounded `--ref` и provenance/cache explain ещё впереди.
 
 ---
 
