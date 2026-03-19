@@ -97,6 +97,85 @@ func TestCompositePrepareAliasRunAlias(t *testing.T) {
 	}
 }
 
+func TestCompositePrepareAliasRunMissingStillCleansPreparedInstance(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	prevDelete := deleteInstanceDetailedFn
+	prevSpinner := startCleanupSpinnerFn
+	t.Cleanup(func() {
+		deleteInstanceDetailedFn = prevDelete
+		startCleanupSpinnerFn = prevSpinner
+	})
+
+	var cleanupCalls int32
+	startCleanupSpinnerFn = func(instanceID string, verbose bool) func() { return func() {} }
+	deleteInstanceDetailedFn = func(ctx context.Context, opts cli.RunOptions, instanceID string) (client.DeleteResult, int, error) {
+		atomic.AddInt32(&cleanupCalls, 1)
+		if instanceID != "inst" {
+			t.Fatalf("cleanup instanceID = %q, want inst", instanceID)
+		}
+		return client.DeleteResult{Outcome: "deleted"}, http.StatusOK, nil
+	}
+
+	server := newCompositeAliasServer(t, nil)
+	defer server.Close()
+
+	workspace := writeAliasWorkspace(t, temp, server.URL)
+	writePrepareAliasFile(t, workspace, "chinook.prep.s9s.yaml", "kind: psql\nimage: image\nargs:\n  - -c\n  - select 1\n")
+	withWorkingDir(t, workspace)
+
+	err := Run([]string{"--workspace", workspace, "prepare", "chinook", "run", "missing"})
+	if err == nil || !strings.Contains(err.Error(), "run alias file not found") {
+		t.Fatalf("expected missing run alias error, got %v", err)
+	}
+	if got := atomic.LoadInt32(&cleanupCalls); got != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", got)
+	}
+}
+
+func TestCompositePrepareAliasRunHelpStillCleansPreparedInstance(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	prevDelete := deleteInstanceDetailedFn
+	prevSpinner := startCleanupSpinnerFn
+	t.Cleanup(func() {
+		deleteInstanceDetailedFn = prevDelete
+		startCleanupSpinnerFn = prevSpinner
+	})
+
+	var cleanupCalls int32
+	startCleanupSpinnerFn = func(instanceID string, verbose bool) func() { return func() {} }
+	deleteInstanceDetailedFn = func(ctx context.Context, opts cli.RunOptions, instanceID string) (client.DeleteResult, int, error) {
+		atomic.AddInt32(&cleanupCalls, 1)
+		if instanceID != "inst" {
+			t.Fatalf("cleanup instanceID = %q, want inst", instanceID)
+		}
+		return client.DeleteResult{Outcome: "deleted"}, http.StatusOK, nil
+	}
+
+	server := newCompositeAliasServer(t, nil)
+	defer server.Close()
+
+	workspace := writeAliasWorkspace(t, temp, server.URL)
+	writePrepareAliasFile(t, workspace, "chinook.prep.s9s.yaml", "kind: psql\nimage: image\nargs:\n  - -c\n  - select 1\n")
+	withWorkingDir(t, workspace)
+
+	out, err := captureRunStdout(t, func() error {
+		return Run([]string{"--workspace", workspace, "prepare", "chinook", "run", "--help"})
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(out, "sqlrs run") {
+		t.Fatalf("expected run usage output, got %q", out)
+	}
+	if got := atomic.LoadInt32(&cleanupCalls); got != 1 {
+		t.Fatalf("cleanup calls = %d, want 1", got)
+	}
+}
+
 func TestCompositePrepareRawRunRawStillWorks(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)

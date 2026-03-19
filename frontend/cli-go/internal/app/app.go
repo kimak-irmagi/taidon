@@ -211,6 +211,11 @@ func Run(args []string) error {
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
 			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, buildPlanAliasCommandArgs(alias), cmdCtx.output, alias.Kind, alias.Kind != "lb")
 		case "run":
+			runOpts := cmdCtx.runOptions()
+			if prepared != nil {
+				runOpts.InstanceRef = prepared.InstanceID
+				defer cleanupPreparedInstance(context.Background(), os.Stderr, runOpts, prepared.InstanceID, cmdCtx.verbose)
+			}
 			invocation, showHelp, err := parseRunAliasArgs(cmd.Args, prepared == nil)
 			if err != nil {
 				return err
@@ -228,11 +233,6 @@ func Run(args []string) error {
 				return err
 			}
 			alias.Args = rebaseRunAliasArgs(alias.Kind, alias.Args, aliasPath)
-			runOpts := cmdCtx.runOptions()
-			if prepared != nil {
-				runOpts.InstanceRef = prepared.InstanceID
-				defer cleanupPreparedInstance(context.Background(), os.Stderr, runOpts, prepared.InstanceID, cmdCtx.verbose)
-			}
 			if err := runRun(os.Stdout, os.Stderr, runOpts, alias.Kind, buildRunAliasCommandArgs(alias, invocation), cmdCtx.workspaceRoot, cmdCtx.cwd); err != nil {
 				return err
 			}
