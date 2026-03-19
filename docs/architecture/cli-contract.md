@@ -321,17 +321,24 @@ Post-MVP local design also introduces explicit alias-management commands for
 repo-tracked workflow recipes:
 
 ```text
-sqlrs alias ls
-sqlrs alias show <ref>
-sqlrs alias validate [<ref>]
+sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]
+sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]
 ```
 
-These commands inspect or validate alias files; they do not replace runtime
-`names`.
+These commands inspect or statically validate alias files; they do not replace
+runtime `names`.
+
+Design notes:
+
+- scan mode defaults to `--from cwd --depth recursive`
+- `check <ref>` reuses the same alias-ref rules as execution commands
+- the current slice intentionally omits a semantic `show` command because the
+  alias files themselves remain the primary human-readable source of truth
 
 See:
 
 - [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
+- [`alias-inspection-flow.md`](alias-inspection-flow.md)
 
 ---
 

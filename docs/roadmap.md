@@ -111,7 +111,7 @@ gantt
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
 - **Next public local focus**: finish the remaining M2 local DX layers with
-  explicit alias inspection (`sqlrs alias ls/show/validate`), then
+  explicit alias inspection (`sqlrs alias ls/check`), then
   `sqlrs discover --aliases`, follow-up discover analyzers, shared input-graph
   primitives, and `sqlrs diff` path mode before the later Git-aware CLI
   follow-up (`--ref`, provenance, cache explain).
@@ -125,16 +125,16 @@ gantt
 - **Direction**: finish the remaining repository-guided M2 local DX surface now
   that alias execution and workspace conventions have landed.
 - **Selected next PR**: alias inspection commands
-  (`sqlrs alias ls/show/validate`).
+  (`sqlrs alias ls/check`).
 - **Next PR slice**:
   - add `sqlrs alias ls` to enumerate `*.prep.s9s.yaml` and `*.run.s9s.yaml`
-    within the active workspace;
-  - add `sqlrs alias show <ref>` to print the resolved alias definition and the
-    concrete file it maps to;
-  - add `sqlrs alias validate [<ref>]` to check one or all alias files before
-    execution;
+    within a bounded scan scope, defaulting to `cwd + recursive`;
+  - add `sqlrs alias check [<ref>]` for static validation in scan mode or
+    single-alias mode;
   - reuse the same cwd-relative alias-ref resolution and exact-file escape rules
     already used by `plan/prepare/run`;
+  - support explicit scan-root and scan-depth controls via
+    `--from <workspace|cwd|path>` and `--depth <self|children|recursive>`;
   - cover missing files, schema/kind errors, wrong alias type, and inspection
     behaviour in docs and tests.
 - **Immediately after**: `sqlrs discover --aliases`, generic discover analyzers,
@@ -232,7 +232,7 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
   - alias-file-relative resolution for file-bearing paths stored inside alias
     files
   - normal `prepare ... run` composition across raw and alias modes
-  - explicit alias inspection via `sqlrs alias ls/show/validate`
+  - explicit alias inspection via `sqlrs alias ls/check`
 - Advisory discovery tooling:
   - `sqlrs discover --aliases`
   - follow-up analyzers for `.gitignore`, `.vscode`, and prepare shaping

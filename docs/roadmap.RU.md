@@ -103,7 +103,7 @@ gantt
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
 - **Следующий публичный local-фокус**: закрыть оставшиеся M2 local DX слои через
-  явный alias inspection (`sqlrs alias ls/show/validate`), затем
+  явный alias inspection (`sqlrs alias ls/check`), затем
   `sqlrs discover --aliases`, последующие discover analyzers, shared
   input-graph primitives и `sqlrs diff` в path mode перед более поздним
   Git-aware CLI follow-up (`--ref`, provenance, cache explain).
@@ -117,16 +117,17 @@ gantt
 - **Направление**: закрыть оставшуюся repository-guided M2 local DX surface
   теперь, когда alias execution и workspace conventions уже влиты.
 - **Выбранный следующий PR**: команды alias inspection
-  (`sqlrs alias ls/show/validate`).
+  (`sqlrs alias ls/check`).
 - **Следующий PR-срез**:
   - добавить `sqlrs alias ls`, чтобы перечислять `*.prep.s9s.yaml` и
-    `*.run.s9s.yaml` в пределах активного workspace;
-  - добавить `sqlrs alias show <ref>`, чтобы печатать resolved alias definition
-    и конкретный файл, в который он разворачивается;
-  - добавить `sqlrs alias validate [<ref>]`, чтобы проверять один alias file
-    или все найденные alias files до execution;
+    `*.run.s9s.yaml` в пределах ограниченной scan scope, по умолчанию
+    `cwd + recursive`;
+  - добавить `sqlrs alias check [<ref>]` для статической проверки в scan mode
+    или в режиме одного alias;
   - переиспользовать те же cwd-relative alias-ref resolution и exact-file
     escape rules, которые уже применяются в `plan/prepare/run`;
+  - поддержать явное управление scan root и scan depth через
+    `--from <workspace|cwd|path>` и `--depth <self|children|recursive>`;
   - покрыть missing files, schema/kind errors, wrong alias type и inspection
     behaviour в docs и тестах.
 - **Сразу после этого**: `sqlrs discover --aliases`, generic discover
@@ -221,7 +222,7 @@ gantt
   - alias-file-relative resolution для file-bearing paths, сохранённых внутри
     alias files
   - обычная композиция `prepare ... run` через raw и alias modes
-  - явный alias inspection через `sqlrs alias ls/show/validate`
+  - явный alias inspection через `sqlrs alias ls/check`
 - Advisory discovery tooling:
   - `sqlrs discover --aliases`
   - последующие analyzers для `.gitignore`, `.vscode` и prepare shaping

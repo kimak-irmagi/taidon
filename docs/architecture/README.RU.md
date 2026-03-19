@@ -36,6 +36,8 @@
   компонентная структура стриминга prepare events и watch-контролов.
 - [`diff-component-structure.RU.md`](diff-component-structure.RU.md) - структура
   компонентов и поток вызовов для `sqlrs diff` (после контракта CLI).
+- [`alias-inspection-flow.RU.md`](alias-inspection-flow.RU.md) - поток
+  взаимодействия для `sqlrs alias ls` и `sqlrs alias check`.
 - [`prepare-manager-refactor.RU.md`](prepare-manager-refactor.RU.md) - разбиение
   prepare manager на coordinator/executor/snapshot роли.
 - [`local-engine-cli-maintainability-refactor.RU.md`][lecmr] -
