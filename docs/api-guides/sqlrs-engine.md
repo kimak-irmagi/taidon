@@ -1659,90 +1659,12 @@ When supported, the server responds with 206 and `Content-Range: events`.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|Inline|
-|206|[Partial Content](https://tools.ietf.org/html/rfc7233#section-4.1)|Partial Content (events range)|Inline|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[PrepareJobEvent](#schemapreparejobevent)|
+|206|[Partial Content](https://tools.ietf.org/html/rfc7233#section-4.1)|Partial Content (events range)|[PrepareJobEvent](#schemapreparejobevent)|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid prefix filter|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|Not found|None|
 |416|[Range Not Satisfiable](https://tools.ietf.org/html/rfc7233#section-4.4)|Requested range not satisfiable|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="streampreparejobevents-responseschema">Response Schema</h3>
-
-Status Code **200**
-
-*Newline-delimited JSON stream of PrepareJobEvent objects.*
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[PrepareJobEvent](#schemapreparejobevent)]|false|none|Newline-delimited JSON stream of PrepareJobEvent objects.|
-|» type|string|true|none|none|
-|» ts|string(date-time)|true|none|none|
-|» task_id|string|false|none|Present for task status events.|
-|» status|string|false|none|none|
-|» message|string|false|none|none|
-|» result|[PrepareJobResult](#schemapreparejobresult)|false|none|none|
-|»» dsn|string|true|none|DSN for the prepared instance.|
-|»» instance_id|string|true|none|none|
-|»» state_id|string|true|none|none|
-|»» image_id|string|true|none|none|
-|»» prepare_kind|string|true|none|none|
-|»» prepare_args_normalized|string|true|none|none|
-|» error|[ErrorResponse](#schemaerrorresponse)|false|none|none|
-|»» code|string|true|none|none|
-|»» message|string|true|none|none|
-|»» details|string|false|none|none|
-
-#### Enumerated Values
-
-|Property|Value|
-|---|---|
-|type|status|
-|type|log|
-|type|result|
-|type|error|
-|type|task|
-|status|queued|
-|status|running|
-|status|succeeded|
-|status|failed|
-
-Status Code **206**
-
-*Newline-delimited JSON stream of PrepareJobEvent objects.*
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[PrepareJobEvent](#schemapreparejobevent)]|false|none|Newline-delimited JSON stream of PrepareJobEvent objects.|
-|» type|string|true|none|none|
-|» ts|string(date-time)|true|none|none|
-|» task_id|string|false|none|Present for task status events.|
-|» status|string|false|none|none|
-|» message|string|false|none|none|
-|» result|[PrepareJobResult](#schemapreparejobresult)|false|none|none|
-|»» dsn|string|true|none|DSN for the prepared instance.|
-|»» instance_id|string|true|none|none|
-|»» state_id|string|true|none|none|
-|»» image_id|string|true|none|none|
-|»» prepare_kind|string|true|none|none|
-|»» prepare_args_normalized|string|true|none|none|
-|» error|[ErrorResponse](#schemaerrorresponse)|false|none|none|
-|»» code|string|true|none|none|
-|»» message|string|true|none|none|
-|»» details|string|false|none|none|
-
-#### Enumerated Values
-
-|Property|Value|
-|---|---|
-|type|status|
-|type|log|
-|type|result|
-|type|error|
-|type|task|
-|status|queued|
-|status|running|
-|status|succeeded|
-|status|failed|
 
 ### Response Headers
 
