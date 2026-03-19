@@ -89,7 +89,11 @@ func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config
 }
 
 func runPrepareLiquibase(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) error {
-	result, handled, err := prepareResultLiquibase(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, args)
+	return runPrepareLiquibaseWithPathMode(stdout, stderr, runOpts, cfg, workspaceRoot, cwd, args, true)
+}
+
+func runPrepareLiquibaseWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, relativizePaths bool) error {
+	result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, args, relativizePaths)
 	if err != nil {
 		return err
 	}
@@ -164,6 +168,13 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 }
 
 func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) (client.PrepareJobResult, bool, error) {
+	return prepareResultLiquibaseWithPathMode(w, runOpts, cfg, workspaceRoot, cwd, args, true)
+}
+
+// Alias-backed liquibase stages already rebase file-bearing args to the alias
+// file directory, so they must preserve those absolute paths instead of
+// re-relativizing them to the caller's cwd.
+func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, relativizePaths bool) (client.PrepareJobResult, bool, error) {
 	parsed, showHelp, err := parsePrepareArgs(args)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
@@ -204,7 +215,9 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
+	if relativizePaths {
+		liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
+	}
 	liquibaseEnv := resolveLiquibaseEnv()
 	workDir, err := normalizeWorkDir(cwd, converter)
 	if err != nil {

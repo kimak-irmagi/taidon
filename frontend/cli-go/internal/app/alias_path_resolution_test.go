@@ -122,8 +122,9 @@ func TestRunPrepareAliasLiquibaseResolvesChangelogRelativeToAliasFile(t *testing
 	}
 
 	args := mustStringSliceField(t, gotRequest, "liquibase_args")
-	if got := strings.Join(args, "|"); got != "update|--changelog-file|"+filepath.Join("examples", "migrations", "changelog.xml") {
-		t.Fatalf("liquibase_args = %q", got)
+	want := "update|--changelog-file|" + filepath.Join(workspace, "examples", "migrations", "changelog.xml")
+	if got := strings.Join(args, "|"); got != want {
+		t.Fatalf("liquibase_args = %q, want %q", got, want)
 	}
 }
 
@@ -157,8 +158,9 @@ func TestRunPrepareAliasLiquibaseResolvesDefaultsFileRelativeToAliasFile(t *test
 	}
 
 	args := mustStringSliceField(t, gotRequest, "liquibase_args")
-	if got := strings.Join(args, "|"); got != "update|--defaults-file|"+filepath.Join("examples", "migrations", "liquibase.properties") {
-		t.Fatalf("liquibase_args = %q", got)
+	want := "update|--defaults-file|" + filepath.Join(workspace, "examples", "migrations", "liquibase.properties")
+	if got := strings.Join(args, "|"); got != want {
+		t.Fatalf("liquibase_args = %q, want %q", got, want)
 	}
 }
 

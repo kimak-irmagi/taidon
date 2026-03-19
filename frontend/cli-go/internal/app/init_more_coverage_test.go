@@ -161,6 +161,27 @@ func TestResolveWorkspacePathRelativeDirectory(t *testing.T) {
 	}
 }
 
+func TestNormalizeEnginePathPreservesWorkspaceSpellingForCanonicalizedCWD(t *testing.T) {
+	temp := t.TempDir()
+	realRoot := filepath.Join(temp, "real")
+	linkRoot := filepath.Join(temp, "link")
+	if err := os.MkdirAll(realRoot, 0o700); err != nil {
+		t.Fatalf("mkdir real root: %v", err)
+	}
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	got := normalizeEnginePath(filepath.Join("bin", "sqlrs-engine"), realRoot, linkRoot)
+	want, err := filepath.Rel(filepath.Join(linkRoot, ".sqlrs"), filepath.Join(linkRoot, "bin", "sqlrs-engine"))
+	if err != nil {
+		t.Fatalf("rel path: %v", err)
+	}
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
 func TestBuildWorkspaceConfigWSLDefaultsAndTrailingNewline(t *testing.T) {
 	data, err := buildWorkspaceConfig(initOptions{Mode: "local"}, &wslInitResult{
 		Distro:      "Ubuntu",

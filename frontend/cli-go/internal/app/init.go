@@ -562,9 +562,11 @@ func normalizeEnginePath(enginePath, cwd, workspace string) string {
 	}
 
 	cwdAbs := resolveExistingPath(cwd)
+	cwdAbs = rebasePathToWorkspaceRoot(cwdAbs, workspace)
 	if isWithin(workspace, cwdAbs) {
 		configDir := filepath.Join(workspace, ".sqlrs")
 		absEngine := filepath.Clean(filepath.Join(cwdAbs, path))
+		absEngine = rebasePathToWorkspaceRoot(absEngine, workspace)
 		if rel, err := filepath.Rel(configDir, absEngine); err == nil {
 			return rel
 		}
