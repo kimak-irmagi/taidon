@@ -44,6 +44,29 @@ func TestSplitCommandsCompositePrepareAliasRunAlias(t *testing.T) {
 	}
 }
 
+func TestSplitCommandsPrepareRawDoesNotSplitToolArgNamedRun(t *testing.T) {
+	cases := [][]string{
+		{"prepare:psql", "--", "-f", "run", "smoke"},
+		{"prepare:lb", "--", "update", "run"},
+	}
+
+	for _, args := range cases {
+		cmds, err := splitCommands(args)
+		if err != nil {
+			t.Fatalf("splitCommands(%v): %v", args, err)
+		}
+		if len(cmds) != 1 {
+			t.Fatalf("splitCommands(%v) produced %+v, want single command", args, cmds)
+		}
+		if cmds[0].Name != args[0] {
+			t.Fatalf("command name = %q, want %q", cmds[0].Name, args[0])
+		}
+		if got := len(cmds[0].Args); got != len(args)-1 {
+			t.Fatalf("args len = %d, want %d", got, len(args)-1)
+		}
+	}
+}
+
 func TestIsCompositePrepareRunFalse(t *testing.T) {
 	if isCompositePrepareRun([]string{"run:psql", "prepare:psql"}) {
 		t.Fatalf("expected false for non-prepare prefix")
@@ -53,6 +76,12 @@ func TestIsCompositePrepareRunFalse(t *testing.T) {
 	}
 	if isCompositePrepareRun([]string{"prepare:psql", "--", "-c", "select 1"}) {
 		t.Fatalf("expected false without run")
+	}
+	if isCompositePrepareRun([]string{"prepare:psql", "--", "-f", "run", "smoke"}) {
+		t.Fatalf("expected false when run is a file argument value")
+	}
+	if isCompositePrepareRun([]string{"prepare:lb", "--", "update", "run"}) {
+		t.Fatalf("expected false when run is a trailing liquibase argument")
 	}
 }
 

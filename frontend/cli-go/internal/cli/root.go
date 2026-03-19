@@ -151,7 +151,13 @@ func isCompositePrepareRun(args []string) bool {
 
 func findRunIndex(args []string) int {
 	for i := 1; i < len(args); i++ {
-		if isRunCommandToken(args[i]) {
+		if !isRunCommandToken(args[i]) {
+			continue
+		}
+		if isPrepareArgValue(args, i) {
+			continue
+		}
+		if isCompositeRunBoundary(args, i) {
 			return i
 		}
 	}
@@ -175,13 +181,53 @@ func findPrepareAliasRunIndex(args []string) int {
 				hasRef = true
 				continue
 			}
-			if isRunCommandToken(arg) {
+			if isCompositeRunBoundary(args, i) {
 				return i
 			}
 			return -1
 		}
 	}
 	return -1
+}
+
+func isPrepareArgValue(args []string, idx int) bool {
+	if idx <= 1 {
+		return false
+	}
+	prev := args[idx-1]
+	switch strings.TrimSpace(args[0]) {
+	case "prepare:psql":
+		return prev == "--image" || prev == "-f" || prev == "--file"
+	case "prepare:lb":
+		return prev == "--image" ||
+			prev == "--changelog-file" ||
+			prev == "--defaults-file" ||
+			prev == "--searchPath" ||
+			prev == "--search-path"
+	default:
+		return prev == "--image"
+	}
+}
+
+func isCompositeRunBoundary(args []string, idx int) bool {
+	if idx <= 0 || idx >= len(args) {
+		return false
+	}
+	token := args[idx]
+	if !isRunCommandToken(token) {
+		return false
+	}
+	if strings.HasPrefix(token, "run:") {
+		return strings.TrimSpace(strings.TrimPrefix(token, "run:")) != ""
+	}
+	if idx+1 >= len(args) {
+		return false
+	}
+	next := strings.TrimSpace(args[idx+1])
+	if next == "" || next == "--" {
+		return false
+	}
+	return next == "--help" || next == "-h" || !strings.HasPrefix(next, "-")
 }
 
 func isRunCommandToken(value string) bool {

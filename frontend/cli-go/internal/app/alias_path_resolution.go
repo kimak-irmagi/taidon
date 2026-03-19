@@ -16,7 +16,7 @@ func rebasePrepareAliasArgs(kind string, args []string, aliasPath string) []stri
 	baseDir := filepath.Dir(aliasPath)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "psql":
-		return rebasePsqlFileArgs(args, baseDir)
+		return rebaseScriptFileArgs(args, baseDir)
 	case "lb":
 		return rebaseLiquibasePathArgs(args, baseDir)
 	default:
@@ -27,14 +27,14 @@ func rebasePrepareAliasArgs(kind string, args []string, aliasPath string) []stri
 func rebaseRunAliasArgs(kind string, args []string, aliasPath string) []string {
 	baseDir := filepath.Dir(aliasPath)
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case runkind.KindPsql:
-		return rebasePsqlFileArgs(args, baseDir)
+	case runkind.KindPsql, runkind.KindPgbench:
+		return rebaseScriptFileArgs(args, baseDir)
 	default:
 		return append([]string{}, args...)
 	}
 }
 
-func rebasePsqlFileArgs(args []string, baseDir string) []string {
+func rebaseScriptFileArgs(args []string, baseDir string) []string {
 	rebased := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]

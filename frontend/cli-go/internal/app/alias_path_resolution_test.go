@@ -269,6 +269,42 @@ func TestRunAliasPgbenchKeepsNonFileArgsUnchangedFromNestedCWD(t *testing.T) {
 	}
 }
 
+func TestRunAliasPgbenchResolvesFileArgsRelativeToAliasFile(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	var gotRequest client.RunRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/runs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotRequest)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = io.WriteString(w, "{\"type\":\"exit\",\"ts\":\"2026-01-22T00:00:01Z\",\"exit_code\":0}\n")
+	}))
+	defer server.Close()
+
+	workspace := writeAliasWorkspace(t, temp, server.URL)
+	writeRunAliasFile(t, workspace, filepath.Join("examples", "bench.run.s9s.yaml"), "kind: pgbench\nargs:\n  - -f\n  - scripts/bench.sql\n  - -T\n  - 30\n")
+	expected := writeTestFile(t, filepath.Join(workspace, "examples"), filepath.Join("scripts", "bench.sql"), "\\set aid random(1, 100000)\n")
+	cwd := filepath.Join(workspace, "examples", "nested")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("mkdir cwd: %v", err)
+	}
+
+	withWorkingDir(t, cwd)
+	if err := Run([]string{"--workspace", workspace, "run", "../bench", "--instance", "perf"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	want := "-f|" + expected + "|-T|30"
+	if got := strings.Join(gotRequest.Args, "|"); got != want {
+		t.Fatalf("args = %q, want %q", got, want)
+	}
+}
+
 func TestCompositePrepareAliasRunRawFromNestedCWD(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
