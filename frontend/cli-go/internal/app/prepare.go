@@ -432,11 +432,13 @@ func normalizeFilePath(path string, workspaceRoot string, cwd string, convert fu
 		root = cwd
 	}
 	root = filepath.Clean(root)
+	cwd = rebasePathToWorkspaceRoot(cwd, root)
 	absPath := path
 	if !filepath.IsAbs(absPath) {
 		absPath = filepath.Join(cwd, absPath)
 	}
 	absPath = filepath.Clean(absPath)
+	absPath = rebasePathToWorkspaceRoot(absPath, root)
 
 	canonicalRoot := canonicalizeBoundaryPath(root)
 	canonicalAbsPath := canonicalizeBoundaryPath(absPath)
@@ -451,6 +453,31 @@ func normalizeFilePath(path string, workspaceRoot string, cwd string, convert fu
 		return converted, false, nil
 	}
 	return absPath, false, nil
+}
+
+func rebasePathToWorkspaceRoot(path string, workspaceRoot string) string {
+	rawPath := strings.TrimSpace(path)
+	rawRoot := strings.TrimSpace(workspaceRoot)
+	if rawPath == "" || rawRoot == "" {
+		return rawPath
+	}
+	cleanedPath := filepath.Clean(rawPath)
+	cleanedRoot := filepath.Clean(rawRoot)
+
+	canonicalRoot := canonicalizeBoundaryPath(cleanedRoot)
+	canonicalPath := canonicalizeBoundaryPath(cleanedPath)
+	if canonicalRoot == "" || canonicalPath == "" || !isWithin(canonicalRoot, canonicalPath) {
+		return cleanedPath
+	}
+
+	rel, err := filepath.Rel(canonicalRoot, canonicalPath)
+	if err != nil {
+		return cleanedPath
+	}
+	if rel == "." {
+		return cleanedRoot
+	}
+	return filepath.Clean(filepath.Join(cleanedRoot, rel))
 }
 
 func canonicalizeBoundaryPath(path string) string {

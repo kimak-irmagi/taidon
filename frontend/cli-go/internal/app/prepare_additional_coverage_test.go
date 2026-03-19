@@ -109,3 +109,28 @@ func TestNormalizeFilePathAllowsMissingLeafWithinSymlinkedWorkspace(t *testing.T
 		t.Fatalf("unexpected normalized path: %q want %q useStdin=%v", normalized, want, useStdin)
 	}
 }
+
+func TestNormalizeFilePathPreservesWorkspaceSpellingForCanonicalizedCWD(t *testing.T) {
+	temp := t.TempDir()
+	realRoot := filepath.Join(temp, "real")
+	linkRoot := filepath.Join(temp, "link")
+	realCWD := filepath.Join(realRoot, "examples", "chinook")
+	if err := os.MkdirAll(realCWD, 0o700); err != nil {
+		t.Fatalf("mkdir real cwd: %v", err)
+	}
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(realCWD, "prepare.sql"), []byte("select 1;"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	normalized, useStdin, err := normalizeFilePath("prepare.sql", linkRoot, realCWD, nil)
+	if err != nil {
+		t.Fatalf("normalizeFilePath: %v", err)
+	}
+	want := filepath.Join(linkRoot, "examples", "chinook", "prepare.sql")
+	if useStdin || normalized != want {
+		t.Fatalf("unexpected normalized path: %q want %q useStdin=%v", normalized, want, useStdin)
+	}
+}
