@@ -1420,10 +1420,17 @@ func (m *PrepareService) computeTaskHash(prepared preparedRequest) (string, *Err
 }
 
 func psqlTaskHash(kind string, contentHash string, engineVersion string) string {
+	return psqlTaskHashWithSchema(kind, contentHash, engineVersion, psqlTaskHashSchema)
+}
+
+const psqlTaskHashSchema = "psql-task-hash-v2"
+
+func psqlTaskHashWithSchema(kind string, contentHash string, engineVersion string, schema string) string {
 	hasher := newStateHasher()
 	hasher.write("prepare_kind", kind)
 	hasher.write("content_hash", contentHash)
 	hasher.write("engine_version", engineVersion)
+	hasher.write("psql_task_hash_schema", schema)
 	return hasher.sum()
 }
 

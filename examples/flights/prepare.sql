@@ -1,1 +1,1 @@
-\i 'demo-small-en-20170815.sql'
+\ir 'demo-small-en-20170815.sql'

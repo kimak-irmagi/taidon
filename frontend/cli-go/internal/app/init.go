@@ -449,10 +449,6 @@ func resolveWorkspacePath(workspace, cwd string) (string, error) {
 	}
 	abs := filepath.Clean(target)
 
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = resolved
-	}
-
 	info, err := os.Stat(abs)
 	if err != nil {
 		return "", err
@@ -566,9 +562,11 @@ func normalizeEnginePath(enginePath, cwd, workspace string) string {
 	}
 
 	cwdAbs := resolveExistingPath(cwd)
+	cwdAbs = rebasePathToWorkspaceRoot(cwdAbs, workspace)
 	if isWithin(workspace, cwdAbs) {
 		configDir := filepath.Join(workspace, ".sqlrs")
 		absEngine := filepath.Clean(filepath.Join(cwdAbs, path))
+		absEngine = rebasePathToWorkspaceRoot(absEngine, workspace)
 		if rel, err := filepath.Rel(configDir, absEngine); err == nil {
 			return rel
 		}
@@ -732,6 +730,10 @@ func isKnownStoreType(value string) bool {
 }
 
 func resolveStoreType(snapshot string, storeType string) (string, error) {
+	return resolveStoreTypeForPlatform(snapshot, storeType, runtime.GOOS, defaultStoreRoot, isBtrfsPath)
+}
+
+func resolveStoreTypeForPlatform(snapshot string, storeType string, goos string, resolveDefaultStoreRoot func() (string, error), isBtrfsStoreRoot func(string) (bool, error)) (string, error) {
 	normalized := normalizeStoreType(storeType)
 	if normalized != "" {
 		return normalized, nil
@@ -740,15 +742,15 @@ func resolveStoreType(snapshot string, storeType string) (string, error) {
 	case "copy", "overlay":
 		return "dir", nil
 	case "btrfs":
-		switch runtime.GOOS {
+		switch goos {
 		case "windows":
 			return "image", nil
 		case "linux":
-			root, err := defaultStoreRoot()
+			root, err := resolveDefaultStoreRoot()
 			if err != nil {
 				return "image", nil
 			}
-			ok, err := isBtrfsPath(root)
+			ok, err := isBtrfsStoreRoot(root)
 			if err == nil && ok {
 				return "dir", nil
 			}
@@ -757,7 +759,7 @@ func resolveStoreType(snapshot string, storeType string) (string, error) {
 			return "dir", nil
 		}
 	case "auto":
-		if runtime.GOOS == "windows" {
+		if goos == "windows" {
 			return "image", nil
 		}
 		return "dir", nil

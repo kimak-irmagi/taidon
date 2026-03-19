@@ -57,11 +57,13 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` не использует `:<kind>` и не принимает `-- <command>...`.
 
-Исключение: `sqlrs diff` работает как meta-command и оборачивает ровно одну
-существующую content-aware команду sqlrs:
+Исключение: `sqlrs diff` работает как meta-command и оборачивает либо ровно
+одну существующую content-aware команду sqlrs, либо обычный двухстадийный
+composite `prepare ... run`:
 
 ```text
-sqlrs diff <diff-scope> <verb>[:<kind>] [subject] [options] [-- <command>...]
+sqlrs diff <diff-scope> <wrapped-command>
+sqlrs diff <diff-scope> <prepare-stage> <run-stage>
 ```
 
 Это сохраняет синтаксис вложенной команды совместимым с основным CLI-контрактом
@@ -84,6 +86,8 @@ sqlrs
   status
   ls
   rm
+  discover
+  alias
   prepare
   watch
   plan
@@ -176,18 +180,24 @@ sqlrs
 - [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
 - [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
 
-Текущее поведение:
+Текущее поведение и утвержденное next-slice расширение:
 
+- `prepare <prepare-ref>` резолвит repo-tracked `*.prep.s9s.yaml` file от
+  текущего рабочего каталога.
 - `prepare` поддерживает `--watch` (по умолчанию) и `--no-watch`.
 - `prepare --no-watch` возвращает `job_id` и ссылки на status/events.
+- `prepare ... run ...` принимает обычную двухстадийную composite-форму, где
+  каждая стадия может быть raw- или alias-mode.
+- file-bearing paths, прочитанные из prepare alias, резолвятся относительно
+  самого alias file, а raw-stage пути сохраняют обычную базу текущего рабочего
+  каталога.
 - В watch-режиме `Ctrl+C` открывает control prompt:
   - `[s] stop` (с подтверждением),
   - `[d] detach`,
   - `[Esc/Enter] continue`.
 - Для composite-вызова `prepare ... run ...` действие `detach` отключает
-  наблюдение за `prepare` и пропускает последующую фазу `run` в текущем CLI-процессе.
-
-TODO (будущее):
+  наблюдение за `prepare` и пропускает последующую фазу `run` в текущем
+  CLI-процессе независимо от того, является ли эта фаза raw- или alias-backed.
 
 - Добавить именованные экземпляры и флаги привязки (`--name`, `--reuse`, `--fresh`,
   `--rebind`).
@@ -202,6 +212,11 @@ TODO (будущее):
 
 CLI должен предоставлять `plan:<kind>` для каждого поддерживаемого `prepare:<kind>`.
 
+Текущий alias mode:
+
+- `sqlrs plan <prepare-ref>` резолвит repo-tracked prepare alias file от
+  текущего рабочего каталога.
+
 ---
 
 ### 3.7 `sqlrs run`
@@ -209,6 +224,17 @@ CLI должен предоставлять `plan:<kind>` для каждого 
 Актуальная семантика команды описана в user guide:
 
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
+
+Утвержденный следующий срез:
+
+- standalone `sqlrs run <run-ref> --instance <id|name>` резолвит repo-tracked
+  `*.run.s9s.yaml` file от текущего рабочего каталога, сохраняя явный выбор
+  runtime instance;
+- в `prepare ... run <run-ref>` run alias использует instance, полученный из
+  предшествующего `prepare`;
+- в такой composite-форме `--instance` запрещён как явная ambiguity.
+- file-bearing paths, прочитанные из run alias, резолвятся относительно самого
+  alias file.
 
 ---
 
@@ -241,17 +267,65 @@ sqlrs watch <job_id>
 Diff-опции задают только область сравнения; синтаксис вложенной команды остаётся
 обычным.
 
-Начальный объём дизайна:
+Текущий объём дизайна:
 
-- вложенные команды: `plan:*`, `prepare:*`
-- расширение на будущее: `run:*` только для file-backed входов
-- без вложенного composite `prepare ... run` в первом срезе
+- вложенные команды: `plan:*`, `prepare:*` и в дальнейшем file-backed `run:*`
+- alias-mode команды вида `prepare <prepare-ref>`
+- обычные двухстадийные composite-вызовы `prepare ... run`, включая смешанные
+  raw/alias стадии
+- wrapped alias refs используют те же per-side bases, что и основной CLI:
+  alias refs резолвятся от effective working directory на каждой стороне, а
+  пути внутри alias files — от директории соответствующего alias file
+- более длинные command chains остаются вне scope
 - глобальные `-v` и `--output` сохраняют текущую семантику
 
 См.:
 
 - [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
 - [`docs/architecture/git-aware-passive.RU.md`](git-aware-passive.RU.md) (сценарий P3)
+
+---
+
+### 3.10 `sqlrs discover`
+
+В post-MVP local design команда `discover` вводится как **advisory verb для
+анализа workspace**:
+
+```text
+sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
+```
+
+Правила дизайна:
+
+- `discover` read-only по умолчанию;
+- execution commands никогда не зависят от предыдущего discovery output;
+- `--aliases` - первый планируемый analyzer;
+- последующие analyzers могут предлагать улучшения для repository hygiene или
+  cache shaping.
+
+См.:
+
+- [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
+
+---
+
+### 3.11 `sqlrs alias`
+
+В post-MVP local design также вводятся явные alias-management команды для
+repo-tracked workflow recipes:
+
+```text
+sqlrs alias ls
+sqlrs alias show <ref>
+sqlrs alias validate [<ref>]
+```
+
+Эти команды inspect-ят или валидируют alias files; они не заменяют runtime
+`names`.
+
+См.:
+
+- [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
 
 ---
 

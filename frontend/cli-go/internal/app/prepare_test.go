@@ -80,6 +80,22 @@ func TestParsePrepareArgsWatch(t *testing.T) {
 	}
 }
 
+func TestParsePrepareArgsImageValidation(t *testing.T) {
+	t.Run("missing separate value", func(t *testing.T) {
+		_, _, err := parsePrepareArgs([]string{"--image"})
+		if err == nil || !strings.Contains(err.Error(), "Missing value for --image") {
+			t.Fatalf("expected missing image value error, got %v", err)
+		}
+	})
+
+	t.Run("blank equals value", func(t *testing.T) {
+		_, _, err := parsePrepareArgs([]string{"--image=   "})
+		if err == nil || !strings.Contains(err.Error(), "Missing value for --image") {
+			t.Fatalf("expected blank image value error, got %v", err)
+		}
+	})
+}
+
 func TestResolvePrepareImagePrecedence(t *testing.T) {
 	temp := t.TempDir()
 	globalDir := filepath.Join(temp, "config")
@@ -406,6 +422,29 @@ func TestPrintRunSkipped(t *testing.T) {
 	}
 }
 
+func TestPrepareResultHelp(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+
+	_, handled, err := prepareResult(
+		stdoutAndErr{stdout: &out, stderr: io.Discard},
+		cli.PrepareOptions{},
+		config.LoadedConfig{},
+		root,
+		root,
+		[]string{"--help"},
+	)
+	if err != nil {
+		t.Fatalf("prepareResult: %v", err)
+	}
+	if !handled {
+		t.Fatalf("expected handled=true for help")
+	}
+	if !strings.Contains(out.String(), "sqlrs prepare") {
+		t.Fatalf("expected usage output, got %q", out.String())
+	}
+}
+
 func TestPrepareResultNoWatchCompositeRun(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/prepare-jobs" {
@@ -543,6 +582,29 @@ func TestPrepareResultLiquibaseNoWatchSubmitError(t *testing.T) {
 	}
 	if handled {
 		t.Fatalf("expected handled=false on submit error")
+	}
+}
+
+func TestPrepareResultLiquibaseHelpPrintsUsage(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+
+	_, handled, err := prepareResultLiquibase(
+		stdoutAndErr{stdout: &out, stderr: io.Discard},
+		cli.PrepareOptions{},
+		config.LoadedConfig{},
+		root,
+		root,
+		[]string{"--help"},
+	)
+	if err != nil {
+		t.Fatalf("prepareResultLiquibase: %v", err)
+	}
+	if !handled {
+		t.Fatalf("expected handled=true for help")
+	}
+	if !strings.Contains(out.String(), "sqlrs prepare") {
+		t.Fatalf("expected usage output, got %q", out.String())
 	}
 }
 

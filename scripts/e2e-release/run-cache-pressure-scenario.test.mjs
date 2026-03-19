@@ -28,10 +28,10 @@ run("buildPrepareCommand keeps cache-pressure scenario prepare-only", () => {
       scenario: {
         id: "cache-pressure-chinook",
         image: "postgres:17",
-        prepareArgs: ["-f", "prepare.sql"]
+        prepareAlias: "chinook"
       }
     }),
-    ["/tmp/sqlrs", "--timeout", "30m", "--workspace", "/tmp/workspace", "prepare:psql", "--image", "postgres:17", "--", "-f", "prepare.sql"]
+    ["/tmp/sqlrs", "--timeout", "30m", "--workspace", "/tmp/workspace", "prepare", "chinook"]
   );
 });
 

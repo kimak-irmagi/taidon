@@ -91,6 +91,8 @@ run("windows e2e cell provisions WSL and docker prerequisites", () => {
   assert.match(String(runStep.run || ""), /\$isBtrfs/);
   assert.match(String(runStep.run || ""), /"--store", "dir", \$storeRoot/);
   assert.match(String(runStep.run || ""), /"--store", "image", \$storeImage/);
+  assert.match(String(runStep.run || ""), /chinook\.prep\.s9s\.yaml/);
+  assert.match(String(runStep.run || ""), /"prepare",\s*"chinook"/);
   assert.match(String(runStep.run || ""), /raw-stdout-run2\.log/);
   assert.match(String(runStep.run || ""), /second pass failed/);
 });

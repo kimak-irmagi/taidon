@@ -11,10 +11,14 @@ import (
 )
 
 func runPlan(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, output string) error {
-	return runPlanKind(stdout, stderr, runOpts, cfg, workspaceRoot, cwd, args, output, "psql")
+	return runPlanKindWithPathMode(stdout, stderr, runOpts, cfg, workspaceRoot, cwd, args, output, "psql", true)
 }
 
 func runPlanKind(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, output string, kind string) error {
+	return runPlanKindWithPathMode(stdout, stderr, runOpts, cfg, workspaceRoot, cwd, args, output, kind, true)
+}
+
+func runPlanKindWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, output string, kind string, relativizeLiquibasePaths bool) error {
 	parsed, showHelp, err := parsePrepareArgs(args)
 	if err != nil {
 		return err
@@ -70,7 +74,9 @@ func runPlanKind(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg confi
 		if err != nil {
 			return err
 		}
-		liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
+		if relativizeLiquibasePaths {
+			liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
+		}
 		liquibaseEnv := resolveLiquibaseEnv()
 		workDir, err := normalizeWorkDir(cwd, converter)
 		if err != nil {

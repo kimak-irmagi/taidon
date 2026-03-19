@@ -141,11 +141,101 @@ func Run(args []string) error {
 			}
 			return runConfig(os.Stdout, cmdCtx.configOptions(), cmd.Args, cmdCtx.output)
 		case "prepare":
-			return fmt.Errorf("missing prepare kind (consider prepare:psql)")
+			invocation, showHelp, err := parsePrepareAliasArgs(cmd.Args)
+			if err != nil {
+				return err
+			}
+			if showHelp {
+				cli.PrintPrepareUsage(os.Stdout)
+				return nil
+			}
+			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
+			if err != nil {
+				return err
+			}
+			alias, err := loadPrepareAlias(aliasPath)
+			if err != nil {
+				return err
+			}
+			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
+			aliasArgs := buildPrepareAliasCommandArgs(alias, invocation)
+			prepareOpts := cmdCtx.prepareOptions(len(commands) > 1)
+			switch alias.Kind {
+			case "psql":
+				if len(commands) == 1 {
+					return runPrepare(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs)
+				}
+				result, handled, err := prepareResult(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs)
+				if err != nil {
+					return err
+				}
+				if handled {
+					return nil
+				}
+				prepared = &result
+			case "lb":
+				if len(commands) == 1 {
+					return runPrepareLiquibaseWithPathMode(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs, false)
+				}
+				result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs, false)
+				if err != nil {
+					return err
+				}
+				if handled {
+					return nil
+				}
+				prepared = &result
+			default:
+				return fmt.Errorf("unknown prepare alias kind: %s", alias.Kind)
+			}
 		case "plan":
-			return fmt.Errorf("missing plan kind (consider plan:psql)")
+			if len(commands) > 1 {
+				return fmt.Errorf("plan cannot be combined with other commands")
+			}
+			ref, showHelp, err := parsePlanAliasArgs(cmd.Args)
+			if err != nil {
+				return err
+			}
+			if showHelp {
+				cli.PrintPlanUsage(os.Stdout)
+				return nil
+			}
+			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, ref)
+			if err != nil {
+				return err
+			}
+			alias, err := loadPrepareAlias(aliasPath)
+			if err != nil {
+				return err
+			}
+			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
+			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, buildPlanAliasCommandArgs(alias), cmdCtx.output, alias.Kind, alias.Kind != "lb")
 		case "run":
-			return fmt.Errorf("missing run kind (consider run:psql)")
+			runOpts := cmdCtx.runOptions()
+			if prepared != nil {
+				runOpts.InstanceRef = prepared.InstanceID
+				defer cleanupPreparedInstance(context.Background(), os.Stderr, runOpts, prepared.InstanceID, cmdCtx.verbose)
+			}
+			invocation, showHelp, err := parseRunAliasArgs(cmd.Args, prepared == nil)
+			if err != nil {
+				return err
+			}
+			if showHelp {
+				cli.PrintRunUsage(os.Stdout)
+				return nil
+			}
+			aliasPath, err := resolveRunAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
+			if err != nil {
+				return err
+			}
+			alias, err := loadRunAlias(aliasPath)
+			if err != nil {
+				return err
+			}
+			alias.Args = rebaseRunAliasArgs(alias.Kind, alias.Args, aliasPath)
+			if err := runRun(os.Stdout, os.Stderr, runOpts, alias.Kind, buildRunAliasCommandArgs(alias, invocation), cmdCtx.workspaceRoot, cmdCtx.cwd); err != nil {
+				return err
+			}
 		default:
 			if strings.HasPrefix(cmd.Name, "prepare:") {
 				kind := strings.TrimSpace(strings.TrimPrefix(cmd.Name, "prepare:"))

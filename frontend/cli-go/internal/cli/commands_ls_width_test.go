@@ -96,6 +96,18 @@ func TestPrintLsStatesTableKeepsShortPrepareArgsOnTTY(t *testing.T) {
 	}
 }
 
+func TestPrintLsStatesTableUsesRemainingTTYWidthForPrepareArgs(t *testing.T) {
+	args := "-f /mnt/c/Users/Zlygo/source/repos/taidon/examples/chinook/prepare.sql -X -v ON_ERROR_STOP=1"
+	result := LsResult{States: &[]client.StateEntry{sampleStateEntry(args)}}
+	out := renderStatesToFakeTTY(t, result, LsPrintOptions{Quiet: true, NoHeader: true}, 206)
+	if !strings.Contains(out, args) {
+		t.Fatalf("expected prepare args to use available tty width, got %q", out)
+	}
+	if strings.Contains(out, " ... ") {
+		t.Fatalf("expected no truncation when tty width still has budget, got %q", out)
+	}
+}
+
 func TestPrintLsStatesTableUsesCompactBudgetWhenNotTTY(t *testing.T) {
 	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
 		state := sampleStateEntry(longPrepareArgs())

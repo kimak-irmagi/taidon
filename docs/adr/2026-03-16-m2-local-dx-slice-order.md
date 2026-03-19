@@ -1,9 +1,12 @@
 # 2026-03-16 M2 Local Developer Experience Slice Order
 
+Status: Obsolete. Superseded by
+[`2026-03-16-file-based-aliases-and-discover-command.md`](2026-03-16-file-based-aliases-and-discover-command.md).
+
 - Conversation timestamp: 2026-03-16T16:20:00+07:00
 - GitHub user id: @evilguest
 - Agent name/version: Codex / GPT-5
-- Status: Accepted
+- Status: Obsolete
 
 ## Question discussed
 
@@ -74,8 +77,9 @@ pulling Team/Shared rollout concerns back into the M2 implementation plan.
 
 ## Contradiction check
 
-No existing ADR was marked obsolete.
+This ADR is obsolete.
 
-This decision is additive. It does not change the accepted `sqlrs diff` command
-shape from `2026-03-09-git-diff-command-shape.md`; it only fixes the ordering
-and scope boundaries of the public/local M2 implementation slices.
+Its original slice order was based on repo/workspace conventions as the first
+execution slice. That assumption was later replaced by explicit file-based
+aliases and the broader `discover` command. The current source of truth is
+[`2026-03-16-file-based-aliases-and-discover-command.md`](2026-03-16-file-based-aliases-and-discover-command.md).

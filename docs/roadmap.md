@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-16)
+## Status (as of 2026-03-19)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -97,11 +97,18 @@ gantt
   `sqlrs ls --states --cache-details`; persisted `size_bytes` metadata and a
   dedicated release cache-pressure scenario are also in place for the local
   profile.
+- **Done (M2 PR1 baseline)**: repo-tracked prepare aliases now back
+  `sqlrs plan <ref>` and `sqlrs prepare <ref>` through `*.prep.s9s.yaml`
+  files, with deterministic alias-file loading and exact-file escape via
+  trailing `.`.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: developer-experience follow-up in M2, especially
-  config conventions and git-aware CLI (`--ref`, `diff`, provenance, cache explain).
+- **Next public local focus**: alias path-resolution alignment
+  (cwd-relative alias refs plus alias-file-relative internal paths), run
+  aliases, mixed raw/alias `prepare ... run` composition, alias inspection,
+  advisory discovery tooling, and the later Git-aware CLI follow-up
+  (`diff`, `--ref`, provenance, cache explain).
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -111,13 +118,25 @@ gantt
 
 - **Direction**: move from local MVP hardening to M2 developer experience while
   keeping the public roadmap focused on open/local deliverables.
+- **Selected next PR**: alias path-resolution alignment, run aliases, alias
+  inspection, and mixed raw/alias `prepare ... run` composition.
 - **Next PR slice**:
-  - keep public docs aligned with the shipped local cache diagnostics and release coverage;
-  - start the first M2 slice around repo/workspace conventions for local workflows;
-  - begin git-aware CLI in small public slices (`--ref`, `diff`, provenance, cache explain).
+  - realign alias refs to resolve from the caller's current working directory
+    while keeping workspace boundaries explicit;
+  - resolve file-bearing paths inside alias files relative to the alias file
+    directory;
+  - define `*.run.s9s.yaml` and standalone `sqlrs run <run-ref> --instance ...`;
+  - allow the normal two-stage `prepare ... run` pipeline to mix raw and alias
+    stages in any combination;
+  - add `sqlrs alias ls/show/validate`;
+  - keep `--instance` forbidden when a preceding `prepare` already selects the
+    target instance;
+  - update docs and tests around alias-based execution and composite parsing.
 - **Rationale**: the local MVP surface and cache hardening are now usable enough
-  that the biggest remaining public value is reducing repository friction and
-  improving reproducibility diagnostics for developers.
+  that the next public value is completing the explicit alias execution surface,
+  including path semantics that behave naturally from nested working
+  directories, instead of leaving `prepare` aliases and `run` pipelines
+  artificially split.
 
 ---
 
@@ -199,19 +218,25 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 
 **Deliverables**:
 
-- Config conventions:
-  - discover migrations from repo layout
-  - profiles (dev/test) and secrets handling
+- Project-tracked workflow aliases:
+  - `*.prep.s9s.yaml` and `*.run.s9s.yaml`
+  - explicit cwd-relative alias-ref resolution for `plan`, `prepare`, and `run`
+  - alias-file-relative resolution for file-bearing paths stored inside alias
+    files
+  - normal `prepare ... run` composition across raw and alias modes
+- Advisory discovery tooling:
+  - `sqlrs discover --aliases`
+  - follow-up analyzers for `.gitignore`, `.vscode`, and prepare shaping
 - Git-aware CLI (passive):
-  - `--ref` (blob/worktree), `diff`, provenance, cache explain
+  - `diff`, `--ref` (blob/worktree), provenance, cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - open SQL editor (via existing VS Code DB tooling)
 
 **Exit criteria**:
 
-- A developer can run common workflows with minimal config and clear cache
-  provenance diagnostics.
+- A developer can run common workflows using explicit repo-tracked recipes with
+  low local setup friction and clear cache provenance diagnostics.
 
 ---
 
@@ -384,4 +409,3 @@ credentials or runtime connection details.
   warmup/diff checks)
 - [`k8s-architecture.md`](architecture/k8s-architecture.md) (single entry gateway
   in k8s)
-
