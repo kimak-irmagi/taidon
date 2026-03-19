@@ -85,7 +85,7 @@ function resolvePrepareConfig(scenario, scenarioId) {
   const prepareArgs = Array.isArray(scenario.prepareArgs)
     ? scenario.prepareArgs
     : prepareCmd === "prepare:psql"
-      ? ["-f", "prepare.sql"]
+      ? ["-f", path.posix.join(resolveScenarioExampleRef(scenario), "prepare.sql")]
       : null;
   if (!prepareArgs) {
     throw new Error(`Scenario ${scenarioId} must define prepareArgs for ${prepareCmd}`);

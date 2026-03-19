@@ -374,6 +374,71 @@ func TestRunRunPgbenchUsesArgs(t *testing.T) {
 	}
 }
 
+func TestRunRunPgbenchMaterializesFileArgToStdin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bench.sql"), []byte("\\set aid random(1, 100000)\n"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	var gotRequest map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotRequest)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		io.WriteString(w, `{"type":"exit","ts":"2026-01-22T00:00:01Z","exit_code":0}`+"\n")
+	}))
+	defer server.Close()
+
+	err := runRun(&bytes.Buffer{}, &bytes.Buffer{}, cli.RunOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+	}, "pgbench", []string{"--instance", "staging", "--", "-f", "bench.sql", "-T", "30"}, dir, dir)
+	if err != nil {
+		t.Fatalf("runRun: %v", err)
+	}
+
+	args, ok := gotRequest["args"].([]any)
+	if !ok || len(args) != 4 || args[0] != "-f" || args[1] != "/dev/stdin" || args[2] != "-T" || args[3] != "30" {
+		t.Fatalf("unexpected args: %+v", gotRequest["args"])
+	}
+	if stdinValue, ok := gotRequest["stdin"].(string); !ok || stdinValue != "\\set aid random(1, 100000)\n" {
+		t.Fatalf("unexpected stdin: %+v", gotRequest["stdin"])
+	}
+}
+
+func TestMaterializePgbenchRunArgsAttachedFileWeight(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "bench.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	args, stdinValue, err := materializePgbenchRunArgs([]string{"-fbench.sql@3", "-T", "30"}, dir, dir, strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("materializePgbenchRunArgs: %v", err)
+	}
+	if got := strings.Join(args, "|"); got != "-f/dev/stdin@3|-T|30" {
+		t.Fatalf("args = %q, want %q", got, "-f/dev/stdin@3|-T|30")
+	}
+	if stdinValue == nil || *stdinValue != "select 1;\n" {
+		t.Fatalf("unexpected stdin: %+v", stdinValue)
+	}
+}
+
+func TestMaterializePgbenchRunArgsRejectsMultipleFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatalf("write file a: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.sql"), []byte("select 2;\n"), 0o600); err != nil {
+		t.Fatalf("write file b: %v", err)
+	}
+
+	_, _, err := materializePgbenchRunArgs([]string{"-f", "a.sql", "-f", "b.sql"}, dir, dir, strings.NewReader(""))
+	if err == nil || !strings.Contains(err.Error(), "Multiple pgbench file arguments") {
+		t.Fatalf("expected multiple file error, got %v", err)
+	}
+}
+
 func TestRunRunConflictingInstance(t *testing.T) {
 	err := runRun(&bytes.Buffer{}, &bytes.Buffer{}, cliRunOpts(), "psql", []string{"--instance", "dev"}, "", "")
 	if err == nil || !strings.Contains(err.Error(), "preceding prepare") {

@@ -150,6 +150,14 @@ run("resolvePrepareConfig rejects mixed alias and raw prepare fields", () => {
   );
 });
 
+run("resolvePrepareConfig defaults raw psql file under staged example directory", () => {
+  assert.deepEqual(resolvePrepareConfig({ example: "liquibase/jhipster-sample-app" }, "hp-lb-jhipster"), {
+    mode: "raw",
+    prepareCmd: "prepare:psql",
+    prepareArgs: ["-f", "liquibase/jhipster-sample-app/prepare.sql"]
+  });
+});
+
 run("buildPrepareFlowCommandPrefix uses alias mode without raw prepare flags", () => {
   assert.deepEqual(
     buildPrepareFlowCommandPrefix({
@@ -163,5 +171,33 @@ run("buildPrepareFlowCommandPrefix uses alias mode without raw prepare flags", (
       }
     }),
     ["/tmp/sqlrs", "--timeout", "15m", "--workspace", "/tmp/workspace", "prepare", "chinook"]
+  );
+});
+
+run("buildPrepareFlowCommandPrefix keeps default raw prepare path aligned with nested staging", () => {
+  assert.deepEqual(
+    buildPrepareFlowCommandPrefix({
+      sqlrsPath: "/tmp/sqlrs",
+      workspaceDir: "/tmp/workspace",
+      timeout: "15m",
+      scenario: {
+        id: "hp-psql-chinook",
+        example: "chinook",
+        image: "postgres:17"
+      }
+    }),
+    [
+      "/tmp/sqlrs",
+      "--timeout",
+      "15m",
+      "--workspace",
+      "/tmp/workspace",
+      "prepare:psql",
+      "--image",
+      "postgres:17",
+      "--",
+      "-f",
+      "chinook/prepare.sql"
+    ]
   );
 });

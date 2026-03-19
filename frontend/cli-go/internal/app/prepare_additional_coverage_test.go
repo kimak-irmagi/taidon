@@ -64,3 +64,48 @@ func TestNormalizeFilePathResolvesExistingPathBeforeBoundaryCheck(t *testing.T) 
 		t.Fatalf("unexpected normalized path: %q useStdin=%v", normalized, useStdin)
 	}
 }
+
+func TestNormalizeFilePathPreservesSymlinkPathForExistingFile(t *testing.T) {
+	temp := t.TempDir()
+	realRoot := filepath.Join(temp, "real")
+	linkRoot := filepath.Join(temp, "link")
+	if err := os.MkdirAll(realRoot, 0o700); err != nil {
+		t.Fatalf("mkdir real root: %v", err)
+	}
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(realRoot, "query.sql"), []byte("select 1;"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	normalized, useStdin, err := normalizeFilePath("query.sql", linkRoot, linkRoot, nil)
+	if err != nil {
+		t.Fatalf("normalizeFilePath: %v", err)
+	}
+	want := filepath.Join(linkRoot, "query.sql")
+	if useStdin || normalized != want {
+		t.Fatalf("unexpected normalized path: %q want %q useStdin=%v", normalized, want, useStdin)
+	}
+}
+
+func TestNormalizeFilePathAllowsMissingLeafWithinSymlinkedWorkspace(t *testing.T) {
+	temp := t.TempDir()
+	realRoot := filepath.Join(temp, "real")
+	linkRoot := filepath.Join(temp, "link")
+	if err := os.MkdirAll(realRoot, 0o700); err != nil {
+		t.Fatalf("mkdir real root: %v", err)
+	}
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	normalized, useStdin, err := normalizeFilePath("missing.sql", linkRoot, linkRoot, nil)
+	if err != nil {
+		t.Fatalf("normalizeFilePath: %v", err)
+	}
+	want := filepath.Join(linkRoot, "missing.sql")
+	if useStdin || normalized != want {
+		t.Fatalf("unexpected normalized path: %q want %q useStdin=%v", normalized, want, useStdin)
+	}
+}

@@ -449,10 +449,6 @@ func resolveWorkspacePath(workspace, cwd string) (string, error) {
 	}
 	abs := filepath.Clean(target)
 
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = resolved
-	}
-
 	info, err := os.Stat(abs)
 	if err != nil {
 		return "", err

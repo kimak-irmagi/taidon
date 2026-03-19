@@ -288,7 +288,7 @@ func TestRunAliasPgbenchResolvesFileArgsRelativeToAliasFile(t *testing.T) {
 
 	workspace := writeAliasWorkspace(t, temp, server.URL)
 	writeRunAliasFile(t, workspace, filepath.Join("examples", "bench.run.s9s.yaml"), "kind: pgbench\nargs:\n  - -f\n  - scripts/bench.sql\n  - -T\n  - 30\n")
-	expected := writeTestFile(t, filepath.Join(workspace, "examples"), filepath.Join("scripts", "bench.sql"), "\\set aid random(1, 100000)\n")
+	writeTestFile(t, filepath.Join(workspace, "examples"), filepath.Join("scripts", "bench.sql"), "\\set aid random(1, 100000)\n")
 	cwd := filepath.Join(workspace, "examples", "nested")
 	if err := os.MkdirAll(cwd, 0o700); err != nil {
 		t.Fatalf("mkdir cwd: %v", err)
@@ -299,9 +299,12 @@ func TestRunAliasPgbenchResolvesFileArgsRelativeToAliasFile(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	want := "-f|" + expected + "|-T|30"
+	want := "-f|/dev/stdin|-T|30"
 	if got := strings.Join(gotRequest.Args, "|"); got != want {
 		t.Fatalf("args = %q, want %q", got, want)
+	}
+	if gotRequest.Stdin == nil || *gotRequest.Stdin != "\\set aid random(1, 100000)\n" {
+		t.Fatalf("stdin = %+v, want file content", gotRequest.Stdin)
 	}
 }
 
