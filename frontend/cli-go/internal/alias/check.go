@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/sqlrs/cli/internal/cli/runkind"
@@ -92,6 +93,8 @@ type runDefinition struct {
 	Args  []string `yaml:"args"`
 }
 
+const pgbenchStdinMarker = "/dev/stdin"
+
 func checkPrepareAlias(path string, workspaceRoot string) (string, []Issue) {
 	def, err := loadPrepareAlias(path)
 	if err != nil {
@@ -171,11 +174,67 @@ func validatePrepareAliasPaths(kind string, args []string, aliasPath string, wor
 
 func validateRunAliasPaths(kind string, args []string, aliasPath string, workspaceRoot string) []Issue {
 	switch kind {
-	case runkind.KindPsql, runkind.KindPgbench:
+	case runkind.KindPsql:
 		return validateScriptFileArgs(args, aliasPath, workspaceRoot)
+	case runkind.KindPgbench:
+		return validatePgbenchFileArgs(args, aliasPath, workspaceRoot)
 	default:
 		return nil
 	}
+}
+
+// validatePgbenchFileArgs mirrors the pgbench runtime path semantics used by
+// materializePgbenchRunArgs so alias check stays aligned with actual execution.
+func validatePgbenchFileArgs(args []string, aliasPath string, workspaceRoot string) []Issue {
+	issues := make([]Issue, 0, 2)
+	fileArgCount := 0
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-f" || arg == "--file":
+			if i+1 >= len(args) {
+				issues = append(issues, Issue{Code: "missing_file_arg", Message: fmt.Sprintf("missing value for %s", arg)})
+				continue
+			}
+			value := args[i+1]
+			i++
+			fileArgCount++
+			if fileArgCount > 1 {
+				issues = append(issues, Issue{
+					Code:    "multiple_file_args",
+					Message: "Multiple pgbench file arguments are not supported",
+				})
+			}
+			if issue, ok := validatePgbenchFileArg(value, aliasPath, workspaceRoot); ok {
+				issues = append(issues, issue)
+			}
+		case strings.HasPrefix(arg, "--file="):
+			value := strings.TrimPrefix(arg, "--file=")
+			fileArgCount++
+			if fileArgCount > 1 {
+				issues = append(issues, Issue{
+					Code:    "multiple_file_args",
+					Message: "Multiple pgbench file arguments are not supported",
+				})
+			}
+			if issue, ok := validatePgbenchFileArg(value, aliasPath, workspaceRoot); ok {
+				issues = append(issues, issue)
+			}
+		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
+			value := arg[2:]
+			fileArgCount++
+			if fileArgCount > 1 {
+				issues = append(issues, Issue{
+					Code:    "multiple_file_args",
+					Message: "Multiple pgbench file arguments are not supported",
+				})
+			}
+			if issue, ok := validatePgbenchFileArg(value, aliasPath, workspaceRoot); ok {
+				issues = append(issues, issue)
+			}
+		}
+	}
+	return issues
 }
 
 func validateScriptFileArgs(args []string, aliasPath string, workspaceRoot string) []Issue {
@@ -269,6 +328,14 @@ func validateLocalLiquibaseArg(value string, aliasPath string, workspaceRoot str
 	return validateLocalFileArg(value, aliasPath, workspaceRoot, requireFile)
 }
 
+func validatePgbenchFileArg(value string, aliasPath string, workspaceRoot string) (Issue, bool) {
+	path, _ := splitPgbenchFileArgValue(value)
+	if path == pgbenchStdinMarker {
+		return Issue{}, false
+	}
+	return validateLocalFileArg(path, aliasPath, workspaceRoot, true)
+}
+
 func validateLocalFileArg(value string, aliasPath string, workspaceRoot string, requireFile bool) (Issue, bool) {
 	cleaned := strings.TrimSpace(value)
 	switch cleaned {
@@ -312,4 +379,15 @@ func validateLocalFileArg(value string, aliasPath string, workspaceRoot string, 
 func looksLikeLiquibaseRemoteRef(value string) bool {
 	lower := strings.ToLower(strings.TrimSpace(value))
 	return strings.Contains(lower, "://") || strings.HasPrefix(lower, "classpath:")
+}
+
+func splitPgbenchFileArgValue(value string) (string, string) {
+	idx := strings.LastIndex(value, "@")
+	if idx <= 0 || idx >= len(value)-1 {
+		return value, ""
+	}
+	if _, err := strconv.ParseUint(value[idx+1:], 10, 32); err != nil {
+		return value, ""
+	}
+	return value[:idx], value[idx:]
 }

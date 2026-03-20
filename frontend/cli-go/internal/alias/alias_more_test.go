@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/cli/runkind"
 )
 
 func TestNormalizeHelpers(t *testing.T) {
@@ -340,6 +342,38 @@ func TestValidatePathHelpers(t *testing.T) {
 	}
 	if issue, ok := validateLocalFileArg("script.sql", aliasPath, workspace, true); ok {
 		t.Fatalf("expected existing file to pass, got %+v", issue)
+	}
+}
+
+func TestValidatePgbenchPathHelpers(t *testing.T) {
+	workspace := t.TempDir()
+	aliasPath := writeAliasFile(t, workspace, "folder/demo.run.s9s.yaml", "kind: pgbench\nargs:\n  - -T\n  - 30\n")
+	writePlainFile(t, filepath.Join(workspace, "folder"), "bench.sql", "select 1;\n")
+	writePlainFile(t, filepath.Join(workspace, "folder"), "extra.sql", "select 2;\n")
+
+	if issues := validateRunAliasPaths(runkind.KindPgbench, []string{"-fbench.sql@10", "-T", "30"}, aliasPath, workspace); len(issues) != 0 {
+		t.Fatalf("expected weighted pgbench file to pass, got %+v", issues)
+	}
+	if issues := validateRunAliasPaths(runkind.KindPgbench, []string{"--file=/dev/stdin@3"}, aliasPath, workspace); len(issues) != 0 {
+		t.Fatalf("expected stdin pgbench file to pass, got %+v", issues)
+	}
+
+	issues := validateRunAliasPaths(runkind.KindPgbench, []string{"-f", "bench.sql", "--file=extra.sql"}, aliasPath, workspace)
+	if len(issues) == 0 {
+		t.Fatalf("expected duplicate pgbench file issue")
+	}
+	foundMultiple := false
+	for _, issue := range issues {
+		if issue.Code == "multiple_file_args" {
+			foundMultiple = true
+		}
+	}
+	if !foundMultiple {
+		t.Fatalf("expected multiple_file_args issue, got %+v", issues)
+	}
+
+	if issues := validateRunAliasPaths(runkind.KindPgbench, []string{"-fmissing.sql@10"}, aliasPath, workspace); len(issues) != 1 || issues[0].Code != "missing_path" {
+		t.Fatalf("expected weighted missing-path issue, got %+v", issues)
 	}
 }
 

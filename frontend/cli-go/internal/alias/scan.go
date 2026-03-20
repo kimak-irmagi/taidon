@@ -66,13 +66,13 @@ func normalizeScanRequest(opts ScanOptions) (string, string, string, Depth, map[
 		cwd = workspaceRoot
 	}
 	cwd = filepath.Clean(cwd)
-	if !isWithin(canonicalizeBoundaryPath(workspaceRoot), canonicalizeBoundaryPath(cwd)) {
-		return "", "", "", "", nil, fmt.Errorf("current working directory must stay within workspace root")
-	}
 
 	scanRoot := workspaceRoot
 	switch from := strings.TrimSpace(opts.From); strings.ToLower(from) {
 	case "", "cwd":
+		if !isWithin(canonicalizeBoundaryPath(workspaceRoot), canonicalizeBoundaryPath(cwd)) {
+			return "", "", "", "", nil, fmt.Errorf("current working directory must stay within workspace root")
+		}
 		scanRoot = cwd
 	case "workspace":
 		scanRoot = workspaceRoot
@@ -80,6 +80,9 @@ func normalizeScanRequest(opts ScanOptions) (string, string, string, Depth, map[
 		if filepath.IsAbs(from) {
 			scanRoot = filepath.Clean(from)
 		} else {
+			if !isWithin(canonicalizeBoundaryPath(workspaceRoot), canonicalizeBoundaryPath(cwd)) {
+				return "", "", "", "", nil, fmt.Errorf("current working directory must stay within workspace root")
+			}
 			scanRoot = filepath.Clean(filepath.Join(cwd, filepath.FromSlash(from)))
 		}
 	}

@@ -46,6 +46,38 @@ func TestScanFromWorkspace(t *testing.T) {
 	}
 }
 
+func TestScanFromWorkspaceAllowsCallerOutsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	caller := filepath.Join(filepath.Dir(workspace), "caller")
+	mkdirAll(t, caller)
+	writeAliasFile(t, workspace, "root.prep.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
+
+	entries, err := Scan(ScanOptions{WorkspaceRoot: workspace, CWD: caller, From: "workspace"})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(entries) != 1 || entries[0].File != "root.prep.s9s.yaml" {
+		t.Fatalf("unexpected entries: %+v", entries)
+	}
+}
+
+func TestScanFromAbsolutePathAllowsCallerOutsideWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	caller := filepath.Join(filepath.Dir(workspace), "caller")
+	cwd := filepath.Join(workspace, "examples")
+	mkdirAll(t, caller)
+	mkdirAll(t, cwd)
+	writeAliasFile(t, cwd, "child.run.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
+
+	entries, err := Scan(ScanOptions{WorkspaceRoot: workspace, CWD: caller, From: cwd})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(entries) != 1 || entries[0].File != "examples/child.run.s9s.yaml" {
+		t.Fatalf("unexpected entries: %+v", entries)
+	}
+}
+
 func TestScanFromExplicitPathRelativeToCWD(t *testing.T) {
 	workspace := t.TempDir()
 	cwd := filepath.Join(workspace, "examples")
