@@ -315,17 +315,25 @@ sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
 repo-tracked workflow recipes:
 
 ```text
-sqlrs alias ls
-sqlrs alias show <ref>
-sqlrs alias validate [<ref>]
+sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]
+sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]
 ```
 
-Эти команды inspect-ят или валидируют alias files; они не заменяют runtime
-`names`.
+Эти команды inspect-ят или статически проверяют alias files; они не заменяют
+runtime `names`.
+
+Примечания к дизайну:
+
+- scan mode по умолчанию использует `--from cwd --depth recursive`
+- `check <ref>` переиспользует те же правила alias-ref resolution, что и
+  execution-команды
+- semantic-команда `show` сознательно не входит в текущий срез, потому что
+  сами alias files остаются основным human-readable источником истины
 
 См.:
 
 - [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
+- [`alias-inspection-flow.RU.md`](alias-inspection-flow.RU.md)
 
 ---
 

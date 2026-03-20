@@ -225,3 +225,42 @@ func TestParseArgsRunAliasStandalone(t *testing.T) {
 		t.Fatalf("unexpected run args: %q", got)
 	}
 }
+
+func TestParseArgsAliasLsScanMode(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"alias", "ls", "--run"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "alias" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "ls|--run" {
+		t.Fatalf("unexpected alias args: %q", got)
+	}
+}
+
+func TestParseArgsAliasCheckScanMode(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"alias", "check", "--from", "workspace"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "alias" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "check|--from|workspace" {
+		t.Fatalf("unexpected alias args: %q", got)
+	}
+}
+
+func TestParseArgsAliasCheckSingleAliasMode(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"alias", "check", "--run", "smoke"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "alias" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "check|--run|smoke" {
+		t.Fatalf("unexpected alias args: %q", got)
+	}
+}

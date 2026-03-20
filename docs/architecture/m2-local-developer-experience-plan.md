@@ -97,9 +97,8 @@ local workspace config.
 - standalone `sqlrs run <run-ref> --instance <id|name>` resolves
   `<run-ref>.run.s9s.yaml` from the current working directory
 - `prepare ... run ...` accepts mixed raw/alias combinations
-- `sqlrs alias ls`
-- `sqlrs alias show <ref>`
-- `sqlrs alias validate [<ref>]`
+- `sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]`
+- `sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]`
 
 **Expected work**:
 
@@ -108,7 +107,7 @@ local workspace config.
 - allow raw/alias stage mixing in composite `prepare ... run`
 - forbid `--instance` when the target instance is already selected by a
   preceding `prepare`
-- implement alias listing/show/validation commands
+- implement alias listing/check commands with bounded scan-scope controls
 - keep raw `run:<kind>` mode intact alongside alias mode
 
 **Tests expected**:
@@ -116,6 +115,8 @@ local workspace config.
 - run alias resolution tests
 - composite grammar tests for mixed raw/alias stages
 - alias inspection command tests
+- scan-root and scan-depth tests for `alias ls` / `alias check`
+- single-alias `check <ref>` tests, including ambiguity and exact-file escape
 - validation tests for kind-specific constraints
 - negative tests for missing `--instance`, conflicting composite `--instance`,
   and wrong alias type
