@@ -113,13 +113,16 @@ Rules:
 - diff-specific options come before the wrapped command;
 - the wrapped command keeps its current syntax unchanged;
 - global `-v` stays the verbose control and global `--output` stays the text/json selector;
-- the first implementation slice supports either one wrapped `plan:*` or `prepare:*`
-  command, or one normal two-stage `prepare ... run` composite;
-- wrapped composites may mix raw and alias stages exactly as in the main CLI;
-- future standalone `run:*` support is possible only for file-backed inputs,
+- **Current CLI slice** (`frontend/cli-go`): exactly **one** wrapped token among
+  `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb`; compares **file-list
+  closures** (hashes) only—no engine. **Ref mode** uses **`git worktree` only**
+  (not blob reads).
+- **Design / later**: two-stage `prepare ... run` composites and alias-backed
+  `prepare <ref>`; full derived representations (task plans, prepare payloads).
+- Future standalone `run:*` support is possible only for file-backed inputs,
   because inline-only invocations may have no revision-dependent payload.
 
-Examples of the accepted composite shape:
+Examples of composite shapes (**design target**; not all parsed by the CLI yet):
 
 ```bash
 sqlrs diff --from-ref <refA> --to-ref <refB> prepare chinook run:psql -- -f ./queries.sql
@@ -128,19 +131,20 @@ sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sq
 
 What `diff` compares:
 
-- `plan:*` -> the derived task plan;
-- `prepare:*` -> prepare task bodies plus the resolved input graph;
-- `run:*` -> only revision-sensitive file inputs, not instance resolution or DSN injection.
+- **Today:** same **resolved file graph + content** for `plan:*` and `prepare:*`
+  of a given kind (psql vs lb).
+- **Design target:** `plan:*` -> derived task plan; `prepare:*` -> bodies + graph;
+  `run:*` -> file-backed inputs only.
 
 ### Implementation
 
 1. Parse the diff scope (`from/to ref` or `from/to path`).
-2. Parse the wrapped command using the same CLI grammar as the main invocation.
+2. Parse the wrapped command using the same CLI grammar as the main invocation
+   (today: single `plan:*` or `prepare:*` token only).
 3. For each side independently, resolve files/includes according to that side's own revision or path context.
-4. Build the derived representation for the wrapped command, or for each phase
-   independently if the wrapped form is `prepare ... run`.
-5. Compare the derived representations and render the report, keeping `prepare`
-   and `run` as separate diff phases for wrapped composites.
+4. **Today:** build file-list closures and compare Added / Modified / Removed.
+   **Later:** richer representations and per-phase output for `prepare ... run`.
+5. Render human or JSON.
 
 ---
 

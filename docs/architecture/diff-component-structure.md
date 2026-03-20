@@ -8,22 +8,27 @@ where they live. It is the next step after the design in
 
 ## 1. Scope and assumptions
 
-- **First slice**: diff runs entirely in the CLI; no new engine API. The CLI
-  resolves the two sides (ref or path), builds file lists locally using the
-  same closure rules as the main CLI, compares them, and renders output.
-- **No engine call** in the first slice: file list construction is implemented
-  in the CLI (or by reusing existing engine logic via a future “file list only”
-  API if added later). This keeps diff usable without a running engine.
-- **Deployment unit**: CLI only (e.g. `frontend/cli-go`). No changes to
-  `backend/local-engine-go` required for the first slice.
+- **Status**: first slice **implemented** in `frontend/cli-go` (`internal/diff`,
+  `internal/cli.RunDiff`, `internal/app` dispatch). This document also records
+  design for later slices.
+- **First slice**: diff runs entirely in the CLI; no engine API. The CLI resolves
+  the two sides (ref or path), builds file lists locally using closure rules for
+  psql and Liquibase, compares paths + content hashes, and renders output.
+- **No engine call**: plan vs prepare do not change behaviour yet—both use the
+  same file-list builders.
+- **Ref mode**: **`worktree` only** in code; `blob` mode is not implemented
+  (explicit error if requested).
+- **Wrapped command**: single token only—`plan:psql`, `plan:lb`, `prepare:psql`,
+  `prepare:lb`. No `prepare … run …` composite parsing yet.
+- **Deployment unit**: CLI only. No `backend/local-engine-go` changes required.
 
 ## 2. Components and responsibilities
 
 | Component | Responsibility | Caller |
 |-----------|----------------|--------|
-| **Diff command handler** | Parse diff scope and wrapped command or bounded `prepare ... run` composite; orchestrate scope resolution → file list build (both sides) → compare → render. Map errors to exit codes. | `internal/app` (command dispatch) |
-| **Scope resolver** | Given `--from-ref`/`--to-ref` or `--from-path`/`--to-path`, produce two **contexts**. Each context is a root from which to read files: either a Git tree at a ref (blob or temporary worktree) or a local directory. | Diff command handler |
-| **File list builder** | For one context and a given **kind** (e.g. psql, lb) plus command args, build the **closure of file inputs**: ordered list of (path, content or hash). Entry point and closure rule are kind-specific (see user guide table). | Diff command handler (called twice: from-context, to-context) |
+| **Diff command handler** | Parse diff scope (`diff.ParseDiffScope`) and single wrapped command; orchestrate `ResolveScope` → file list build (both sides) → `Compare` → render. Map errors to exit codes. | `internal/app` (command dispatch) → `internal/cli.RunDiff` |
+| **Scope resolver** | Given `--from-ref`/`--to-ref` or `--from-path`/`--to-path`, produce two **contexts**. Each context is a filesystem root: **detached worktree** at repo root per ref, or an absolute **`--from-path` / `--to-path`**. | `internal/diff.ResolveScope` |
+| **File list builder** | For one context and kind **psql** or **lb** plus wrapped args, build the **closure**: `BuildPsqlFileList`, `BuildLbFileList` → ordered `(path, hash[, content])`. | `RunDiff` (twice per side) |
 | **Diff comparator** | Given two file lists (from, to), compute Added / Modified / Removed (by path and optional content hash). Optionally apply `--limit` and `--include-content`. | Diff command handler |
 | **Diff renderer** | Turn a diff result into human-readable text or JSON according to global `--output`. | Diff command handler |
 
@@ -34,49 +39,41 @@ has a single entry point and a closure rule.
 
 | Kind | Entry point from args | Closure rule | Implementer |
 |------|------------------------|--------------|-------------|
-| **prepare:psql** / plan:psql | `-f <file>` (and `-f -`) | From each `-f` file, recursively add every file referenced by `\i`, `\ir`, `\include`, `\include_relative`. | `PsqlClosureBuilder` (or shared with engine if reused) |
-| **prepare:lb** / plan:lb | `--changelog-file <path>` | From changelog file, add every file referenced by the changelog graph (include, includeAll, etc.). Liquibase defines the graph. | `LbChangelogClosureBuilder` |
+| **prepare:psql** / plan:psql | `-f <file>` (file path; not stdin `-f -`) | From each `-f` file, recursively add every file referenced by `\i`, `\ir`, `\include`, `\include_relative`. | `BuildPsqlFileList` in `internal/diff` |
+| **prepare:lb** / plan:lb | `--changelog-file <path>` | From changelog file, add every file referenced by the changelog graph (include, includeAll, etc.). Liquibase defines the graph. | `BuildLbFileList` in `internal/diff` |
 | **run:psql** (future) | `-f <file>` (file-backed only) | Same as psql: closure over `\i`/`\include` from `-f`. | Reuse psql closure builder |
 
-The handler selects the builder by the wrapped command’s kind (e.g. `plan:psql` →
-psql builder, `prepare:lb` → lb builder). Alias-backed stages are resolved first
-to their underlying kind plus args and then use the same builders. Arguments
-that are not revision-sensitive
-(e.g. `-c`, `--image`) do not affect the file list; the builder only uses the
-args that define file-backed inputs.
+`RunDiff` selects the builder from the wrapped **token** (`plan:psql` and
+`prepare:psql` → psql; `plan:lb` and `prepare:lb` → lb). Alias expansion and
+composite phases are **not** wired yet. Non-file args (e.g. `-c`, `--image`) are
+ignored for closure purposes.
 
 ## 4. Call flow
 
 ```text
 1. app (command dispatch)
    → detects verb "diff"
-   → parses global flags, then diff scope (--from-ref/--to-ref or --from-path/--to-path),
-     then wrapped command or bounded composite (e.g. plan:psql -- -f ./x.sql
-     or prepare chinook run:psql -- -f ./queries.sql)
-   → calls cli.RunDiff(scope, wrappedCommand, globalOptions)
+   → global flags (existing ParseArgs), then diff.ParseDiffScope on command args:
+     scope + single wrapped token + args (e.g. plan:psql -- -f ./x.sql)
+   → cli.RunDiff(stdout, parsed, cwd, outputFormat)
 
 2. RunDiff
-   → scopeResolver.Resolve(scope)  →  (fromContext, toContext)
-   → for each wrapped phase:
-       → fileListBuilder.Build(fromContext, kind, wrappedCommandArgs)  →  fromList
-       → fileListBuilder.Build(toContext, kind, wrappedCommandArgs)     →  toList
-       → comparator.Compare(fromList, toList, options)                  →  phaseResult
-   → renderer merges or prints per-phase results                        →  diffResult
-   → renderer.Render(diffResult, outputFormat, options)             →  stdout
-   → return exit code
+   → diff.ResolveScope(parsed.Scope, cwd)  →  fromCtx, toCtx, cleanup (ref worktrees)
+   → BuildPsqlFileList or BuildLbFileList(fromCtx, wrappedArgs)  →  fromList
+   → same for toCtx  →  toList
+   → diff.Compare(fromList, toList, options)  →  result
+   → diff.RenderHuman or diff.RenderJSON  →  stdout
 ```
 
-Scope resolver behaviour:
+Scope resolver behaviour (implemented):
 
-- **Ref mode**: resolve each ref to a commit/tree; if `--ref-mode blob`, read
-  files via Git blobs (e.g. `git show ref:path`); if `worktree`, create a
-  temporary worktree and pass its root as the context; optionally `--ref-keep-worktree`
-  leaves it for debugging.
-- **Path mode**: each path is the context root directly (no Git).
+- **Ref mode**: `git -C <cwd> rev-parse --show-toplevel`; `git worktree add --detach`
+  into temp dirs; context root = worktree path (full tree at that ref). Only
+  `worktree`; `blob` not implemented. Optional `--ref-keep-worktree` skips removal.
+- **Path mode**: each `--from-path` / `--to-path` resolved to an absolute
+  directory; that directory is the context root.
 
-File list builder is chosen per wrapped phase by `kind` (psql vs lb). It
-receives the context root and the parsed args of that phase and returns a list
-of (path, content or hash) in a deterministic order.
+File lists are deterministic; comparison is by relative path and content hash.
 
 ## 5. Suggested package layout (CLI)
 
@@ -84,13 +81,9 @@ All of the following live in the CLI codebase (e.g. `frontend/cli-go`).
 
 | Package | Contents |
 |---------|----------|
-| `internal/app` | Add diff to command graph; parse diff scope and wrapped command or bounded composite; call `cli.RunDiff`. |
-| `internal/cli` | `RunDiff`, diff-specific option types; orchestration of resolver → builder → comparator → renderer, including per-phase handling for wrapped composites. Optionally: human/JSON renderer for diff output. |
-| `internal/diff` (new) | `ScopeResolver` (ref + path modes). `FileListBuilder` interface; `PsqlClosureBuilder`, `LbChangelogClosureBuilder`. `Comparator` (Compare). `Renderer` (human + JSON) if not in `internal/cli`. Types: `Context`, `FileList`, `DiffResult`. |
-
-Alternative: keep `internal/diff` minimal (only resolver + comparator + types) and
-put closure builders in `internal/cli/diff` or reuse engine-side logic via a small
-adapter if the engine exposes a “file list for these args” helper later.
+| `internal/app` | Dispatches `diff`; `runDiff` → `diff.ParseDiffScope`, then `cli.RunDiff`. |
+| `internal/cli` | `RunDiff` orchestrates `internal/diff`. |
+| `internal/diff` | `ParseDiffScope`, `ResolveScope`, `BuildPsqlFileList`, `BuildLbFileList`, `Compare`, `RenderHuman`, `RenderJSON`, types (`Scope`, `Context`, `FileList`, `DiffResult`, …). |
 
 ## 6. Data ownership and lifecycle
 
@@ -109,7 +102,7 @@ adapter if the engine exposes a “file list for these args” helper later.
 flowchart TB
   APP["internal/app <br/> (диспетчер команд)"]
   RUN_DIFF["internal/cli <br/> RunDiff"]
-  RESOLVER["internal/diff <br/> ScopeResolver"]
+  RESOLVER["internal/diff <br/> ResolveScope"]
   BUILDER["internal/diff <br/> FileListBuilder<br/>(psql, lb)"]
   COMPARE["internal/diff <br/> Comparator"]
   RENDER["internal/diff <br/> Renderer<br/>(или cli)"]

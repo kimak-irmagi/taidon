@@ -11,8 +11,9 @@ import (
 // entries per section are listed; summary counts are always full.
 // When opts.IncludeContent is true, fromCtx and toCtx supply roots to read file snippets:
 // added and modified show content from toCtx; removed from fromCtx.
-func RenderHuman(w io.Writer, result DiffResult, scope PathScope, wrappedCommand string, opts Options, fromCtx, toCtx Context) {
-	fmt.Fprintf(w, "diff --from-path %s --to-path %s %s\n\n", scope.FromPath, scope.ToPath, wrappedCommand)
+func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand string, opts Options, fromCtx, toCtx Context) {
+	fmt.Fprintln(w, formatDiffCommandLine(scope, wrappedCommand))
+	fmt.Fprintln(w)
 	added := result.Added
 	modified := result.Modified
 	removed := result.Removed
@@ -90,8 +91,13 @@ type JSONOutput struct {
 }
 
 type JSONScope struct {
-	FromPath string `json:"from_path"`
-	ToPath   string `json:"to_path"`
+	Mode            string `json:"mode"`
+	FromPath        string `json:"from_path,omitempty"`
+	ToPath          string `json:"to_path,omitempty"`
+	FromRef         string `json:"from_ref,omitempty"`
+	ToRef           string `json:"to_ref,omitempty"`
+	RefMode         string `json:"ref_mode,omitempty"`
+	RefKeepWorktree bool   `json:"ref_keep_worktree,omitempty"`
 }
 
 type JSONEntry struct {
@@ -110,7 +116,7 @@ type JSONSummary struct {
 // added/modified/removed arrays are truncated; summary counts are always full.
 // When opts.IncludeContent is true, each entry includes a truncated content snippet
 // from the same roots as RenderHuman (to for added/modified, from for removed).
-func RenderJSON(w io.Writer, result DiffResult, scope PathScope, wrappedCommand string, opts Options, fromCtx, toCtx Context) error {
+func RenderJSON(w io.Writer, result DiffResult, scope Scope, wrappedCommand string, opts Options, fromCtx, toCtx Context) error {
 	added := result.Added
 	modified := result.Modified
 	removed := result.Removed
@@ -150,7 +156,7 @@ func RenderJSON(w io.Writer, result DiffResult, scope PathScope, wrappedCommand 
 		removedJ[i] = ent
 	}
 	out := JSONOutput{
-		Scope:   JSONScope{FromPath: scope.FromPath, ToPath: scope.ToPath},
+		Scope:   scopeToJSONScope(scope),
 		Command: wrappedCommand,
 		Added:   addedJ,
 		Modified: modifiedJ,
@@ -164,4 +170,37 @@ func RenderJSON(w io.Writer, result DiffResult, scope PathScope, wrappedCommand 
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	return enc.Encode(out)
+}
+
+func formatDiffCommandLine(scope Scope, wrapped string) string {
+	switch scope.Kind {
+	case ScopeKindRef:
+		var b strings.Builder
+		fmt.Fprintf(&b, "diff --from-ref %s --to-ref %s", scope.FromRef, scope.ToRef)
+		if scope.RefMode != "" && scope.RefMode != "worktree" {
+			fmt.Fprintf(&b, " --ref-mode %s", scope.RefMode)
+		}
+		if scope.RefKeepWorktree {
+			b.WriteString(" --ref-keep-worktree")
+		}
+		fmt.Fprintf(&b, " %s", wrapped)
+		return b.String()
+	default:
+		return fmt.Sprintf("diff --from-path %s --to-path %s %s", scope.FromPath, scope.ToPath, wrapped)
+	}
+}
+
+func scopeToJSONScope(s Scope) JSONScope {
+	j := JSONScope{Mode: string(s.Kind)}
+	switch s.Kind {
+	case ScopeKindPath:
+		j.FromPath = s.FromPath
+		j.ToPath = s.ToPath
+	case ScopeKindRef:
+		j.FromRef = s.FromRef
+		j.ToRef = s.ToRef
+		j.RefMode = s.RefMode
+		j.RefKeepWorktree = s.RefKeepWorktree
+	}
+	return j
 }

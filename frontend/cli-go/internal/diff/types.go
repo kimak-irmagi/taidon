@@ -1,5 +1,5 @@
-// Package diff provides path-mode comparison for sqlrs diff: build file lists
-// per kind (psql, lb), compare them, and render Added/Modified/Removed.
+// Package diff provides sqlrs diff: build file lists per kind (psql, lb) in two
+// contexts (path or git refs), compare them, and render Added/Modified/Removed.
 // See docs/architecture/diff-component-structure.md and docs/user-guides/sqlrs-diff.md.
 package diff
 
@@ -27,10 +27,27 @@ type DiffResult struct {
 	Removed  []FileEntry
 }
 
-// Scope is the comparison scope. PathScope is the first slice (--from-path / --to-path).
-type PathScope struct {
+// ScopeKind selects how the two comparison roots are supplied.
+type ScopeKind string
+
+const (
+	ScopeKindPath ScopeKind = "path"
+	ScopeKindRef  ScopeKind = "ref"
+)
+
+// Scope is either path mode (--from-path / --to-path) or ref mode (--from-ref / --to-ref).
+type Scope struct {
+	Kind ScopeKind
+
+	// Path mode
 	FromPath string
 	ToPath   string
+
+	// Ref mode (RefMode is currently only "worktree")
+	FromRef         string
+	ToRef           string
+	RefMode         string
+	RefKeepWorktree bool
 }
 
 // Options holds diff-specific options (limit, include content in output).

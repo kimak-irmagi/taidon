@@ -115,14 +115,15 @@ sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sq
 - diff-опции идут до оборачиваемой команды;
 - оборачиваемая команда сохраняет свой текущий синтаксис без изменений;
 - глобальный `-v` остаётся флагом подробного вывода, а глобальный `--output` — переключателем text/json;
-- первый срез реализации поддерживает либо ровно одну оборачиваемую команду
-  `plan:*` или `prepare:*`, либо обычный двухстадийный composite `prepare ... run`;
-- wrapped composite может смешивать raw- и alias-стадии точно так же, как и
-  основной CLI;
+- **Текущий CLI** (`frontend/cli-go`): ровно **один** wrapped-токен из
+  `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb`; сравниваются **closures
+  файлов** (хеши), без engine. **Режим ref** — только **`git worktree`**, не blob.
+- **Дизайн / потом**: composite `prepare ... run`, alias `prepare <ref>`; полные
+  производные представления (планы, payload prepare).
 - будущая standalone-поддержка `run:*` возможна только для file-backed входов,
   потому что inline-only вызовы могут не иметь payload, зависящего от ревизии.
 
-Примеры принятой composite-формы:
+Примеры composite-формы (**цель дизайна**; парсер CLI пока не всё поддерживает):
 
 ```bash
 sqlrs diff --from-ref <refA> --to-ref <refB> prepare chinook run:psql -- -f ./queries.sql
@@ -131,19 +132,19 @@ sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sq
 
 Что именно сравнивает `diff`:
 
-- `plan:*` -> производный task plan;
-- `prepare:*` -> тела prepare-задач плюс resolved input graph;
-- `run:*` -> только revision-sensitive file inputs, но не instance resolution и не DSN injection.
+- **Сейчас:** один и тот же **resolved file graph + контент** для `plan:*` и
+  `prepare:*` данного kind (psql vs lb).
+- **Целевое:** `plan:*` → task plan; `prepare:*` → тела + граф; `run:*` → только
+  файловые входы.
 
 ### Алгоритм реализации
 
 1. Разобрать diff-scope (`from/to ref` или `from/to path`).
-2. Разобрать оборачиваемую команду по той же грамматике CLI, что и основной invocation.
-3. Для каждой стороны независимо разрешить файлы/includes согласно её собственной ревизии или path-контексту.
-4. Построить производное представление для оборачиваемой команды или для
-   каждой фазы отдельно, если форма — `prepare ... run`.
-5. Сравнить производные представления и отрендерить отчёт, сохраняя `prepare`
-   и `run` как отдельные diff-фазы для wrapped composite.
+2. Разобрать оборачиваемую команду (сейчас: один `plan:*` или `prepare:*` токен).
+3. Для каждой стороны независимо разрешить файлы/includes согласно её ревизии или path-контексту.
+4. **Сейчас:** построить списки файлов (closures) и сравнить Added / Modified / Removed.
+   **Потом:** richer representations и per-phase вывод для `prepare ... run`.
+5. Вывести human или JSON.
 
 ---
 

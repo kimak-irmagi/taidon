@@ -12,12 +12,14 @@ import (
 // compare, and render. kind is the wrapped command (e.g. plan:psql, prepare:lb).
 // Returns an error for unsupported kind or build/compare errors.
 func RunDiff(stdout io.Writer, parsed diff.ParsedDiff, cwd string, outputFormat string) error {
-	scope := parsed.Scope
 	opts := diff.Options{Limit: parsed.Limit, IncludeContent: parsed.IncludeContent}
 
-	fromCtx, toCtx, err := diff.ResolvePathScope(scope, cwd)
+	fromCtx, toCtx, cleanup, err := diff.ResolveScope(parsed.Scope, cwd)
 	if err != nil {
 		return err
+	}
+	if cleanup != nil {
+		defer func() { _ = cleanup() }()
 	}
 
 	kind := parseDiffKind(parsed.WrappedName)
@@ -48,9 +50,9 @@ func RunDiff(stdout io.Writer, parsed diff.ParsedDiff, cwd string, outputFormat 
 
 	result := diff.Compare(fromList, toList, opts)
 	if outputFormat == "json" {
-		return diff.RenderJSON(stdout, result, scope, parsed.WrappedName, opts, fromCtx, toCtx)
+		return diff.RenderJSON(stdout, result, parsed.Scope, parsed.WrappedName, opts, fromCtx, toCtx)
 	}
-	diff.RenderHuman(stdout, result, scope, parsed.WrappedName, opts, fromCtx, toCtx)
+	diff.RenderHuman(stdout, result, parsed.Scope, parsed.WrappedName, opts, fromCtx, toCtx)
 	return nil
 }
 

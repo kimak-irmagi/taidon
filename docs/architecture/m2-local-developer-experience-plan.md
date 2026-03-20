@@ -218,7 +218,13 @@ execution depend on heuristics.
 **Goal**: ship the first user-visible Git-aware workflow without requiring Git
 object access yet.
 
-**Primary outcome**:
+**Status (partially delivered in `frontend/cli-go`)**: path mode and ref mode
+(worktree) work for a **single** wrapped `plan:psql` / `plan:lb` / `prepare:psql`
+/ `prepare:lb`; comparison is **file-list closures + hashes**, no engine.
+**Still open** vs this PR’s original wording: two-stage `prepare ... run`
+composite parsing, alias `prepare <ref>`, and JSON/human **per-phase** layout.
+
+**Primary outcome** (target):
 
 - `sqlrs diff --from-path/--to-path ...` works for one wrapped `plan:*` or
   `prepare:*` command, and for the normal two-stage `prepare ... run`

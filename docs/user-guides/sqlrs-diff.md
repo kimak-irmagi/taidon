@@ -4,31 +4,43 @@ Russian: [sqlrs-diff.RU.md](sqlrs-diff.RU.md)
 
 ## Overview
 
-**Status: design / future.** This command is part of the git-aware passive
-feature set described in
+**Status: first slice implemented** in `frontend/cli-go` (`internal/diff`,
+`internal/cli`, `internal/app`). Diff runs **without contacting the engine**
+and compares **file-list closures** (paths + content hashes) built locally.
+
+Broader behaviour is part of the git-aware passive set in
 [`docs/architecture/git-aware-passive.md`](../architecture/git-aware-passive.md).
-It is not implemented in the current MVP CLI.
 
 `sqlrs diff` is a **meta-command**: it wraps one existing content-aware sqlrs
-command, evaluates that command in two contexts, and reports the difference.
-The goal is to stay syntactically close to the main sqlrs command surface rather
-than introducing a separate `diff`-specific input DSL.
+command line, evaluates it in two filesystem contexts, and reports Added /
+Modified / Removed files in the resolved input graph. The goal is to stay
+syntactically close to the main sqlrs command surface rather than introducing a
+separate `diff`-specific input DSL.
 
-**Composite diff commands.** To maximise compatibility with the main CLI, `diff`
-is designed as a **group of composite commands**: you take the same verb you would
-use for a real run and insert the diff scope between `sqlrs` and that verb. The
-three forms and what they compare are:
+**What the first slice compares.** For `plan:psql`, `prepare:psql`, `plan:lb`, and
+`prepare:lb`, the implementation uses the **same file-closure builders** on both
+sides (psql `\i`/`\include` closure, Liquibase changelog graph). It does **not**
+yet fetch engine task plans or prepare payloads, so “plan vs prepare” does not
+change the diff output today—only the wrapped **kind** (psql vs lb) does.
 
-| Form | Compares |
-|------|----------|
-| `sqlrs diff ... plan ...` | **Difference in task plans** for instance preparation (ordered steps, task hashes, cacheability). |
-| `sqlrs diff ... prepare ...` | **Difference in task bodies** for preparation (resolved files, include graph, normalized content units). |
-| `sqlrs diff ... run ...` | **Difference in task bodies** for query execution (file-backed run inputs only). |
+**Design target (later slices).** Compatibility with composite shapes and richer
+semantics:
 
-So: `diff ... plan` answers “how does the *plan* change?”; `diff ... prepare` answers
-“how do the *prepare inputs/bodies* change?”; `diff ... run` answers “how do the
-*run inputs* change?”. The same command line you use for `plan` / `prepare` / `run`
-is reused, with only the diff scope inserted.
+| Form | Design target (future engine-backed / multi-phase) |
+|------|----------------------------------------------------|
+| `sqlrs diff ... plan ...` | Difference in **task plans** (ordered steps, task hashes, cacheability). |
+| `sqlrs diff ... prepare ...` | Difference in **prepare** inputs / normalized task bodies. |
+| `sqlrs diff ... run ...` | **File-backed** run inputs only. |
+
+The same command line you use for `plan` / `prepare` / `run` is intended to be
+reused with only the diff scope inserted once those slices land.
+
+**Composite diff commands (design).** To maximise compatibility with the main CLI,
+`diff` is ultimately a **group of composite commands**: you insert the diff scope
+between `sqlrs` and the verb you would use for a real run. **Today only a single
+wrapped command token** is accepted (`plan:psql`, `plan:lb`, `prepare:psql`,
+`prepare:lb`). Shapes such as `prepare <alias> run:psql ...` are **not** parsed yet
+(see [Composite `prepare ... run`](#composite-prepare--run) below).
 
 Use cases:
 
@@ -56,15 +68,15 @@ Where:
   more verbose logging to stdout/stderr during the diff process; `--output human|json`
   selects the output format (no diff-specific `--format`).
 
-Examples of wrapped commands:
+Examples of wrapped commands **supported today**:
 
 - `plan:psql`
 - `plan:lb`
-- `prepare chinook`
 - `prepare:psql`
 - `prepare:lb`
-- `prepare chinook run:psql -- -f queries.sql`
-- `prepare:psql -- -f prepare.sql run smoke`
+
+**Not yet:** `prepare <alias>`, `prepare … run …` composites, `run:*` (and any
+invocation whose first token after the scope is not one of the four above).
 
 Initial non-goals:
 
@@ -85,7 +97,13 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
 
 - `<refA>`, `<refB>` may be `HEAD`, `origin/main`, a commit hash, a tag, or any
   locally resolvable Git ref.
-- The wrapped command is evaluated separately at each ref.
+- Each ref is checked out as a **detached worktree** at the repository root
+  (`git worktree add --detach`; cleaned up after the command unless
+  `--ref-keep-worktree`). Paths from the wrapped command (e.g. `-f`, changelog)
+  resolve **relative to that worktree root**. The Git repo is found from the
+  process current working directory.
+- **`--ref-mode blob`** is reserved; the CLI currently supports **`worktree` only**
+  (default). Passing `blob` returns a clear “not supported” error.
 
 ### Mode 2: Compare two local paths
 
@@ -114,22 +132,17 @@ invent semantics for them. For commands that mix file-backed and inline inputs,
 only the file-derived part is diffed; the implementation may warn or reject
 when there is nothing revision-dependent to compare.
 
-### `plan:*`
+### `plan:*` (first slice)
 
-Compare the derived task plan:
+Compare the **resolved file graph** used as input to planning (same closure as for
+`prepare:*` of the same kind). Engine **task plan** diff (steps, cache keys) is
+not implemented yet.
 
-- task ordering
-- task bodies / hashes
-- cacheability-relevant inputs
-- any resolved file graph that influences planning
+### `prepare:*` (first slice)
 
-### `prepare:*`
-
-Compare the preparation payload:
-
-- resolved input files
-- expanded include graph
-- normalized task bodies / content-derived units
+Compare **resolved input files** and the expanded include/changelog graph
+(content-addressed). Normalized prepare **task bodies** from the engine are not
+compared yet.
 
 ### `run:*` (future / limited)
 
@@ -142,33 +155,30 @@ compared across refs.
 
 ### Composite `prepare ... run`
 
-`sqlrs diff` also accepts the same normal two-stage composite shape as the main
-CLI:
+**Not supported in the first CLI slice.** The parser accepts exactly one wrapped
+command token after the scope (e.g. `plan:psql`), not `prepare … run …` composites
+or `prepare <alias>` alias invocations.
+
+**Design** (for when this is implemented): the same normal two-stage composite
+shape as the main CLI:
 
 - `prepare <prepare-ref> run <run-ref>`
 - `prepare <prepare-ref> run:<kind> ...`
 - `prepare:<kind> ... run <run-ref>`
 - `prepare:<kind> ... run:<kind> ...`
 
-Rules:
+Rules (target):
 
-- the wrapped `prepare` stage and the wrapped `run` stage are each resolved in
-  the left and right comparison context using the same rules as the main CLI;
-- alias-backed stages resolve their `*.prep.s9s.yaml` or `*.run.s9s.yaml` files
-  separately on each side;
-- relative alias refs are not rebased to a workspace root in diff mode either:
-  each side resolves them from that side's effective working directory;
-- file-bearing paths read from an alias file are resolved relative to that
-  alias file's directory on that side;
-- diff reports the `prepare` phase and the `run` phase separately;
-- if one phase has no revision-dependent payload, that phase is reported as
-  empty or non-diffable without invalidating the other phase.
+- each phase resolved in the left/right context per main CLI rules;
+- alias-backed stages resolve `*.prep.s9s.yaml` / `*.run.s9s.yaml` per side;
+- diff reports **prepare** and **run** separately in output.
 
-For scope modes, the effective working directory is:
+For scope modes, the effective context root is:
 
-- in path mode: the side root selected by `--from-path` or `--to-path`;
-- in ref mode: the caller's current working directory projected into each ref's
-  tree.
+- **path mode**: `--from-path` / `--to-path` as given;
+- **ref mode**: repository root at that revision inside each temporary worktree
+  (not a subdirectory of your current cwd unless you adjust `-f` paths
+  accordingly).
 
 ### Revision-dependent file discovery
 
@@ -193,7 +203,7 @@ the same rules as the main CLI.
 
 | Kind | Entry point | Closure rule |
 |------|-------------|--------------|
-| **prepare:psql** / plan:psql | `-f <file>` (and `-f -` with stdin) | Closure over `\i`, `\ir`, `\include`, `\include_relative` (and any other include directives the engine expands). Start from the file(s) named in `-f`; recursively add every file referenced by those directives. |
+| **prepare:psql** / plan:psql | `-f <file>` (file path required; **not** `-f -` / stdin) | Closure over `\i`, `\ir`, `\include`, `\include_relative` (and any other include directives the engine expands). Start from the file(s) named in `-f`; recursively add every file referenced by those directives. |
 | **prepare:lb** / plan:lb | `--changelog-file <path>` | Closure over the changelog graph: start from the changelog file; add every file referenced by it (include, includeAll, etc.). Liquibase defines the graph; diff reuses the same resolution so the file set is identical to what prepare/plan would use. |
 | **run:psql** (future) | `-f <file>` (file-backed only) | Same as prepare:psql: closure over `\i` / `\include` from each `-f` entry. Inline `-c` does not contribute to the file list. |
 | **run:*** (other kinds, future) | Kind-specific | Each run kind defines which arguments are file-backed; the file list is built from those (e.g. script path, config path) and their kind-specific includes. |
@@ -214,7 +224,8 @@ implementation requirement.
 | `--to-ref <ref>` | Right Git revision. |
 | `--from-path <path>` | Left local context. |
 | `--to-path <path>` | Right local context. |
-| `--ref-mode blob\|worktree` | Ref mode only. How files are loaded from Git. |
+| `--ref-mode worktree` | Ref mode only. **Implemented:** `worktree` (default). **`blob` is not implemented** (passing it errors). |
+| `--ref-keep-worktree` | Ref mode only. Do not remove temporary worktrees after exit (debugging). |
 | `--include-content` | Include content snippets in human/json output. |
 | `--limit <n>` | Truncate listed entries for very large diffs. |
 
@@ -235,30 +246,24 @@ Output and verbosity are **global**, not diff-specific:
 - Added / Modified / Removed sections.
 - Optional content snippets when `--include-content` is set.
 - Short summary counts.
-- Optional semantic hint such as `db_impact=yes|no|unknown` when available.
 
-For wrapped composite commands, human output should render separate `prepare`
-and `run` sections so that each phase can show its own Added / Modified /
-Removed summary.
+**Future:** optional hints such as `db_impact`; separate **prepare** / **run**
+sections when composite wrapping is implemented.
 
 ### JSON output (`--output json`)
 
-A single JSON object with stable top-level fields such as:
+A single JSON object with stable top-level fields:
 
-- `scope`
+- `scope` (includes `mode`, path or ref fields, `ref_mode`, `ref_keep_worktree` when relevant)
 - `command`
-- `added`
-- `modified`
-- `removed`
-- `summary`
-- `db_impact` (optional)
+- `added`, `modified`, `removed` (entries with `path`, `hash`, optional `content` when `--include-content`)
+- `summary` (`added` / `modified` / `removed` counts)
 
-When `--limit` is used, listed entries may be truncated while summary counts
-should still represent the full diff when known.
+When `--limit` is used, listed arrays may be truncated while summary counts
+reflect the full diff.
 
-For wrapped composite commands, the top-level object should instead contain
-separate `prepare` and `run` objects, each with the same stable per-phase fields
-(`added`, `modified`, `removed`, `summary`, optional `db_impact`).
+**Future:** optional `db_impact`; nested `prepare` / `run` objects for composite
+wrappers.
 
 ---
 
@@ -267,9 +272,13 @@ separate `prepare` and `run` objects, each with the same stable per-phase fields
 - **Missing or conflicting scope** — exactly one of ref mode or path mode must be
   selected.
 - **Invalid wrapped command** — `diff` requires one wrapped sqlrs command.
-- **Unsupported wrapped chain** — `diff` accepts one wrapped command or one
-  normal two-stage `prepare ... run` composite, but not longer command chains.
+- **Unsupported wrapped command** — only `plan:psql`, `plan:lb`,
+  `prepare:psql`, `prepare:lb` (e.g. `run:psql`, alias `prepare …`, and
+  `prepare … run …` composites are rejected today).
 - **Ref resolution failure** — one of the refs does not resolve locally.
+- **Missing file at one ref** — the primary file (`-f`, changelog, etc.) must be
+  present in **both** worktrees; otherwise diff fails with a filesystem error on
+  the missing side.
 - **Not a Git repository** — ref mode requires a Git repository context.
 - **No revision-dependent payload** — for future `run:*` support, inline-only
   inputs may be rejected as non-diffable.
@@ -277,6 +286,28 @@ separate `prepare` and `run` objects, each with the same stable per-phase fields
 ---
 
 ## Examples
+
+### Minimal demo (two commits, same `-f` path)
+
+Ref mode materializes each revision in a temporary Git worktree. The path you pass
+to `-f` / `--changelog-file` must exist **on both** refs, or file stat will fail
+(for example `from-path: stat …/schema/a.sql: no such file or directory`).
+
+To see a working ref diff without touching your real project, run from the repo root:
+
+```bash
+./scripts/sqlrs-diff/demo-diff-refs.sh
+```
+
+That script creates a throwaway repository, makes two commits that change `schema/a.sql`,
+and runs:
+
+```bash
+sqlrs diff --from-ref HEAD~1 --to-ref HEAD plan:psql -- -f schema/a.sql
+```
+
+You should see **Modified: schema/a.sql** in human output and a non-empty `modified`
+array in JSON.
 
 ### Compare two refs with `plan:psql`
 
@@ -297,10 +328,11 @@ sqlrs diff --from-ref origin/main --to-ref HEAD prepare:lb -- \
 sqlrs --output json diff --from-path ./left --to-path ./right prepare:psql -- -f ./prepare.sql
 ```
 
-### Compare a mixed composite invocation
+### Mixed composite invocation (not supported yet)
 
 ```bash
-sqlrs diff --from-ref origin/main --to-ref HEAD prepare chinook run:psql -- -f ./queries.sql
+# Design target only — current CLI rejects this shape (single wrapped token required).
+# sqlrs diff --from-ref origin/main --to-ref HEAD prepare chinook run:psql -- -f ./queries.sql
 ```
 
 ---
@@ -320,18 +352,19 @@ their contents. The rest is shared machinery.
    for the wrapped kind: resolve ref or path, then apply that kind's closure rule
    (e.g. `\i`/`\include` for psql, changelog graph for lb). The file set and
    content can differ per side.
-5. Optionally build the derived representation (plan tasks, prepare payload, run
-   file-backed inputs) for each side if the output format needs it. For
-   composite commands, do this separately for the `prepare` and `run` phases.
-6. Compare the two file sets (and optionally derived representations) and
-   classify Added / Modified / Removed.
+5. **First slice:** compare the two file lists only (hashes / optional content
+   snippets). **Future:** engine-backed plan/prepare/run payloads and per-phase
+   composite output.
+6. Classify Added / Modified / Removed.
 7. Render human or JSON output according to the global `--output` flag.
 
-This command does not start an engine or execute SQL in the first design slice;
-it compares the sqlrs-relevant file sets and their contents. Compatibility with
-the main CLI (syntax, global `-v`, `--output`) is intentional so that users can
-reuse the same command line they use for `plan` or `prepare`, only inserting the
-`diff` scope.
+**Implemented layout:** `internal/app` dispatches `diff` and calls
+`diff.ParseDiffScope`; `internal/cli.RunDiff` runs `diff.ResolveScope` (path or
+ref worktrees), `BuildPsqlFileList` / `BuildLbFileList`, `Compare`, and renderers.
+
+This command does not start an engine or execute SQL; it compares resolved file
+sets and their contents. Compatibility with global `-v` and `--output` matches
+other sqlrs commands.
 
 For **component structure and call flow** (who builds file lists, who calls whom),
 see [`docs/architecture/diff-component-structure.md`](../architecture/diff-component-structure.md).

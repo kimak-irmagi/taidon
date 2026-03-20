@@ -20,13 +20,13 @@ Two directory trees that simulate "left" (baseline) and "right" (new) DB migrati
 Из корня репозитория:
 
 ```bash
-./scripts/test-diff-db.sh
+./scripts/sqlrs-diff/test-diff-db.sh
 ```
 
 С предварительным запуском движка:
 
 ```bash
-./scripts/test-diff-db.sh --with-engine
+./scripts/sqlrs-diff/test-diff-db.sh --with-engine
 ```
 
 Ожидаемый вывод diff: **1 added** (`features/audit_trigger.sql`), **3 modified** (`main.sql`, `schema.sql`, `data.sql`), **0 removed**.

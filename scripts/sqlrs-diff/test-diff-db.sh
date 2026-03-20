@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Test sqlrs diff on two local DB script trees (testdata/diff-db/left and right).
 # Usage:
-#   ./scripts/test-diff-db.sh           — only diff (engine not required)
-#   ./scripts/test-diff-db.sh --with-engine — build engine, start it, status, then diff
+#   ./scripts/sqlrs-diff/test-diff-db.sh            — only diff (engine not required)
+#   ./scripts/sqlrs-diff/test-diff-db.sh --with-engine — build engine, start it, status, then diff
 
 set -e
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null)" || true
+if [[ -z "${REPO_ROOT:-}" ]]; then
+  REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
 cd "$REPO_ROOT"
 
 LEFT="${REPO_ROOT}/testdata/diff-db/left"

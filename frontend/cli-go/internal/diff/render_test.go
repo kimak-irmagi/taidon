@@ -27,7 +27,7 @@ func TestRenderHuman_IncludeContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	RenderHuman(&buf, result, PathScope{FromPath: fromDir, ToPath: toDir}, "plan:psql",
+	RenderHuman(&buf, result, Scope{Kind: ScopeKindPath, FromPath: fromDir, ToPath: toDir}, "plan:psql",
 		Options{IncludeContent: true}, Context{Root: fromDir}, Context{Root: toDir})
 	out := buf.String()
 	if !strings.Contains(out, "only-to.sql") || !strings.Contains(out, "to line") {
@@ -49,7 +49,7 @@ func TestRenderHuman_IncludeContentOff(t *testing.T) {
 	}
 	result := DiffResult{Added: []FileEntry{{Path: "a.sql", Hash: "h"}}}
 	var buf bytes.Buffer
-	RenderHuman(&buf, result, PathScope{FromPath: fromDir, ToPath: toDir}, "plan:psql",
+	RenderHuman(&buf, result, Scope{Kind: ScopeKindPath, FromPath: fromDir, ToPath: toDir}, "plan:psql",
 		Options{IncludeContent: false}, Context{Root: fromDir}, Context{Root: toDir})
 	if strings.Contains(buf.String(), "secret") {
 		t.Fatalf("did not expect content when IncludeContent false:\n%s", buf.String())
@@ -63,7 +63,7 @@ func TestRenderJSON_IncludeContent(t *testing.T) {
 	}
 	result := DiffResult{Added: []FileEntry{{Path: "b.sql", Hash: "h"}}}
 	var buf bytes.Buffer
-	if err := RenderJSON(&buf, result, PathScope{ToPath: toDir}, "plan:psql",
+	if err := RenderJSON(&buf, result, Scope{Kind: ScopeKindPath, FromPath: "", ToPath: toDir}, "plan:psql",
 		Options{IncludeContent: true}, Context{}, Context{Root: toDir}); err != nil {
 		t.Fatal(err)
 	}

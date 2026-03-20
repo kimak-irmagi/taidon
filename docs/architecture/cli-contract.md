@@ -55,17 +55,18 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
-Exception: `sqlrs diff` acts as a meta-command and wraps either one existing
-content-aware sqlrs command or one normal two-stage `prepare ... run`
-composite:
+Exception: `sqlrs diff` is a meta-command with a diff scope, then a wrapped
+command. **Implemented today:** one wrapped token among `plan:psql`, `plan:lb`,
+`prepare:psql`, `prepare:lb`. **Design target:** also a normal two-stage
+`prepare ... run` composite:
 
 ```text
-sqlrs diff <diff-scope> <wrapped-command>
-sqlrs diff <diff-scope> <prepare-stage> <run-stage>
+sqlrs diff <diff-scope> <wrapped-command>            # supported (single token)
+sqlrs diff <diff-scope> <prepare-stage> <run-stage>  # not implemented yet
 ```
 
-This keeps the nested command syntax aligned with the main CLI surface instead of
-introducing a separate `diff`-specific input DSL.
+This keeps nested syntax aligned with the main CLI instead of a separate
+`diff`-specific input DSL.
 
 ## ID Prefix Rules
 
@@ -261,10 +262,15 @@ See:
 
 ### 3.9 `sqlrs diff`
 
-`sqlrs diff` is a **group of composite commands**: the user inserts the diff scope
-between `sqlrs` and one content-aware command (`plan`, `prepare`, or `run`), and
-the same command syntax is used as in the main CLI. It compares two contexts by
-evaluating that command on both sides and reporting the difference.
+`sqlrs diff` is a **group of composite commands** (design): the user inserts the
+diff scope between `sqlrs` and one content-aware command (`plan`, `prepare`, or
+`run`), reusing the main CLI syntax. **First implementation slice** (in
+`frontend/cli-go`): compares **file-list closures** (paths + content hashes) for
+exactly one wrapped `plan:psql`, `plan:lb`, `prepare:psql`, or `prepare:lb`
+invocation—**no engine calls**; `plan:*` and `prepare:*` share the same builders
+today.
+
+Design targets for later slices:
 
 - `sqlrs diff ... plan ...` — difference in **task plans** for instance preparation.
 - `sqlrs diff ... prepare ...` — difference in **task bodies** for preparation.
@@ -273,17 +279,18 @@ evaluating that command on both sides and reporting the difference.
 Diff-specific options define the comparison scope; the wrapped command keeps its
 normal syntax.
 
-Current design scope:
+**Implemented today**
 
-- wrapped commands: `plan:*`, `prepare:*`, and later file-backed `run:*`
+- scope: `--from-path`/`--to-path` or `--from-ref`/`--to-ref`
+- ref mode: **worktree only** (`git worktree add --detach`); `--ref-mode blob` is not implemented
+- wrapped commands: `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb` only
+- global `-v` and `--output` as elsewhere
+
+**Design scope (not all implemented)**
+
 - wrapped alias-mode commands such as `prepare <prepare-ref>`
-- wrapped normal two-stage `prepare ... run` composites, including mixed
-  raw/alias stages
-- wrapped alias refs use the same per-side path bases as the main CLI: alias
-  refs resolve from the effective working directory on each side, and file
-  paths inside alias files resolve from the alias file directory on that side
-- longer command chains remain out of scope
-- global `-v` and `--output` keep their existing meaning
+- wrapped two-stage `prepare ... run` composites
+- per-side alias path bases as in the main CLI; longer command chains out of scope
 
 See:
 

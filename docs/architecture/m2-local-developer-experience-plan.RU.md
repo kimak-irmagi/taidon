@@ -218,7 +218,13 @@ local inputs.
 **Цель**: поставить первый user-visible Git-aware workflow без обязательного
 доступа к Git objects.
 
-**Основной результат**:
+**Статус (частично сделано в `frontend/cli-go`)**: path- и ref-mode (worktree)
+для **одного** wrapped `plan:psql` / `plan:lb` / `prepare:psql` / `prepare:lb`;
+сравнение — **closure файлов + хеши**, без engine. **Ещё не сделано** относительно
+первоначальной формулировки PR: composite `prepare … run`, alias `prepare <ref>`,
+отдельный per-phase JSON/human.
+
+**Основной результат** (цель):
 
 - `sqlrs diff --from-path/--to-path ...` работает для одного wrapped `plan:*`
   или `prepare:*` command, а также для обычной двухстадийной grammar
