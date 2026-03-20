@@ -15,6 +15,9 @@ import (
 	"github.com/sqlrs/cli/internal/config"
 )
 
+var runPrepareFn = cli.RunPrepare
+var submitPrepareFn = cli.SubmitPrepare
+
 type prepareArgs struct {
 	Image          string
 	PsqlArgs       []string
@@ -86,7 +89,11 @@ func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config
 }
 
 func runPrepareLiquibase(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) error {
-	result, handled, err := prepareResultLiquibase(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, args)
+	return runPrepareLiquibaseWithPathMode(stdout, stderr, runOpts, cfg, workspaceRoot, cwd, args, true)
+}
+
+func runPrepareLiquibaseWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, relativizePaths bool) error {
+	result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, args, relativizePaths)
 	if err != nil {
 		return err
 	}
@@ -129,7 +136,7 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 	runOpts.PrepareKind = "psql"
 
 	if !parsed.Watch {
-		accepted, err := cli.SubmitPrepare(context.Background(), runOpts)
+		accepted, err := submitPrepareFn(context.Background(), runOpts)
 		if err != nil {
 			return client.PrepareJobResult{}, false, err
 		}
@@ -140,7 +147,7 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		return client.PrepareJobResult{}, true, nil
 	}
 
-	result, err := cli.RunPrepare(context.Background(), runOpts)
+	result, err := runPrepareFn(context.Background(), runOpts)
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
@@ -161,6 +168,13 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 }
 
 func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) (client.PrepareJobResult, bool, error) {
+	return prepareResultLiquibaseWithPathMode(w, runOpts, cfg, workspaceRoot, cwd, args, true)
+}
+
+// Alias-backed liquibase stages already rebase file-bearing args to the alias
+// file directory, so they must preserve those absolute paths instead of
+// re-relativizing them to the caller's cwd.
+func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, relativizePaths bool) (client.PrepareJobResult, bool, error) {
 	parsed, showHelp, err := parsePrepareArgs(args)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
@@ -201,7 +215,9 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
+	if relativizePaths {
+		liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
+	}
 	liquibaseEnv := resolveLiquibaseEnv()
 	workDir, err := normalizeWorkDir(cwd, converter)
 	if err != nil {
@@ -217,7 +233,7 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 	runOpts.PrepareKind = "lb"
 
 	if !parsed.Watch {
-		accepted, err := cli.SubmitPrepare(context.Background(), runOpts)
+		accepted, err := submitPrepareFn(context.Background(), runOpts)
 		if err != nil {
 			return client.PrepareJobResult{}, false, err
 		}
@@ -228,7 +244,7 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 		return client.PrepareJobResult{}, true, nil
 	}
 
-	result, err := cli.RunPrepare(context.Background(), runOpts)
+	result, err := runPrepareFn(context.Background(), runOpts)
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
@@ -429,18 +445,17 @@ func normalizeFilePath(path string, workspaceRoot string, cwd string, convert fu
 		root = cwd
 	}
 	root = filepath.Clean(root)
+	cwd = rebasePathToWorkspaceRoot(cwd, root)
 	absPath := path
 	if !filepath.IsAbs(absPath) {
 		absPath = filepath.Join(cwd, absPath)
 	}
 	absPath = filepath.Clean(absPath)
-	if rootResolved, rootErr := filepath.EvalSymlinks(root); rootErr == nil {
-		if pathResolved, pathErr := filepath.EvalSymlinks(absPath); pathErr == nil {
-			root = rootResolved
-			absPath = pathResolved
-		}
-	}
-	if root != "" && !isWithin(root, absPath) {
+	absPath = rebasePathToWorkspaceRoot(absPath, root)
+
+	canonicalRoot := canonicalizeBoundaryPath(root)
+	canonicalAbsPath := canonicalizeBoundaryPath(absPath)
+	if canonicalRoot != "" && !isWithin(canonicalRoot, canonicalAbsPath) {
 		return "", false, ExitErrorf(2, "File path must be within workspace root: %s", absPath)
 	}
 	if convert != nil {
@@ -451,6 +466,56 @@ func normalizeFilePath(path string, workspaceRoot string, cwd string, convert fu
 		return converted, false, nil
 	}
 	return absPath, false, nil
+}
+
+func rebasePathToWorkspaceRoot(path string, workspaceRoot string) string {
+	rawPath := strings.TrimSpace(path)
+	rawRoot := strings.TrimSpace(workspaceRoot)
+	if rawPath == "" || rawRoot == "" {
+		return rawPath
+	}
+	cleanedPath := filepath.Clean(rawPath)
+	cleanedRoot := filepath.Clean(rawRoot)
+
+	canonicalRoot := canonicalizeBoundaryPath(cleanedRoot)
+	canonicalPath := canonicalizeBoundaryPath(cleanedPath)
+	if canonicalRoot == "" || canonicalPath == "" || !isWithin(canonicalRoot, canonicalPath) {
+		return cleanedPath
+	}
+
+	rel, err := filepath.Rel(canonicalRoot, canonicalPath)
+	if err != nil {
+		return cleanedPath
+	}
+	if rel == "." {
+		return cleanedRoot
+	}
+	return filepath.Clean(filepath.Join(cleanedRoot, rel))
+}
+
+func canonicalizeBoundaryPath(path string) string {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" {
+		return cleaned
+	}
+	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
+		return resolved
+	}
+
+	probe := cleaned
+	suffix := make([]string, 0, 4)
+	for {
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return cleaned
+		}
+		suffix = append([]string{filepath.Base(probe)}, suffix...)
+		probe = parent
+		if resolved, err := filepath.EvalSymlinks(probe); err == nil {
+			parts := append([]string{resolved}, suffix...)
+			return filepath.Join(parts...)
+		}
+	}
 }
 
 func buildPathConverter(opts cli.PrepareOptions) func(string) (string, error) {

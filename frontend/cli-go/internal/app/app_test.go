@@ -145,13 +145,13 @@ func TestRunUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestRunPrepareMissingKind(t *testing.T) {
+func TestRunPrepareMissingAliasRefLegacyBareCommand(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
 
 	err := Run([]string{"prepare"})
-	if err == nil || !strings.Contains(err.Error(), "missing prepare kind") {
-		t.Fatalf("expected missing prepare kind error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing prepare alias ref") {
+		t.Fatalf("expected missing prepare alias ref error, got %v", err)
 	}
 }
 
@@ -175,13 +175,13 @@ func TestRunPrepareLiquibaseRequiresCommand(t *testing.T) {
 	}
 }
 
-func TestRunPlanMissingKind(t *testing.T) {
+func TestRunPlanMissingAliasRefLegacyBareCommand(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
 
 	err := Run([]string{"plan"})
-	if err == nil || !strings.Contains(err.Error(), "missing plan kind") {
-		t.Fatalf("expected missing plan kind error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing plan alias ref") {
+		t.Fatalf("expected missing plan alias ref error, got %v", err)
 	}
 }
 

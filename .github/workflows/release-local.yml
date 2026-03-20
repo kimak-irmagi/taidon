@@ -645,7 +645,10 @@ jobs:
 
           $dirs = @($outDir, $workspaceDir, $storeRoot, $env:APPDATA, $env:LOCALAPPDATA)
           New-Item -ItemType Directory -Force -Path $dirs | Out-Null
-          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "examples\chinook\*") -Destination $workspaceDir -Recurse -Force
+          $exampleDir = Join-Path $workspaceDir "chinook"
+          New-Item -ItemType Directory -Force -Path $exampleDir | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "examples\chinook\*") -Destination $exampleDir -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE "examples\chinook.prep.s9s.yaml") -Destination (Join-Path $workspaceDir "chinook.prep.s9s.yaml") -Force
           Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE ("test\e2e\release\" + $scenario + "\query.sql")) -Destination (Join-Path $workspaceDir ".e2e-query.sql") -Force
 
           $initArgs = @(
@@ -663,10 +666,8 @@ jobs:
           $flowArgs = @(
             "--timeout", "15m",
             "--workspace", $workspaceDir,
-            "prepare:psql",
-            "--image", "postgres:17",
-            "--",
-            "-f", "prepare.sql",
+            "prepare",
+            "chinook",
             "run:psql",
             "--",
             "-At", "-f", ".e2e-query.sql"

@@ -60,12 +60,14 @@ Examples of wrapped commands:
 
 - `plan:psql`
 - `plan:lb`
+- `prepare chinook`
 - `prepare:psql`
 - `prepare:lb`
+- `prepare chinook run:psql -- -f queries.sql`
+- `prepare:psql -- -f prepare.sql run smoke`
 
 Initial non-goals:
 
-- wrapping a composite `prepare ... run` invocation;
 - inventing command-specific output flags such as `--format`;
 - changing the syntax of the wrapped command.
 
@@ -138,6 +140,36 @@ may be rejected or produce an empty diff. The same principle applies to other
 kinds: only inputs that come from files (or from the resolved file graph) are
 compared across refs.
 
+### Composite `prepare ... run`
+
+`sqlrs diff` also accepts the same normal two-stage composite shape as the main
+CLI:
+
+- `prepare <prepare-ref> run <run-ref>`
+- `prepare <prepare-ref> run:<kind> ...`
+- `prepare:<kind> ... run <run-ref>`
+- `prepare:<kind> ... run:<kind> ...`
+
+Rules:
+
+- the wrapped `prepare` stage and the wrapped `run` stage are each resolved in
+  the left and right comparison context using the same rules as the main CLI;
+- alias-backed stages resolve their `*.prep.s9s.yaml` or `*.run.s9s.yaml` files
+  separately on each side;
+- relative alias refs are not rebased to a workspace root in diff mode either:
+  each side resolves them from that side's effective working directory;
+- file-bearing paths read from an alias file are resolved relative to that
+  alias file's directory on that side;
+- diff reports the `prepare` phase and the `run` phase separately;
+- if one phase has no revision-dependent payload, that phase is reported as
+  empty or non-diffable without invalidating the other phase.
+
+For scope modes, the effective working directory is:
+
+- in path mode: the side root selected by `--from-path` or `--to-path`;
+- in ref mode: the caller's current working directory projected into each ref's
+  tree.
+
 ### Revision-dependent file discovery
 
 The **set of files** that participate in the wrapped command can differ between
@@ -205,6 +237,10 @@ Output and verbosity are **global**, not diff-specific:
 - Short summary counts.
 - Optional semantic hint such as `db_impact=yes|no|unknown` when available.
 
+For wrapped composite commands, human output should render separate `prepare`
+and `run` sections so that each phase can show its own Added / Modified /
+Removed summary.
+
 ### JSON output (`--output json`)
 
 A single JSON object with stable top-level fields such as:
@@ -220,6 +256,10 @@ A single JSON object with stable top-level fields such as:
 When `--limit` is used, listed entries may be truncated while summary counts
 should still represent the full diff when known.
 
+For wrapped composite commands, the top-level object should instead contain
+separate `prepare` and `run` objects, each with the same stable per-phase fields
+(`added`, `modified`, `removed`, `summary`, optional `db_impact`).
+
 ---
 
 ## Validation and Errors
@@ -227,8 +267,8 @@ should still represent the full diff when known.
 - **Missing or conflicting scope** — exactly one of ref mode or path mode must be
   selected.
 - **Invalid wrapped command** — `diff` requires one wrapped sqlrs command.
-- **Unsupported wrapped form** — nested composite `prepare ... run` is rejected in
-  the first slice.
+- **Unsupported wrapped chain** — `diff` accepts one wrapped command or one
+  normal two-stage `prepare ... run` composite, but not longer command chains.
 - **Ref resolution failure** — one of the refs does not resolve locally.
 - **Not a Git repository** — ref mode requires a Git repository context.
 - **No revision-dependent payload** — for future `run:*` support, inline-only
@@ -257,6 +297,12 @@ sqlrs diff --from-ref origin/main --to-ref HEAD prepare:lb -- \
 sqlrs --output json diff --from-path ./left --to-path ./right prepare:psql -- -f ./prepare.sql
 ```
 
+### Compare a mixed composite invocation
+
+```bash
+sqlrs diff --from-ref origin/main --to-ref HEAD prepare chinook run:psql -- -f ./queries.sql
+```
+
 ---
 
 ## Implementation Notes
@@ -268,13 +314,15 @@ their contents. The rest is shared machinery.
 1. Parse global flags first, exactly as in a normal sqlrs invocation.
 2. Parse the `diff` scope block.
 3. Parse the wrapped command using the **same grammar and validation rules** as
-   the main CLI (so that the syntax stays compatible).
+   the main CLI (so that the syntax stays compatible), including the normal
+   two-stage `prepare ... run` composite forms.
 4. For each side (from-ref/to-ref or from-path/to-path), build the **file list**
    for the wrapped kind: resolve ref or path, then apply that kind's closure rule
    (e.g. `\i`/`\include` for psql, changelog graph for lb). The file set and
    content can differ per side.
 5. Optionally build the derived representation (plan tasks, prepare payload, run
-   file-backed inputs) for each side if the output format needs it.
+   file-backed inputs) for each side if the output format needs it. For
+   composite commands, do this separately for the `prepare` and `run` phases.
 6. Compare the two file sets (and optionally derived representations) and
    classify Added / Modified / Removed.
 7. Render human or JSON output according to the global `--output` flag.

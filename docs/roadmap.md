@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-16)
+## Status (as of 2026-03-19)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -97,11 +97,24 @@ gantt
   `sqlrs ls --states --cache-details`; persisted `size_bytes` metadata and a
   dedicated release cache-pressure scenario are also in place for the local
   profile.
+- **Done (M2 alias execution baseline)**: repo-tracked prepare and run aliases
+  now back `sqlrs plan <ref>`, `sqlrs prepare <ref>`, and standalone
+  `sqlrs run <ref> --instance ...` through `*.prep.s9s.yaml` and
+  `*.run.s9s.yaml` files, with exact-file escape via trailing `.`, cwd-relative
+  alias-ref resolution, alias-file-relative file-bearing paths, and mixed raw
+  and alias `prepare ... run` composition with `--instance` guardrails.
+- **Done (release alias/workspace coverage)**: release/e2e scenarios now
+  exercise repo-tracked prepare aliases for Chinook, Sakila, and
+  Liquibase/JHipster examples, keeping alias/workspace conventions under
+  verification.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: developer-experience follow-up in M2, especially
-  config conventions and git-aware CLI (`--ref`, `diff`, provenance, cache explain).
+- **Next public local focus**: finish the remaining M2 local DX layers with
+  explicit alias inspection (`sqlrs alias ls/show/validate`), then
+  `sqlrs discover --aliases`, follow-up discover analyzers, shared input-graph
+  primitives, and `sqlrs diff` path mode before the later Git-aware CLI
+  follow-up (`--ref`, provenance, cache explain).
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -109,15 +122,28 @@ gantt
 
 ## Immediate Next Step (Selected)
 
-- **Direction**: move from local MVP hardening to M2 developer experience while
-  keeping the public roadmap focused on open/local deliverables.
+- **Direction**: finish the remaining repository-guided M2 local DX surface now
+  that alias execution and workspace conventions have landed.
+- **Selected next PR**: alias inspection commands
+  (`sqlrs alias ls/show/validate`).
 - **Next PR slice**:
-  - keep public docs aligned with the shipped local cache diagnostics and release coverage;
-  - start the first M2 slice around repo/workspace conventions for local workflows;
-  - begin git-aware CLI in small public slices (`--ref`, `diff`, provenance, cache explain).
-- **Rationale**: the local MVP surface and cache hardening are now usable enough
-  that the biggest remaining public value is reducing repository friction and
-  improving reproducibility diagnostics for developers.
+  - add `sqlrs alias ls` to enumerate `*.prep.s9s.yaml` and `*.run.s9s.yaml`
+    within the active workspace;
+  - add `sqlrs alias show <ref>` to print the resolved alias definition and the
+    concrete file it maps to;
+  - add `sqlrs alias validate [<ref>]` to check one or all alias files before
+    execution;
+  - reuse the same cwd-relative alias-ref resolution and exact-file escape rules
+    already used by `plan/prepare/run`;
+  - cover missing files, schema/kind errors, wrong alias type, and inspection
+    behaviour in docs and tests.
+- **Immediately after**: `sqlrs discover --aliases`, generic discover analyzers,
+  shared local input-graph primitives, `sqlrs diff` path mode, bounded local
+  `--ref`, then provenance and cache explain.
+- **Rationale**: alias execution is already usable and covered by release
+  scenarios; the highest remaining local DX gap is direct inspection and
+  validation of repo-tracked recipes before moving into advisory discovery and
+  Git-aware flows.
 
 ---
 
@@ -168,8 +194,9 @@ gantt
 - Liquibase adapter (apply changelog) — **Done (MVP scope)** (local flow via
   `prepare:lb`/`plan:lb` is implemented)
 - Release happy-path e2e gate — **Done** (Linux/macOS/Windows WSL coverage for
-  Chinook/Sakila scenarios, with Btrfs in matrix validation and a dedicated
-  local cache-pressure scenario in release checks)
+  Chinook, Sakila, and Liquibase/JHipster alias-driven scenarios, with Btrfs in
+  matrix validation and a dedicated local cache-pressure scenario in release
+  checks)
 
 **Optional (nice-to-have)**:
 
@@ -199,19 +226,31 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 
 **Deliverables**:
 
-- Config conventions:
-  - discover migrations from repo layout
-  - profiles (dev/test) and secrets handling
+- Project-tracked workflow aliases:
+  - `*.prep.s9s.yaml` and `*.run.s9s.yaml`
+  - explicit cwd-relative alias-ref resolution for `plan`, `prepare`, and `run`
+  - alias-file-relative resolution for file-bearing paths stored inside alias
+    files
+  - normal `prepare ... run` composition across raw and alias modes
+  - explicit alias inspection via `sqlrs alias ls/show/validate`
+- Advisory discovery tooling:
+  - `sqlrs discover --aliases`
+  - follow-up analyzers for `.gitignore`, `.vscode`, and prepare shaping
 - Git-aware CLI (passive):
-  - `--ref` (blob/worktree), `diff`, provenance, cache explain
+  - `diff`, `--ref` (blob/worktree), provenance, cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - open SQL editor (via existing VS Code DB tooling)
 
 **Exit criteria**:
 
-- A developer can run common workflows with minimal config and clear cache
-  provenance diagnostics.
+- A developer can run common workflows using explicit repo-tracked recipes with
+  low local setup friction and clear cache provenance diagnostics.
+
+**Status**: In progress. Alias execution baseline is landed (`plan/prepare/run`
+aliases, cwd-relative refs, alias-file-relative payloads, mixed
+`prepare ... run`), with alias inspection, discovery, `diff` path mode,
+bounded `--ref`, and provenance/cache explain still ahead.
 
 ---
 
@@ -384,4 +423,3 @@ credentials or runtime connection details.
   warmup/diff checks)
 - [`k8s-architecture.md`](architecture/k8s-architecture.md) (single entry gateway
   in k8s)
-

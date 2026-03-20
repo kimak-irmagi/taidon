@@ -172,3 +172,22 @@ func TestResolveCommandContextAppliesCLIOverrides(t *testing.T) {
 		t.Fatalf("expected verbose=true")
 	}
 }
+
+func TestResolveCommandContextUsesWorkspaceFlagAsFallbackRoot(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	workspace := filepath.Join(temp, "workspace")
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+
+	ctx, err := resolveCommandContext(temp, cli.GlobalOptions{Workspace: "workspace"})
+	if err != nil {
+		t.Fatalf("resolveCommandContext: %v", err)
+	}
+
+	if ctx.workspaceRoot != workspace {
+		t.Fatalf("workspaceRoot = %q, want %q", ctx.workspaceRoot, workspace)
+	}
+}

@@ -57,6 +57,9 @@ func resolveCommandContext(cwd string, opts cli.GlobalOptions) (commandContext, 
 		return result, err
 	}
 	result.cfgResult = cfgResult
+	if strings.TrimSpace(opts.Workspace) != "" {
+		result.workspaceRoot = configWorkingDir
+	}
 	if cfgResult.ProjectConfigPath != "" {
 		result.workspaceRoot = filepath.Dir(filepath.Dir(cfgResult.ProjectConfigPath))
 	}

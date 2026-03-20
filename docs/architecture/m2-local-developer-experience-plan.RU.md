@@ -3,11 +3,11 @@
 Статус: принятая базовая реализационная схема (2026-03-16)
 
 Этот документ определяет план реализации для **публичной/локальной** части
-milestone M2. Он предназначен как рабочий brief для инженера, который будет
-реализовывать feature slices.
+roadmap milestone M2 после отказа от implicit repo-layout guessing в пользу
+**явных versioned alias files** и advisory workspace discovery.
 
-План сознательно остается в публичной/open части roadmap. Он не возвращает в
-документ private Team/Shared sequencing или внутренние детали rollout backend.
+План остается в публичной/open части roadmap. Он не возвращает private
+Team/Shared sequencing или внутренние детали rollout backend.
 
 ## 1. Результат
 
@@ -17,260 +17,312 @@ M2 должен уменьшить трение при локальном onboar
 
 Ожидаемый публичный результат:
 
-- меньше обязательных флагов в типовых локальных сценариях;
-- явные repository-aware workflow, управляемые намерением пользователя;
-- воспроизводимое и объяснимое поведение cache для локальных запусков;
-- поэтапная поставка через slices, каждый из которых полезен сам по себе.
+- repo-tracked workflow recipes для типовых `plan`, `prepare` и `run` flow;
+- явное разделение между versioned workflow definitions и local-only
+  workspace configuration;
+- advisory discovery tooling, предлагающий улучшения, но не участвующий в
+  execution semantics;
+- детерминированные локальные building blocks для последующих `diff`, Git-ref,
+  provenance и cache explanation возможностей.
 
 ## 2. Ограничения
 
-- Первые M2-срезы должны оставаться local-first и CLI-led.
-- Если срез не требует engine API, предпочтение отдается CLI-only изменениям.
-- Локальные workflow не должны зависеть от hosted/shared инфраструктуры.
-- Нужно переиспользовать уже принятое command shape для `sqlrs diff`.
-- Текущая MVP command surface остается стабильной базой.
+- Ранние M2-срезы должны оставаться local-first и CLI-led.
+- Нельзя полагаться на execution-time guesswork.
+- Versioned workflow definitions должны жить отдельно от `.sqlrs/config.yaml`.
+- Aliases и runtime names должны оставаться разными сущностями.
+- Пока engine API явно не нужен, предпочтение отдается CLI-only изменениям.
+- Command syntax должен оставаться additive и explicit.
 
-## 3. Порядок Срезов
+## 3. Утвержденный Порядок Срезов
 
 Утвержден следующий порядок реализации:
 
-1. repo/workspace conventions
-2. shared local input graph primitives
-3. первый публичный срез `sqlrs diff`
-4. baseline для выполнения по git ref
-5. provenance и cache explain
+1. file-based prepare aliases
+2. run aliases, alias inspection и mixed `prepare ... run` composition
+3. `discover --aliases`
+4. generic discover analyzers
+5. shared local input graph primitives
+6. `sqlrs diff` в path mode
+7. Git ref execution baseline
+8. provenance и cache explain
 
-Такой порядок выбран, чтобы рано отдавать пользовательскую ценность и при этом
-держать Git-aware features ограниченными и тестируемыми.
+Такой порядок дает раннюю публичную ценность и при этом держит будущую
+Git-aware часть ограниченной и тестируемой.
 
-## 4. Определение Срезов
+## 4. PR-срезы
 
-### 4.1 Срез 1: Repo/Workspace Conventions
+### 4.1 PR1: Базовый Срез File-Based Prepare Aliases
 
-**Цель**: уменьшить конфигурационное трение для типовых локальных layout
-репозитория.
+**Цель**: сделать repo-tracked prepare recipes исполняемыми без смешивания их с
+local workspace config.
 
 **Основной результат**:
 
-- `sqlrs` умеет находить conventional prepare inputs по repo/workspace layout;
-- локальные профили вроде `dev` и `test` имеют ясную документированную форму;
-- публичная документация рекомендует один-два канонических layout репозитория.
+- `sqlrs plan <prepare-ref>` резолвит `<prepare-ref>.prep.s9s.yaml` от
+  текущего рабочего каталога
+- `sqlrs prepare <prepare-ref>` резолвит тот же класс alias files
+- поддерживается exact-file escape через trailing `.`
+- runtime names остаются отдельными от alias refs
 
 **Ожидаемая работа**:
 
-- определить repo layout conventions для `prepare:psql` и `prepare:lb`;
-- определить config fallback order для обнаруживаемых prepare inputs;
-- задокументировать profile conventions и границы secret handling для local use;
-- обновить user guides так, чтобы happy path не начинался с ручной прокладки путей.
-
-**Предполагаемая CLI surface**:
-
-- новый top-level command не требуется;
-- изменения должны выражаться через предсказуемые defaults или небольшие
-  флаги на существующих `plan:*` / `prepare:*` командах.
+- определить формат prepare alias files
+- реализовать alias-ref resolution от текущего рабочего каталога
+- резолвить file-bearing alias arguments относительно директории alias file
+- добавить alias-mode dispatch для `plan` и `prepare`
+- задокументировать взаимодействие с `--name`
 
 **Ожидаемые тесты**:
 
-- тесты config/profile resolution;
-- тесты repo-layout discovery;
-- negative tests для ambiguous/conflicting layout;
-- примеры в user guides, соответствующие shipped behavior.
+- тесты alias-ref resolution
+- тесты exact-file escape
+- тесты валидации prepare aliases
+- negative tests для missing files и kind/schema errors
 
 **Вне scope**:
 
-- `sqlrs diff`
-- `--ref`
+- run aliases
+- discover
+- diff
+- Git refs
+
+### 4.2 PR2: Run Aliases, Alias Inspection и Mixed Composition
+
+**Цель**: завершить явную alias execution surface и заставить обычные
+`prepare ... run` pipeline работать через raw и alias modes.
+
+**Основной результат**:
+
+- standalone `sqlrs run <run-ref> --instance <id|name>` резолвит
+  `<run-ref>.run.s9s.yaml` от текущего рабочего каталога
+- `prepare ... run ...` принимает смешанные raw/alias комбинации
+- `sqlrs alias ls`
+- `sqlrs alias show <ref>`
+- `sqlrs alias validate [<ref>]`
+
+**Ожидаемая работа**:
+
+- определить формат run alias files
+- добавить run alias-mode dispatch
+- разрешить смешивание raw/alias стадий в composite `prepare ... run`
+- запретить `--instance`, если target instance уже выбран предшествующим
+  `prepare`
+- реализовать alias listing/show/validation commands
+- сохранить raw `run:<kind>` mode рядом с alias mode
+
+**Ожидаемые тесты**:
+
+- тесты run alias resolution
+- тесты composite grammar для смешанных raw/alias стадий
+- тесты alias inspection commands
+- тесты валидации kind-specific constraints
+- negative tests для missing `--instance`, conflicting composite `--instance`
+  и wrong alias type
+
+**Вне scope**:
+
+- discover analyzers
+- diff
+- Git refs
+
+### 4.3 PR3: `discover --aliases`
+
+**Цель**: помочь авторам репозитория bootstrap-ить explicit alias files без
+зависимости execution path от эвристик.
+
+**Основной результат**:
+
+- `sqlrs discover --aliases` анализирует workspace и сообщает candidate alias files
+- команда advisory и read-only по умолчанию
+
+**Ожидаемая работа**:
+
+- добавить семейство команд `discover`
+- реализовать analyzer `--aliases`
+- определить стабильный human и JSON output для findings
+- сохранить жесткое разделение между discovery и execution semantics
+
+**Ожидаемые тесты**:
+
+- тесты выбора analyzers
+- тесты candidate detection
+- тесты JSON finding shape
+- regression tests, подтверждающие, что `plan/prepare/run` не fallback-ятся к discovery
+
+**Вне scope**:
+
+- generic discover analyzers
+- write mode для unrelated workspace files
+- diff
+
+### 4.4 PR4: Generic Discover Analyzers
+
+**Цель**: превратить `discover` в общий advisory workflow для local repository
+  hygiene и cache-friendly shaping.
+
+**Основной результат**:
+
+- базовый analyzer framework для нескольких selectors
+- стартовые non-alias analyzers, например:
+  - `--gitignore`
+  - `--vscode`
+  - `--prepare-shaping`
+
+**Ожидаемая работа**:
+
+- добавить analyzer registration и selection rules
+- где это уместно, определить shared finding structure
+- сохранить analyzer-specific semantics явными
+
+**Ожидаемые тесты**:
+
+- тесты multi-analyzer selection
+- per-analyzer finding tests
+- negative tests для incompatible write/update modes, если они появятся
+
+**Вне scope**:
+
+- Git-ref workflow
 - provenance
-- cache explain
 
-### 4.2 Срез 2: Shared Local Input Graph Primitives
+### 4.5 PR5: Shared Local Input Graph Primitives
 
-**Цель**: зафиксировать единую детерминированную модель revision-sensitive inputs.
-
-**Основной результат**:
-
-- CLI умеет строить детерминированный ordered input graph для поддерживаемых
-  local prepare flow;
-- та же модель переиспользуется для `diff`, `--ref`, provenance и cache explain.
-
-**Ожидаемая работа**:
-
-- определить CLI-side types для context root, input entry, ordered file list и
-  hash material;
-- реализовать `psql` closure builder для `-f` + include graph;
-- реализовать Liquibase changelog graph builder для `--changelog-file`;
-- определить стабильные правила hashing и ordering;
-- сохранить первую версию модели локальной и file-oriented.
-
-**Граница реализации**:
-
-- по умолчанию CLI-only;
-- новый engine API допустим только если явно уменьшает дублирование без
-  расширения публичного протокола.
-
-**Ожидаемые тесты**:
-
-- тесты детерминированного порядка;
-- тесты closure graph для `psql`;
-- тесты обхода changelog graph для Liquibase;
-- тесты стабильности hash на кейсах с path normalization.
-
-**Вне scope**:
-
-- конечный UX команды `diff`
-- доступ к Git refs
-- вывод provenance
-
-### 4.3 Срез 3: Первый Публичный Срез `sqlrs diff`
-
-**Цель**: поставить первый видимый Git-aware workflow без обязательного доступа
-к Git objects.
+**Цель**: зафиксировать единую детерминированную модель revision-sensitive
+local inputs.
 
 **Основной результат**:
 
-- `sqlrs diff` работает в режиме `--from-path/--to-path`;
-- команда оборачивает ровно один вызов `plan:*` или `prepare:*`;
-- пользователь может сравнивать локальные деревья, сохраняя привычный syntax
-  уже известных sqlrs-команд.
-
-**Принятое command shape**:
-
-```text
-sqlrs diff --from-path <pathA> --to-path <pathB> <wrapped-command> [command-args...]
-```
+- CLI умеет строить детерминированные ordered input graphs для поддерживаемых
+  prepare flow
+- та же модель переиспользуется для discover analyzers, `diff`, Git-ref mode,
+  provenance и cache explanation
 
 **Ожидаемая работа**:
 
-- добавить dispatch команды `diff` в CLI;
-- отдельно парсить diff scope и wrapped command;
-- переиспользовать input graph builders из среза 2;
-- реализовать human и JSON output;
-- задокументировать error handling и exit-code behavior.
+- определить CLI-side types для context roots и ordered input entries
+- реализовать `psql` include-graph closure building
+- реализовать Liquibase changelog-graph closure building
+- определить стабильные правила hashing и ordering
 
 **Ожидаемые тесты**:
 
-- тесты парсинга аргументов;
-- path-mode compare tests для `plan:psql`;
-- path-mode compare tests для `prepare:lb`;
-- тесты JSON shape;
-- negative tests для unsupported wrapped commands и mixed scope modes.
+- тесты детерминированного порядка
+- тесты обхода closure для `psql`
+- тесты обхода changelog graph для Liquibase
+- тесты стабильности hash на normalization cases
 
-**Вне scope**:
+### 4.6 PR6: `sqlrs diff` в Path Mode
 
-- `--from-ref` / `--to-ref`
-- wrapped `run:*`
-- nested composite `prepare ... run`
-
-### 4.4 Срез 4: Git Ref Execution Baseline
-
-**Цель**: позволить пользователю выполнять prepare/run из Git revision без
-изменения working tree.
+**Цель**: поставить первый user-visible Git-aware workflow без обязательного
+доступа к Git objects.
 
 **Основной результат**:
 
-- `--ref` usable в local profile;
-- `blob` mode поддерживает zero-copy cache lookup до extraction;
-- `worktree` mode существует как явный fallback для кейсов, где он нужен.
-
-**Ожидаемая CLI surface**:
-
-```text
-sqlrs ... --ref <git-ref> [--ref-mode blob|worktree] [--ref-keep-worktree]
-```
+- `sqlrs diff --from-path/--to-path ...` работает для одного wrapped `plan:*`
+  или `prepare:*` command, а также для обычной двухстадийной grammar
+  `prepare ... run`
 
 **Ожидаемая работа**:
 
-- определить repo root и разрешение Git refs;
-- добавить blob-mode доступ к revision-sensitive input;
-- добавить режим временного worktree;
-- встроить cache lookup до file extraction в blob mode;
-- определить понятные user-facing errors для non-Git directory, unresolved ref
-  и missing objects.
+- добавить dispatch команды `diff`
+- отдельно парсить diff scope и wrapped command
+- переиспользовать input-graph builders из PR5
+- отдельно вычислять wrapped `prepare` и `run` фазы, если используется
+  composite
+- реализовать human и JSON rendering
 
 **Ожидаемые тесты**:
 
-- тесты парсинга и разрешения refs;
-- blob-mode cache-hit tests;
-- worktree lifecycle tests;
-- failure tests для missing repo, bad ref и unsupported inputs.
+- тесты парсинга аргументов
+- path-mode compare tests для `plan:psql`
+- path-mode compare tests для `prepare:lb`
+- path-mode compare tests для mixed raw/alias `prepare ... run`
+- тесты JSON shape
 
-**Вне scope**:
+### 4.7 PR7: Git Ref Execution Baseline
 
-- hosted/shared repo access
-- remote source upload integration
-- `sqlrs compare`
-
-### 4.5 Срез 5: Provenance и Cache Explain
-
-**Цель**: сделать repository-aware local runs воспроизводимыми и объяснимыми.
+**Цель**: позволить пользователю выполнять repository-aware workflow из Git
+revision без изменения working tree.
 
 **Основной результат**:
 
-- пользователь может сохранить или вывести provenance record для выполненного flow;
-- пользователь может запросить объяснение, почему cache lookup был быстрым,
-  медленным или завершился miss.
-
-**Ожидаемая CLI surface**:
-
-```text
-sqlrs ... --provenance write|print|both [--provenance-path <path>]
-sqlrs cache explain ...
-```
+- bounded local `--ref` support
+- `blob` mode с zero-copy cache lookup до extraction
+- явный `worktree` fallback mode
 
 **Ожидаемая работа**:
 
-- определить стабильный provenance payload для local execution;
-- записывать key run context, input hashes, cache hit/miss decision и snapshot
-  chain identifiers;
-- реализовать простой `cache explain` report с miss reasons;
-- добавить operator/user guides по интерпретации этой диагностики.
+- Git ref resolution
+- blob-mode input access
+- worktree lifecycle handling
+- понятные user-facing errors для non-Git и missing-object случаев
 
 **Ожидаемые тесты**:
 
-- тесты provenance payload;
-- тесты text/JSON output;
-- cache-explain tests для hit, partial hit и miss cases;
-- regression tests для missing optional metadata.
+- тесты парсинга и разрешения refs
+- blob-mode cache-hit tests
+- worktree lifecycle tests
+- failure tests для bad refs и missing objects
 
-**Вне scope**:
+### 4.8 PR8: Provenance и Cache Explain
 
-- PR automation
-- hosted/shared cache introspection
-- сравнение результатов между двумя полными execution context
+**Цель**: сделать repository-aware local workflows воспроизводимыми и объяснимыми.
+
+**Основной результат**:
+
+- provenance output для local alias/Git-ref workflows
+- `sqlrs cache explain ...` для user-facing hit/miss diagnostics
+
+**Ожидаемая работа**:
+
+- определить provenance payload
+- записывать input hashes и cache decisions
+- реализовать human и JSON output для cache explain
+
+**Ожидаемые тесты**:
+
+- тесты provenance payload
+- cache-explain tests для hit/miss
+- тесты text/JSON rendering
 
 ## 5. Сквозные Правила
 
-- Каждый срез должен нести самостоятельную пользовательскую ценность.
-- Первые публичные срезы не должны зависеть от новых private/shared service.
-- Command syntax должен оставаться additive и explicit.
-- Если slice в основном состоит из CLI logic, предпочтение отдается
-  детерминированным локальным тестам, а не тяжелому end-to-end покрытию.
-- Если срез меняет command semantics, в том же PR нужно обновлять релевантные
+- Каждый slice должен нести самостоятельную пользовательскую ценность.
+- Discovery остается advisory, если только явно не выбран определенный write mode.
+- Execution commands никогда не должны зависеть от предыдущего `discover`.
+- Alias refs должны оставаться детерминированными и зависеть от текущего
+  рабочего каталога.
+- File-bearing paths внутри alias files должны резолвиться от директории самого
+  alias file.
+- Names остаются runtime handles и не заменяют aliases.
+- Если slice меняет command semantics, в том же PR нужно обновлять релевантные
   user guide и architecture/contract docs.
 
 ## 6. Явные Не-Цели Этого Плана
 
 - sequencing rollout для Team/Shared backend
 - PR automation или hosted Git integrations
-- поставка IDE extension
+- сама поставка IDE extension
 - `sqlrs compare`
-- широкая переработка command surface сверх нужд M2
+- широкая переработка command surface за пределами alias/discover/Git-aware roadmap
 
 ## 7. Definition of Done для M2
 
 M2 можно считать завершенным для публичного/local roadmap, когда:
 
-- local repository conventions задокументированы и реализованы;
-- `sqlrs diff` существует в первом публичном path-based срезе;
-- `--ref` поддерживает ограниченный, но полезный local baseline;
-- provenance и cache explanation доступны для local repository-aware flow;
+- repo-tracked prepare/run aliases существуют и исполнимы;
+- `discover` дает полезный advisory analysis для local repositories;
+- `sqlrs diff` существует в path mode;
+- Git-ref execution поддерживается в ограниченном local baseline;
+- provenance и cache explanation доступны для repository-aware flow;
 - итоговая документация описывает shipped public behavior без опоры на private
   deployment assumptions.
 
 ## 8. Ссылки
 
 - [`../roadmap.RU.md`](../roadmap.RU.md)
+- [`../user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
 - [`cli-contract.RU.md`](cli-contract.RU.md)
 - [`git-aware-passive.RU.md`](git-aware-passive.RU.md)
 - [`diff-component-structure.RU.md`](diff-component-structure.RU.md)
-- [`../adr/2026-03-09-git-diff-command-shape.md`](../adr/2026-03-09-git-diff-command-shape.md)

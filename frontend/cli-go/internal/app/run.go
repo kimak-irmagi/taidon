@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/sqlrs/cli/internal/cli"
@@ -16,6 +17,8 @@ type runArgs struct {
 	Command     string
 	Args        []string
 }
+
+const pgbenchStdinPath = "/dev/stdin"
 
 func parseRunArgs(args []string) (runArgs, bool, error) {
 	var opts runArgs
@@ -98,7 +101,8 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 	runOpts.InstanceRef = instanceRef
 	runOpts.Command = strings.TrimSpace(parsed.Command)
 	runArgs := append([]string{}, parsed.Args...)
-	if kind == runkind.KindPsql {
+	switch kind {
+	case runkind.KindPsql:
 		steps, err := buildPsqlRunSteps(runArgs, workspaceRoot, cwd, os.Stdin)
 		if err != nil {
 			return err
@@ -106,7 +110,15 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 		runOpts.Steps = steps
 		runOpts.Args = nil
 		runOpts.Stdin = nil
-	} else {
+	case runkind.KindPgbench:
+		normalizedArgs, stdinValue, err := materializePgbenchRunArgs(runArgs, workspaceRoot, cwd, os.Stdin)
+		if err != nil {
+			return err
+		}
+		runOpts.Args = normalizedArgs
+		runOpts.Stdin = stdinValue
+		runOpts.Steps = nil
+	default:
 		runOpts.Args = runArgs
 		runOpts.Stdin = nil
 		runOpts.Steps = nil
@@ -233,4 +245,115 @@ func buildFileStep(shared []string, value string, workspaceRoot string, cwd stri
 	stepArgs := append([]string{}, shared...)
 	stepArgs = append(stepArgs, "-f", "-")
 	return cli.RunStep{Args: stepArgs, Stdin: &text}, false, nil
+}
+
+type pgbenchFileSource struct {
+	Path      string
+	UsesStdin bool
+}
+
+func materializePgbenchRunArgs(args []string, workspaceRoot string, cwd string, stdin io.Reader) ([]string, *string, error) {
+	normalized := make([]string, 0, len(args))
+	var source *pgbenchFileSource
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-f" || arg == "--file":
+			if i+1 >= len(args) {
+				return nil, nil, ExitErrorf(2, "Missing value for %s", arg)
+			}
+			value := args[i+1]
+			i++
+			rewritten, nextSource, err := rewritePgbenchFileArg(value, workspaceRoot, cwd)
+			if err != nil {
+				return nil, nil, err
+			}
+			if nextSource != nil {
+				if source != nil {
+					return nil, nil, ExitErrorf(2, "Multiple pgbench file arguments are not supported")
+				}
+				source = nextSource
+			}
+			normalized = append(normalized, arg, rewritten)
+		case strings.HasPrefix(arg, "--file="):
+			value := strings.TrimPrefix(arg, "--file=")
+			rewritten, nextSource, err := rewritePgbenchFileArg(value, workspaceRoot, cwd)
+			if err != nil {
+				return nil, nil, err
+			}
+			if nextSource != nil {
+				if source != nil {
+					return nil, nil, ExitErrorf(2, "Multiple pgbench file arguments are not supported")
+				}
+				source = nextSource
+			}
+			normalized = append(normalized, "--file="+rewritten)
+		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
+			value := arg[2:]
+			rewritten, nextSource, err := rewritePgbenchFileArg(value, workspaceRoot, cwd)
+			if err != nil {
+				return nil, nil, err
+			}
+			if nextSource != nil {
+				if source != nil {
+					return nil, nil, ExitErrorf(2, "Multiple pgbench file arguments are not supported")
+				}
+				source = nextSource
+			}
+			normalized = append(normalized, "-f"+rewritten)
+		default:
+			normalized = append(normalized, arg)
+		}
+	}
+
+	if source == nil {
+		return normalized, nil, nil
+	}
+	text, err := readPgbenchFileSource(*source, stdin)
+	if err != nil {
+		return nil, nil, err
+	}
+	return normalized, &text, nil
+}
+
+func rewritePgbenchFileArg(value string, workspaceRoot string, cwd string) (string, *pgbenchFileSource, error) {
+	path, weightSuffix := splitPgbenchFileArgValue(value)
+	if strings.TrimSpace(path) == "" {
+		return "", nil, ExitErrorf(2, "Missing value for --file")
+	}
+	if path == "-" || path == pgbenchStdinPath {
+		return pgbenchStdinPath + weightSuffix, &pgbenchFileSource{UsesStdin: true}, nil
+	}
+	normalizedPath, _, err := normalizeFilePath(path, workspaceRoot, cwd, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	return pgbenchStdinPath + weightSuffix, &pgbenchFileSource{Path: normalizedPath}, nil
+}
+
+func readPgbenchFileSource(source pgbenchFileSource, stdin io.Reader) (string, error) {
+	if source.UsesStdin {
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+	data, err := os.ReadFile(source.Path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func splitPgbenchFileArgValue(value string) (string, string) {
+	idx := strings.LastIndex(value, "@")
+	if idx <= 0 || idx >= len(value)-1 {
+		return value, ""
+	}
+	if _, err := strconv.ParseUint(value[idx+1:], 10, 32); err != nil {
+		return value, ""
+	}
+	return value[:idx], value[idx:]
 }

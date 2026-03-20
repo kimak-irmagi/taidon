@@ -55,11 +55,13 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` itself does not use `:<kind>` and does not accept `-- <command>...`.
 
-Exception: `sqlrs diff` acts as a meta-command and wraps exactly one existing
-content-aware sqlrs command:
+Exception: `sqlrs diff` acts as a meta-command and wraps either one existing
+content-aware sqlrs command or one normal two-stage `prepare ... run`
+composite:
 
 ```text
-sqlrs diff <diff-scope> <verb>[:<kind>] [subject] [options] [-- <command>...]
+sqlrs diff <diff-scope> <wrapped-command>
+sqlrs diff <diff-scope> <prepare-stage> <run-stage>
 ```
 
 This keeps the nested command syntax aligned with the main CLI surface instead of
@@ -82,6 +84,8 @@ sqlrs
   status
   ls
   rm
+  discover
+  alias
   prepare
   watch
   plan
@@ -185,18 +189,24 @@ See the user guide for the authoritative, up-to-date command semantics:
 - [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
 - [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
 
-Current behavior:
+Current behavior plus approved next-slice extension:
 
+- `prepare <prepare-ref>` resolves a repo-tracked `*.prep.s9s.yaml` file from
+  the current working directory.
 - `prepare` supports `--watch` (default) and `--no-watch`.
 - `prepare --no-watch` returns `job_id` and stream/status references.
+- `prepare ... run ...` accepts the normal two-stage composite shape with raw
+  or alias mode on each stage.
+- file-bearing paths read from a prepare alias resolve relative to that alias
+  file, while raw-stage file paths keep their normal current-working-directory
+  base.
 - In watch mode, `Ctrl+C` opens a control prompt:
   - `[s] stop` (with confirmation),
   - `[d] detach`,
   - `[Esc/Enter] continue`.
 - For composite `prepare ... run ...`, `detach` detaches from `prepare` and
-  skips the subsequent `run` phase in the current CLI process.
-
-TODO (future):
+  skips the subsequent `run` phase in the current CLI process, regardless of
+  whether that phase is raw or alias-backed.
 
 - Add named instances and name binding flags (`--name`, `--reuse`, `--fresh`, `--rebind`).
 
@@ -210,6 +220,11 @@ See the user guide for the authoritative, up-to-date command semantics:
 
 The CLI must expose `plan:<kind>` for every supported `prepare:<kind>`.
 
+Current alias mode:
+
+- `sqlrs plan <prepare-ref>` resolves a repo-tracked prepare alias file from
+  the current working directory.
+
 ---
 
 ### 3.7 `sqlrs run`
@@ -217,6 +232,16 @@ The CLI must expose `plan:<kind>` for every supported `prepare:<kind>`.
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
+
+Approved next slice:
+
+- standalone `sqlrs run <run-ref> --instance <id|name>` resolves a repo-tracked
+  `*.run.s9s.yaml` file from the current working directory while keeping runtime
+  instance selection explicit;
+- in `prepare ... run <run-ref>`, the run alias consumes the instance produced
+  by the preceding `prepare`;
+- in that composite form, `--instance` is forbidden as an explicit ambiguity.
+- file-bearing paths read from a run alias resolve relative to that alias file.
 
 ---
 
@@ -248,17 +273,65 @@ evaluating that command on both sides and reporting the difference.
 Diff-specific options define the comparison scope; the wrapped command keeps its
 normal syntax.
 
-Initial design scope:
+Current design scope:
 
-- wrapped commands: `plan:*`, `prepare:*`
-- future extension: `run:*` for file-backed inputs only
-- no nested composite `prepare ... run` in the first slice
+- wrapped commands: `plan:*`, `prepare:*`, and later file-backed `run:*`
+- wrapped alias-mode commands such as `prepare <prepare-ref>`
+- wrapped normal two-stage `prepare ... run` composites, including mixed
+  raw/alias stages
+- wrapped alias refs use the same per-side path bases as the main CLI: alias
+  refs resolve from the effective working directory on each side, and file
+  paths inside alias files resolve from the alias file directory on that side
+- longer command chains remain out of scope
 - global `-v` and `--output` keep their existing meaning
 
 See:
 
 - [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
 - [`docs/architecture/git-aware-passive.md`](git-aware-passive.md) (scenario P3)
+
+---
+
+### 3.10 `sqlrs discover`
+
+Post-MVP local design introduces `discover` as an **advisory workspace-analysis
+verb**:
+
+```text
+sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
+```
+
+Design rules:
+
+- `discover` is read-only by default;
+- execution commands never depend on prior discovery output;
+- `--aliases` is the first planned analyzer;
+- follow-up analyzers may suggest repository hygiene or cache-shaping
+  improvements.
+
+See:
+
+- [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
+
+---
+
+### 3.11 `sqlrs alias`
+
+Post-MVP local design also introduces explicit alias-management commands for
+repo-tracked workflow recipes:
+
+```text
+sqlrs alias ls
+sqlrs alias show <ref>
+sqlrs alias validate [<ref>]
+```
+
+These commands inspect or validate alias files; they do not replace runtime
+`names`.
+
+See:
+
+- [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
 
 ---
 

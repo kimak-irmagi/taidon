@@ -1,9 +1,12 @@
 # 2026-03-09 Git Diff Command Shape
 
+Status: Obsolete. Superseded by
+[`2026-03-18-mixed-alias-composite-grammar.md`](2026-03-18-mixed-alias-composite-grammar.md).
+
 - Conversation timestamp: 2026-03-09T10:13:04+07:00
 - GitHub user id: @evilguest
 - Agent name/version: Codex / GPT-5
-- Status: Accepted
+- Status: Obsolete
 
 ## Question discussed
 
@@ -54,5 +57,12 @@ nested composites.
 
 ## Contradiction check
 
-No existing ADR was marked obsolete. This decision specializes the previously
-proposed git-aware passive diff scenario and narrows its command shape.
+This ADR is obsolete.
+
+It originally constrained `sqlrs diff` to exactly one wrapped command and
+explicitly excluded wrapped `prepare ... run` composites from the first slice.
+That restriction was later replaced by bounded parity with the main CLI:
+`diff` now accepts either one wrapped command or one normal two-stage
+`prepare ... run` composite, including mixed raw/alias stages. The current
+source of truth is
+[`2026-03-18-mixed-alias-composite-grammar.md`](2026-03-18-mixed-alias-composite-grammar.md).

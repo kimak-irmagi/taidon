@@ -3,10 +3,7 @@
     {
       "id": "hp-psql-chinook",
       "example": "chinook",
-      "prepareArgs": [
-        "-f",
-        "prepare.sql"
-      ],
+      "prepareAlias": "chinook",
       "runArgs": [
         "-At",
         "-f",
@@ -24,10 +21,7 @@
     {
       "id": "hp-psql-sakila",
       "example": "sakila",
-      "prepareArgs": [
-        "-f",
-        "prepare.sql"
-      ],
+      "prepareAlias": "sakila",
       "runArgs": [
         "-At",
         "-f",
@@ -45,12 +39,7 @@
     {
       "id": "hp-lb-jhipster",
       "example": "liquibase/jhipster-sample-app",
-      "prepareCmd": "prepare:lb",
-      "prepareArgs": [
-        "update",
-        "--changelog-file",
-        "config/liquibase/master.xml"
-      ],
+      "prepareAlias": "liquibase/jhipster-sample-app",
       "runArgs": [
         "-At",
         "-f",
@@ -68,10 +57,7 @@
     {
       "id": "cache-pressure-chinook",
       "example": "chinook",
-      "prepareArgs": [
-        "-f",
-        "prepare.sql"
-      ],
+      "prepareAlias": "chinook",
       "runArgs": [
         "-At",
         "-f",

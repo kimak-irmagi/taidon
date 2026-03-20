@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -471,24 +472,35 @@ func runWSLCommand(ctx context.Context, distro string, args ...string) (string, 
 	}
 	cmdArgs := []string{"-d", distro, "-u", "root", "--"}
 	cmdArgs = append(cmdArgs, args...)
-	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		text := strings.TrimSpace(string(output))
-		if text != "" {
-			return string(output), fmt.Errorf("%v (%s)", err, text)
-		}
-	}
-	return string(output), err
+	return runCommandWithSplitOutput(ctx, "wsl.exe", cmdArgs...)
 }
 
 func runHostCommand(ctx context.Context, args ...string) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	output, err := cmd.CombinedOutput()
-	return string(output), err
+	return runCommandWithSplitOutput(ctx, args[0], args[1:]...)
+}
+
+func runCommandWithSplitOutput(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	out := stdout.String()
+	if err == nil {
+		return out, nil
+	}
+	detail := strings.TrimSpace(stderr.String())
+	if detail == "" {
+		detail = strings.TrimSpace(out)
+	}
+	if detail != "" {
+		return out, fmt.Errorf("%v (%s)", err, detail)
+	}
+	return out, err
 }
 
 func runWSLCommandInInitNamespace(ctx context.Context, distro string, args ...string) (string, error) {

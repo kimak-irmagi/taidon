@@ -11,7 +11,7 @@ SELECT 'CREATE DATABASE sakila OWNER sakila'
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'sakila') \gexec
 
 \connect sakila
-\i '0-postgres-sakila-setup.sql'
-\i '1-postgres-sakila-schema.sql'
-\i '2-postgres-sakila-insert-data.sql'
-\i '3-postgres-sakila-user.sql'
+\ir '0-postgres-sakila-setup.sql'
+\ir '1-postgres-sakila-schema.sql'
+\ir '2-postgres-sakila-insert-data.sql'
+\ir '3-postgres-sakila-user.sql'

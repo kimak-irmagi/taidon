@@ -1,0 +1,9 @@
+kind: psql
+image: postgres:17
+args:
+  - -f
+  - flights-multi-step/schema.sql
+  - -f
+  - flights-multi-step/data.sql
+  - -f
+  - flights-multi-step/constraints.sql

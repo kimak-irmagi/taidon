@@ -22,7 +22,7 @@
 
 | Компонент | Ответственность | Кто вызывает |
 |-----------|-----------------|--------------|
-| **Обработчик команды diff** | Разбор области diff и оборачиваемой команды; оркестрация: разрешение области → построение списка файлов (обе стороны) → сравнение → вывод. Преобразование ошибок в коды выхода. | `internal/app` (диспетчер команд) |
+| **Обработчик команды diff** | Разбор области diff и оборачиваемой команды или ограниченного composite `prepare ... run`; оркестрация: разрешение области → построение списка файлов (обе стороны) → сравнение → вывод. Преобразование ошибок в коды выхода. | `internal/app` (диспетчер команд) |
 | **Разрешитель области (scope)** | По `--from-ref`/`--to-ref` или `--from-path`/`--to-path` выдаёт два **контекста**. Каждый контекст — корень, от которого читаются файлы: либо дерево Git по ref (blob или временный worktree), либо локальная директория. | Обработчик команды diff |
 | **Построитель списка файлов** | Для одного контекста и заданного **kind** (например, psql, lb) плюс аргументы команды строит **замыкание файловых входов**: упорядоченный список (path, содержимое или хеш). Точка входа и правило замыкания зависят от kind (см. таблицу в user guide). | Обработчик команды diff (вызывается дважды: для from- и to-контекста) |
 | **Компаратор diff** | По двум спискам файлов (from, to) вычисляет Added / Modified / Removed (по пути и опционально по хешу содержимого). Опционально применяет `--limit` и `--include-content`. | Обработчик команды diff |
@@ -40,7 +40,9 @@
 | **run:psql** (будущее) | `-f <file>` (только файловые входы) | Как у psql: замыкание по `\i`/`\include` от `-f`. | Повторное использование psql-построителя |
 
 Обработчик выбирает построитель по kind оборачиваемой команды (например,
-`plan:psql` → psql-построитель, `prepare:lb` → lb-построитель). Аргументы, не
+`plan:psql` → psql-построитель, `prepare:lb` → lb-построитель). Alias-backed
+стадии сначала резолвятся в underlying kind и args, а затем используют те же
+построители. Аргументы, не
 зависящие от ревизии (например, `-c`, `--image`), на список файлов не влияют;
 построитель использует только аргументы, задающие файловые входы.
 
@@ -50,15 +52,19 @@
 1. app (диспетчер команд)
    → обнаруживает глагол "diff"
    → разбирает глобальные флаги, затем область diff (--from-ref/--to-ref или
-     --from-path/--to-path), затем оборачиваемую команду (напр. plan:psql -- -f ./x.sql)
+     --from-path/--to-path), затем оборачиваемую команду или ограниченный
+     composite (напр. plan:psql -- -f ./x.sql или
+     prepare chinook run:psql -- -f ./queries.sql)
    → вызывает cli.RunDiff(scope, wrappedCommand, globalOptions)
 
 2. RunDiff
    → scopeResolver.Resolve(scope)  →  (fromContext, toContext)
-   → fileListBuilder.Build(fromContext, kind, wrappedCommandArgs)  →  fromList
-   → fileListBuilder.Build(toContext, kind, wrappedCommandArgs)    →  toList
-   → comparator.Compare(fromList, toList, options)                  →  diffResult
-   → renderer.Render(diffResult, outputFormat, options)             →  stdout
+   → для каждой wrapped-фазы:
+       → fileListBuilder.Build(fromContext, kind, wrappedCommandArgs)  →  fromList
+       → fileListBuilder.Build(toContext, kind, wrappedCommandArgs)    →  toList
+       → comparator.Compare(fromList, toList, options)                 →  phaseResult
+   → renderer объединяет или печатает per-phase results               →  diffResult
+   → renderer.Render(diffResult, outputFormat, options)               →  stdout
    → возврат кода выхода
 ```
 
@@ -70,9 +76,10 @@
   `--ref-keep-worktree` оставляет worktree для отладки.
 - **Режим path**: каждый путь — корень контекста напрямую (без Git).
 
-Построитель списка файлов выбирается по `kind` (psql или lb). Он получает корень
-контекста и разобранные аргументы оборачиваемой команды и возвращает список
-(path, содержимое или хеш) в детерминированном порядке.
+Построитель списка файлов выбирается отдельно для каждой wrapped-фазы по
+`kind` (psql или lb). Он получает корень контекста и разобранные аргументы
+этой фазы и возвращает список (path, содержимое или хеш) в детерминированном
+порядке.
 
 ## 5. Предлагаемое размещение пакетов (CLI)
 
@@ -80,8 +87,8 @@
 
 | Пакет | Содержимое |
 |-------|------------|
-| `internal/app` | Добавить diff в граф команд; разбор области diff и оборачиваемой команды; вызов `cli.RunDiff`. |
-| `internal/cli` | `RunDiff`, типы опций diff; оркестрация resolver → builder → comparator → renderer. Опционально: рендер human/JSON для вывода diff. |
+| `internal/app` | Добавить diff в граф команд; разбор области diff и оборачиваемой команды или ограниченного composite; вызов `cli.RunDiff`. |
+| `internal/cli` | `RunDiff`, типы опций diff; оркестрация resolver → builder → comparator → renderer, включая per-phase handling для wrapped composite. Опционально: рендер human/JSON для вывода diff. |
 | `internal/diff` (новый) | `ScopeResolver` (режимы ref и path). Интерфейс `FileListBuilder`; `PsqlClosureBuilder`, `LbChangelogClosureBuilder`. `Comparator` (Compare). `Renderer` (human + JSON), если не в `internal/cli`. Типы: `Context`, `FileList`, `DiffResult`. |
 
 Вариант: оставить `internal/diff` минимальным (только resolver, comparator, типы),

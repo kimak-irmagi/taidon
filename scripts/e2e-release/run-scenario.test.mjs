@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  buildPrepareFlowCommandPrefix,
   buildRuntimeConfigCommand,
   buildInitCommand,
+  resolvePrepareConfig,
   resolveContainerRuntime,
   resolveFlowRuns,
+  resolveScenarioExampleRef,
   resolveSnapshotBackend,
   resolveStorePlan
 } from "./run-scenario.mjs";
@@ -119,4 +122,82 @@ run("non-btrfs backend uses plain directory store plan", () => {
   const plan = resolveStorePlan("copy", outDir);
   assert.equal(plan.mountType, "plain-dir");
   assert.equal(plan.storeDir, path.join(outDir, "store"));
+});
+
+run("resolveScenarioExampleRef normalizes nested example refs", () => {
+  assert.equal(resolveScenarioExampleRef({ example: "liquibase\\jhipster-sample-app" }), "liquibase/jhipster-sample-app");
+  assert.throws(() => resolveScenarioExampleRef({ example: "../escape" }), /must stay within examples/);
+});
+
+run("resolvePrepareConfig prefers explicit prepare alias", () => {
+  assert.deepEqual(resolvePrepareConfig({ prepareAlias: "chinook" }, "hp-psql-chinook"), {
+    mode: "alias",
+    prepareAlias: "chinook"
+  });
+});
+
+run("resolvePrepareConfig rejects mixed alias and raw prepare fields", () => {
+  assert.throws(
+    () =>
+      resolvePrepareConfig(
+        {
+          prepareAlias: "chinook",
+          prepareArgs: ["-f", "prepare.sql"]
+        },
+        "hp-psql-chinook"
+      ),
+    /either prepareAlias or raw prepareCmd\/prepareArgs/
+  );
+});
+
+run("resolvePrepareConfig defaults raw psql file under staged example directory", () => {
+  assert.deepEqual(resolvePrepareConfig({ example: "liquibase/jhipster-sample-app" }, "hp-lb-jhipster"), {
+    mode: "raw",
+    prepareCmd: "prepare:psql",
+    prepareArgs: ["-f", "liquibase/jhipster-sample-app/prepare.sql"]
+  });
+});
+
+run("buildPrepareFlowCommandPrefix uses alias mode without raw prepare flags", () => {
+  assert.deepEqual(
+    buildPrepareFlowCommandPrefix({
+      sqlrsPath: "/tmp/sqlrs",
+      workspaceDir: "/tmp/workspace",
+      timeout: "15m",
+      scenario: {
+        id: "hp-psql-chinook",
+        prepareAlias: "chinook",
+        image: "postgres:17"
+      }
+    }),
+    ["/tmp/sqlrs", "--timeout", "15m", "--workspace", "/tmp/workspace", "prepare", "chinook"]
+  );
+});
+
+run("buildPrepareFlowCommandPrefix keeps default raw prepare path aligned with nested staging", () => {
+  assert.deepEqual(
+    buildPrepareFlowCommandPrefix({
+      sqlrsPath: "/tmp/sqlrs",
+      workspaceDir: "/tmp/workspace",
+      timeout: "15m",
+      scenario: {
+        id: "hp-psql-chinook",
+        example: "chinook",
+        image: "postgres:17"
+      }
+    }),
+    [
+      "/tmp/sqlrs",
+      "--timeout",
+      "15m",
+      "--workspace",
+      "/tmp/workspace",
+      "prepare:psql",
+      "--image",
+      "postgres:17",
+      "--",
+      "-f",
+      "chinook/prepare.sql"
+    ]
+  );
 });
