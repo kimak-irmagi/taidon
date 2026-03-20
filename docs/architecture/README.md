@@ -37,6 +37,8 @@ Entry points for Taidon architecture and service design.
   structure and call flow for `sqlrs diff` (after CLI contract).
 - [`alias-inspection-flow.md`](alias-inspection-flow.md) - interaction flow for
   `sqlrs alias ls` and `sqlrs alias check`.
+- [`alias-inspection-component-structure.md`](alias-inspection-component-structure.md) -
+  internal component structure for the alias-inspection CLI slice.
 - [`prepare-manager-refactor.md`](prepare-manager-refactor.md) - prepare manager
   split into coordinator/executor/snapshot roles.
 - [`local-engine-cli-maintainability-refactor.md`][lecmr] -
