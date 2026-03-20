@@ -118,6 +118,10 @@ implementation bounded to two phases.
 
 ## Decision Record 4: updated M2 execution slice
 
+Status: Partially superseded by
+[`2026-03-20-alias-inspection-cli-shape.md`](2026-03-20-alias-inspection-cli-shape.md)
+for the alias-inspection command shape.
+
 ### Question discussed
 
 How should the next public/local M2 slice be framed after the prepare-alias
@@ -137,7 +141,8 @@ Adopt option 2.
 The next M2 slice after the prepare-alias baseline is:
 
 - run aliases
-- alias inspection (`sqlrs alias ls/show/validate`)
+- alias inspection (later refined; see
+  [`2026-03-20-alias-inspection-cli-shape.md`](2026-03-20-alias-inspection-cli-shape.md))
 - mixed raw/alias `prepare ... run` composition
 
 ### Brief rationale
@@ -164,3 +169,6 @@ This ADR supersedes:
 
 Those ADRs should be marked obsolete and point here as the current source of
 truth for mixed alias/raw composite grammar and diff parity.
+
+Its alias-inspection command names were later refined by
+[`2026-03-20-alias-inspection-cli-shape.md`](2026-03-20-alias-inspection-cli-shape.md).

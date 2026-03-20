@@ -8,13 +8,16 @@ Current local CLI support includes:
 
 - `sqlrs plan <prepare-ref>`
 - `sqlrs prepare <prepare-ref>`
+- `sqlrs run <run-ref> [--instance <id|name>]`
 - `*.prep.s9s.yaml` prepare alias files
+- `*.run.s9s.yaml` run alias files
 - exact-file escape via a trailing `.`
+- cwd-relative alias-ref resolution
+- alias-file-relative resolution for file-bearing paths
+- mixed `prepare ... run ...` composite invocations across raw and alias modes
 
 Approved next slice:
 
-- `sqlrs run <run-ref> [--instance <id|name>]`
-- mixed `prepare ... run ...` composite invocations across raw and alias modes
 - explicit `sqlrs alias ...` management commands
 - `sqlrs discover ...`
 - alias-driven name binding flags such as `--name`
@@ -191,8 +194,8 @@ partial preset layered with ad-hoc command-line overrides.
 
 ### Mixed composite `prepare ... run`
 
-The approved next slice allows the normal two-stage `prepare ... run`
-invocation to mix raw and alias modes freely:
+The normal two-stage `prepare ... run` invocation may mix raw and alias modes
+freely:
 
 ```text
 sqlrs prepare <prepare-ref> run <run-ref>
@@ -265,19 +268,143 @@ sqlrs should expose explicit alias-management commands that operate on the
 repo-tracked alias files:
 
 ```text
-sqlrs alias ls
-sqlrs alias show <ref>
-sqlrs alias validate [<ref>]
+sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]
+sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]
 ```
 
 Purpose:
 
 - `ls` - list discovered alias refs from the workspace
-- `show` - print the resolved alias definition
-- `validate` - validate schema and command-specific constraints
+- `check` - validate schema and command-specific constraints
 
 These commands inspect or validate alias files. They do not create runtime
 instances and they do not replace `names`.
+
+### Common inspection rules
+
+- `alias ls` and `alias check` without `<ref>` run in **scan mode**.
+- Scan mode searches for files ending in
+  `.prep.s9s.yaml` or `.run.s9s.yaml`.
+- Discovery is exact-suffix-based only. These commands do not apply heuristics
+  and do not depend on `discover`.
+- The local-only `.sqlrs/` directory is out of scope for alias inspection.
+- Scan results are sorted deterministically by workspace-relative file path.
+- `--prepare` limits the selection to prepare aliases.
+- `--run` limits the selection to run aliases.
+- For `ls` and `check` without `<ref>`, omitting both selectors means
+  "inspect both alias classes".
+- `--from` selects the scan root:
+  - `workspace` = active workspace root
+  - `cwd` = caller's current working directory
+  - any other value = explicit path, resolved from the caller's current working
+    directory unless already absolute
+- The resolved scan root must stay within the active workspace.
+- `--depth` limits scan breadth from that root:
+  - `self` = only the selected directory
+  - `children` = the selected directory plus its immediate child directories
+  - `recursive` = all descendants
+- Scan mode defaults to `--from cwd --depth recursive`.
+- `alias check <ref>` switches to **single-alias mode** and reuses the same ref
+  rules as execution commands:
+  current-working-directory-relative stems plus exact-file escape via a trailing
+  `.`.
+- In single-alias mode, `--from` and `--depth` are not allowed.
+- For `check <ref>`, sqlrs must resolve exactly one alias. If both
+  `<ref>.prep.s9s.yaml` and `<ref>.run.s9s.yaml` match, the command fails with
+  an ambiguity error and asks the user to add `--prepare`, `--run`, or an
+  exact-file escape.
+- If an exact-file escape is used with a non-standard filename in single-alias
+  mode, the caller must provide `--prepare` or `--run` so sqlrs knows which
+  alias schema to apply.
+
+### `sqlrs alias ls`
+
+`ls` is an inventory command. It does not validate aliases beyond the minimum
+needed to recognize their class and, when possible, extract `kind`.
+
+Human output should be copy-friendly and show at least:
+
+- alias type (`prepare` or `run`)
+- invocation ref relative to the caller's current working directory
+- workspace-relative file path
+- tool kind (`psql`, `lb`, `pgbench`, ...) when it can be read cheaply
+
+Unreadable or malformed files still appear in `ls` when they match the alias
+suffix, but `kind` may be empty or marked unknown.
+
+`--output json` should return one entry per discovered alias file with stable
+fields for:
+
+- alias type
+- invocation ref
+- workspace-relative file path
+- optional tool kind
+
+### `sqlrs alias check`
+
+`check` performs static checks only. It must not require engine availability,
+network access, container startup, or Git-ref resolution.
+
+Validation scope:
+
+- YAML parses successfully
+- the file matches the selected alias class
+- required fields such as `kind` and `args` are present
+- kind-specific constraints are satisfied
+- file-bearing arguments resolve using the same alias-file-relative rules as
+  execution commands
+- each referenced local file required by the selected alias kind exists
+
+With no `<ref>`, `check` validates all selected alias files in the scan scope.
+With `<ref>`, it validates exactly one resolved alias.
+
+Human output should report one result per alias plus a deterministic summary.
+
+Suggested exit semantics:
+
+- exit `0` - all selected aliases are valid
+- exit `1` - validation completed, but at least one alias is invalid
+- exit `2` - command usage or alias selection error (for example missing `<ref>`
+  for `check`, ambiguous alias class, or missing exact-file selector)
+
+`--output json` should expose:
+
+- checked count
+- valid count
+- invalid count
+- per-alias results with path, type, validity, and error message when present
+
+### Examples
+
+List all aliases in the current workspace:
+
+```bash
+sqlrs alias ls
+```
+
+List only run aliases under the current directory subtree:
+
+```bash
+sqlrs alias ls --run --from cwd
+```
+
+Validate every discovered alias file:
+
+```bash
+sqlrs alias check
+```
+
+Validate only the direct children of `examples/`:
+
+```bash
+sqlrs alias check --from examples --depth children
+```
+
+Validate one explicit file by exact path:
+
+```bash
+sqlrs alias check --run scripts/smoke.run.s9s.yaml.
+```
 
 ---
 
@@ -383,8 +510,8 @@ Inspect workspace alias files:
 
 ```bash
 sqlrs alias ls
-sqlrs alias show chinook
-sqlrs alias validate
+sqlrs alias ls --from cwd
+sqlrs alias check
 ```
 
 Advisory discovery:

@@ -86,6 +86,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  sqlrs [global flags] <command> [command flags]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
+	fmt.Fprintln(w, "  alias    Inspect repo-tracked alias files")
 	fmt.Fprintln(w, "  init     Initialize a workspace")
 	fmt.Fprintln(w, "  ls       List names, instances, or states")
 	fmt.Fprintln(w, "  rm       Remove an instance or state")
@@ -237,7 +238,7 @@ func isRunCommandToken(value string) bool {
 
 func isCommandToken(value string) bool {
 	switch value {
-	case "init", "ls", "rm", "diff", "plan", "prepare", "run", "watch", "status", "config":
+	case "alias", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config":
 		return true
 	}
 	if strings.HasPrefix(value, "prepare:") {
