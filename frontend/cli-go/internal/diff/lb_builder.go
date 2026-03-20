@@ -20,9 +20,16 @@ func BuildLbFileList(ctx Context, args []string) (FileList, error) {
 		return FileList{}, fmt.Errorf("liquibase command has no --changelog-file (required for diff)")
 	}
 	absChangelog := filepath.Join(ctx.Root, filepath.FromSlash(changelogPath))
-	tracker := &lbTracker{seen: make(map[string]struct{})}
+	rootAbs, err := filepath.Abs(ctx.Root)
+	if err != nil {
+		return FileList{}, fmt.Errorf("liquibase context root: %w", err)
+	}
+	tracker := &lbTracker{
+		seen:    make(map[string]struct{}),
+		rootAbs: filepath.Clean(rootAbs),
+	}
 	var order []string
-	if err := tracker.collect(absChangelog, filepath.Dir(absChangelog), &order); err != nil {
+	if err := tracker.collect(absChangelog, &order); err != nil {
 		return FileList{}, err
 	}
 	entries := make([]FileEntry, 0, len(order))
@@ -61,17 +68,39 @@ type lbChangelog struct {
 
 type lbInclude struct {
 	File string `xml:"file,attr"`
+	// RelativeToChangelogFile: if "true" or omitted, File is resolved relative to the
+	// directory of the changelog that declares the include; if "false" (JHipster-style),
+	// File is resolved relative to the diff context root (ctx.Root), e.g. paths like
+	// config/liquibase/changelog/... from the repo/resources root.
+	RelativeToChangelogFile string `xml:"relativeToChangelogFile,attr"`
 }
 
 type lbIncludeAll struct {
 	Path string `xml:"path,attr"`
+	// RelativeToChangelogFile: same semantics as for <include>; when "false", Path is
+	// relative to the diff context root.
+	RelativeToChangelogFile string `xml:"relativeToChangelogFile,attr"`
 }
 
 type lbTracker struct {
 	seen map[string]struct{}
+	// rootAbs is the absolute diff context root (--from-path/--to-path) for resolving
+	// includes when relativeToChangelogFile="false".
+	rootAbs string
 }
 
-func (t *lbTracker) collect(absPath, baseDir string, order *[]string) error {
+// useChangelogDirForInclude reports whether to resolve the file path relative to the
+// current changelog's directory. Liquibase allowlist: explicit "false" means paths are
+// relative to the changelog search root (we use diff context root). Omitted or "true"
+// keeps the prior CLI behavior: relative to the including file's directory.
+func useChangelogDirForInclude(relativeToChangelogFileAttr string) bool {
+	if strings.EqualFold(strings.TrimSpace(relativeToChangelogFileAttr), "false") {
+		return false
+	}
+	return true
+}
+
+func (t *lbTracker) collect(absPath string, order *[]string) error {
 	absPath = filepath.Clean(absPath)
 	if _, ok := t.seen[absPath]; ok {
 		return nil
@@ -86,11 +115,18 @@ func (t *lbTracker) collect(absPath, baseDir string, order *[]string) error {
 	if err != nil {
 		return err
 	}
-	var log lbChangelog
-	if err := xml.Unmarshal(content, &log); err != nil {
+	// Only XML Liquibase changelogs are expanded for include/includeAll. Other
+	// extensions (e.g. .sql from includeAll) are leaves; they are not valid XML.
+	// Malformed .xml must fail loudly so diff does not silently skip includes.
+	ext := strings.ToLower(filepath.Ext(absPath))
+	if ext != ".xml" {
 		return nil
 	}
-	dir := filepath.Dir(absPath)
+	var log lbChangelog
+	if err := xml.Unmarshal(content, &log); err != nil {
+		return fmt.Errorf("parse liquibase changelog %s: %w", absPath, err)
+	}
+	changelogDir := filepath.Dir(absPath)
 	for _, inc := range log.Include {
 		f := strings.TrimSpace(inc.File)
 		if f == "" {
@@ -99,8 +135,13 @@ func (t *lbTracker) collect(absPath, baseDir string, order *[]string) error {
 		if strings.Contains(f, "://") || strings.HasPrefix(strings.ToLower(f), "classpath:") {
 			continue
 		}
-		next := filepath.Join(dir, filepath.FromSlash(f))
-		if err := t.collect(next, dir, order); err != nil {
+		var next string
+		if useChangelogDirForInclude(inc.RelativeToChangelogFile) {
+			next = filepath.Join(changelogDir, filepath.FromSlash(f))
+		} else {
+			next = filepath.Join(t.rootAbs, filepath.FromSlash(f))
+		}
+		if err := t.collect(next, order); err != nil {
 			return err
 		}
 	}
@@ -109,7 +150,13 @@ func (t *lbTracker) collect(absPath, baseDir string, order *[]string) error {
 		if pathAttr == "" {
 			continue
 		}
-		dirPath := filepath.Join(dir, filepath.FromSlash(pathAttr))
+		var base string
+		if useChangelogDirForInclude(inc.RelativeToChangelogFile) {
+			base = changelogDir
+		} else {
+			base = t.rootAbs
+		}
+		dirPath := filepath.Join(base, filepath.FromSlash(pathAttr))
 		if err := t.collectIncludeAll(dirPath, order); err != nil {
 			return err
 		}
@@ -139,7 +186,7 @@ func (t *lbTracker) collectIncludeAll(dirPath string, order *[]string) error {
 	sort.Strings(names)
 	for _, name := range names {
 		abs := filepath.Join(dirPath, name)
-		if err := t.collect(abs, dirPath, order); err != nil {
+		if err := t.collect(abs, order); err != nil {
 			return err
 		}
 	}

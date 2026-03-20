@@ -48,9 +48,9 @@ func RunDiff(stdout io.Writer, parsed diff.ParsedDiff, cwd string, outputFormat 
 
 	result := diff.Compare(fromList, toList, opts)
 	if outputFormat == "json" {
-		return diff.RenderJSON(stdout, result, scope, parsed.WrappedName, opts)
+		return diff.RenderJSON(stdout, result, scope, parsed.WrappedName, opts, fromCtx, toCtx)
 	}
-	diff.RenderHuman(stdout, result, scope, parsed.WrappedName, opts)
+	diff.RenderHuman(stdout, result, scope, parsed.WrappedName, opts, fromCtx, toCtx)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -44,5 +45,29 @@ func TestCompare_Modified(t *testing.T) {
 	}
 	if len(result.Added) != 0 || len(result.Removed) != 0 {
 		t.Fatalf("expected no added/removed, got %d %d", len(result.Added), len(result.Removed))
+	}
+}
+
+func TestCompare_StableOrderByPath(t *testing.T) {
+	from := FileList{}
+	to := FileList{Entries: []FileEntry{
+		{Path: "z/b.sql", Hash: "h2"},
+		{Path: "m/a.sql", Hash: "h1"},
+		{Path: "m/c.sql", Hash: "h3"},
+	}}
+	results := make([][]string, 3)
+	for i := 0; i < len(results); i++ {
+		r := Compare(from, to, Options{})
+		paths := make([]string, len(r.Added))
+		for j, e := range r.Added {
+			paths[j] = e.Path
+		}
+		results[i] = paths
+	}
+	want := []string{"m/a.sql", "m/c.sql", "z/b.sql"}
+	for i := 1; i < len(results); i++ {
+		if !reflect.DeepEqual(results[i], results[0]) || !reflect.DeepEqual(results[0], want) {
+			t.Fatalf("iteration 0=%v iteration %d=%v want %v", results[0], i, results[i], want)
+		}
 	}
 }
