@@ -84,8 +84,14 @@ func TestReadInventoryKindAndHelpers(t *testing.T) {
 	if got := workspaceRelativePath(`D:\bad\path`, `C:\bad\root`); got != "path" {
 		t.Fatalf("workspaceRelativePath fallback = %q", got)
 	}
+	if got := workspaceRelativePath(`C:\bad\root\demo.run.s9s.yaml`, `C:\bad\root`); got != "demo.run.s9s.yaml" {
+		t.Fatalf("workspaceRelativePath same-drive = %q", got)
+	}
 	if got := invocationRef(`D:\bad\path\demo.run.s9s.yaml`, `C:\bad\cwd`, ""); got != "demo.run.s9s.yaml" {
 		t.Fatalf("invocationRef fallback = %q", got)
+	}
+	if got := invocationRef(`C:\bad\cwd\demo.run.s9s.yaml`, `C:\bad\cwd`, ClassRun); got != "demo" {
+		t.Fatalf("invocationRef same-drive = %q", got)
 	}
 }
 

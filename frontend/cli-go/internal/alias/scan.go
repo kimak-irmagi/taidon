@@ -3,6 +3,7 @@ package alias
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -157,17 +158,17 @@ func inventoryReadError(class Class, err error) error {
 }
 
 func workspaceRelativePath(path string, workspaceRoot string) string {
-	rel, err := filepath.Rel(workspaceRoot, path)
+	rel, err := portableRelativePath(workspaceRoot, path)
 	if err != nil {
-		return filepath.ToSlash(filepath.Base(path))
+		return filepath.ToSlash(portablePathBase(path))
 	}
 	return filepath.ToSlash(rel)
 }
 
 func invocationRef(path string, cwd string, class Class) string {
-	rel, err := filepath.Rel(cwd, path)
+	rel, err := portableRelativePath(cwd, path)
 	if err != nil {
-		rel = filepath.Base(path)
+		rel = portablePathBase(path)
 	}
 	switch class {
 	case ClassPrepare:
@@ -187,4 +188,81 @@ func classifyPath(path string) Class {
 	default:
 		return ""
 	}
+}
+
+func portableRelativePath(base string, target string) (string, error) {
+	baseVolume := windowsVolumeName(base)
+	targetVolume := windowsVolumeName(target)
+	if baseVolume != "" || targetVolume != "" {
+		if baseVolume == "" || targetVolume == "" || !strings.EqualFold(baseVolume, targetVolume) {
+			return "", fmt.Errorf("paths have different roots")
+		}
+		return slashRelativePath(normalizeWindowsLikePath(base[len(baseVolume):]), normalizeWindowsLikePath(target[len(targetVolume):])), nil
+	}
+	return filepath.Rel(base, target)
+}
+
+func windowsVolumeName(value string) string {
+	if len(value) < 2 || value[1] != ':' {
+		return ""
+	}
+	letter := value[0]
+	if (letter >= 'A' && letter <= 'Z') || (letter >= 'a' && letter <= 'z') {
+		return value[:2]
+	}
+	return ""
+}
+
+func normalizeWindowsLikePath(value string) string {
+	normalized := strings.ReplaceAll(value, `\`, "/")
+	if normalized == "" {
+		return "/"
+	}
+	cleaned := path.Clean(normalized)
+	if strings.HasPrefix(cleaned, "/") {
+		return cleaned
+	}
+	return "/" + strings.TrimPrefix(cleaned, "/")
+}
+
+func slashRelativePath(base string, target string) string {
+	baseParts := splitSlashPath(base)
+	targetParts := splitSlashPath(target)
+
+	shared := 0
+	for shared < len(baseParts) && shared < len(targetParts) {
+		if !strings.EqualFold(baseParts[shared], targetParts[shared]) {
+			break
+		}
+		shared++
+	}
+
+	parts := make([]string, 0, len(baseParts)-shared+len(targetParts)-shared)
+	for i := shared; i < len(baseParts); i++ {
+		parts = append(parts, "..")
+	}
+	parts = append(parts, targetParts[shared:]...)
+	if len(parts) == 0 {
+		return "."
+	}
+	return strings.Join(parts, "/")
+}
+
+func splitSlashPath(value string) []string {
+	trimmed := strings.TrimPrefix(value, "/")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
+}
+
+func portablePathBase(value string) string {
+	trimmed := strings.TrimRight(value, `/\`)
+	if trimmed == "" {
+		return ""
+	}
+	if idx := strings.LastIndexAny(trimmed, `/\`); idx >= 0 {
+		return trimmed[idx+1:]
+	}
+	return trimmed
 }
