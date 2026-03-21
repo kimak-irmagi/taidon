@@ -72,7 +72,13 @@ gantt
 
 ## Статус (на 2026-03-20)
 
-- **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
+- **Сделано**: локальная поверхность API (health, config, names, instances, runs,
+  states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
+  init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть
+  state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`,
+  `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`,
+  `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`),
+  WSL init flow (включая установку nsenter), логирование instance-delete.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
 - **Сделано (PR #37-#41, hardening)**: добавлены release happy-path e2e сценарии
   для Chinook/Sakila с расширением матрицы (включая Btrfs), поведение
