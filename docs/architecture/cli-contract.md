@@ -68,6 +68,10 @@ sqlrs diff <diff-scope> <prepare-stage> <run-stage>  # not implemented yet
 This keeps nested syntax aligned with the main CLI instead of a separate
 `diff`-specific input DSL.
 
+Internal architecture rule: kind-specific file-bearing semantics are owned by
+shared CLI-side `internal/inputset` components and are reused by execution,
+`sqlrs diff`, and `sqlrs alias check`.
+
 ## ID Prefix Rules
 
 Where the CLI expects a **state or instance id**, users may supply a hex prefix
@@ -267,8 +271,9 @@ diff scope between `sqlrs` and one content-aware command (`plan`, `prepare`, or
 `run`), reusing the main CLI syntax. **First implementation slice** (in
 `frontend/cli-go`): compares **file-list closures** (paths + content hashes) for
 exactly one wrapped `plan:psql`, `plan:lb`, `prepare:psql`, or `prepare:lb`
-invocation—**no engine calls**; `plan:*` and `prepare:*` share the same builders
-today.
+invocation—**no engine calls**. The long-term source of truth for wrapped
+command file semantics is the shared CLI-side `internal/inputset` layer; any
+builders that still live in `internal/diff` are transitional.
 
 Design targets for later slices:
 
@@ -291,6 +296,8 @@ normal syntax.
 - wrapped alias-mode commands such as `prepare <prepare-ref>`
 - wrapped two-stage `prepare ... run` composites
 - per-side alias path bases as in the main CLI; longer command chains out of scope
+- shared per-kind file semantics with execution and alias inspection via
+  `internal/inputset`
 
 See:
 
@@ -339,6 +346,8 @@ Design notes:
 
 - scan mode defaults to `--from cwd --depth recursive`
 - `check <ref>` reuses the same alias-ref rules as execution commands
+- kind-specific file-bearing validation and closure semantics are shared with
+  execution and `diff` through the same `internal/inputset` components
 - the current slice intentionally omits a semantic `show` command because the
   alias files themselves remain the primary human-readable source of truth
 

@@ -28,6 +28,8 @@
   remote и загрузки исходников.
 - [`cli-component-structure.RU.md`](cli-component-structure.RU.md) - внутренняя
   структура CLI.
+- [`inputset-component-structure.RU.md`](inputset-component-structure.RU.md) -
+  общий CLI-side слой input set для file-bearing семантики команд.
 - [`local-engine-component-structure.RU.md`][lecs] -
   внутренняя структура локального engine.
 - [`prepare-job-events-flow.RU.md`][pjef] - events-first

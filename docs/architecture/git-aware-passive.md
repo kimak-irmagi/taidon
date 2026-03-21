@@ -113,6 +113,8 @@ Rules:
 - diff-specific options come before the wrapped command;
 - the wrapped command keeps its current syntax unchanged;
 - global `-v` stays the verbose control and global `--output` stays the text/json selector;
+- wrapped-command file-bearing semantics come from the shared CLI-side
+  `inputset` component for the selected kind;
 - **Current CLI slice** (`frontend/cli-go`): exactly **one** wrapped token among
   `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb`; compares **file-list
   closures** (hashes) only—no engine. **Ref mode** uses **`git worktree` only**
@@ -141,7 +143,9 @@ What `diff` compares:
 1. Parse the diff scope (`from/to ref` or `from/to path`).
 2. Parse the wrapped command using the same CLI grammar as the main invocation
    (today: single `plan:*` or `prepare:*` token only).
-3. For each side independently, resolve files/includes according to that side's own revision or path context.
+3. For each side independently, bind the wrapped command through the shared
+   `inputset` component for that kind and collect the resulting file set using
+   that side's own revision or path context.
 4. **Today:** build file-list closures and compare Added / Modified / Removed.
    **Later:** richer representations and per-phase output for `prepare ... run`.
 5. Render human or JSON.

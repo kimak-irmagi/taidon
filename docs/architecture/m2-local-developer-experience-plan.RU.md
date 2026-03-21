@@ -22,8 +22,8 @@ M2 должен уменьшить трение при локальном onboar
   workspace configuration;
 - advisory discovery tooling, предлагающий улучшения, но не участвующий в
   execution semantics;
-- детерминированные локальные building blocks для последующих `diff`, Git-ref,
-  provenance и cache explanation возможностей.
+- детерминированные shared CLI-side inputset building blocks для последующих
+  execution, `diff`, Git-ref, provenance и cache explanation возможностей.
 
 ## 2. Ограничения
 
@@ -33,6 +33,8 @@ M2 должен уменьшить трение при локальном onboar
 - Aliases и runtime names должны оставаться разными сущностями.
 - Пока engine API явно не нужен, предпочтение отдается CLI-only изменениям.
 - Command syntax должен оставаться additive и explicit.
+- Для file-bearing semantics каждого tool kind должен существовать один shared
+  CLI-side источник истины, общий для execution, `diff` и `alias check`.
 
 ## 3. Утвержденный Порядок Срезов
 
@@ -42,7 +44,7 @@ M2 должен уменьшить трение при локальном onboar
 2. run aliases, alias inspection и mixed `prepare ... run` composition
 3. `discover --aliases`
 4. generic discover analyzers
-5. shared local input graph primitives
+5. shared local inputset layer
 6. `sqlrs diff` в path mode
 7. Git ref execution baseline
 8. provenance и cache explain
@@ -98,7 +100,16 @@ local workspace config.
   `<run-ref>.run.s9s.yaml` от текущего рабочего каталога
 - `prepare ... run ...` принимает смешанные raw/alias комбинации
 - `sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]`
-- `sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]`
+- :
+
+  ```bash
+  sqlrs alias check \ 
+    [--prepare] \ 
+    [--run] \
+    [--from <workspace|cwd|path>] \
+    [--depth <self|children|recursive>] \
+    [<ref>]
+  ```
 
 **Ожидаемая работа**:
 
@@ -160,7 +171,7 @@ local workspace config.
 ### 4.4 PR4: Generic Discover Analyzers
 
 **Цель**: превратить `discover` в общий advisory workflow для local repository
-  hygiene и cache-friendly shaping.
+hygiene и cache-friendly shaping.
 
 **Основной результат**:
 
@@ -187,31 +198,35 @@ local workspace config.
 - Git-ref workflow
 - provenance
 
-### 4.5 PR5: Shared Local Input Graph Primitives
+### 4.5 PR5: Shared Local InputSet Layer
 
-**Цель**: зафиксировать единую детерминированную модель revision-sensitive
-local inputs.
+**Цель**: зафиксировать единый shared CLI-side источник истины для
+revision-sensitive local inputs.
 
 **Основной результат**:
 
-- CLI умеет строить детерминированные ordered input graphs для поддерживаемых
-  prepare flow
-- та же модель переиспользуется для discover analyzers, `diff`, Git-ref mode,
-  provenance и cache explanation
+- у CLI появляется единый слой `inputset` для поддерживаемых file-bearing tool kind
+- тот же слой переиспользуется в `prepare`, `plan`, `run`, `alias check`,
+  `diff`, discover analyzers, Git-ref mode, provenance и cache explanation
 
 **Ожидаемая работа**:
 
-- определить CLI-side types для context roots и ordered input entries
-- реализовать `psql` include-graph closure building
-- реализовать Liquibase changelog-graph closure building
+- определить CLI-side абстракции parse/bind/collect/project, а также общие
+  типы resolver и filesystem
+- реализовать общий `psql` inputset component
+- реализовать общий Liquibase inputset component
+- реализовать общий `pgbench` inputset component для file-bearing run inputs
+- перевести execution и alias-check flow на shared layer
 - определить стабильные правила hashing и ordering
 
 **Ожидаемые тесты**:
 
+- тесты parity для parser/binding у `psql`, Liquibase и `pgbench`
 - тесты детерминированного порядка
 - тесты обхода closure для `psql`
 - тесты обхода changelog graph для Liquibase
 - тесты стабильности hash на normalization cases
+- тесты parity projection между execution и inspection consumers
 
 ### 4.6 PR6: `sqlrs diff` в Path Mode
 
@@ -222,7 +237,8 @@ local inputs.
 для **одного** wrapped `plan:psql` / `plan:lb` / `prepare:psql` / `prepare:lb`;
 сравнение — **closure файлов + хеши**, без engine. **Ещё не сделано** относительно
 первоначальной формулировки PR: composite `prepare … run`, alias `prepare <ref>`,
-отдельный per-phase JSON/human.
+отдельный per-phase JSON/human и миграция от diff-owned builders к shared
+слою `inputset` из PR5.
 
 **Основной результат** (цель):
 
@@ -234,7 +250,8 @@ local inputs.
 
 - добавить dispatch команды `diff`
 - отдельно парсить diff scope и wrapped command
-- переиспользовать input-graph builders из PR5
+- переиспользовать shared inputset components из PR5 вместо diff-owned
+  parsers/builders
 - отдельно вычислять wrapped `prepare` и `run` фазы, если используется
   composite
 - реализовать human и JSON rendering
@@ -244,6 +261,8 @@ local inputs.
 - тесты парсинга аргументов
 - path-mode compare tests для `plan:psql`
 - path-mode compare tests для `prepare:lb`
+- тесты parity, показывающие, что `diff` использует ту же per-kind input
+  semantics, что и shared execution layer
 - path-mode compare tests для mixed raw/alias `prepare ... run`
 - тесты JSON shape
 

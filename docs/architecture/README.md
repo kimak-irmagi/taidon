@@ -27,6 +27,8 @@ Entry points for Taidon architecture and service design.
   and source uploads.
 - [`cli-component-structure.md`](cli-component-structure.md) - CLI internal
   component structure.
+- [`inputset-component-structure.md`](inputset-component-structure.md) - shared
+  CLI-side input-set layer for file-bearing command semantics.
 - [`local-engine-component-structure.md`](local-engine-component-structure.md) -
   local engine component structure.
 - [`prepare-job-events-flow.md`](prepare-job-events-flow.md) - events-first
@@ -56,7 +58,7 @@ Entry points for Taidon architecture and service design.
 - [`git-aware-passive.md`](git-aware-passive.md) — notes on the `git` interaction
   scenarios, initiated
   by user via the local CLI commands
-- [`m2-local-developer-experience-plan.md`](m2-local-developer-experience-plan.md) -
+- [`m2-local-developer-experience-plan.md`](m2-local-developer-experience-plan.md) ok-
   approved implementation slices for the public/local M2 developer-experience work.
 - [`git-aware-active.md`](git-aware-active.md) — notes on the github interaction
   scenarios that require

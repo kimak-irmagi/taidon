@@ -22,8 +22,8 @@ The expected public outcome is:
   workspace configuration;
 - advisory discovery tooling that suggests improvements without becoming part of
   execution semantics;
-- deterministic local building blocks that later support `diff`, Git-ref mode,
-  provenance, and cache explanation.
+- deterministic shared CLI-side inputset building blocks that later support
+  execution, `diff`, Git-ref mode, provenance, and cache explanation.
 
 ## 2. Constraints
 
@@ -33,6 +33,8 @@ The expected public outcome is:
 - Keep aliases and runtime names as separate entities.
 - Prefer CLI-only changes until an engine API is clearly justified.
 - Keep command syntax additive and explicit.
+- Keep one shared CLI-side source of truth for each tool kind's file-bearing
+  semantics across execution, `diff`, and `alias check`.
 
 ## 3. Approved Slice Order
 
@@ -42,7 +44,7 @@ The approved implementation order is:
 2. run aliases, alias inspection, and mixed `prepare ... run` composition
 3. `discover --aliases`
 4. generic discover analyzers
-5. shared local input graph primitives
+5. shared local inputset layer
 6. `sqlrs diff` path mode
 7. git ref execution baseline
 8. provenance and cache explain
@@ -161,7 +163,7 @@ execution depend on heuristics.
 ### 4.4 PR4: Generic Discover Analyzers
 
 **Goal**: turn `discover` into a general advisory workflow for local repository
-  hygiene and cache-friendly shaping.
+hygiene and cache-friendly shaping.
 
 **Primary outcome**:
 
@@ -188,30 +190,35 @@ execution depend on heuristics.
 - Git-ref workflows
 - provenance
 
-### 4.5 PR5: Shared Local Input Graph Primitives
+### 4.5 PR5: Shared Local InputSet Layer
 
-**Goal**: establish one deterministic model for revision-sensitive local inputs.
+**Goal**: establish one shared CLI-side source of truth for revision-sensitive
+local inputs.
 
 **Primary outcome**:
 
-- the CLI can build deterministic ordered input graphs for supported prepare
-  flows
-- the same model can be reused by discover analyzers, `diff`, Git-ref mode,
-  provenance, and cache explanation
+- the CLI has one shared `inputset` layer for supported file-bearing tool kinds
+- the same layer is reused by `prepare`, `plan`, `run`, `alias check`, `diff`,
+  discover analyzers, Git-ref mode, provenance, and cache explanation
 
 **Expected work**:
 
-- define CLI-side types for context roots and ordered input entries
-- implement `psql` include-graph closure building
-- implement Liquibase changelog-graph closure building
+- define CLI-side parse/bind/collect/project abstractions plus shared resolver
+  and filesystem types
+- implement the shared `psql` inputset component
+- implement the shared Liquibase inputset component
+- implement the shared `pgbench` inputset component for file-bearing run inputs
+- wire execution and alias-check flows to the shared layer
 - define stable hashing and ordering rules
 
 **Tests expected**:
 
+- parser/binding parity tests for `psql`, Liquibase, and `pgbench`
 - deterministic ordering tests
 - closure traversal tests for `psql`
 - changelog traversal tests for Liquibase
 - hash stability tests across normalization cases
+- projection parity tests across execution and inspection consumers
 
 ### 4.6 PR6: `sqlrs diff` Path Mode
 
@@ -222,7 +229,8 @@ object access yet.
 (worktree) work for a **single** wrapped `plan:psql` / `plan:lb` / `prepare:psql`
 / `prepare:lb`; comparison is **file-list closures + hashes**, no engine.
 **Still open** vs this PR’s original wording: two-stage `prepare ... run`
-composite parsing, alias `prepare <ref>`, and JSON/human **per-phase** layout.
+composite parsing, alias `prepare <ref>`, JSON/human **per-phase** layout, and
+migration from diff-owned builders to the shared PR5 `inputset` layer.
 
 **Primary outcome** (target):
 
@@ -234,7 +242,7 @@ composite parsing, alias `prepare <ref>`, and JSON/human **per-phase** layout.
 
 - add `diff` command dispatch
 - parse diff scope separately from the wrapped command
-- reuse PR5 input-graph builders
+- reuse PR5 shared inputset components instead of diff-owned parsers/builders
 - evaluate wrapped `prepare` and `run` phases separately when a composite is
   used
 - implement human and JSON rendering
@@ -244,6 +252,8 @@ composite parsing, alias `prepare <ref>`, and JSON/human **per-phase** layout.
 - argument parsing tests
 - path-mode compare tests for `plan:psql`
 - path-mode compare tests for `prepare:lb`
+- parity tests showing `diff` uses the same per-kind input semantics as the
+  shared execution layer
 - path-mode compare tests for mixed raw/alias `prepare ... run`
 - JSON shape tests
 

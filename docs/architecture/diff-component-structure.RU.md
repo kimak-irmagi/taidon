@@ -1,123 +1,118 @@
-# sqlrs diff — структура компонентов
+# sqlrs diff - структура компонентов
 
-В этом документе описана **архитектурная проработка** команды `sqlrs diff` после
-контракта CLI и user guide: какие компоненты есть, кто кого вызывает и где они
-расположены. Это следующий шаг после дизайна в
-[`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md) и
-[`docs/architecture/cli-contract.md`](cli-contract.md).
+Документ описывает утвержденную компонентную структуру `sqlrs diff` после
+CLI-контракта, user guide и решения о shared слое `inputset`.
 
-## 1. Область и допущения
+## 1. Область и статус
 
-- **Статус**: первый срез **реализован** в `frontend/cli-go` (`internal/diff`,
-  `internal/cli.RunDiff`, dispatch в `internal/app`). Ниже также зафиксирован
-  дизайн следующих срезов.
-- **Первый срез**: diff выполняется целиком в CLI; без engine. CLI разрешает две
-  стороны (ref или path), строит closures для psql и Liquibase, сравнивает пути и
-  хеши контента, рендерит вывод.
-- **Поведение plan vs prepare** в коде пока одинаковое: те же построители
-  списков файлов.
-- **Режим ref**: в реализации только **`worktree`**; режим `blob` не сделан
-  (явная ошибка при запросе).
-- **Оборачиваемая команда**: один токен — `plan:psql`, `plan:lb`, `prepare:psql`,
-  `prepare:lb`. Composite `prepare … run …` не парсится.
-- **Единица развёртывания**: только CLI. Изменения в `backend/local-engine-go` не
-  требуются.
+- Первый user-visible срез реализован в `frontend/cli-go` и остается CLI-only.
+- Сейчас команда сравнивает file-list closures и хеши контента; engine API не
+  используется.
+- Ref-mode сейчас использует detached `git worktree`; blob-mode не реализован.
+- Wrapped command пока остается одним токеном из `plan:psql`, `plan:lb`,
+  `prepare:psql` и `prepare:lb`.
+- Утвержденная архитектура такова: `internal/diff` владеет только parsing diff
+  scope, resolution контекстов сторон, сравнением и рендерингом. Kind-specific
+  file semantics принадлежат общим компонентам `internal/inputset`.
+- Существующие `BuildPsqlFileList` / `BuildLbFileList` в `internal/diff` -
+  переходные реализации, а не долгосрочный источник истины.
 
 ## 2. Компоненты и ответственность
 
 | Компонент | Ответственность | Кто вызывает |
 |-----------|-----------------|--------------|
-| **Обработчик команды diff** | `diff.ParseDiffScope` + один wrapped-токен; оркестрация `ResolveScope` → построение списков (обе стороны) → `Compare` → рендер; коды выхода. | `internal/app` → `internal/cli.RunDiff` |
-| **Разрешитель области** | `internal/diff.ResolveScope`: два **контекста** — абсолютные корни `--from-path`/`--to-path` или **detached worktree** на каждый ref. | `RunDiff` |
-| **Построитель списка файлов** | `BuildPsqlFileList` / `BuildLbFileList` для kind psql или lb и wrapped args. | `RunDiff` (для from и to) |
-| **Компаратор diff** | `Compare(fromList, toList, options)` — Added / Modified / Removed; `--limit`, `--include-content`. | `RunDiff` |
-| **Рендер diff** | `RenderHuman` / `RenderJSON`. | `RunDiff` |
+| **Обработчик команды diff** | Разобрать diff scope и wrapped command; оркестрировать resolution сторон, сбор input set для каждой стороны, сравнение и рендеринг. Сопоставлять ошибки с exit code. | `internal/app` -> `internal/cli.RunDiff` |
+| **Разрешитель области** | По `--from-ref`/`--to-ref` или `--from-path`/`--to-path` построить два side context. Каждый context дает корень файловой системы для одной стороны сравнения. | `internal/diff.ResolveScope` |
+| **Shared inputset kind component** | Для одной стороны и одного kind wrapped-команды разобрать file-bearing args, привязать их к корню этой стороны и собрать детерминированный input set. | `RunDiff` через `internal/inputset/*` |
+| **Компаратор diff** | По двум собранным input set вычислить Added / Modified / Removed и применить опции вроде `--limit` и `--include-content`. | Обработчик diff |
+| **Рендер diff** | Преобразовать результат сравнения в human-readable текст или JSON согласно глобальному `--output`. | Обработчик diff |
 
-## 3. Построитель списка файлов по kind
+## 3. Shared inputset компоненты по kind
 
-Построитель списка файлов — **ключевая абстракция**, разная для каждого kind. У
-каждого kind одна точка входа и одно правило замыкания.
+`sqlrs diff` не владеет per-kind file semantics. Он выбирает тот же shared
+CLI-side компонент, который используют execution и alias inspection.
 
-| Kind | Точка входа из аргументов | Правило замыкания | Реализация |
-|------|---------------------------|-------------------|------------|
-| **prepare:psql** / plan:psql | `-f <file>` (путь к файлу; не stdin `-f -`) | От каждого файла из `-f` рекурсивно добавлять все файлы, на которые ссылаются `\i`, `\ir`, `\include`, `\include_relative`. | `BuildPsqlFileList` в `internal/diff` |
-| **prepare:lb** / plan:lb | `--changelog-file <path>` | От файла changelog добавлять все файлы, на которые ссылается граф changelog (include, includeAll и т.д.). Граф задаёт Liquibase. | `BuildLbFileList` в `internal/diff` |
-| **run:psql** (будущее) | `-f <file>` (только файловые входы) | Как у psql: замыкание по `\i`/`\include` от `-f`. | Повторное использование psql-построителя |
+| Семейство wrapped-команд | Shared component | Примечание |
+|--------------------------|------------------|------------|
+| `plan:psql`, `prepare:psql`, будущий `run:psql` | `internal/inputset/psql` | Парсит file-bearing аргументы `psql` и собирает closure по `\i` / `\ir` / `\include`. |
+| `plan:lb`, `prepare:lb` | `internal/inputset/liquibase` | Парсит changelog/defaults/search-path аргументы и собирает Liquibase changelog graph. |
+| Будущий file-backed `run:pgbench` | `internal/inputset/pgbench` | Парсит file-bearing script args и отдает runtime и diff-facing projection-ы. |
 
-`RunDiff` выбирает построитель по wrapped-токену (`plan:psql` и `prepare:psql` →
-psql; `plan:lb` и `prepare:lb` → lb). Разбор alias и composite **пока не
-подключён**. Аргументы вроде `-c`, `--image` на closure не влияют.
+Пока миграция не завершена, в `internal/diff` могут оставаться wrappers или
+adapter-ы над прежними builders. Эти обертки переходные и должны схлопнуться в
+`internal/inputset` как в единый источник истины.
 
 ## 4. Поток вызовов
 
 ```text
-1. app
-   → глагол "diff"
-   → глобальные флаги (ParseArgs), затем diff.ParseDiffScope: scope + один
-     wrapped-токен + args (напр. plan:psql -- -f ./x.sql)
-   → cli.RunDiff(stdout, parsed, cwd, outputFormat)
+1. app (dispatch команды)
+   -> определяет глагол "diff"
+   -> парсит глобальные флаги и diff scope
+   -> передает wrapped command token и args в cli.RunDiff
 
 2. RunDiff
-   → diff.ResolveScope(parsed.Scope, cwd)  →  fromCtx, toCtx, cleanup
-   → BuildPsqlFileList или BuildLbFileList(fromCtx, wrappedArgs)  →  fromList
-   → то же для toCtx  →  toList
-   → diff.Compare(fromList, toList, options)
-   → RenderHuman или RenderJSON
+   -> diff.ResolveScope(parsed.Scope, cwd) -> fromCtx, toCtx, cleanup
+   -> выбирает shared kind component по wrapped command
+   -> для каждой стороны:
+      Parse(wrappedArgs)
+      -> Bind(side resolver, rooted at fromCtx/toCtx)
+      -> Collect(side filesystem view)
+   -> diff.Compare(fromSet, toSet, options)
+   -> diff.RenderHuman или diff.RenderJSON
 ```
 
-Разрешение области (как в коде):
-
-- **ref**: `git rev-parse --show-toplevel` от cwd репозитория; `git worktree add
-  --detach` во временные каталоги; только worktree; опционально
-  `--ref-keep-worktree`.
-- **path**: абсолютные каталоги из `--from-path` / `--to-path`.
+Когда последующие срезы добавят wrapped composite `prepare ... run`, `RunDiff`
+должен вычислять каждую стадию отдельно, но все так же делегировать per-kind
+file semantics одним и тем же компонентам `internal/inputset`.
 
 ## 5. Предлагаемое размещение пакетов (CLI)
 
-Всё перечисленное относится к кодовой базе CLI (например, `frontend/cli-go`).
+Все перечисленное относится к кодовой базе CLI (например, `frontend/cli-go`).
 
 | Пакет | Содержимое |
 |-------|------------|
-| `internal/app` | dispatch `diff`; `runDiff` → `diff.ParseDiffScope`, затем `cli.RunDiff`. |
-| `internal/cli` | `RunDiff`, оркестрация `internal/diff`. |
-| `internal/diff` | `ParseDiffScope`, `ResolveScope`, `BuildPsqlFileList`, `BuildLbFileList`, `Compare`, `RenderHuman`, `RenderJSON`, типы (`Scope`, `Context`, `FileList`, …). |
+| `internal/app` | Dispatch `diff`, parsing diff scope, сбор side-root context. |
+| `internal/cli` | Оркестрация `RunDiff` и top-level dispatch рендера. |
+| `internal/diff` | `ParseDiffScope`, `ResolveScope`, `Compare`, `RenderHuman`, `RenderJSON` и общие типы результата diff. |
+| `internal/inputset` | Общие parse/bind/collect/project абстракции и per-kind пакеты, которые использует `diff`. |
 
 ## 6. Владение данными и жизненный цикл
 
-- **Область (from/to ref или path)**: разбирается один раз за вызов; не
+- **Scope (from/to ref или path)** разбирается один раз за invocation и не
   персистится.
-- **Контексты**: in-memory представление двух корней (например, путь worktree
-  или аксессор к blob). Временный worktree при необходимости создаётся до
-  построения списков файлов и удаляется после (если не задан `--ref-keep-worktree`).
-- **Списки файлов**: in-memory на время выполнения команды; кэш не используется.
-  Каждый список — упорядоченное множество (path, содержимое или хеш).
-- **Результат diff**: in-memory; передаётся рендеру и затем отбрасывается.
-  Постоянного состояния diff не вводит.
+- **Side contexts** - in-memory представление двух корней. Временные worktree,
+  если используются, создаются до стадии collection и удаляются после команды,
+  если пользователь явно не сохраняет их.
+- **Parsed specs, bound specs и collected input sets** существуют только в
+  памяти и только в рамках одной стороны одного вызова.
+- **Результат diff** существует только в памяти и отбрасывается после
+  рендеринга. Постоянный diff cache не вводится.
 
 ## 7. Схема зависимостей
 
 ```mermaid
 flowchart TB
-  APP["internal/app <br/> (диспетчер команд)"]
-  RUN_DIFF["internal/cli <br/> RunDiff"]
-  RESOLVER["internal/diff <br/> ResolveScope"]
-  BUILDER["internal/diff <br/> FileListBuilder<br/>(psql, lb)"]
-  COMPARE["internal/diff <br/> Comparator"]
-  RENDER["internal/diff <br/> Renderer<br/>(или cli)"]
+  APP["internal/app"]
+  RUN_DIFF["internal/cli<br/>RunDiff"]
+  RESOLVER["internal/diff<br/>ResolveScope"]
+  INPUTSET["internal/inputset<br/>kind component"]
+  COMPARE["internal/diff<br/>Compare"]
+  RENDER["internal/diff<br/>Render"]
 
   APP --> RUN_DIFF
   RUN_DIFF --> RESOLVER
-  RUN_DIFF --> BUILDER
+  RUN_DIFF --> INPUTSET
   RUN_DIFF --> COMPARE
   RUN_DIFF --> RENDER
-  RESOLVER -.->|fromContext, toContext| BUILDER
-  BUILDER -.->|fromList, toList| COMPARE
+  RESOLVER -.->|side roots| INPUTSET
+  INPUTSET -.->|fromSet, toSet| COMPARE
   COMPARE -.->|DiffResult| RENDER
 ```
 
 ## 8. Ссылки
 
 - User guide: [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
-- Контракт CLI: [`docs/architecture/cli-contract.md`](cli-contract.md) (секция 3.9)
+- Контракт CLI: [`docs/architecture/cli-contract.RU.md`](cli-contract.RU.md) (секция 3.9)
+- Shared inputset layer: [`inputset-component-structure.RU.md`](inputset-component-structure.RU.md)
 - Git-aware passive (сценарий P3): [`docs/architecture/git-aware-passive.RU.md`](git-aware-passive.RU.md)
 - Структура компонентов CLI: [`cli-component-structure.RU.md`](cli-component-structure.RU.md)
