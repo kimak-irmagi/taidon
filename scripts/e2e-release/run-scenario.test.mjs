@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildPrepareFlowCommandPrefix,
   buildRuntimeConfigCommand,
   buildInitCommand,
+  loadScenario,
   resolvePrepareConfig,
   resolveContainerRuntime,
   resolveFlowRuns,
   resolveScenarioExampleRef,
   resolveSnapshotBackend,
-  resolveStorePlan
+  resolveStorePlan,
+  stageScenarioWorkspace
 } from "./run-scenario.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -200,4 +204,32 @@ run("buildPrepareFlowCommandPrefix keeps default raw prepare path aligned with n
       "chinook/prepare.sql"
     ]
   );
+});
+
+run("hp-lb-jhipster staged alias keeps app-root searchPath for Liquibase includes", () => {
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), "sqlrs-run-scenario-"));
+  try {
+    const scenario = loadScenario(path.join(repoRoot, "test", "e2e", "release", "scenarios.json"), "hp-lb-jhipster");
+    const staged = stageScenarioWorkspace({
+      repoRoot,
+      workspaceDir,
+      scenario: { ...scenario, id: "hp-lb-jhipster" }
+    });
+
+    assert.equal(staged.exampleRef, "liquibase/jhipster-sample-app");
+    assert.equal(staged.stagedExampleDir, path.join(workspaceDir, "liquibase", "jhipster-sample-app"));
+
+    const aliasPath = path.join(workspaceDir, "liquibase", "jhipster-sample-app.prep.s9s.yaml");
+    const lines = fs
+      .readFileSync(aliasPath, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const searchPathIndex = lines.indexOf("- --searchPath");
+    assert.notEqual(searchPathIndex, -1);
+    assert.equal(lines[searchPathIndex + 1], "- jhipster-sample-app");
+  } finally {
+    fs.rmSync(workspaceDir, { recursive: true, force: true });
+  }
 });

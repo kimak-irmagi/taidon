@@ -100,8 +100,10 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
 - Each ref is checked out as a **detached worktree** at the repository root
   (`git worktree add --detach`; cleaned up after the command unless
   `--ref-keep-worktree`). Paths from the wrapped command (e.g. `-f`, changelog)
-  resolve **relative to that worktree root**. The Git repo is found from the
-  process current working directory.
+  resolve relative to the **same logical cwd inside that worktree**. For example,
+  if `sqlrs diff` is started from `<repo>/examples`, then `-f ./chinook/prepare.sql`
+  is resolved against `<worktree>/examples/chinook/prepare.sql`. The Git repo is
+  found from the process current working directory.
 - **`--ref-mode blob`** is reserved; the CLI currently supports **`worktree` only**
   (default). Passing `blob` returns a clear “not supported” error.
 
@@ -291,7 +293,7 @@ wrappers.
 
 Ref mode materializes each revision in a temporary Git worktree. The path you pass
 to `-f` / `--changelog-file` must exist **on both** refs, or file stat will fail
-(for example `from-path: stat …/schema/a.sql: no such file or directory`).
+(for example `from-ref: ...` in ref mode or `from-path: ...` in path mode).
 
 To see a working ref diff without touching your real project, run from the repo root:
 

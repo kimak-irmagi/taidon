@@ -4,9 +4,12 @@
 package diff
 
 // Context is the root from which to read files for one side of the diff.
-// In path mode it is the absolute path to a directory.
+// BaseDir is the effective working directory for resolving wrapped relative
+// paths within that side. In path mode it defaults to Root; in ref mode it may
+// mirror the original cwd inside the detached worktree.
 type Context struct {
-	Root string
+	Root    string
+	BaseDir string
 }
 
 // FileEntry is one file in the ordered list: path relative to context root and content hash.
@@ -52,6 +55,6 @@ type Scope struct {
 
 // Options holds diff-specific options (limit, include content in output).
 type Options struct {
-	Limit         int
+	Limit          int
 	IncludeContent bool
 }

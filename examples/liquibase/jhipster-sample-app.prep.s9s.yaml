@@ -2,5 +2,7 @@ kind: lb
 image: postgres:17
 args:
   - update
+  - --searchPath
+  - jhipster-sample-app
   - --changelog-file
   - jhipster-sample-app/config/liquibase/master.xml

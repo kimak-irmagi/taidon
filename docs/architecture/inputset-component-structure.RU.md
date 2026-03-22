@@ -100,7 +100,7 @@ Resolvers кодируют context-dependent rules, например:
 
 - raw CLI cwd/workspace-root resolution;
 - alias-file-relative resolution;
-- diff side root resolution (`--from-path` / `--to-path` или worktree root).
+- diff side root resolution (`--from-path` / `--to-path` или ref-worktree с зеркальным cwd-slice).
 
 Результат binding — normalized host-side file refs и search roots без
 привязки к runtime-specific path format.
