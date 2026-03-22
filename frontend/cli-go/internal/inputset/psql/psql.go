@@ -157,10 +157,11 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 	}
 
 	tracker := &tracker{
-		root:  resolver.Root,
-		seen:  make(map[string]struct{}),
-		stack: make(map[string]struct{}),
-		fs:    fs,
+		root:    resolver.Root,
+		workDir: filepath.Dir(entryPaths[0]),
+		seen:    make(map[string]struct{}),
+		stack:   make(map[string]struct{}),
+		fs:      fs,
 	}
 	var order []string
 	for _, path := range entryPaths {
@@ -293,10 +294,11 @@ func collectEntryPaths(args []string, resolver inputset.Resolver) ([]string, err
 }
 
 type tracker struct {
-	root  string
-	seen  map[string]struct{}
-	stack map[string]struct{}
-	fs    inputset.FileSystem
+	root    string
+	workDir string
+	seen    map[string]struct{}
+	stack   map[string]struct{}
+	fs      inputset.FileSystem
 }
 
 func (t *tracker) collect(path string, order *[]string) error {
@@ -335,7 +337,7 @@ func (t *tracker) collect(path string, order *[]string) error {
 }
 
 func (t *tracker) resolveInclude(cmd string, arg string, currentFile string) string {
-	base := t.root
+	base := t.workDir
 	if cmd == `\ir` || cmd == `\include_relative` {
 		base = filepath.Dir(currentFile)
 	}
