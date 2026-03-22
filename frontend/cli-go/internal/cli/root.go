@@ -90,6 +90,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  init     Initialize a workspace")
 	fmt.Fprintln(w, "  ls       List names, instances, or states")
 	fmt.Fprintln(w, "  rm       Remove an instance or state")
+	fmt.Fprintln(w, "  diff     Compare file sets between two paths (plan/prepare)")
 	fmt.Fprintln(w, "  prepare  Prepare a database state from a repo alias")
 	fmt.Fprintln(w, "  run      Run a repo alias against an instance")
 	fmt.Fprintln(w, "  run:psql  Run a command against an instance (psql)")
@@ -237,7 +238,7 @@ func isRunCommandToken(value string) bool {
 
 func isCommandToken(value string) bool {
 	switch value {
-	case "alias", "init", "ls", "rm", "plan", "prepare", "run", "watch", "status", "config":
+	case "alias", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config":
 		return true
 	}
 	if strings.HasPrefix(value, "prepare:") {

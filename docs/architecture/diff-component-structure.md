@@ -1,126 +1,113 @@
-# sqlrs diff — Component Structure
+# sqlrs diff - Component Structure
 
-This document describes the **architectural elaboration** for `sqlrs diff` after
-the CLI contract and user guide: which components exist, who calls whom, and
-where they live. It is the next step after the design in
-[`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md) and
-[`docs/architecture/cli-contract.md`](cli-contract.md).
+This document describes the approved component structure for `sqlrs diff` after
+the CLI contract, user guide, and the shared `inputset` decision.
 
-## 1. Scope and assumptions
+## 1. Scope and status
 
-- **First slice**: diff runs entirely in the CLI; no new engine API. The CLI
-  resolves the two sides (ref or path), builds file lists locally using the
-  same closure rules as the main CLI, compares them, and renders output.
-- **No engine call** in the first slice: file list construction is implemented
-  in the CLI (or by reusing existing engine logic via a future “file list only”
-  API if added later). This keeps diff usable without a running engine.
-- **Deployment unit**: CLI only (e.g. `frontend/cli-go`). No changes to
-  `backend/local-engine-go` required for the first slice.
+- The first user-visible slice is implemented in `frontend/cli-go` and remains
+  CLI-only.
+- Today the command compares file-list closures and content hashes; no engine
+  API is involved.
+- Ref mode currently uses detached `git worktree` contexts; blob mode is not
+  implemented.
+- The wrapped command currently remains one token among `plan:psql`, `plan:lb`,
+  `prepare:psql`, and `prepare:lb`.
+- The approved architecture is that `internal/diff` owns scope parsing,
+  context resolution, comparison, and rendering only. Kind-specific file
+  semantics belong to shared `internal/inputset` components.
+- Existing `BuildPsqlFileList` / `BuildLbFileList` helpers in `internal/diff`
+  are transitional implementation artifacts, not the long-term source of truth.
 
 ## 2. Components and responsibilities
 
 | Component | Responsibility | Caller |
 |-----------|----------------|--------|
-| **Diff command handler** | Parse diff scope and wrapped command or bounded `prepare ... run` composite; orchestrate scope resolution → file list build (both sides) → compare → render. Map errors to exit codes. | `internal/app` (command dispatch) |
-| **Scope resolver** | Given `--from-ref`/`--to-ref` or `--from-path`/`--to-path`, produce two **contexts**. Each context is a root from which to read files: either a Git tree at a ref (blob or temporary worktree) or a local directory. | Diff command handler |
-| **File list builder** | For one context and a given **kind** (e.g. psql, lb) plus command args, build the **closure of file inputs**: ordered list of (path, content or hash). Entry point and closure rule are kind-specific (see user guide table). | Diff command handler (called twice: from-context, to-context) |
-| **Diff comparator** | Given two file lists (from, to), compute Added / Modified / Removed (by path and optional content hash). Optionally apply `--limit` and `--include-content`. | Diff command handler |
-| **Diff renderer** | Turn a diff result into human-readable text or JSON according to global `--output`. | Diff command handler |
+| **Diff command handler** | Parse the diff scope and wrapped command; orchestrate side resolution, per-side input-set collection, comparison, and rendering. Map errors to exit codes. | `internal/app` -> `internal/cli.RunDiff` |
+| **Scope resolver** | Given `--from-ref`/`--to-ref` or `--from-path`/`--to-path`, produce two side contexts. Each context exposes a filesystem root for one side of the comparison. | `internal/diff.ResolveScope` |
+| **Shared inputset kind component** | For one side and one wrapped command kind, parse file-bearing args, bind them against that side's root, and collect a deterministic input set. | `RunDiff` via `internal/inputset/*` |
+| **Diff comparator** | Given two collected input sets, compute Added / Modified / Removed and apply options such as `--limit` and `--include-content`. | Diff command handler |
+| **Diff renderer** | Turn the comparison result into human-readable text or JSON according to global `--output`. | Diff command handler |
 
-## 3. File list builder per kind
+## 3. Shared inputset components by kind
 
-The file list builder is the **core abstraction** that differs by kind. Each kind
-has a single entry point and a closure rule.
+`sqlrs diff` does not own per-kind file semantics. It selects the same shared
+CLI-side component that execution and alias inspection use.
 
-| Kind | Entry point from args | Closure rule | Implementer |
-|------|------------------------|--------------|-------------|
-| **prepare:psql** / plan:psql | `-f <file>` (and `-f -`) | From each `-f` file, recursively add every file referenced by `\i`, `\ir`, `\include`, `\include_relative`. | `PsqlClosureBuilder` (or shared with engine if reused) |
-| **prepare:lb** / plan:lb | `--changelog-file <path>` | From changelog file, add every file referenced by the changelog graph (include, includeAll, etc.). Liquibase defines the graph. | `LbChangelogClosureBuilder` |
-| **run:psql** (future) | `-f <file>` (file-backed only) | Same as psql: closure over `\i`/`\include` from `-f`. | Reuse psql closure builder |
+| Wrapped command family | Shared component | Notes |
+|------------------------|------------------|-------|
+| `plan:psql`, `prepare:psql`, future `run:psql` | `internal/inputset/psql` | Parses `psql` file-bearing args and collects `\i` / `\ir` / `\include` closure. |
+| `plan:lb`, `prepare:lb` | `internal/inputset/liquibase` | Parses changelog/defaults/search-path args and collects the Liquibase changelog graph. |
+| Future file-backed `run:pgbench` | `internal/inputset/pgbench` | Parses file-bearing script args and exposes runtime and diff-facing projections. |
 
-The handler selects the builder by the wrapped command’s kind (e.g. `plan:psql` →
-psql builder, `prepare:lb` → lb builder). Alias-backed stages are resolved first
-to their underlying kind plus args and then use the same builders. Arguments
-that are not revision-sensitive
-(e.g. `-c`, `--image`) do not affect the file list; the builder only uses the
-args that define file-backed inputs.
+Until the migration is complete, `internal/diff` may still contain wrappers or
+adapters around older builders. Those wrappers remain transitional and must
+collapse onto `internal/inputset` as the single source of truth.
 
 ## 4. Call flow
 
 ```text
 1. app (command dispatch)
-   → detects verb "diff"
-   → parses global flags, then diff scope (--from-ref/--to-ref or --from-path/--to-path),
-     then wrapped command or bounded composite (e.g. plan:psql -- -f ./x.sql
-     or prepare chinook run:psql -- -f ./queries.sql)
-   → calls cli.RunDiff(scope, wrappedCommand, globalOptions)
+   -> detects verb "diff"
+   -> parses global flags and diff scope
+   -> passes the wrapped command token and args to cli.RunDiff
 
 2. RunDiff
-   → scopeResolver.Resolve(scope)  →  (fromContext, toContext)
-   → for each wrapped phase:
-       → fileListBuilder.Build(fromContext, kind, wrappedCommandArgs)  →  fromList
-       → fileListBuilder.Build(toContext, kind, wrappedCommandArgs)     →  toList
-       → comparator.Compare(fromList, toList, options)                  →  phaseResult
-   → renderer merges or prints per-phase results                        →  diffResult
-   → renderer.Render(diffResult, outputFormat, options)             →  stdout
-   → return exit code
+   -> diff.ResolveScope(parsed.Scope, cwd) -> fromCtx, toCtx, cleanup
+   -> choose the shared kind component from the wrapped command
+   -> for each side:
+      Parse(wrappedArgs)
+      -> Bind(side resolver rooted at fromCtx/toCtx)
+      -> Collect(side filesystem view)
+   -> diff.Compare(fromSet, toSet, options)
+   -> diff.RenderHuman or diff.RenderJSON
 ```
 
-Scope resolver behaviour:
-
-- **Ref mode**: resolve each ref to a commit/tree; if `--ref-mode blob`, read
-  files via Git blobs (e.g. `git show ref:path`); if `worktree`, create a
-  temporary worktree and pass its root as the context; optionally `--ref-keep-worktree`
-  leaves it for debugging.
-- **Path mode**: each path is the context root directly (no Git).
-
-File list builder is chosen per wrapped phase by `kind` (psql vs lb). It
-receives the context root and the parsed args of that phase and returns a list
-of (path, content or hash) in a deterministic order.
+When later slices add wrapped `prepare ... run` composites, `RunDiff` should
+evaluate each stage separately while still delegating per-kind file semantics to
+the same `internal/inputset` components.
 
 ## 5. Suggested package layout (CLI)
 
-All of the following live in the CLI codebase (e.g. `frontend/cli-go`).
+All of the following live in the CLI codebase (for example `frontend/cli-go`).
 
 | Package | Contents |
 |---------|----------|
-| `internal/app` | Add diff to command graph; parse diff scope and wrapped command or bounded composite; call `cli.RunDiff`. |
-| `internal/cli` | `RunDiff`, diff-specific option types; orchestration of resolver → builder → comparator → renderer, including per-phase handling for wrapped composites. Optionally: human/JSON renderer for diff output. |
-| `internal/diff` (new) | `ScopeResolver` (ref + path modes). `FileListBuilder` interface; `PsqlClosureBuilder`, `LbChangelogClosureBuilder`. `Comparator` (Compare). `Renderer` (human + JSON) if not in `internal/cli`. Types: `Context`, `FileList`, `DiffResult`. |
-
-Alternative: keep `internal/diff` minimal (only resolver + comparator + types) and
-put closure builders in `internal/cli/diff` or reuse engine-side logic via a small
-adapter if the engine exposes a “file list for these args” helper later.
+| `internal/app` | Dispatches `diff`; parses diff scope; builds side root context. |
+| `internal/cli` | `RunDiff` orchestration and top-level render dispatch. |
+| `internal/diff` | `ParseDiffScope`, `ResolveScope`, `Compare`, `RenderHuman`, `RenderJSON`, and shared diff result types. |
+| `internal/inputset` | Shared parse/bind/collect/project abstractions and the per-kind packages used by `diff`. |
 
 ## 6. Data ownership and lifecycle
 
-- **Scope (from/to ref or path)**: parsed once per invocation; not persisted.
-- **Contexts**: in-memory representation of the two roots (e.g. worktree path,
-  or blob accessor). Temporary worktree, if used, is created before building file
-  lists and removed after (unless `--ref-keep-worktree`).
-- **File lists**: in-memory for the duration of the command; no cache. Each list
-  is an ordered set of (path, content or hash).
-- **Diff result**: in-memory; passed to renderer then discarded. No persistent
-  state introduced by diff.
+- **Scope (from/to ref or path)** is parsed once per invocation and is not
+  persisted.
+- **Side contexts** are in-memory representations of the two roots. Temporary
+  worktrees, if used, are created before collection and removed after the
+  command unless the user keeps them explicitly.
+- **Parsed specs, bound specs, and collected input sets** are in-memory only and
+  live for one side of one invocation.
+- **Diff results** are in-memory only and discarded after rendering. The command
+  introduces no persistent diff cache.
 
 ## 7. Dependency diagram
 
 ```mermaid
 flowchart TB
-  APP["internal/app <br/> (диспетчер команд)"]
-  RUN_DIFF["internal/cli <br/> RunDiff"]
-  RESOLVER["internal/diff <br/> ScopeResolver"]
-  BUILDER["internal/diff <br/> FileListBuilder<br/>(psql, lb)"]
-  COMPARE["internal/diff <br/> Comparator"]
-  RENDER["internal/diff <br/> Renderer<br/>(или cli)"]
+  APP["internal/app"]
+  RUN_DIFF["internal/cli<br/>RunDiff"]
+  RESOLVER["internal/diff<br/>ResolveScope"]
+  INPUTSET["internal/inputset<br/>kind component"]
+  COMPARE["internal/diff<br/>Compare"]
+  RENDER["internal/diff<br/>Render"]
 
   APP --> RUN_DIFF
   RUN_DIFF --> RESOLVER
-  RUN_DIFF --> BUILDER
+  RUN_DIFF --> INPUTSET
   RUN_DIFF --> COMPARE
   RUN_DIFF --> RENDER
-  RESOLVER -.->|fromContext, toContext| BUILDER
-  BUILDER -.->|fromList, toList| COMPARE
+  RESOLVER -.->|side roots| INPUTSET
+  INPUTSET -.->|fromSet, toSet| COMPARE
   COMPARE -.->|DiffResult| RENDER
 ```
 
@@ -128,5 +115,6 @@ flowchart TB
 
 - User guide: [`docs/user-guides/sqlrs-diff.md`](../user-guides/sqlrs-diff.md)
 - CLI contract: [`docs/architecture/cli-contract.md`](cli-contract.md) (section 3.9)
+- Shared inputset layer: [`inputset-component-structure.md`](inputset-component-structure.md)
 - Git-aware passive (scenario P3): [`docs/architecture/git-aware-passive.md`](git-aware-passive.md)
-- CLI component structure (existing): [`cli-component-structure.md`](cli-component-structure.md)
+- CLI component structure: [`cli-component-structure.md`](cli-component-structure.md)

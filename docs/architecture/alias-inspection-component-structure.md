@@ -1,57 +1,62 @@
 # Alias Inspection Component Structure
 
-This document defines the internal component structure for the
-`sqlrs alias ls` / `sqlrs alias check` slice after the CLI contract and the
-interaction-flow design.
+This document defines the approved internal component structure for the
+`sqlrs alias ls` / `sqlrs alias check` slice after adopting the shared
+`inputset` layer for kind-specific file semantics.
 
-It focuses on which modules should own scanning, single-alias resolution,
-class-specific validation, and output rendering.
+It focuses on which modules own alias discovery and resolution, where static
+validation lives, and how `alias check` reuses the same file-bearing semantics
+as execution and `diff`.
 
 ## 1. Scope and assumptions
 
-- The first slice is **CLI-only**. No new engine API, background service, or
-  remote workflow is introduced.
-- Alias inspection must reuse the same repository semantics already accepted for
+- The slice is **CLI-only**. No new engine API, background service, or remote
+  workflow is introduced.
+- Alias inspection reuses the same repository semantics already accepted for
   execution:
   - alias refs are current-working-directory-relative;
   - exact-file escape uses a trailing `.`;
-  - file-bearing paths inside alias files resolve relative to the alias file.
+  - file-bearing paths inside alias files resolve relative to the alias file;
+  - kind-specific file semantics come from the same `internal/inputset`
+    components used by execution and `diff`.
 - `sqlrs alias ls` is inventory-first and tolerant of malformed files.
 - `sqlrs alias check` performs static validation only and never starts runtime
   work.
 
 ## 2. CLI modules and responsibilities
 
-| Module                 | Responsibility                                                                                                                                                                            | Notes                                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `internal/app`         | Extend command dispatch with `alias`; parse `ls` vs `check`, selectors, scan-scope flags, and single-alias mode. Resolve workspace root / cwd and call the inspection services.           | Owns command-shape rules and exit-code mapping.                                              |
-| `internal/alias` (new) | Shared local alias-file mechanics: scan bounded directory scopes, resolve one alias target from `<ref>`, load alias files, classify alias class, and validate class-specific constraints. | This becomes the reusable library for inspection now and later for discover/diff follow-ups. |
-| `internal/cli`         | Render human and JSON output for alias inventory and check results; print alias usage/help.                                                                                               | Keeps formatting separate from filesystem logic.                                             |
-| `internal/cli/runkind` | Continue to own the registry of known run kinds.                                                                                                                                          | Reused by run-alias validation.                                                              |
+| Module                 | Responsibility                                                                                                                                                                  | Notes                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `internal/app`         | Extend command dispatch with `alias`; parse `ls` vs `check`, selectors, scan-scope flags, and single-alias mode. Resolve workspace root / cwd and call the inspection services. | Owns command-shape rules and exit-code mapping.                       |
+| `internal/alias`       | Shared alias-file mechanics: bounded scan traversal, single-alias resolution from `<ref>`, YAML loading, alias-class selection, and issue aggregation.                          | Owns alias-specific repository semantics, not tool-kind file parsing. |
+| `internal/inputset`    | Shared CLI-side source of truth for `psql`, Liquibase, and `pgbench` file-bearing semantics.                                                                                    | Reused by execution, `diff`, and `alias check`.                       |
+| `internal/cli`         | Render human and JSON output for alias inventory and check results; print alias usage/help.                                                                                     | Keeps formatting separate from filesystem logic.                      |
+| `internal/cli/runkind` | Continue to own the registry of known run kinds.                                                                                                                                | Reused when alias definitions select a run kind.                      |
 
-### Why a new `internal/alias` package
+## 3. Why `internal/alias` and `internal/inputset` are separate
 
-The existing alias execution helpers live in `internal/app`, but alias
-inspection would otherwise duplicate several file-level concerns:
+The separation is intentional:
 
-- suffix-based alias-class detection;
-- workspace-bounded scan traversal;
-- exact-file and stem resolution;
-- prepare-vs-run schema checks;
-- alias-file-relative path rebasing and existence checks.
+- `internal/alias` owns alias discovery, ref resolution, YAML loading, and
+  scan-scope rules.
+- `internal/inputset` owns tool-kind file semantics such as `psql` `-f`,
+  Liquibase changelog/defaults/search-path handling, and include/graph closure.
 
-A dedicated `internal/alias` package keeps those mechanics reusable across:
+Without this split, `alias check` would either duplicate `prepare` / `run`
+logic or force `diff` and execution to depend on alias-specific code paths.
 
-- execution (`plan`, `prepare`, `run`);
-- inspection (`alias ls`, `alias check`);
-- later advisory tooling (`discover --aliases`);
-- later repository-aware analysis (`diff` around alias-backed stages).
+The approved flow is:
 
-The first implementation can migrate incrementally: `internal/app` remains the
-command orchestrator, while file-oriented alias logic moves behind
-`internal/alias`.
+```text
+resolve alias ref
+-> load alias definition
+-> choose the kind component from internal/inputset
+-> bind with an alias-file-relative resolver
+-> inspect DeclaredRefs() and, where enabled, Collect()
+-> map findings to alias issues
+```
 
-## 3. Suggested package/file layout
+## 4. Suggested package/file layout
 
 ### `frontend/cli-go/internal/app`
 
@@ -63,7 +68,7 @@ command orchestrator, while file-oriented alias logic moves behind
   - Parse selectors (`--prepare`, `--run`), scan-root options, and `<ref>`.
   - Produce command-local option structs for `ls` and `check`.
 
-### `frontend/cli-go/internal/alias` (new)
+### `frontend/cli-go/internal/alias`
 
 - `types.go`
   - Shared enums and structs.
@@ -73,13 +78,20 @@ command orchestrator, while file-oriented alias logic moves behind
   - Single-alias resolution from `<ref>` using cwd-relative stem rules and
     exact-file escape.
 - `load.go`
-  - YAML reading and minimal class extraction.
+  - YAML reading and extraction of alias class, kind, and raw command args.
 - `check.go`
   - Static validation orchestration and issue aggregation.
-- `prepare_handler.go`
-  - Prepare-alias-specific parsing and checks.
-- `run_handler.go`
-  - Run-alias-specific parsing and checks.
+- `definition_prepare.go`
+  - Prepare-alias-specific schema loading.
+- `definition_run.go`
+  - Run-alias-specific schema loading.
+
+### `frontend/cli-go/internal/inputset`
+
+- Shared per-kind components selected by alias definitions:
+  - `psql`
+  - `liquibase`
+  - `pgbench`
 
 ### `frontend/cli-go/internal/cli`
 
@@ -90,83 +102,54 @@ command orchestrator, while file-oriented alias logic moves behind
 - optional `alias_render.go`
   - Shared human/JSON rendering helpers if output grows beyond one file.
 
-## 4. Key types and interfaces
-
-### Core types
+## 5. Key types and interfaces
 
 - `alias.Class`
   - `prepare` or `run`.
 - `alias.Depth`
   - `self`, `children`, `recursive`.
 - `alias.ScanOptions`
-  - Selected classes, scan root, scan depth, workspace boundary, cwd.
+  - Selected classes, scan root, scan depth, workspace boundary, and cwd.
 - `alias.Entry`
-  - Inventory row for one discovered alias file:
-    - class
-    - invocation ref
-    - workspace-relative path
-    - optional kind
-    - optional lightweight read error
+  - Inventory row for one discovered alias file, including invocation ref,
+    workspace-relative path, optional kind, and lightweight load error.
 - `alias.Target`
-  - One resolved alias file for single-alias mode:
-    - class
-    - absolute path
-    - invocation ref
+  - One resolved alias file for single-alias mode.
+- `alias.Definition`
+  - Loaded alias metadata: class, selected kind, and raw wrapped args.
 - `alias.CheckResult`
-  - Validation result for one alias file:
-    - target metadata
-    - valid flag
-    - issues
+  - Validation result for one alias file: target metadata, valid flag, and
+    issues.
 - `alias.Issue`
-  - One static validation finding:
-    - code
-    - message
-    - optional argument/path reference
+  - One static validation finding.
+- `inputset.PathResolver`, `inputset.CommandSpec`, `inputset.BoundSpec`
+  - Shared staged interfaces used by `alias check` after YAML loading.
+- `inputset.DeclaredRef`, `inputset.InputSet`
+  - Declared-path and collected-closure views reused for static validation.
 
-### Class-specific interface
+## 6. Data ownership
 
-```go
-type ClassHandler interface {
-    Class() Class
-    Suffix() string
-    Load(path string) (Definition, error)
-    Check(def Definition, path string, workspaceRoot string) []Issue
-}
-```
+- **Workspace root / cwd** is owned by command context in `internal/app` and
+  passed into `internal/alias` for bounded resolution.
+- **Scan results** live in memory only for one CLI invocation.
+- **Parsed alias definitions** are loaded on demand and remain in memory only
+  while inspection runs.
+- **Bound specs and collected input sets** are ephemeral and are produced by the
+  selected `internal/inputset` kind component.
+- **Validation findings** live in memory only and are discarded after rendering.
+- **Repository files** remain the source of truth on disk; no alias cache or
+  generated metadata is introduced in this slice.
 
-Purpose:
-
-- unify prepare/run alias handling behind one scanning and checking pipeline;
-- keep kind-specific rules out of command parsing and rendering;
-- make future discover/diff integrations consume the same alias definitions.
-
-`Definition` can remain an internal sum type owned by `internal/alias`; the app
-layer does not need to know YAML details.
-
-## 5. Data ownership
-
-- **Workspace root / cwd**
-  - Owned by command context in `internal/app`; passed into `internal/alias`
-    for bounded resolution.
-- **Scan results**
-  - In-memory only for the duration of one CLI invocation.
-- **Parsed alias definitions**
-  - In-memory only; loaded on demand per file.
-- **Validation findings**
-  - In-memory only; discarded after rendering.
-- **Repository files**
-  - Remain the source of truth on disk; no alias cache or generated metadata is
-    introduced in this slice.
-
-## 6. Deployment units
+## 7. Deployment units
 
 ### CLI (`frontend/cli-go`)
 
-Owns all new behavior in this slice:
+Owns all behavior in this slice:
 
 - command parsing;
 - filesystem scanning;
 - alias-file loading;
+- shared inputset reuse;
 - static validation;
 - human/JSON rendering.
 
@@ -186,26 +169,29 @@ No changes in this slice.
 
 The command remains purely local and repository-facing.
 
-## 7. Dependency diagram
+## 8. Dependency diagram
 
 ```mermaid
 flowchart TB
   APP["internal/app"]
   ALIAS["internal/alias"]
+  INPUTSET["internal/inputset"]
   CLI["internal/cli"]
   RUNKIND["internal/cli/runkind"]
   FS["workspace filesystem"]
 
   APP --> ALIAS
   APP --> CLI
+  ALIAS --> INPUTSET
   ALIAS --> RUNKIND
-  ALIAS --> FS
+  INPUTSET --> FS
   CLI -.-> ALIAS
 ```
 
-## 8. References
+## 9. References
 
 - User guide: [`../user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
 - CLI contract: [`cli-contract.md`](cli-contract.md)
 - Interaction flow: [`alias-inspection-flow.md`](alias-inspection-flow.md)
-- Existing CLI structure: [`cli-component-structure.md`](cli-component-structure.md)
+- Shared inputset layer: [`inputset-component-structure.md`](inputset-component-structure.md)
+- CLI component structure: [`cli-component-structure.md`](cli-component-structure.md)

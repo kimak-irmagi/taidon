@@ -27,6 +27,8 @@ Entry points for Taidon architecture and service design.
   and source uploads.
 - [`cli-component-structure.md`](cli-component-structure.md) - CLI internal
   component structure.
+- [`inputset-component-structure.md`](inputset-component-structure.md) - shared
+  CLI-side input-set layer for file-bearing command semantics.
 - [`local-engine-component-structure.md`](local-engine-component-structure.md) -
   local engine component structure.
 - [`prepare-job-events-flow.md`](prepare-job-events-flow.md) - events-first
@@ -37,7 +39,7 @@ Entry points for Taidon architecture and service design.
   structure and call flow for `sqlrs diff` (after CLI contract).
 - [`alias-inspection-flow.md`](alias-inspection-flow.md) - interaction flow for
   `sqlrs alias ls` and `sqlrs alias check`.
-- [`alias-inspection-component-structure.md`](alias-inspection-component-structure.md) -
+- [`alias-inspection-component-structure.md`][aics] -
   internal component structure for the alias-inspection CLI slice.
 - [`prepare-manager-refactor.md`](prepare-manager-refactor.md) - prepare manager
   split into coordinator/executor/snapshot roles.
@@ -56,7 +58,7 @@ Entry points for Taidon architecture and service design.
 - [`git-aware-passive.md`](git-aware-passive.md) — notes on the `git` interaction
   scenarios, initiated
   by user via the local CLI commands
-- [`m2-local-developer-experience-plan.md`](m2-local-developer-experience-plan.md) -
+- [`m2-local-developer-experience-plan.md`][m2ldep] -
   approved implementation slices for the public/local M2 developer-experience work.
 - [`git-aware-active.md`](git-aware-active.md) — notes on the github interaction
   scenarios that require
@@ -65,3 +67,5 @@ Entry points for Taidon architecture and service design.
 [pjecs]: prepare-job-events-component-structure.md
 [openAPI]: ../api-guides/sqlrs-engine.openapi.yaml
 [lecmr]: local-engine-cli-maintainability-refactor.md
+[aics]: alias-inspection-component-structure.md
+[m2ldep]: m2-local-developer-experience-plan.md

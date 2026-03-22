@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/sqlrs/cli/internal/cli/runkind"
+	"github.com/sqlrs/cli/internal/inputset"
+	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
+	inputpgbench "github.com/sqlrs/cli/internal/inputset/pgbench"
+	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
 	"gopkg.in/yaml.v3"
 )
 
@@ -164,9 +167,9 @@ func loadRunAlias(path string) (runDefinition, error) {
 func validatePrepareAliasPaths(kind string, args []string, aliasPath string, workspaceRoot string) []Issue {
 	switch kind {
 	case "psql":
-		return validateScriptFileArgs(args, aliasPath, workspaceRoot)
+		return mapInputsetIssues(inputpsql.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 	case "lb":
-		return validateLiquibasePathArgs(args, aliasPath, workspaceRoot)
+		return mapInputsetIssues(inputliquibase.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 	default:
 		return nil
 	}
@@ -175,131 +178,41 @@ func validatePrepareAliasPaths(kind string, args []string, aliasPath string, wor
 func validateRunAliasPaths(kind string, args []string, aliasPath string, workspaceRoot string) []Issue {
 	switch kind {
 	case runkind.KindPsql:
-		return validateScriptFileArgs(args, aliasPath, workspaceRoot)
+		return mapInputsetIssues(inputpsql.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 	case runkind.KindPgbench:
-		return validatePgbenchFileArgs(args, aliasPath, workspaceRoot)
+		return mapInputsetIssues(inputpgbench.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 	default:
 		return nil
 	}
 }
 
+func newAliasResolver(workspaceRoot string, aliasPath string) inputset.Resolver {
+	return inputset.NewAliasResolver(workspaceRoot, aliasPath)
+}
+
+func mapInputsetIssues(issues []inputset.UserError) []Issue {
+	out := make([]Issue, 0, len(issues))
+	for _, issue := range issues {
+		out = append(out, Issue{
+			Code:    issue.Code,
+			Message: issue.Message,
+		})
+	}
+	return out
+}
+
 // validatePgbenchFileArgs mirrors the pgbench runtime path semantics used by
 // materializePgbenchRunArgs so alias check stays aligned with actual execution.
 func validatePgbenchFileArgs(args []string, aliasPath string, workspaceRoot string) []Issue {
-	issues := make([]Issue, 0, 2)
-	fileArgCount := 0
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "-f" || arg == "--file":
-			if i+1 >= len(args) {
-				issues = append(issues, Issue{Code: "missing_file_arg", Message: fmt.Sprintf("missing value for %s", arg)})
-				continue
-			}
-			value := args[i+1]
-			i++
-			fileArgCount++
-			if fileArgCount > 1 {
-				issues = append(issues, Issue{
-					Code:    "multiple_file_args",
-					Message: "Multiple pgbench file arguments are not supported",
-				})
-			}
-			if issue, ok := validatePgbenchFileArg(value, aliasPath, workspaceRoot); ok {
-				issues = append(issues, issue)
-			}
-		case strings.HasPrefix(arg, "--file="):
-			value := strings.TrimPrefix(arg, "--file=")
-			fileArgCount++
-			if fileArgCount > 1 {
-				issues = append(issues, Issue{
-					Code:    "multiple_file_args",
-					Message: "Multiple pgbench file arguments are not supported",
-				})
-			}
-			if issue, ok := validatePgbenchFileArg(value, aliasPath, workspaceRoot); ok {
-				issues = append(issues, issue)
-			}
-		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
-			value := arg[2:]
-			fileArgCount++
-			if fileArgCount > 1 {
-				issues = append(issues, Issue{
-					Code:    "multiple_file_args",
-					Message: "Multiple pgbench file arguments are not supported",
-				})
-			}
-			if issue, ok := validatePgbenchFileArg(value, aliasPath, workspaceRoot); ok {
-				issues = append(issues, issue)
-			}
-		}
-	}
-	return issues
+	return mapInputsetIssues(inputpgbench.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 }
 
 func validateScriptFileArgs(args []string, aliasPath string, workspaceRoot string) []Issue {
-	issues := make([]Issue, 0, 2)
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "-f" || arg == "--file":
-			if i+1 >= len(args) {
-				issues = append(issues, Issue{Code: "missing_file_arg", Message: fmt.Sprintf("missing value for %s", arg)})
-				continue
-			}
-			if issue, ok := validateLocalFileArg(args[i+1], aliasPath, workspaceRoot, true); ok {
-				issues = append(issues, issue)
-			}
-			i++
-		case strings.HasPrefix(arg, "--file="):
-			if issue, ok := validateLocalFileArg(strings.TrimPrefix(arg, "--file="), aliasPath, workspaceRoot, true); ok {
-				issues = append(issues, issue)
-			}
-		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
-			if issue, ok := validateLocalFileArg(arg[2:], aliasPath, workspaceRoot, true); ok {
-				issues = append(issues, issue)
-			}
-		}
-	}
-	return issues
+	return mapInputsetIssues(inputpsql.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 }
 
 func validateLiquibasePathArgs(args []string, aliasPath string, workspaceRoot string) []Issue {
-	issues := make([]Issue, 0, 2)
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--changelog-file" || arg == "--defaults-file":
-			if i+1 >= len(args) {
-				issues = append(issues, Issue{Code: "missing_path_arg", Message: fmt.Sprintf("missing value for %s", arg)})
-				continue
-			}
-			if issue, ok := validateLocalLiquibaseArg(args[i+1], aliasPath, workspaceRoot, true); ok {
-				issues = append(issues, issue)
-			}
-			i++
-		case arg == "--searchPath" || arg == "--search-path":
-			if i+1 >= len(args) {
-				issues = append(issues, Issue{Code: "missing_path_arg", Message: fmt.Sprintf("missing value for %s", arg)})
-				continue
-			}
-			issues = append(issues, validateSearchPath(args[i+1], aliasPath, workspaceRoot)...)
-			i++
-		case strings.HasPrefix(arg, "--changelog-file="):
-			if issue, ok := validateLocalLiquibaseArg(strings.TrimPrefix(arg, "--changelog-file="), aliasPath, workspaceRoot, true); ok {
-				issues = append(issues, issue)
-			}
-		case strings.HasPrefix(arg, "--defaults-file="):
-			if issue, ok := validateLocalLiquibaseArg(strings.TrimPrefix(arg, "--defaults-file="), aliasPath, workspaceRoot, true); ok {
-				issues = append(issues, issue)
-			}
-		case strings.HasPrefix(arg, "--searchPath="):
-			issues = append(issues, validateSearchPath(strings.TrimPrefix(arg, "--searchPath="), aliasPath, workspaceRoot)...)
-		case strings.HasPrefix(arg, "--search-path="):
-			issues = append(issues, validateSearchPath(strings.TrimPrefix(arg, "--search-path="), aliasPath, workspaceRoot)...)
-		}
-	}
-	return issues
+	return mapInputsetIssues(inputliquibase.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 }
 
 func validateSearchPath(value string, aliasPath string, workspaceRoot string) []Issue {
@@ -345,16 +258,18 @@ func validateLocalFileArg(value string, aliasPath string, workspaceRoot string, 
 		return Issue{}, false
 	}
 
-	resolved := cleaned
-	if !filepath.IsAbs(resolved) {
-		resolved = filepath.Join(filepath.Dir(aliasPath), filepath.FromSlash(cleaned))
-	}
-	resolved = filepath.Clean(resolved)
-
-	if !isWithin(canonicalizeBoundaryPath(workspaceRoot), canonicalizeBoundaryPath(resolved)) {
+	resolved, err := newAliasResolver(workspaceRoot, aliasPath).ResolvePath(cleaned)
+	if err != nil {
+		if issue, ok := err.(*inputset.UserError); ok {
+			return Issue{
+				Code:    issue.Code,
+				Message: issue.Message,
+				Path:    cleaned,
+			}, true
+		}
 		return Issue{
-			Code:    "path_outside_workspace",
-			Message: fmt.Sprintf("file path must be within workspace root: %s", resolved),
+			Code:    "invalid_path",
+			Message: err.Error(),
 			Path:    cleaned,
 		}, true
 	}
@@ -377,17 +292,9 @@ func validateLocalFileArg(value string, aliasPath string, workspaceRoot string, 
 }
 
 func looksLikeLiquibaseRemoteRef(value string) bool {
-	lower := strings.ToLower(strings.TrimSpace(value))
-	return strings.Contains(lower, "://") || strings.HasPrefix(lower, "classpath:")
+	return inputset.LooksLikeLiquibaseRemoteRef(value)
 }
 
 func splitPgbenchFileArgValue(value string) (string, string) {
-	idx := strings.LastIndex(value, "@")
-	if idx <= 0 || idx >= len(value)-1 {
-		return value, ""
-	}
-	if _, err := strconv.ParseUint(value[idx+1:], 10, 32); err != nil {
-		return value, ""
-	}
-	return value[:idx], value[idx:]
+	return inputset.SplitPgbenchFileArgValue(value)
 }

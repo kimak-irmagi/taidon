@@ -1,12 +1,16 @@
 # CLI Component Structure
 
-This document defines the current internal layout of the `sqlrs` CLI.
+This document defines the approved internal layout of the `sqlrs` CLI after the
+addition of a shared `inputset` layer for file-bearing command semantics.
 
 ## 1. Goals
 
-- Keep command parsing, orchestration, transport, and rendering separated.
+- Keep command parsing, orchestration, shared input semantics, transport, and
+  rendering separated.
+- Keep one CLI-side source of truth for file-bearing arguments and closure rules
+  for each supported tool kind.
+- Reuse the same kind components across execution, `diff`, and `alias check`.
 - Reuse one transport layer for local and remote profiles.
-- Keep command-specific argument normalization in one place.
 
 ## 2. Packages and responsibilities
 
@@ -14,26 +18,48 @@ This document defines the current internal layout of the `sqlrs` CLI.
   - Entrypoint; invokes `app.Run` and maps errors to exit codes.
 - `internal/app`
   - Loads workspace/global config and resolves profile/mode.
-  - Dispatches command graph (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`, `status`, `config`, `init`).
-  - Normalizes file/path arguments before transport calls.
+  - Dispatches the command graph (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
+    `status`, `config`, `init`, `alias`, `diff`).
+  - Builds command context and chooses path resolvers and runtime projections
+    from `internal/inputset`.
+- `internal/inputset`
+  - Shared CLI-side source of truth for file-bearing command semantics.
+  - Owns staged parse/bind/collect/project abstractions and common helper types.
+- `internal/inputset/psql`
+  - `psql` file-bearing args and include-closure semantics reused by
+    `prepare:psql`, `plan:psql`, `run:psql`, `diff`, and `alias check`.
+- `internal/inputset/liquibase`
+  - Liquibase path-bearing args, search-path binding, and changelog-graph
+    semantics reused by `prepare:lb`, `plan:lb`, `diff`, and `alias check`.
+- `internal/inputset/pgbench`
+  - `pgbench` file-bearing args and runtime projection reused by `run:pgbench`
+    and alias validation.
+- `internal/alias`
+  - Alias discovery, scan-scope handling, single-alias resolution, YAML loading,
+    and static validation orchestration.
+  - Delegates kind-specific file semantics to `internal/inputset`.
+- `internal/diff`
+  - Diff-scope parsing, side-root resolution, comparison, and rendering.
+  - Delegates wrapped-command file semantics to `internal/inputset`.
 - `internal/cli`
-  - Client-side command executors (`RunLs`, `RunPrepare`, `RunPlan`, `RunRun`, `RunStatus`, `RunConfig`, `RunRm`).
-  - Human-readable rendering for table/plan/status outputs.
+  - Client-side command executors and human/JSON renderers.
 - `internal/cli/runkind`
-  - Registry of supported run kinds (`psql`, `pgbench`).
+  - Registry of supported run kinds.
 - `internal/client`
   - HTTP API client for `/v1/*` endpoints.
   - NDJSON streaming for prepare events and run output.
 - `internal/daemon`
   - Local engine autostart/discovery (`engine.json`, lock/state orchestration).
 - `internal/config`
-  - CLI config loading, merge, and typed lookups (`dbms.image`, Liquibase settings, timeouts).
+  - CLI config loading, merge, and typed lookups (`dbms.image`, Liquibase
+    settings, timeouts).
 - `internal/paths`
   - OS-aware config/cache/state directory resolution.
 - `internal/wsl`
-  - WSL detection and distro resolution used by `init local` and Windows local mode.
+  - WSL detection and distro resolution used by `init local` and Windows local
+    mode.
 - `internal/util`
-  - Shared helpers (NDJSON reader, atomic IO helpers, error helpers).
+  - Shared helpers (NDJSON reader, atomic I/O helpers, error helpers).
 
 ## 3. Key types and interfaces
 
@@ -45,18 +71,35 @@ This document defines the current internal layout of the `sqlrs` CLI.
   - Shared prepare/plan options and plan rendering model.
 - `cli.RunOptions`, `cli.RunStep`, `cli.RunResult`
   - Run invocation options (kind, args, stdin/steps) and terminal run result.
+- `inputset.PathResolver`, `inputset.CommandSpec`, `inputset.BoundSpec`
+  - Shared staged interfaces for parsing, host-side binding, and collection of
+    file-bearing inputs.
+- `inputset.InputSet`, `inputset.InputEntry`
+  - Deterministic collected view of declared and discovered files.
+- `alias.Target`, `alias.CheckResult`
+  - Single-alias resolution target and static validation result.
+- `diff.Scope`, `diff.Context`, `diff.DiffResult`
+  - `diff` comparison scope, resolved side roots, and rendered comparison model.
 - `client.PrepareJobRequest`, `client.PrepareJobStatus`, `client.PrepareJobEvent`
   - Prepare API payloads, including `plan_only` and planned tasks.
 - `client.RunRequest`, `client.RunEvent`
-  - Run API payload and streamed events (`stdout`, `stderr`, `exit`, `error`, `log`).
+  - Run API payload and streamed events (`stdout`, `stderr`, `exit`, `error`,
+    `log`).
 - `cli.ConfigOptions`, `client.ConfigValue`
   - Config command options and API value payloads.
 
 ## 4. Data ownership
 
-- CLI config is file-based (workspace + global); loaded into memory per invocation.
-- Engine discovery state (`engine.json`, daemon lock/process metadata) is managed via `internal/daemon`.
-- Server config is owned by engine-side storage and accessed via HTTP (`/v1/config*`), not cached by CLI.
+- CLI config is file-based (workspace + global); loaded into memory per
+  invocation.
+- Raw argv belongs to the command orchestrator until it is handed to the chosen
+  `internal/inputset` kind component.
+- Parsed specs, bound specs, and collected input sets are ephemeral and live
+  only for one CLI invocation.
+- Engine discovery state (`engine.json`, daemon lock/process metadata) is
+  managed via `internal/daemon`.
+- Server config is owned by engine-side storage and accessed via HTTP
+  (`/v1/config*`), not cached by the CLI.
 
 ## 5. Dependency diagram
 
@@ -65,6 +108,9 @@ flowchart LR
   CMD["cmd/sqlrs"]
   APP["internal/app"]
   CLI["internal/cli"]
+  INPUTSET["internal/inputset"]
+  ALIAS["internal/alias"]
+  DIFF["internal/diff"]
   RUNKIND["internal/cli/runkind"]
   CLIENT["internal/client"]
   DAEMON["internal/daemon"]
@@ -75,6 +121,7 @@ flowchart LR
 
   CMD --> APP
   APP --> CLI
+  APP --> INPUTSET
   APP --> CONFIG
   APP --> PATHS
   APP --> WSL
@@ -82,4 +129,8 @@ flowchart LR
   CLI --> CLIENT
   CLI --> DAEMON
   CLI --> RUNKIND
+  CLI --> ALIAS
+  CLI --> DIFF
+  ALIAS --> INPUTSET
+  DIFF --> INPUTSET
 ```

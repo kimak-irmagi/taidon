@@ -57,17 +57,21 @@ sqlrs <verb>[:<kind>] [subject] [options] [-- <command>...]
 
 `sqlrs ls` не использует `:<kind>` и не принимает `-- <command>...`.
 
-Исключение: `sqlrs diff` работает как meta-command и оборачивает либо ровно
-одну существующую content-aware команду sqlrs, либо обычный двухстадийный
-composite `prepare ... run`:
+Исключение: `sqlrs diff` — meta-команда: сначала область diff, затем
+оборачиваемая команда. **Сейчас:** один токен — `plan:psql`, `plan:lb`,
+`prepare:psql`, `prepare:lb`. **Цель дизайна:** также двухстадийный composite
+`prepare ... run`:
 
 ```text
-sqlrs diff <diff-scope> <wrapped-command>
-sqlrs diff <diff-scope> <prepare-stage> <run-stage>
+sqlrs diff <diff-scope> <wrapped-command>            # поддержано (один токен)
+sqlrs diff <diff-scope> <prepare-stage> <run-stage>  # пока не реализовано
 ```
 
-Это сохраняет синтаксис вложенной команды совместимым с основным CLI-контрактом
-вместо введения отдельного `diff`-DSL для входных файлов.
+Синтаксис остаётся совместимым с основным CLI вместо отдельного `diff`-DSL.
+
+Внутреннее архитектурное правило: kind-specific file-bearing semantics
+принадлежат общим CLI-side компонентам `internal/inputset` и переиспользуются
+в execution, `sqlrs diff` и `sqlrs alias check`.
 
 ## Правила префиксов id
 
@@ -254,30 +258,35 @@ sqlrs watch <job_id>
 
 ### 3.9 `sqlrs diff`
 
-`sqlrs diff` — **группа составных команд**: пользователь вставляет область diff
-между `sqlrs` и одной content-aware командой (`plan`, `prepare` или `run`), причём
-используется тот же синтаксис команды, что и в основном CLI. Сравнение двух
-контекстов выполняется путём вычисления этой команды на обеих сторонах и вывода
-разницы.
+`sqlrs diff` — **группа составных команд** (дизайн): область diff вставляется
+между `sqlrs` и content-aware командой, с тем же синтаксисом, что в основном CLI.
+**Первый срез** (`frontend/cli-go`): сравниваются **closures файлов** (пути и
+хеши) ровно для одного `plan:psql`, `plan:lb`, `prepare:psql` или `prepare:lb`
+— **без вызова engine**. Долгосрочный источник истины для file semantics
+вложенной команды - shared CLI-side слой `internal/inputset`; любые builders,
+которые пока лежат в `internal/diff`, считаются переходными.
 
-- `sqlrs diff ... plan ...` — разница в **планах задач** по подготовке экземпляра.
-- `sqlrs diff ... prepare ...` — разница в **телах задач** по подготовке экземпляра.
-- `sqlrs diff ... run ...` — разница в **телах задач** по выполнению запросов (файловые входы).
+Цели на следующих срезах:
 
-Diff-опции задают только область сравнения; синтаксис вложенной команды остаётся
-обычным.
+- `sqlrs diff ... plan ...` — **планы задач** prepare.
+- `sqlrs diff ... prepare ...` — **тела задач** prepare.
+- `sqlrs diff ... run ...` — файловые входы run.
 
-Текущий объём дизайна:
+Diff-опции задают область сравнения; синтаксис вложенной команды — обычный.
 
-- вложенные команды: `plan:*`, `prepare:*` и в дальнейшем file-backed `run:*`
-- alias-mode команды вида `prepare <prepare-ref>`
-- обычные двухстадийные composite-вызовы `prepare ... run`, включая смешанные
-  raw/alias стадии
-- wrapped alias refs используют те же per-side bases, что и основной CLI:
-  alias refs резолвятся от effective working directory на каждой стороне, а
-  пути внутри alias files — от директории соответствующего alias file
-- более длинные command chains остаются вне scope
-- глобальные `-v` и `--output` сохраняют текущую семантику
+**Уже есть**
+
+- scope: `--from-path`/`--to-path` или `--from-ref`/`--to-ref`
+- ref: только **worktree**; `blob` не реализован
+- вложенные команды: только четыре токена выше
+- глобальные `-v` и `--output`
+
+**Дизайн (не всё сделано)**
+
+- `prepare <alias>`, composite `prepare ... run`, позже `run:*`
+- per-side bases для alias, как в основном CLI
+- shared per-kind file semantics с execution и alias inspection через
+  `internal/inputset`
 
 См.:
 
@@ -327,6 +336,8 @@ runtime `names`.
 - scan mode по умолчанию использует `--from cwd --depth recursive`
 - `check <ref>` переиспользует те же правила alias-ref resolution, что и
   execution-команды
+- kind-specific file-bearing validation и closure semantics являются общими
+  с execution и `diff` через одни и те же компоненты `internal/inputset`
 - semantic-команда `show` сознательно не входит в текущий срез, потому что
   сами alias files остаются основным human-readable источником истины
 

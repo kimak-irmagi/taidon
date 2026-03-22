@@ -53,6 +53,13 @@ func Run(args []string) error {
 		return runInit(os.Stdout, cwd, opts.Workspace, commands[0].Args, opts.Verbose)
 	}
 
+	if commands[0].Name == "diff" {
+		if len(commands) > 1 {
+			return fmt.Errorf("diff cannot be combined with other commands")
+		}
+		return runDiff(os.Stdout, os.Stderr, cwd, commands[0].Args, opts.Output, opts.Verbose)
+	}
+
 	cmdCtx, err := resolveCommandContext(cwd, opts)
 	if err != nil {
 		return err

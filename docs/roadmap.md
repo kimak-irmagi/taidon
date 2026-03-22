@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-20)
+## Status (as of 2026-03-22)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -108,6 +108,11 @@ gantt
   default `cwd + recursive`, explicit `--from` / `--depth` controls, static
   validation for both scan and single-alias modes, and invalid-entry reporting
   for malformed alias files.
+- **Done (M2 shared inputset + diff path baseline)**: the CLI now ships
+  `sqlrs diff --from-path/--to-path` for `prepare:psql` and `prepare:lb`, while
+  `prepare`, `plan`, `run`, `diff`, and `alias check` now share one
+  kind-specific `internal/inputset` layer for file-bearing semantics and local
+  closure collection across `psql`, `liquibase`, and `pgbench`.
 - **Done (release alias/workspace coverage)**: release/e2e scenarios now
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under
@@ -116,9 +121,9 @@ gantt
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
 - **Next public local focus**: finish the remaining M2 local DX layers with
-  `sqlrs discover --aliases`, follow-up discover analyzers, shared input-graph
-  primitives, and `sqlrs diff` path mode before the later Git-aware CLI
-  follow-up (`--ref`, provenance, cache explain).
+  `sqlrs discover --aliases`, follow-up discover analyzers, and the later
+  Git-aware CLI follow-up for `sqlrs diff`/prepare provenance (`--ref`,
+  provenance, cache explain).
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -141,9 +146,8 @@ gantt
     `.gitignore`, `.vscode`, and prepare-shaping heuristics;
   - cover workspace-scope defaults, filtering, and human/JSON rendering in docs
     and tests.
-- **Immediately after**: generic discover analyzers, shared local input-graph
-  primitives, `sqlrs diff` path mode, bounded local `--ref`, then provenance
-  and cache explain.
+- **Immediately after**: generic discover analyzers, bounded local `--ref` for
+  `sqlrs diff`/prepare flows, then provenance and cache explain.
 - **Rationale**: alias execution and inspection are now usable and covered by
   tests; the highest remaining local DX gap is advisory repository discovery
   before moving into broader analyzers and later Git-aware flows.
@@ -240,7 +244,8 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
   - `sqlrs discover --aliases`
   - follow-up analyzers for `.gitignore`, `.vscode`, and prepare shaping
 - Git-aware CLI (passive):
-  - `diff`, `--ref` (blob/worktree), provenance, cache explain
+  - `diff` path mode
+  - `diff`/prepare `--ref` (blob/worktree), provenance, cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - open SQL editor (via existing VS Code DB tooling)
@@ -250,10 +255,10 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 - A developer can run common workflows using explicit repo-tracked recipes with
   low local setup friction and clear cache provenance diagnostics.
 
-**Status**: In progress. Alias execution and inspection baselines are landed
-(`plan/prepare/run`, `sqlrs alias ls/check`, cwd-relative refs,
-alias-file-relative payloads, mixed `prepare ... run`), with discovery,
-`diff` path mode, bounded `--ref`, and provenance/cache explain still ahead.
+**Status**: In progress. Alias execution and inspection baselines are landed,
+`sqlrs diff` path mode is available, and shared `internal/inputset` semantics
+now back `prepare`/`plan`/`run`/`diff`/`alias check`; discovery, bounded
+`--ref`, and provenance/cache explain are still ahead.
 
 ---
 

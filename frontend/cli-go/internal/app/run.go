@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/cli/runkind"
+	"github.com/sqlrs/cli/internal/inputset"
+	inputpgbench "github.com/sqlrs/cli/internal/inputset/pgbench"
+	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
 )
 
 type runArgs struct {
@@ -135,93 +137,20 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 }
 
 func buildPsqlRunSteps(args []string, workspaceRoot string, cwd string, stdin io.Reader) ([]cli.RunStep, error) {
-	var shared []string
-	var steps []cli.RunStep
-	stdinStep := -1
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "-c" || arg == "--command":
-			if i+1 >= len(args) {
-				return nil, ExitErrorf(2, "Missing value for %s", arg)
-			}
-			cmd := args[i+1]
-			i++
-			stepArgs := append([]string{}, shared...)
-			stepArgs = append(stepArgs, "-c", cmd)
-			steps = append(steps, cli.RunStep{Args: stepArgs})
-		case strings.HasPrefix(arg, "--command="):
-			cmd := strings.TrimPrefix(arg, "--command=")
-			stepArgs := append([]string{}, shared...)
-			stepArgs = append(stepArgs, "-c", cmd)
-			steps = append(steps, cli.RunStep{Args: stepArgs})
-		case strings.HasPrefix(arg, "-c") && len(arg) > 2:
-			cmd := arg[2:]
-			stepArgs := append([]string{}, shared...)
-			stepArgs = append(stepArgs, "-c", cmd)
-			steps = append(steps, cli.RunStep{Args: stepArgs})
-		case arg == "-f" || arg == "--file":
-			if i+1 >= len(args) {
-				return nil, ExitErrorf(2, "Missing value for %s", arg)
-			}
-			value := args[i+1]
-			i++
-			step, isStdin, err := buildFileStep(shared, value, workspaceRoot, cwd)
-			if err != nil {
-				return nil, err
-			}
-			if isStdin {
-				if stdinStep != -1 {
-					return nil, ExitErrorf(2, "Multiple stdin file arguments are not supported")
-				}
-				stdinStep = len(steps)
-			}
-			steps = append(steps, step)
-		case strings.HasPrefix(arg, "--file="):
-			value := strings.TrimPrefix(arg, "--file=")
-			step, isStdin, err := buildFileStep(shared, value, workspaceRoot, cwd)
-			if err != nil {
-				return nil, err
-			}
-			if isStdin {
-				if stdinStep != -1 {
-					return nil, ExitErrorf(2, "Multiple stdin file arguments are not supported")
-				}
-				stdinStep = len(steps)
-			}
-			steps = append(steps, step)
-		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
-			value := arg[2:]
-			step, isStdin, err := buildFileStep(shared, value, workspaceRoot, cwd)
-			if err != nil {
-				return nil, err
-			}
-			if isStdin {
-				if stdinStep != -1 {
-					return nil, ExitErrorf(2, "Multiple stdin file arguments are not supported")
-				}
-				stdinStep = len(steps)
-			}
-			steps = append(steps, step)
-		default:
-			shared = append(shared, arg)
-		}
+	steps, err := inputpsql.BuildRunSteps(
+		args,
+		inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil),
+		stdin,
+		inputset.OSFileSystem{},
+	)
+	if err != nil {
+		return nil, wrapInputsetError(err)
 	}
-
-	if stdinStep != -1 {
-		data, err := io.ReadAll(stdin)
-		if err != nil {
-			return nil, err
-		}
-		text := string(data)
-		steps[stdinStep].Stdin = &text
+	out := make([]cli.RunStep, 0, len(steps))
+	for _, step := range steps {
+		out = append(out, cli.RunStep{Args: step.Args, Stdin: step.Stdin})
 	}
-
-	if len(steps) == 0 {
-		return []cli.RunStep{{Args: shared}}, nil
-	}
-	return steps, nil
+	return out, nil
 }
 
 func buildFileStep(shared []string, value string, workspaceRoot string, cwd string) (cli.RunStep, bool, error) {
@@ -253,68 +182,16 @@ type pgbenchFileSource struct {
 }
 
 func materializePgbenchRunArgs(args []string, workspaceRoot string, cwd string, stdin io.Reader) ([]string, *string, error) {
-	normalized := make([]string, 0, len(args))
-	var source *pgbenchFileSource
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "-f" || arg == "--file":
-			if i+1 >= len(args) {
-				return nil, nil, ExitErrorf(2, "Missing value for %s", arg)
-			}
-			value := args[i+1]
-			i++
-			rewritten, nextSource, err := rewritePgbenchFileArg(value, workspaceRoot, cwd)
-			if err != nil {
-				return nil, nil, err
-			}
-			if nextSource != nil {
-				if source != nil {
-					return nil, nil, ExitErrorf(2, "Multiple pgbench file arguments are not supported")
-				}
-				source = nextSource
-			}
-			normalized = append(normalized, arg, rewritten)
-		case strings.HasPrefix(arg, "--file="):
-			value := strings.TrimPrefix(arg, "--file=")
-			rewritten, nextSource, err := rewritePgbenchFileArg(value, workspaceRoot, cwd)
-			if err != nil {
-				return nil, nil, err
-			}
-			if nextSource != nil {
-				if source != nil {
-					return nil, nil, ExitErrorf(2, "Multiple pgbench file arguments are not supported")
-				}
-				source = nextSource
-			}
-			normalized = append(normalized, "--file="+rewritten)
-		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
-			value := arg[2:]
-			rewritten, nextSource, err := rewritePgbenchFileArg(value, workspaceRoot, cwd)
-			if err != nil {
-				return nil, nil, err
-			}
-			if nextSource != nil {
-				if source != nil {
-					return nil, nil, ExitErrorf(2, "Multiple pgbench file arguments are not supported")
-				}
-				source = nextSource
-			}
-			normalized = append(normalized, "-f"+rewritten)
-		default:
-			normalized = append(normalized, arg)
-		}
-	}
-
-	if source == nil {
-		return normalized, nil, nil
-	}
-	text, err := readPgbenchFileSource(*source, stdin)
+	normalized, stdinValue, err := inputpgbench.MaterializeArgs(
+		args,
+		inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil),
+		stdin,
+		inputset.OSFileSystem{},
+	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, wrapInputsetError(err)
 	}
-	return normalized, &text, nil
+	return normalized, stdinValue, nil
 }
 
 func rewritePgbenchFileArg(value string, workspaceRoot string, cwd string) (string, *pgbenchFileSource, error) {
@@ -348,12 +225,5 @@ func readPgbenchFileSource(source pgbenchFileSource, stdin io.Reader) (string, e
 }
 
 func splitPgbenchFileArgValue(value string) (string, string) {
-	idx := strings.LastIndex(value, "@")
-	if idx <= 0 || idx >= len(value)-1 {
-		return value, ""
-	}
-	if _, err := strconv.ParseUint(value[idx+1:], 10, 32); err != nil {
-		return value, ""
-	}
-	return value[:idx], value[idx:]
+	return inputset.SplitPgbenchFileArgValue(value)
 }

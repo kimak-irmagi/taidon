@@ -1,12 +1,17 @@
 # Компонентная структура CLI
 
-Документ описывает текущую внутреннюю структуру `sqlrs` CLI.
+Документ описывает утвержденную внутреннюю структуру `sqlrs` CLI после
+добавления общего слоя `inputset` для file-bearing семантики команд.
 
 ## 1. Цели
 
-- Разделить парсинг команд, оркестрацию, транспорт и рендеринг.
-- Использовать единый транспортный слой для local и remote профилей.
-- Держать нормализацию аргументов команд в одном месте.
+- Разделить парсинг команд, оркестрацию, shared input semantics, транспорт и
+  рендеринг.
+- Держать один CLI-side источник истины для file-bearing аргументов и правил
+  замыкания по каждому поддерживаемому tool kind.
+- Переиспользовать одни и те же kind-компоненты между execution, `diff` и
+  `alias check`.
+- Использовать единый transport-слой для local и remote профилей.
 
 ## 2. Пакеты и ответственность
 
@@ -14,26 +19,48 @@
   - Точка входа; вызывает `app.Run` и маппит ошибки в exit code.
 - `internal/app`
   - Загружает workspace/global config, выбирает профиль и режим.
-  - Диспетчеризует граф команд (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`, `status`, `config`, `init`).
-  - Нормализует file/path аргументы до вызовов transport-слоя.
+  - Диспетчеризует граф команд (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
+    `status`, `config`, `init`, `alias`, `diff`).
+  - Собирает command context и выбирает path resolver-ы и runtime projection-ы
+    из `internal/inputset`.
+- `internal/inputset`
+  - Общий CLI-side источник истины для file-bearing семантики команд.
+  - Владеет staged абстракциями parse/bind/collect/project и общими типами.
+- `internal/inputset/psql`
+  - File-bearing аргументы `psql` и include-closure семантика, переиспользуемые
+    в `prepare:psql`, `plan:psql`, `run:psql`, `diff` и `alias check`.
+- `internal/inputset/liquibase`
+  - Path-bearing аргументы Liquibase, binding search path и семантика
+    changelog graph, переиспользуемые в `prepare:lb`, `plan:lb`, `diff` и
+    `alias check`.
+- `internal/inputset/pgbench`
+  - File-bearing аргументы `pgbench` и runtime projection, переиспользуемые в
+    `run:pgbench` и alias validation.
+- `internal/alias`
+  - Discovery alias files, обработка scan scope, resolution одного alias,
+    загрузка YAML и оркестрация статической валидации.
+  - Делегирует kind-specific file semantics в `internal/inputset`.
+- `internal/diff`
+  - Парсинг diff scope, resolution корней сторон, сравнение и рендеринг.
+  - Делегирует file semantics вложенной команды в `internal/inputset`.
 - `internal/cli`
-  - Исполнители команд на стороне клиента (`RunLs`, `RunPrepare`, `RunPlan`, `RunRun`, `RunStatus`, `RunConfig`, `RunRm`).
-  - Рендеринг человекочитаемого вывода (таблицы/plan/status).
+  - Исполнители клиентских команд и human/JSON renderers.
 - `internal/cli/runkind`
-  - Реестр поддерживаемых run-kind (`psql`, `pgbench`).
+  - Реестр поддерживаемых run kind.
 - `internal/client`
   - HTTP клиент для `/v1/*` endpoint-ов.
   - NDJSON-стриминг событий prepare и вывода run.
 - `internal/daemon`
   - Autostart/discovery локального engine (`engine.json`, lock/state orchestration).
 - `internal/config`
-  - Загрузка и merge CLI-конфига, typed lookup (`dbms.image`, настройки Liquibase, timeout-ы).
+  - Загрузка и merge CLI-конфига, typed lookup (`dbms.image`, настройки
+    Liquibase, timeout-ы).
 - `internal/paths`
   - OS-aware разрешение директорий config/cache/state.
 - `internal/wsl`
   - Определение WSL и выбор дистрибутива для `init local` и Windows local mode.
 - `internal/util`
-  - Общие хелперы (NDJSON reader, атомарный IO, error helpers).
+  - Общие хелперы (NDJSON reader, atomic I/O, error helpers).
 
 ## 3. Ключевые типы и интерфейсы
 
@@ -45,18 +72,35 @@
   - Общие опции prepare/plan и модель рендера плана.
 - `cli.RunOptions`, `cli.RunStep`, `cli.RunResult`
   - Параметры запуска (kind, args, stdin/steps) и терминальный результат run.
+- `inputset.PathResolver`, `inputset.CommandSpec`, `inputset.BoundSpec`
+  - Общие staged интерфейсы для parsing, host-side binding и сбора file-bearing
+    входов.
+- `inputset.InputSet`, `inputset.InputEntry`
+  - Детерминированное представление объявленных и обнаруженных файлов.
+- `alias.Target`, `alias.CheckResult`
+  - Цель single-alias resolution и результат статической проверки.
+- `diff.Scope`, `diff.Context`, `diff.DiffResult`
+  - Область сравнения `diff`, резолвленные корни сторон и модель результата.
 - `client.PrepareJobRequest`, `client.PrepareJobStatus`, `client.PrepareJobEvent`
   - Payload prepare API, включая `plan_only` и список задач плана.
 - `client.RunRequest`, `client.RunEvent`
-  - Payload run API и стрим событий (`stdout`, `stderr`, `exit`, `error`, `log`).
+  - Payload run API и стрим событий (`stdout`, `stderr`, `exit`, `error`,
+    `log`).
 - `cli.ConfigOptions`, `client.ConfigValue`
-  - Опции config-команд и API payload для значений.
+  - Опции config-команд и API payload значений.
 
 ## 4. Владение данными
 
-- CLI-конфиг файловый (workspace + global), в память грузится на время запуска команды.
-- Состояние discovery локального engine (`engine.json`, lock/process metadata) ведется через `internal/daemon`.
-- Server config принадлежит engine-side storage и читается/изменяется по HTTP (`/v1/config*`), без локального кеширования в CLI.
+- CLI-конфиг файловый (workspace + global) и загружается в память на время
+  запуска команды.
+- Raw argv принадлежит command orchestrator-у, пока не передан выбранному
+  kind-компоненту `internal/inputset`.
+- Parsed specs, bound specs и collected input sets эфемерны и живут только
+  в рамках одного CLI invocation.
+- Состояние discovery локального engine (`engine.json`, daemon lock/process
+  metadata) ведется через `internal/daemon`.
+- Server config принадлежит engine-side storage и читается/изменяется по HTTP
+  (`/v1/config*`), без локального кеширования в CLI.
 
 ## 5. Диаграмма зависимостей
 
@@ -65,6 +109,9 @@ flowchart LR
   CMD["cmd/sqlrs"]
   APP["internal/app"]
   CLI["internal/cli"]
+  INPUTSET["internal/inputset"]
+  ALIAS["internal/alias"]
+  DIFF["internal/diff"]
   RUNKIND["internal/cli/runkind"]
   CLIENT["internal/client"]
   DAEMON["internal/daemon"]
@@ -75,6 +122,7 @@ flowchart LR
 
   CMD --> APP
   APP --> CLI
+  APP --> INPUTSET
   APP --> CONFIG
   APP --> PATHS
   APP --> WSL
@@ -82,4 +130,8 @@ flowchart LR
   CLI --> CLIENT
   CLI --> DAEMON
   CLI --> RUNKIND
+  CLI --> ALIAS
+  CLI --> DIFF
+  ALIAS --> INPUTSET
+  DIFF --> INPUTSET
 ```
