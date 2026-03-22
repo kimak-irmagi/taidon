@@ -99,10 +99,11 @@ func TestRunDiff_RefScopePreservesSubdirCwd(t *testing.T) {
 	}
 
 	var out bytes.Buffer
+	prepareArg := filepath.Join("chinook", "prepare.sql")
 	err = runDiff(&out, nil, filepath.Join(repo, "examples"), []string{
 		"--from-ref", string(bytes.TrimSpace(parentRef)),
 		"--to-ref", string(bytes.TrimSpace(headRef)),
-		"prepare:psql", "--", "-f", ".\\chinook\\prepare.sql",
+		"prepare:psql", "--", "-f", prepareArg,
 	}, "human", false)
 	if err != nil {
 		t.Fatalf("runDiff: %v", err)
@@ -158,10 +159,11 @@ func TestRunDiff_RefScopePreservesPsqlIncludeBaseDir(t *testing.T) {
 	}
 
 	var out bytes.Buffer
+	prepareArg := filepath.Join("chinook", "prepare.sql")
 	err = runDiff(&out, nil, filepath.Join(repo, "examples"), []string{
 		"--from-ref", string(bytes.TrimSpace(parentRef)),
 		"--to-ref", string(bytes.TrimSpace(headRef)),
-		"prepare:psql", "--", "-f", ".\\chinook\\prepare.sql",
+		"prepare:psql", "--", "-f", prepareArg,
 	}, "human", false)
 	if err != nil {
 		t.Fatalf("runDiff: %v", err)
