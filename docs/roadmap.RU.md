@@ -1,6 +1,8 @@
 # Roadmap Taidon
 
-Этот roadmap приоритизирует сценарии, use cases и компоненты, чтобы дать раннюю продуктовую ценность при сохранении четкого пути к team (on-prem) и cloud/education предложениям.
+Этот roadmap приоритизирует сценарии, use cases и компоненты, чтобы дать раннюю
+продуктовую ценность при сохранении четкого пути к team (on-prem) и
+cloud/education предложениям.
 
 ---
 
@@ -70,9 +72,15 @@ gantt
 
 ---
 
-## Статус (на 2026-03-20)
+## Статус (на 2026-03-22)
 
-- **Сделано**: локальная поверхность API (health, config, names, instances, runs, states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL init flow (включая установку nsenter), логирование instance-delete.
+- **Сделано**: локальная поверхность API (health, config, names, instances, runs,
+  states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
+  init/prepare/run, хранение job/task и события, абстракция StateFS, базовая часть
+  state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`,
+  `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`,
+  `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL
+  init flow (включая установку nsenter), логирование instance-delete.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
 - **Сделано (PR #37-#41, hardening)**: добавлены release happy-path e2e сценарии
   для Chinook/Sakila с расширением матрицы (включая Btrfs), поведение
@@ -101,6 +109,11 @@ gantt
   дефолтом `cwd + recursive`, явными `--from` / `--depth`, статической
   валидацией как для scan mode, так и для single-alias mode, и reporting-ом
   invalid entries для битых alias-файлов.
+- **Сделано (M2 shared inputset + diff path baseline)**: CLI теперь включает
+  `sqlrs diff --from-path/--to-path` для `prepare:psql` и `prepare:lb`, а
+  `prepare`, `plan`, `run`, `diff` и `alias check` теперь разделяют единый
+  kind-specific слой `internal/inputset` для file-bearing semantics и локального
+  closure collection по `psql`, `liquibase` и `pgbench`.
 - **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
   гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
   Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.
@@ -108,9 +121,9 @@ gantt
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
 - **Следующий публичный local-фокус**: закрыть оставшиеся M2 local DX слои через
-  `sqlrs discover --aliases`, последующие discover analyzers, shared
-  input-graph primitives и `sqlrs diff` в path mode перед более поздним
-  Git-aware CLI follow-up (`--ref`, provenance, cache explain).
+  `sqlrs discover --aliases`, последующие discover analyzers и более поздний
+  Git-aware CLI follow-up для `sqlrs diff`/prepare provenance (`--ref`,
+  provenance, cache explain).
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -133,9 +146,8 @@ gantt
     `.gitignore`, `.vscode` и prepare-shaping heuristics;
   - покрыть workspace-scope defaults, filtering и human/JSON rendering в docs
     и тестах.
-- **Сразу после этого**: generic discover analyzers, shared local input-graph
-  primitives, `sqlrs diff` в path mode, bounded local `--ref`, затем
-  provenance и cache explain.
+- **Сразу после этого**: generic discover analyzers, bounded local `--ref` для
+  `sqlrs diff`/prepare flow, затем provenance и cache explain.
 - **Почему сейчас**: alias execution и inspection уже пригодны к использованию
   и покрыты тестами; главный оставшийся local DX gap теперь в advisory
   repository discovery перед переходом к более широким analyzers и поздним
@@ -178,13 +190,17 @@ gantt
 
 - Taidon Engine + API (локальный режим) — **сделано** (локальный OpenAPI spec)
 - Локальный runtime (контейнеры) с lifecycle экземпляра — **сделано**
-- CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **сделано**
+- CLI (локальный): `sqlrs init`, `sqlrs config`, `sqlrs ls`, `sqlrs status`,
+  `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`, `sqlrs prepare:lb`,
+  `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm` — **сделано**
 - Cache v1 (prepare jobs + reuse state + retention) — **сделано (ядро)**
 - Ограничения ёмкости кэша (лимиты размера + eviction) — **сделано**
   (core enforcement, CLI diagnostics, persisted size metadata, release
   cache-pressure coverage для локального профиля)
-- Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs), **в планах** (ZFS)
-- Liquibase адаптер (apply changelog) — **сделано (MVP scope)** (базовый локальный поток через `prepare:lb`/`plan:lb` реализован)
+- Бэкенды snapshot ФС — **сделано** (заглушка overlayfs copy, Btrfs),
+  **в планах** (ZFS)
+- Liquibase адаптер (apply changelog) — **сделано (MVP scope)** (базовый
+  локальный поток через `prepare:lb`/`plan:lb` реализован)
 - Release happy-path e2e gate — **сделано** (покрытие Linux/macOS/Windows WSL
   для alias-driven сценариев Chinook, Sakila и Liquibase/JHipster, включая
   Btrfs в матрице валидации и отдельный local cache-pressure сценарий в
@@ -230,7 +246,8 @@ gantt
   - `sqlrs discover --aliases`
   - последующие analyzers для `.gitignore`, `.vscode` и prepare shaping
 - Git-aware CLI (passive):
-  - `diff`, `--ref` (blob/worktree), provenance, cache explain
+  - `diff` в path mode
+  - `diff`/prepare `--ref` (blob/worktree), provenance, cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - открыть SQL редактор (через существующие DB инструменты VS Code)
@@ -241,10 +258,10 @@ gantt
   с низким локальным setup friction и понятной диагностикой происхождения/
   содержимого кэша.
 
-**Статус**: в работе. Базовые alias execution и inspection уже влиты
-(`plan/prepare/run`, `sqlrs alias ls/check`, cwd-relative refs,
-alias-file-relative payloads, смешанный `prepare ... run`), а discovery,
-`diff` в path mode, bounded `--ref` и provenance/cache explain ещё впереди.
+**Статус**: в работе. Базовые alias execution и inspection уже влиты,
+`sqlrs diff` в path mode уже доступен, а shared `internal/inputset` semantics
+теперь обслуживает `prepare`/`plan`/`run`/`diff`/`alias check`; discovery,
+bounded `--ref` и provenance/cache explain ещё впереди.
 
 ---
 
@@ -315,7 +332,8 @@ alias-file-relative payloads, смешанный `prepare ... run`), а discover
 
 **Exit criteria**:
 
-- Пользователь может привязать Git репозиторий и запустить экземпляр из выбранной ветки/коммита
+- Пользователь может привязать Git репозиторий и запустить экземпляр из выбранной
+  ветки/коммита
 - Обновления репозитория доступны в экземпляре без ручного ре-импорта
 
 ---
@@ -368,7 +386,8 @@ credentials или runtime connection details.
 
 ## Обоснование приоритизации
 
-1. Local MVP (A1) дает немедленную продуктовую ценность и проверяет производительность ядра
+1. Local MVP (A1) дает немедленную продуктовую ценность и проверяет
+   производительность ядра
 2. Drop-in adoption снижает трение и ускоряет обратную связь
 3. Team on-prem (A2) открывает enterprise-путь (квоты, auth, CI)
 4. Sharing (B3) становится безопасным, когда есть артефакты, auth и квоты
@@ -400,13 +419,20 @@ credentials или runtime connection details.
 ## Следующие документы для детализации
 
 - [`api-contract.md`](api-contract.md) (REST/gRPC + events)
-- [`sql-runner-api.md`](architecture/sql-runner-api.RU.md) (timeouts, cancel, streaming, cache-aware planning)
+- [`sql-runner-api.md`](architecture/sql-runner-api.RU.md) (timeouts, cancel,
+  streaming, cache-aware planning)
 - [`runtime-and-isolation.md`](runtime-and-isolation.md) (local + k8s)
-- [`liquibase-integration.md`](architecture/liquibase-integration.RU.md) (modes, config discovery)
-- [`state-cache-design.md`](architecture/state-cache-design.RU.md) (snapshotting, hashing, retention)
+- [`liquibase-integration.md`](architecture/liquibase-integration.RU.md) (modes,
+  config discovery)
+- [`state-cache-design.md`](architecture/state-cache-design.RU.md) (snapshotting,
+  hashing, retention)
 - [`cli-spec.md`](cli-spec.md) (commands and exit codes)
 - [`security-model.md`](security-model.md) (cloud-hardening, redaction, audit)
-- [`runtime-snapshotting.md`](architecture/runtime-snapshotting.RU.md) (details of the snapshot mechanics)
-- [`git-aware-passive.md`](architecture/git-aware-passive.RU.md) (CLI by ref, zero-copy, provenance)
-- [`git-aware-active.md`](architecture/git-aware-active.RU.md) (PR automation, warmup/diff checks)
-- [`k8s-architecture.md`](architecture/k8s-architecture.RU.md) (single entry gateway in k8s)
+- [`runtime-snapshotting.md`](architecture/runtime-snapshotting.RU.md) (details
+  of the snapshot mechanics)
+- [`git-aware-passive.md`](architecture/git-aware-passive.RU.md) (CLI by ref,
+  zero-copy, provenance)
+- [`git-aware-active.md`](architecture/git-aware-active.RU.md) (PR automation,
+  warmup/diff checks)
+- [`k8s-architecture.md`](architecture/k8s-architecture.RU.md) (single entry
+  gateway in k8s)

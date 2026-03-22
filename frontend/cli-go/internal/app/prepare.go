@@ -13,6 +13,9 @@ import (
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/client"
 	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/inputset"
+	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
+	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
 )
 
 var runPrepareFn = cli.RunPrepare
@@ -384,88 +387,26 @@ func formatImageSource(imageID, source string) string {
 }
 
 func normalizePsqlArgs(args []string, workspaceRoot string, cwd string, stdin io.Reader, convert func(string) (string, error)) ([]string, *string, error) {
-	normalized := make([]string, 0, len(args))
-	usesStdin := false
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "-f" || arg == "--file":
-			if i+1 >= len(args) {
-				return nil, nil, ExitErrorf(2, "Missing value for %s", arg)
-			}
-			path, useStdin, err := normalizeFilePath(args[i+1], workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, nil, err
-			}
-			usesStdin = usesStdin || useStdin
-			normalized = append(normalized, arg, path)
-			i++
-		case strings.HasPrefix(arg, "--file="):
-			value := strings.TrimPrefix(arg, "--file=")
-			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, nil, err
-			}
-			usesStdin = usesStdin || useStdin
-			normalized = append(normalized, "--file="+path)
-		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
-			value := arg[2:]
-			path, useStdin, err := normalizeFilePath(value, workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, nil, err
-			}
-			usesStdin = usesStdin || useStdin
-			normalized = append(normalized, "-f"+path)
-		default:
-			normalized = append(normalized, arg)
-		}
-	}
-
-	if !usesStdin {
-		return normalized, nil, nil
-	}
-	data, err := io.ReadAll(stdin)
+	normalized, stdinValue, err := inputpsql.NormalizeArgs(
+		args,
+		inputset.NewWorkspaceResolver(workspaceRoot, cwd, convert),
+		stdin,
+	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, wrapInputsetError(err)
 	}
-	text := string(data)
-	return normalized, &text, nil
+	return normalized, stdinValue, nil
 }
 
 func normalizeFilePath(path string, workspaceRoot string, cwd string, convert func(string) (string, error)) (string, bool, error) {
 	if path == "-" {
 		return path, true, nil
 	}
-	if strings.TrimSpace(path) == "" {
-		return "", false, ExitErrorf(2, "File path is empty")
+	resolved, err := inputset.NewWorkspaceResolver(workspaceRoot, cwd, convert).ResolvePath(path)
+	if err != nil {
+		return "", false, wrapInputsetError(err)
 	}
-	root := strings.TrimSpace(workspaceRoot)
-	if root == "" {
-		root = cwd
-	}
-	root = filepath.Clean(root)
-	cwd = rebasePathToWorkspaceRoot(cwd, root)
-	absPath := path
-	if !filepath.IsAbs(absPath) {
-		absPath = filepath.Join(cwd, absPath)
-	}
-	absPath = filepath.Clean(absPath)
-	absPath = rebasePathToWorkspaceRoot(absPath, root)
-
-	canonicalRoot := canonicalizeBoundaryPath(root)
-	canonicalAbsPath := canonicalizeBoundaryPath(absPath)
-	if canonicalRoot != "" && !isWithin(canonicalRoot, canonicalAbsPath) {
-		return "", false, ExitErrorf(2, "File path must be within workspace root: %s", absPath)
-	}
-	if convert != nil {
-		converted, err := convert(absPath)
-		if err != nil {
-			return "", false, err
-		}
-		return converted, false, nil
-	}
-	return absPath, false, nil
+	return resolved, false, nil
 }
 
 func rebasePathToWorkspaceRoot(path string, workspaceRoot string) string {
@@ -529,71 +470,27 @@ func buildPathConverter(opts cli.PrepareOptions) func(string) (string, error) {
 }
 
 func normalizeLiquibaseArgs(args []string, workspaceRoot string, cwd string, convert func(string) (string, error)) ([]string, error) {
-	normalized := make([]string, 0, len(args))
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
+	for _, arg := range args {
 		switch {
-		case arg == "--changelog-file" || arg == "--defaults-file" || arg == "--searchPath" || arg == "--search-path":
-			if i+1 >= len(args) {
-				return nil, ExitErrorf(2, "Missing value for %s", arg)
-			}
-			value := args[i+1]
-			flag := arg
-			if flag == "--search-path" {
-				flag = "--searchPath"
-			}
-			rewritten, err := rewriteLiquibasePathArg(flag, value, workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, err
-			}
-			normalized = append(normalized, flag, rewritten)
-			i++
-		case strings.HasPrefix(arg, "--changelog-file="):
-			value := strings.TrimPrefix(arg, "--changelog-file=")
-			if strings.TrimSpace(value) == "" {
-				return nil, ExitErrorf(2, "Missing value for --changelog-file")
-			}
-			rewritten, err := rewriteLiquibasePathArg("--changelog-file", value, workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, err
-			}
-			normalized = append(normalized, "--changelog-file="+rewritten)
-		case strings.HasPrefix(arg, "--defaults-file="):
-			value := strings.TrimPrefix(arg, "--defaults-file=")
-			if strings.TrimSpace(value) == "" {
-				return nil, ExitErrorf(2, "Missing value for --defaults-file")
-			}
-			rewritten, err := rewriteLiquibasePathArg("--defaults-file", value, workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, err
-			}
-			normalized = append(normalized, "--defaults-file="+rewritten)
-		case strings.HasPrefix(arg, "--searchPath="):
-			value := strings.TrimPrefix(arg, "--searchPath=")
-			if strings.TrimSpace(value) == "" {
-				return nil, ExitErrorf(2, "Missing value for --searchPath")
-			}
-			rewritten, err := rewriteLiquibasePathArg("--searchPath", value, workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, err
-			}
-			normalized = append(normalized, "--searchPath="+rewritten)
-		case strings.HasPrefix(arg, "--search-path="):
-			value := strings.TrimPrefix(arg, "--search-path=")
-			if strings.TrimSpace(value) == "" {
-				return nil, ExitErrorf(2, "Missing value for --search-path")
-			}
-			rewritten, err := rewriteLiquibasePathArg("--searchPath", value, workspaceRoot, cwd, convert)
-			if err != nil {
-				return nil, err
-			}
-			normalized = append(normalized, "--searchPath="+rewritten)
-		default:
-			normalized = append(normalized, arg)
+		case strings.HasPrefix(arg, "--changelog-file=") && strings.TrimSpace(strings.TrimPrefix(arg, "--changelog-file=")) == "":
+			return nil, ExitErrorf(2, "Missing value for --changelog-file")
+		case strings.HasPrefix(arg, "--defaults-file=") && strings.TrimSpace(strings.TrimPrefix(arg, "--defaults-file=")) == "":
+			return nil, ExitErrorf(2, "Missing value for --defaults-file")
+		case strings.HasPrefix(arg, "--searchPath=") && strings.TrimSpace(strings.TrimPrefix(arg, "--searchPath=")) == "":
+			return nil, ExitErrorf(2, "Missing value for --searchPath")
+		case strings.HasPrefix(arg, "--search-path=") && strings.TrimSpace(strings.TrimPrefix(arg, "--search-path=")) == "":
+			return nil, ExitErrorf(2, "Missing value for --search-path")
 		}
 	}
 
+	normalized, err := inputliquibase.NormalizeArgs(
+		args,
+		inputset.NewWorkspaceResolver(workspaceRoot, cwd, convert),
+		true,
+	)
+	if err != nil {
+		return nil, wrapInputsetError(err)
+	}
 	return normalized, nil
 }
 
@@ -616,41 +513,18 @@ func normalizeWorkDir(cwd string, convert func(string) (string, error)) (string,
 }
 
 func rewriteLiquibasePathArg(flag string, value string, workspaceRoot string, cwd string, convert func(string) (string, error)) (string, error) {
-	if flag == "--searchPath" || flag == "--search-path" {
-		if strings.TrimSpace(value) == "" {
-			return "", ExitErrorf(2, "searchPath is empty")
-		}
-		parts := strings.Split(value, ",")
-		out := make([]string, 0, len(parts))
-		for _, part := range parts {
-			item := strings.TrimSpace(part)
-			if item == "" {
-				return "", ExitErrorf(2, "searchPath is empty")
-			}
-			if looksLikeLiquibaseRemoteRef(item) {
-				out = append(out, item)
-				continue
-			}
-			normalized, _, err := normalizeFilePath(item, workspaceRoot, cwd, convert)
-			if err != nil {
-				return "", err
-			}
-			out = append(out, normalized)
-		}
-		return strings.Join(out, ","), nil
-	}
-
-	if strings.TrimSpace(value) == "" {
-		return "", ExitErrorf(2, "Path is empty")
-	}
-	if looksLikeLiquibaseRemoteRef(value) {
-		return value, nil
-	}
-	normalized, _, err := normalizeFilePath(value, workspaceRoot, cwd, convert)
+	normalized, err := inputliquibase.NormalizeArgs(
+		[]string{flag, value},
+		inputset.NewWorkspaceResolver(workspaceRoot, cwd, convert),
+		false,
+	)
 	if err != nil {
-		return "", err
+		return "", wrapInputsetError(err)
 	}
-	return normalized, nil
+	if len(normalized) < 2 {
+		return "", ExitErrorf(2, "Missing value for %s", flag)
+	}
+	return normalized[1], nil
 }
 
 func relativizeLiquibaseArgs(args []string, workspaceRoot string, cwd string) []string {
@@ -710,6 +584,16 @@ func toRelativeIfWithin(base string, value string) string {
 }
 
 func looksLikeLiquibaseRemoteRef(value string) bool {
-	lower := strings.ToLower(value)
-	return strings.Contains(lower, "://") || strings.HasPrefix(lower, "classpath:")
+	return inputset.LooksLikeLiquibaseRemoteRef(value)
+}
+
+func wrapInputsetError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var userErr *inputset.UserError
+	if errors.As(err, &userErr) {
+		return ExitErrorf(2, userErr.Message)
+	}
+	return err
 }

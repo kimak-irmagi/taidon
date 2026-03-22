@@ -100,7 +100,8 @@ local workspace config.
   `<run-ref>.run.s9s.yaml` from the current working directory
 - `prepare ... run ...` accepts mixed raw/alias combinations
 - `sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]`
-- `sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]`
+- `sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>]`
+  `[--depth <self|children|recursive>] [<ref>]`
 
 **Expected work**:
 
