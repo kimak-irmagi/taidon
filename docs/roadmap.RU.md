@@ -81,6 +81,8 @@ gantt
   `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`,
   `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL
   init flow (включая установку nsenter), логирование instance-delete.
+  `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`),
+  WSL init flow (включая установку nsenter), логирование instance-delete.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
 - **Сделано (PR #37-#41, hardening)**: добавлены release happy-path e2e сценарии
   для Chinook/Sakila с расширением матрицы (включая Btrfs), поведение
