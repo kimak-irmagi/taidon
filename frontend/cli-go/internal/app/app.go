@@ -186,10 +186,11 @@ func Run(args []string) error {
 				}
 				prepared = &result
 			case "lb":
+				aliasCwd := filepath.Dir(aliasPath)
 				if len(commands) == 1 {
-					return runPrepareLiquibaseWithPathMode(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs, false)
+					return runPrepareLiquibaseWithPathMode(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, aliasArgs, false)
 				}
-				result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs, false)
+				result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, aliasArgs, false)
 				if err != nil {
 					return err
 				}
@@ -221,7 +222,8 @@ func Run(args []string) error {
 				return err
 			}
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
-			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, buildPlanAliasCommandArgs(alias), cmdCtx.output, alias.Kind, alias.Kind != "lb")
+			aliasCwd := filepath.Dir(aliasPath)
+			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, buildPlanAliasCommandArgs(alias), cmdCtx.output, alias.Kind, alias.Kind != "lb")
 		case "run":
 			runOpts := cmdCtx.runOptions()
 			if prepared != nil {
