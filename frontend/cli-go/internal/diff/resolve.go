@@ -116,11 +116,19 @@ func resolveRefWorktrees(s Scope, cwd string) (fromCtx, toCtx Context, cleanup f
 }
 
 func cwdWithinRepo(repoRoot, cwd string) (string, error) {
+	absRepo, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return "", err
+	}
+	absRepo = inputset.CanonicalizeBoundaryPath(absRepo)
+
 	absCwd, err := filepath.Abs(cwd)
 	if err != nil {
 		return "", err
 	}
-	rel, err := filepath.Rel(repoRoot, absCwd)
+	absCwd = inputset.CanonicalizeBoundaryPath(absCwd)
+
+	rel, err := filepath.Rel(absRepo, absCwd)
 	if err != nil {
 		return "", err
 	}

@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-22)
+## Status (as of 2026-03-23)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -113,6 +113,10 @@ gantt
   `prepare`, `plan`, `run`, `diff`, and `alias check` now share one
   kind-specific `internal/inputset` layer for file-bearing semantics and local
   closure collection across `psql`, `liquibase`, and `pgbench`.
+- **Done (M2 diff ref-mode hardening)**: ref-mode worktree resolution now keeps
+  the caller cwd stable across symlinked paths, and `psql` include semantics
+  stay aligned with `psql` (`\i` / `\include` from command cwd, `\ir` /
+  `\include_relative` from the including file directory).
 - **Done (release alias/workspace coverage)**: release/e2e scenarios now
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under
