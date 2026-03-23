@@ -170,16 +170,16 @@ func TestCollectRecursiveIncludeAndScannerError(t *testing.T) {
 	}
 }
 
-func TestCollectUsesFirstFileDirForPlainInclude(t *testing.T) {
+func TestCollectUsesResolverBaseDirForPlainInclude(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "dir", "a.sql"), "\\i b.sql\n")
-	writeFile(t, filepath.Join(root, "dir", "b.sql"), "select 1;\n")
+	writeFile(t, filepath.Join(root, "chinook", "a.sql"), "\\i b.sql\n")
+	writeFile(t, filepath.Join(root, "b.sql"), "select 1;\n")
 
-	set, err := Collect([]string{"-f", filepath.Join("dir", "a.sql")}, inputset.NewDiffResolver(root), inputset.OSFileSystem{})
+	set, err := Collect([]string{"-f", filepath.Join("chinook", "a.sql")}, inputset.NewWorkspaceResolver(root, root, nil), inputset.OSFileSystem{})
 	if err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
-	if len(set.Entries) != 2 || set.Entries[0].Path != "dir/a.sql" || set.Entries[1].Path != "dir/b.sql" {
+	if len(set.Entries) != 2 || set.Entries[0].Path != "chinook/a.sql" || set.Entries[1].Path != "b.sql" {
 		t.Fatalf("unexpected collected entries: %+v", set.Entries)
 	}
 }
@@ -213,7 +213,7 @@ func TestPsqlHelperBranches(t *testing.T) {
 
 	tracker := &tracker{
 		root:    root,
-		workDir: filepath.Join(root, "base"),
+		baseDir: filepath.Join(root, "base"),
 		seen:    make(map[string]struct{}),
 		stack:   make(map[string]struct{}),
 		fs:      inputset.OSFileSystem{},
@@ -272,7 +272,7 @@ func TestPsqlTrackerAndCollectHelpers(t *testing.T) {
 	}
 	trk := &tracker{
 		root:    root,
-		workDir: root,
+		baseDir: root,
 		seen:    make(map[string]struct{}),
 		stack:   make(map[string]struct{}),
 		fs:      fsWithStatError,
@@ -289,7 +289,7 @@ func TestPsqlTrackerAndCollectHelpers(t *testing.T) {
 	}
 	trk = &tracker{
 		root:    root,
-		workDir: root,
+		baseDir: root,
 		seen:    make(map[string]struct{}),
 		stack:   make(map[string]struct{}),
 		fs:      fsWithReadError,
@@ -300,7 +300,7 @@ func TestPsqlTrackerAndCollectHelpers(t *testing.T) {
 	order = nil
 	trk = &tracker{
 		root:    root,
-		workDir: root,
+		baseDir: root,
 		seen:    make(map[string]struct{}),
 		stack:   make(map[string]struct{}),
 		fs:      inputset.OSFileSystem{},

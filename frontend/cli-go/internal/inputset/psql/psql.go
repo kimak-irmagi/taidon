@@ -147,6 +147,9 @@ func BuildRunSteps(args []string, resolver inputset.Resolver, stdin io.Reader, f
 }
 
 // Collect builds the deterministic psql file closure used by diff-facing consumers.
+// Plain \i and \include resolve from the effective command base directory, while
+// \ir and \include_relative resolve from the including file directory, matching
+// the psql semantics documented in docs/architecture/inputset-component-structure.md.
 func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) (inputset.InputSet, error) {
 	entryPaths, err := collectEntryPaths(args, resolver)
 	if err != nil {
@@ -158,7 +161,7 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 
 	tracker := &tracker{
 		root:    resolver.Root,
-		workDir: filepath.Dir(entryPaths[0]),
+		baseDir: resolver.BaseDir,
 		seen:    make(map[string]struct{}),
 		stack:   make(map[string]struct{}),
 		fs:      fs,
@@ -295,7 +298,7 @@ func collectEntryPaths(args []string, resolver inputset.Resolver) ([]string, err
 
 type tracker struct {
 	root    string
-	workDir string
+	baseDir string
 	seen    map[string]struct{}
 	stack   map[string]struct{}
 	fs      inputset.FileSystem
@@ -337,7 +340,10 @@ func (t *tracker) collect(path string, order *[]string) error {
 }
 
 func (t *tracker) resolveInclude(cmd string, arg string, currentFile string) string {
-	base := t.workDir
+	base := t.baseDir
+	if strings.TrimSpace(base) == "" {
+		base = t.root
+	}
 	if cmd == `\ir` || cmd == `\include_relative` {
 		base = filepath.Dir(currentFile)
 	}

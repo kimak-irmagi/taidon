@@ -113,7 +113,7 @@ func TestRunDiff_RefScopePreservesSubdirCwd(t *testing.T) {
 	}
 }
 
-func TestRunDiff_RefScopePreservesPsqlIncludeBaseDir(t *testing.T) {
+func TestRunDiff_RefScopePreservesPsqlRelativeIncludeDir(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not in PATH")
 	}
@@ -137,7 +137,7 @@ func TestRunDiff_RefScopePreservesPsqlIncludeBaseDir(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(preparePath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFile(preparePath, "\\i 'Chinook_PostgreSql.sql'\n"); err != nil {
+	if err := writeFile(preparePath, "\\ir 'Chinook_PostgreSql.sql'\n"); err != nil {
 		t.Fatal(err)
 	}
 	if err := writeFile(includePath, "select 1;\n"); err != nil {

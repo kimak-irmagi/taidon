@@ -205,7 +205,7 @@ the same rules as the main CLI.
 
 | Kind | Entry point | Closure rule |
 |------|-------------|--------------|
-| **prepare:psql** / plan:psql | `-f <file>` (file path required; **not** `-f -` / stdin) | Closure over `\i`, `\ir`, `\include`, `\include_relative` (and any other include directives the engine expands). Start from the file(s) named in `-f`; recursively add every file referenced by those directives. |
+| **prepare:psql** / plan:psql | `-f <file>` (file path required; **not** `-f -` / stdin) | Closure over `\i`, `\ir`, `\include`, `\include_relative` (and any other include directives the engine expands). Start from the file(s) named in `-f`; plain `\i` / `\include` resolve from the wrapped command cwd, while `\ir` / `\include_relative` resolve from the including file directory; recursively add every file referenced by those directives. |
 | **prepare:lb** / plan:lb | `--changelog-file <path>` | Closure over the changelog graph: start from the changelog file; add every file referenced by it (include, includeAll, etc.). Liquibase defines the graph; diff reuses the same resolution so the file set is identical to what prepare/plan would use. |
 | **run:psql** (future) | `-f <file>` (file-backed only) | Same as prepare:psql: closure over `\i` / `\include` from each `-f` entry. Inline `-c` does not contribute to the file list. |
 | **run:*** (other kinds, future) | Kind-specific | Each run kind defines which arguments are file-backed; the file list is built from those (e.g. script path, config path) and their kind-specific includes. |

@@ -69,6 +69,7 @@ patching each consumer manually:
 - `docs/architecture/diff-component-structure.md`
 - `docs/architecture/alias-inspection-component-structure.md`
 - `docs/architecture/m2-local-developer-experience-plan.md`
+- `docs/adr/2026-03-23-psql-include-base-semantics.md`
 
 ## Contradiction check
 

@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/sqlrs/cli/internal/inputset"
 )
 
 // ResolveScope turns a Scope into two filesystem Context roots. For ref mode it
@@ -100,12 +102,16 @@ func resolveRefWorktrees(s Scope, cwd string) (fromCtx, toCtx Context, cleanup f
 		_ = cleanupBoth()
 		return Context{}, Context{}, nil, fmt.Errorf("to-ref %q: %w", s.ToRef, err)
 	}
+	fromRoot := inputset.CanonicalizeBoundaryPath(fromDir)
+	toRoot := inputset.CanonicalizeBoundaryPath(toDir)
+	fromBase := inputset.CanonicalizeBoundaryPath(filepath.Join(fromDir, relCwd))
+	toBase := inputset.CanonicalizeBoundaryPath(filepath.Join(toDir, relCwd))
 	return Context{
-			Root:    fromDir,
-			BaseDir: filepath.Join(fromDir, relCwd),
+			Root:    fromRoot,
+			BaseDir: fromBase,
 		}, Context{
-			Root:    toDir,
-			BaseDir: filepath.Join(toDir, relCwd),
+			Root:    toRoot,
+			BaseDir: toBase,
 		}, cleanupBoth, nil
 }
 
