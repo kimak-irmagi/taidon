@@ -8,7 +8,7 @@ import (
 // BuildLbFileList builds the ordered file list for plan:lb / prepare:lb by
 // projecting the shared Liquibase input set into diff.FileList.
 func BuildLbFileList(ctx Context, args []string) (FileList, error) {
-	set, err := inputliquibase.Collect(args, inputset.NewDiffResolver(ctx.Root), inputset.OSFileSystem{})
+	set, err := inputliquibase.Collect(args, inputset.NewWorkspaceResolver(ctx.Root, ctx.BaseDir, nil), inputset.OSFileSystem{})
 	if err != nil {
 		return FileList{}, err
 	}

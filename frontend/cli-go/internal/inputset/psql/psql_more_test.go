@@ -170,6 +170,20 @@ func TestCollectRecursiveIncludeAndScannerError(t *testing.T) {
 	}
 }
 
+func TestCollectUsesResolverBaseDirForPlainInclude(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "chinook", "a.sql"), "\\i b.sql\n")
+	writeFile(t, filepath.Join(root, "b.sql"), "select 1;\n")
+
+	set, err := Collect([]string{"-f", filepath.Join("chinook", "a.sql")}, inputset.NewWorkspaceResolver(root, root, nil), inputset.OSFileSystem{})
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if len(set.Entries) != 2 || set.Entries[0].Path != "chinook/a.sql" || set.Entries[1].Path != "b.sql" {
+		t.Fatalf("unexpected collected entries: %+v", set.Entries)
+	}
+}
+
 func TestPsqlHelperBranches(t *testing.T) {
 	root := t.TempDir()
 	aliasPath := filepath.Join(root, "aliases", "demo.prep.s9s.yaml")
@@ -198,14 +212,18 @@ func TestPsqlHelperBranches(t *testing.T) {
 	}
 
 	tracker := &tracker{
-		root:  root,
-		seen:  make(map[string]struct{}),
-		stack: make(map[string]struct{}),
-		fs:    inputset.OSFileSystem{},
+		root:    root,
+		baseDir: filepath.Join(root, "base"),
+		seen:    make(map[string]struct{}),
+		stack:   make(map[string]struct{}),
+		fs:      inputset.OSFileSystem{},
 	}
 	got := tracker.resolveInclude(`\include_relative`, filepath.ToSlash(filepath.Join("inner", "nested.sql")), filepath.Join(root, "base", "a.sql"))
 	if got != filepath.Join(root, "base", "inner", "nested.sql") {
 		t.Fatalf("unexpected relative include path: %q", got)
+	}
+	if got := tracker.resolveInclude(`\i`, "plain.sql", filepath.Join(root, "base", "a.sql")); got != filepath.Join(root, "base", "plain.sql") {
+		t.Fatalf("unexpected plain include path: %q", got)
 	}
 	abs := filepath.Join(root, "dir", "child.sql")
 	if got := tracker.resolveInclude(`\i`, abs, filepath.Join(root, "base", "a.sql")); got != abs {
@@ -253,10 +271,11 @@ func TestPsqlTrackerAndCollectHelpers(t *testing.T) {
 		},
 	}
 	trk := &tracker{
-		root:  root,
-		seen:  make(map[string]struct{}),
-		stack: make(map[string]struct{}),
-		fs:    fsWithStatError,
+		root:    root,
+		baseDir: root,
+		seen:    make(map[string]struct{}),
+		stack:   make(map[string]struct{}),
+		fs:      fsWithStatError,
 	}
 	var order []string
 	if err := trk.collect(filepath.Join(root, "a.sql"), &order); err == nil || !strings.Contains(err.Error(), "boom") {
@@ -269,20 +288,22 @@ func TestPsqlTrackerAndCollectHelpers(t *testing.T) {
 		},
 	}
 	trk = &tracker{
-		root:  root,
-		seen:  make(map[string]struct{}),
-		stack: make(map[string]struct{}),
-		fs:    fsWithReadError,
+		root:    root,
+		baseDir: root,
+		seen:    make(map[string]struct{}),
+		stack:   make(map[string]struct{}),
+		fs:      fsWithReadError,
 	}
 	if err := trk.collect(filepath.Join(root, "a.sql"), &order); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected read error, got %v", err)
 	}
 	order = nil
 	trk = &tracker{
-		root:  root,
-		seen:  make(map[string]struct{}),
-		stack: make(map[string]struct{}),
-		fs:    inputset.OSFileSystem{},
+		root:    root,
+		baseDir: root,
+		seen:    make(map[string]struct{}),
+		stack:   make(map[string]struct{}),
+		fs:      inputset.OSFileSystem{},
 	}
 	if err := trk.collect(filepath.Join(root, "a.sql"), &order); err != nil {
 		t.Fatalf("collect existing file: %v", err)

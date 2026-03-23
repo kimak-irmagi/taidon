@@ -8,7 +8,7 @@ import (
 // BuildPsqlFileList builds the ordered file list for plan:psql / prepare:psql
 // by projecting the shared psql input set into diff.FileList.
 func BuildPsqlFileList(ctx Context, args []string) (FileList, error) {
-	set, err := inputpsql.Collect(args, inputset.NewDiffResolver(ctx.Root), inputset.OSFileSystem{})
+	set, err := inputpsql.Collect(args, inputset.NewWorkspaceResolver(ctx.Root, ctx.BaseDir, nil), inputset.OSFileSystem{})
 	if err != nil {
 		return FileList{}, err
 	}

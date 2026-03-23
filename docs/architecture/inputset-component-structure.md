@@ -69,7 +69,7 @@ source of truth for:
 | Component                     | Responsibility                                                                                                                                                                         | Primary consumers                                              |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `internal/inputset`           | Shared core abstractions: path resolvers, filesystem abstraction, collected input-set types, shared hashing/ordering helpers.                                                          | `internal/app`, `internal/diff`, `internal/alias`              |
-| `internal/inputset/psql`      | Parse `psql` file-bearing args, bind paths, collect include closure (`\i`, `\ir`, `\include`, `\include_relative`), project to prepare/run/diff/alias-check views.                     | `prepare:psql`, `plan:psql`, `run:psql`, `diff`, `alias check` |
+| `internal/inputset/psql`      | Parse `psql` file-bearing args, bind paths, collect include closure where plain `\i` / `\include` resolve from the effective command base dir and `\ir` / `\include_relative` resolve from the including file directory, project to prepare/run/diff/alias-check views. | `prepare:psql`, `plan:psql`, `run:psql`, `diff`, `alias check` |
 | `internal/inputset/liquibase` | Parse Liquibase path-bearing args (`--changelog-file`, `--defaults-file`, `--searchPath`), bind search roots, collect changelog graph, project to prepare/plan/diff/alias-check views. | `prepare:lb`, `plan:lb`, `diff`, `alias check`                 |
 | `internal/inputset/pgbench`   | Parse `pgbench` file-bearing args, bind paths, materialize runtime stdin projection, expose declared file refs for alias validation.                                                   | `run:pgbench`, `alias check`                                   |
 | `internal/app`                | Build command context, choose the kind component, provide the right path resolver, request runtime projections, and call transport executors.                                          | CLI execution                                                  |
@@ -99,7 +99,7 @@ Resolvers encode context-dependent rules such as:
 
 - raw CLI cwd/workspace-root resolution;
 - alias-file-relative resolution;
-- diff side root resolution (`--from-path` / `--to-path` or worktree root).
+- diff side root resolution (`--from-path` / `--to-path` or a ref worktree plus mirrored cwd slice).
 
 Binding produces normalized host-side file references and search roots without
 committing to a runtime-specific path format.

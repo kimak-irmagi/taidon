@@ -107,6 +107,12 @@ sqlrs expands all supported `psql` include directives and fingerprints the
 resulting content. The **form** and **paths** of include commands do not
 affect the fingerprint.
 
+Resolution still follows `psql` rules:
+
+- plain `\i` and `\include` resolve from the command working directory;
+- `\ir` and `\include_relative` resolve from the directory of the including
+  script.
+
 Supported include directives:
 
 - `\i`
@@ -119,6 +125,8 @@ Normalization rules (initial):
 - include directives are replaced by the **contents** of the referenced files.
 - traversal order is deterministic (depth-first, in include order).
 - the final content stream is hashed; include paths and command spelling are ignored.
+- the final content stream is hashed after path resolution; include paths and
+  command spelling are ignored.
 
 If two scripts differ **only** by include form or file paths, but resolve to the
 same included content, they produce the **same** state id.

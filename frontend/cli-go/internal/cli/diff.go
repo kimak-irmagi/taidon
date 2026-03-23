@@ -13,6 +13,10 @@ import (
 // Returns an error for unsupported kind or build/compare errors.
 func RunDiff(stdout io.Writer, parsed diff.ParsedDiff, cwd string, outputFormat string) error {
 	opts := diff.Options{Limit: parsed.Limit, IncludeContent: parsed.IncludeContent}
+	fromLabel, toLabel := "from-path", "to-path"
+	if parsed.Scope.Kind == diff.ScopeKindRef {
+		fromLabel, toLabel = "from-ref", "to-ref"
+	}
 
 	fromCtx, toCtx, cleanup, err := diff.ResolveScope(parsed.Scope, cwd)
 	if err != nil {
@@ -31,20 +35,20 @@ func RunDiff(stdout io.Writer, parsed diff.ParsedDiff, cwd string, outputFormat 
 	if kind == "psql" {
 		fromList, err = diff.BuildPsqlFileList(fromCtx, parsed.WrappedArgs)
 		if err != nil {
-			return fmt.Errorf("from-path: %w", err)
+			return fmt.Errorf("%s: %w", fromLabel, err)
 		}
 		toList, err = diff.BuildPsqlFileList(toCtx, parsed.WrappedArgs)
 		if err != nil {
-			return fmt.Errorf("to-path: %w", err)
+			return fmt.Errorf("%s: %w", toLabel, err)
 		}
 	} else {
 		fromList, err = diff.BuildLbFileList(fromCtx, parsed.WrappedArgs)
 		if err != nil {
-			return fmt.Errorf("from-path: %w", err)
+			return fmt.Errorf("%s: %w", fromLabel, err)
 		}
 		toList, err = diff.BuildLbFileList(toCtx, parsed.WrappedArgs)
 		if err != nil {
-			return fmt.Errorf("to-path: %w", err)
+			return fmt.Errorf("%s: %w", toLabel, err)
 		}
 	}
 

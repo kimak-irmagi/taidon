@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/sqlrs/cli/internal/inputset"
 )
 
 // ResolveScope turns a Scope into two filesystem Context roots. For ref mode it
@@ -35,7 +37,7 @@ func resolvePathScopeStrings(fromPath, toPath, cwd string) (fromCtx, toCtx Conte
 	if err != nil {
 		return Context{}, Context{}, fmt.Errorf("to-path: %w", err)
 	}
-	return Context{Root: fromAbs}, Context{Root: toAbs}, nil
+	return Context{Root: fromAbs, BaseDir: fromAbs}, Context{Root: toAbs, BaseDir: toAbs}, nil
 }
 
 func absPathInCwd(p, cwd string) (string, error) {
@@ -60,6 +62,10 @@ func resolveRefWorktrees(s Scope, cwd string) (fromCtx, toCtx Context, cleanup f
 	repoRoot, err := gitTopLevel(cwd)
 	if err != nil {
 		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: %w", err)
+	}
+	relCwd, err := cwdWithinRepo(repoRoot, cwd)
+	if err != nil {
+		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: resolve cwd: %w", err)
 	}
 	fromDir, err := os.MkdirTemp("", "sqlrs-diff-from-*")
 	if err != nil {
@@ -96,7 +102,29 @@ func resolveRefWorktrees(s Scope, cwd string) (fromCtx, toCtx Context, cleanup f
 		_ = cleanupBoth()
 		return Context{}, Context{}, nil, fmt.Errorf("to-ref %q: %w", s.ToRef, err)
 	}
-	return Context{Root: fromDir}, Context{Root: toDir}, cleanupBoth, nil
+	fromRoot := inputset.CanonicalizeBoundaryPath(fromDir)
+	toRoot := inputset.CanonicalizeBoundaryPath(toDir)
+	fromBase := inputset.CanonicalizeBoundaryPath(filepath.Join(fromDir, relCwd))
+	toBase := inputset.CanonicalizeBoundaryPath(filepath.Join(toDir, relCwd))
+	return Context{
+			Root:    fromRoot,
+			BaseDir: fromBase,
+		}, Context{
+			Root:    toRoot,
+			BaseDir: toBase,
+		}, cleanupBoth, nil
+}
+
+func cwdWithinRepo(repoRoot, cwd string) (string, error) {
+	absCwd, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(repoRoot, absCwd)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(rel), nil
 }
 
 func refWorktreeUnavailable() string {
