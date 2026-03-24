@@ -83,6 +83,10 @@ gantt
   init flow (включая установку nsenter), логирование instance-delete.
   `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`),
   WSL init flow (включая установку nsenter), логирование instance-delete.
+- **Отложено (names follow-up)**: более глубокие workflows вокруг runtime names
+  и любая alias-to-name связка намеренно вынесены за пределы M2 local DX; текущие
+  list/get names уже входят в local engine baseline, но более богатая оркестрация
+  names отложена.
 - **Сделано (ФС)**: заглушка snapshot на overlayfs (copy) и бэкенд снимков на Btrfs.
 - **Сделано (PR #37-#41, hardening)**: добавлены release happy-path e2e сценарии
   для Chinook/Sakila с расширением матрицы (включая Btrfs), поведение

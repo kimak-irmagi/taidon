@@ -80,6 +80,10 @@ gantt
   `sqlrs config`, `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`,
   `sqlrs prepare:psql`, `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`,
   `sqlrs rm`), WSL init flow (incl. nsenter install), instance-delete logging.
+- **Deferred (names follow-up)**: deeper runtime-name workflows and any
+  alias-to-name linkage remain intentionally out of M2 local DX scope; the
+  current names list/get API is part of the local engine baseline, but richer
+  name orchestration is postponed.
 - **Done (filesystem)**: overlayfs-based copy stub and Btrfs snapshot backend.
 - **Done (PR #37-#41 hardening)**: release happy-path e2e scenarios landed for
   Chinook/Sakila with matrix expansion (incl. Btrfs), `init --btrfs` behaviour
