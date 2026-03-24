@@ -175,8 +175,8 @@ func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg conf
 }
 
 // Alias-backed liquibase stages already rebase file-bearing args to the alias
-// file directory, so they must preserve those absolute paths instead of
-// re-relativizing them to the caller's cwd.
+// file directory. When a searchPath is present, Liquibase must run from that
+// app root so the changelog path and include graph stay aligned on the host.
 func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, relativizePaths bool) (client.PrepareJobResult, bool, error) {
 	parsed, showHelp, err := parsePrepareArgs(args)
 	if err != nil {
@@ -225,6 +225,9 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 	workDir, err := normalizeWorkDir(cwd, converter)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
+	}
+	if !relativizePaths {
+		workDir = deriveLiquibaseWorkDirFromArgs(liquibaseArgs, workDir)
 	}
 
 	runOpts.ImageID = imageID
@@ -510,6 +513,41 @@ func normalizeWorkDir(cwd string, convert func(string) (string, error)) (string,
 		return converted, nil
 	}
 	return cleaned, nil
+}
+
+func deriveLiquibaseWorkDirFromArgs(args []string, fallback string) string {
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		switch {
+		case arg == "--searchPath" || arg == "--search-path":
+			if i+1 < len(args) {
+				if dir := firstLiquibaseSearchPathDir(args[i+1]); dir != "" {
+					return dir
+				}
+				i++
+			}
+		case strings.HasPrefix(arg, "--searchPath="):
+			if dir := firstLiquibaseSearchPathDir(strings.TrimPrefix(arg, "--searchPath=")); dir != "" {
+				return dir
+			}
+		case strings.HasPrefix(arg, "--search-path="):
+			if dir := firstLiquibaseSearchPathDir(strings.TrimPrefix(arg, "--search-path=")); dir != "" {
+				return dir
+			}
+		}
+	}
+	return fallback
+}
+
+func firstLiquibaseSearchPathDir(value string) string {
+	for _, part := range strings.Split(value, ",") {
+		item := strings.TrimSpace(part)
+		if item == "" || inputset.LooksLikeLiquibaseRemoteRef(item) {
+			continue
+		}
+		return filepath.Clean(item)
+	}
+	return ""
 }
 
 func rewriteLiquibasePathArg(flag string, value string, workspaceRoot string, cwd string, convert func(string) (string, error)) (string, error) {

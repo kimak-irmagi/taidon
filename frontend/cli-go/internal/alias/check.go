@@ -96,8 +96,6 @@ type runDefinition struct {
 	Args  []string `yaml:"args"`
 }
 
-const pgbenchStdinMarker = "/dev/stdin"
-
 func checkPrepareAlias(path string, workspaceRoot string) (string, []Issue) {
 	def, err := loadPrepareAlias(path)
 	if err != nil {
@@ -201,12 +199,6 @@ func mapInputsetIssues(issues []inputset.UserError) []Issue {
 	return out
 }
 
-// validatePgbenchFileArgs mirrors the pgbench runtime path semantics used by
-// materializePgbenchRunArgs so alias check stays aligned with actual execution.
-func validatePgbenchFileArgs(args []string, aliasPath string, workspaceRoot string) []Issue {
-	return mapInputsetIssues(inputpgbench.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
-}
-
 func validateScriptFileArgs(args []string, aliasPath string, workspaceRoot string) []Issue {
 	return mapInputsetIssues(inputpsql.ValidateArgs(args, newAliasResolver(workspaceRoot, aliasPath), inputset.OSFileSystem{}))
 }
@@ -239,14 +231,6 @@ func validateLocalLiquibaseArg(value string, aliasPath string, workspaceRoot str
 		return Issue{}, false
 	}
 	return validateLocalFileArg(value, aliasPath, workspaceRoot, requireFile)
-}
-
-func validatePgbenchFileArg(value string, aliasPath string, workspaceRoot string) (Issue, bool) {
-	path, _ := splitPgbenchFileArgValue(value)
-	if path == pgbenchStdinMarker {
-		return Issue{}, false
-	}
-	return validateLocalFileArg(path, aliasPath, workspaceRoot, true)
 }
 
 func validateLocalFileArg(value string, aliasPath string, workspaceRoot string, requireFile bool) (Issue, bool) {
@@ -293,8 +277,4 @@ func validateLocalFileArg(value string, aliasPath string, workspaceRoot string, 
 
 func looksLikeLiquibaseRemoteRef(value string) bool {
 	return inputset.LooksLikeLiquibaseRemoteRef(value)
-}
-
-func splitPgbenchFileArgValue(value string) (string, string) {
-	return inputset.SplitPgbenchFileArgValue(value)
 }

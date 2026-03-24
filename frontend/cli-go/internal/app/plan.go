@@ -82,6 +82,9 @@ func runPlanKindWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOption
 		if err != nil {
 			return err
 		}
+		if !relativizeLiquibasePaths {
+			workDir = deriveLiquibaseWorkDirFromArgs(liquibaseArgs, workDir)
+		}
 		runOpts.ImageID = imageID
 		runOpts.LiquibaseArgs = liquibaseArgs
 		runOpts.LiquibaseExec = liquibaseExec

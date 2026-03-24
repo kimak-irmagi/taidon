@@ -100,8 +100,10 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
 - Each ref is checked out as a **detached worktree** at the repository root
   (`git worktree add --detach`; cleaned up after the command unless
   `--ref-keep-worktree`). Paths from the wrapped command (e.g. `-f`, changelog)
-  resolve **relative to that worktree root**. The Git repo is found from the
-  process current working directory.
+  resolve relative to the **same logical cwd inside that worktree**. For example,
+  if `sqlrs diff` is started from `<repo>/examples`, then `-f ./chinook/prepare.sql`
+  is resolved against `<worktree>/examples/chinook/prepare.sql`. The Git repo is
+  found from the process current working directory.
 - **`--ref-mode blob`** is reserved; the CLI currently supports **`worktree` only**
   (default). Passing `blob` returns a clear “not supported” error.
 
@@ -203,7 +205,7 @@ the same rules as the main CLI.
 
 | Kind | Entry point | Closure rule |
 |------|-------------|--------------|
-| **prepare:psql** / plan:psql | `-f <file>` (file path required; **not** `-f -` / stdin) | Closure over `\i`, `\ir`, `\include`, `\include_relative` (and any other include directives the engine expands). Start from the file(s) named in `-f`; recursively add every file referenced by those directives. |
+| **prepare:psql** / plan:psql | `-f <file>` (file path required; **not** `-f -` / stdin) | Closure over `\i`, `\ir`, `\include`, `\include_relative` (and any other include directives the engine expands). Start from the file(s) named in `-f`; plain `\i` / `\include` resolve from the wrapped command cwd, while `\ir` / `\include_relative` resolve from the including file directory; recursively add every file referenced by those directives. |
 | **prepare:lb** / plan:lb | `--changelog-file <path>` | Closure over the changelog graph: start from the changelog file; add every file referenced by it (include, includeAll, etc.). Liquibase defines the graph; diff reuses the same resolution so the file set is identical to what prepare/plan would use. |
 | **run:psql** (future) | `-f <file>` (file-backed only) | Same as prepare:psql: closure over `\i` / `\include` from each `-f` entry. Inline `-c` does not contribute to the file list. |
 | **run:*** (other kinds, future) | Kind-specific | Each run kind defines which arguments are file-backed; the file list is built from those (e.g. script path, config path) and their kind-specific includes. |
@@ -291,7 +293,7 @@ wrappers.
 
 Ref mode materializes each revision in a temporary Git worktree. The path you pass
 to `-f` / `--changelog-file` must exist **on both** refs, or file stat will fail
-(for example `from-path: stat …/schema/a.sql: no such file or directory`).
+(for example `from-ref: ...` in ref mode or `from-path: ...` in path mode).
 
 To see a working ref diff without touching your real project, run from the repo root:
 

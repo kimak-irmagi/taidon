@@ -89,8 +89,11 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
   локально разрешаемый Git ref.
 - Каждая ревизия — **detached worktree** в корне репозитория (`git worktree add
   --detach`; по окончании удаляется, если не задан `--ref-keep-worktree`). Пути
-  из команды (`-f`, changelog) **относительно корня этого worktree**. Репозиторий
-  находится из текущего каталога процесса.
+  из команды (`-f`, changelog) резолвятся относительно **того же логического cwd
+  внутри этого worktree**. Например, если `sqlrs diff` запущен из
+  `<repo>/examples`, то `-f ./chinook/prepare.sql` будет резолвиться как
+  `<worktree>/examples/chinook/prepare.sql`. Репозиторий находится из текущего
+  каталога процесса.
 - **`--ref-mode blob`** зарезервирован; в CLI поддержан только **`worktree`**
   (по умолчанию); значение `blob` даёт явную ошибку.
 
@@ -269,7 +272,7 @@ composite.
 
 В режиме ref каждая ревизия выкладывается во временный Git worktree. Путь в
 `-f` / `--changelog-file` должен существовать **в обеих** ревизиях, иначе будет
-ошибка stat (например `from-path: stat …/schema/a.sql: no such file or directory`).
+ошибка stat (например `from-ref: ...` в ref mode или `from-path: ...` в path mode).
 
 Из корня репозитория taidon:
 

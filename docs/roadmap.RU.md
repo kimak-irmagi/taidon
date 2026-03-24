@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-03-22)
+## Статус (на 2026-03-23)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -116,6 +116,10 @@ gantt
   `prepare`, `plan`, `run`, `diff` и `alias check` теперь разделяют единый
   kind-specific слой `internal/inputset` для file-bearing semantics и локального
   closure collection по `psql`, `liquibase` и `pgbench`.
+- **Сделано (M2 diff ref-mode hardening)**: разрешение worktree в ref-mode
+  теперь сохраняет caller cwd через symlinked paths, а `psql` include semantics
+  остаются как в `psql` (`\i` / `\include` от cwd команды, `\ir` /
+  `\include_relative` от директории включающего файла).
 - **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
   гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
   Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.

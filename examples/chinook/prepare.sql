@@ -1,1 +1,1 @@
-\i 'Chinook_PostgreSql.sql'
+\ir 'Chinook_PostgreSql.sql'

@@ -126,6 +126,9 @@ func TestRunPrepareAliasLiquibaseResolvesChangelogRelativeToAliasFile(t *testing
 	if got := strings.Join(args, "|"); got != want {
 		t.Fatalf("liquibase_args = %q, want %q", got, want)
 	}
+	if got := gotRequest["work_dir"]; got != filepath.Join(workspace, "examples") {
+		t.Fatalf("work_dir = %v, want %q", got, filepath.Join(workspace, "examples"))
+	}
 }
 
 func TestRunPrepareAliasLiquibaseResolvesDefaultsFileRelativeToAliasFile(t *testing.T) {
@@ -197,6 +200,89 @@ func TestRunPrepareAliasLiquibaseResolvesSearchPathRelativeToAliasFile(t *testin
 	want := "update|--searchPath|" + filepath.Join(workspace, "examples", "migrations") + "," + filepath.Join(workspace, "examples", "shared")
 	if got := strings.Join(args, "|"); got != want {
 		t.Fatalf("liquibase_args = %q, want %q", got, want)
+	}
+}
+
+func TestRunPrepareAliasLiquibaseUsesSearchPathAsWorkDirForNestedAlias(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	var gotRequest map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+	}))
+	defer server.Close()
+
+	workspace := writeAliasWorkspace(t, temp, server.URL)
+	writePrepareAliasFile(t, workspace, filepath.Join("liquibase", "jhipster-sample-app.prep.s9s.yaml"), "kind: lb\nimage: image\nargs:\n  - update\n  - --searchPath\n  - jhipster-sample-app\n  - --changelog-file\n  - jhipster-sample-app/config/liquibase/master.xml\n")
+	writeTestFile(t, filepath.Join(workspace, "liquibase", "jhipster-sample-app"), filepath.Join("config", "liquibase", "master.xml"), "<databaseChangeLog/>\n")
+
+	withWorkingDir(t, workspace)
+	_, err := captureRunStdout(t, func() error {
+		return Run([]string{"--workspace", workspace, "prepare", "--no-watch", "liquibase/jhipster-sample-app"})
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	args := mustStringSliceField(t, gotRequest, "liquibase_args")
+	wantSearch := filepath.Join(workspace, "liquibase", "jhipster-sample-app")
+	wantChangelog := filepath.Join(wantSearch, "config", "liquibase", "master.xml")
+	if got := strings.Join(args, "|"); got != "update|--searchPath|"+wantSearch+"|--changelog-file|"+wantChangelog {
+		t.Fatalf("liquibase_args = %q, want %q", got, "update|--searchPath|"+wantSearch+"|--changelog-file|"+wantChangelog)
+	}
+	if got := gotRequest["work_dir"]; got != wantSearch {
+		t.Fatalf("work_dir = %v, want %q", got, wantSearch)
+	}
+}
+
+func TestRunPlanAliasLiquibaseUsesAliasDirWorkDir(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	var gotRequest map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &gotRequest)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = io.WriteString(w, "{\"type\":\"status\",\"ts\":\"2026-01-24T00:00:00Z\",\"status\":\"succeeded\"}\n")
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":true,"prepare_kind":"lb","image_id":"image","prepare_args_normalized":"update --changelog-file config/liquibase/master.xml","tasks":[{"task_id":"plan","type":"plan","planner_kind":"lb"}]}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	workspace := writeAliasWorkspace(t, temp, server.URL)
+	writePrepareAliasFile(t, workspace, filepath.Join("examples", "liquibase.prep.s9s.yaml"), "kind: lb\nimage: image\nargs:\n  - update\n  - --changelog-file\n  - config/liquibase/master.xml\n")
+	writeTestFile(t, filepath.Join(workspace, "examples"), filepath.Join("config", "liquibase", "master.xml"), "<databaseChangeLog/>\n")
+
+	withWorkingDir(t, workspace)
+	_, err := captureRunStdout(t, func() error {
+		return Run([]string{"--workspace", workspace, "--output=json", "plan", "examples/liquibase"})
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if got := gotRequest["work_dir"]; got != filepath.Join(workspace, "examples") {
+		t.Fatalf("work_dir = %v, want %q", got, filepath.Join(workspace, "examples"))
 	}
 }
 
