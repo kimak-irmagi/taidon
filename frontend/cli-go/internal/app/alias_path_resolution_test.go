@@ -203,6 +203,47 @@ func TestRunPrepareAliasLiquibaseResolvesSearchPathRelativeToAliasFile(t *testin
 	}
 }
 
+func TestRunPrepareAliasLiquibaseUsesSearchPathAsWorkDirForNestedAlias(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+
+	var gotRequest map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/prepare-jobs" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+	}))
+	defer server.Close()
+
+	workspace := writeAliasWorkspace(t, temp, server.URL)
+	writePrepareAliasFile(t, workspace, filepath.Join("liquibase", "jhipster-sample-app.prep.s9s.yaml"), "kind: lb\nimage: image\nargs:\n  - update\n  - --searchPath\n  - jhipster-sample-app\n  - --changelog-file\n  - jhipster-sample-app/config/liquibase/master.xml\n")
+	writeTestFile(t, filepath.Join(workspace, "liquibase", "jhipster-sample-app"), filepath.Join("config", "liquibase", "master.xml"), "<databaseChangeLog/>\n")
+
+	withWorkingDir(t, workspace)
+	_, err := captureRunStdout(t, func() error {
+		return Run([]string{"--workspace", workspace, "prepare", "--no-watch", "liquibase/jhipster-sample-app"})
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	args := mustStringSliceField(t, gotRequest, "liquibase_args")
+	wantSearch := filepath.Join(workspace, "liquibase", "jhipster-sample-app")
+	wantChangelog := filepath.Join(wantSearch, "config", "liquibase", "master.xml")
+	if got := strings.Join(args, "|"); got != "update|--searchPath|"+wantSearch+"|--changelog-file|"+wantChangelog {
+		t.Fatalf("liquibase_args = %q, want %q", got, "update|--searchPath|"+wantSearch+"|--changelog-file|"+wantChangelog)
+	}
+	if got := gotRequest["work_dir"]; got != wantSearch {
+		t.Fatalf("work_dir = %v, want %q", got, wantSearch)
+	}
+}
+
 func TestRunPlanAliasLiquibaseUsesAliasDirWorkDir(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)

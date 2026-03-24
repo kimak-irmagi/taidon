@@ -99,7 +99,10 @@ overrides the default search locations. By default, Liquibase looks for a
 
 **Proposed behavior in sqlrs**:
 
-- The Liquibase **working directory** is the CLI working directory.
+- The Liquibase **working directory** is the CLI working directory, except for
+  alias-backed `prepare:lb` / `plan:lb` invocations that set a local
+  `--searchPath`; in that case sqlrs runs Liquibase from the first local
+  search-path entry so the changelog path and include graph stay aligned.
 - sqlrs does **not** attempt to resolve includes itself. Liquibase handles it.
 
 This delegates include resolution to Liquibase.

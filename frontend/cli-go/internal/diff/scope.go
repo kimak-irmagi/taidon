@@ -154,11 +154,6 @@ func finishParseDiffScope(
 	return ParsedDiff{}, errors.New("diff requires a scope: --from-path/--to-path or --from-ref/--to-ref")
 }
 
-// ParsePathScope is an alias for ParseDiffScope (path or ref).
-func ParsePathScope(args []string) (ParsedDiff, error) {
-	return ParseDiffScope(args)
-}
-
 func parseInt(s string) (int, error) {
 	var n int
 	_, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &n)

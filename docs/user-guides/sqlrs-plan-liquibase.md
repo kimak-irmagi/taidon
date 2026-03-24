@@ -52,6 +52,9 @@ When Liquibase runs on the Windows host (WSL engine + host Liquibase):
   Windows paths before execution.
 - If the file is under the workspace root, sqlrs prefers **relative paths** to
   allow Liquibase to resolve them against `--searchPath`.
+- For alias-backed `plan:lb` invocations that declare a local `--searchPath`,
+  sqlrs runs Liquibase from the first local search-path entry so the changelog
+  path and include graph stay aligned.
 
 ---
 
