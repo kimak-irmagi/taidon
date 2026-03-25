@@ -3,8 +3,8 @@
 Этот документ определяет утвержденный общий CLI-side слой для
 **семантики file-bearing команд** в `sqlrs`.
 
-Цель слоя — дать `prepare`, `plan`, `run`, `diff` и `alias check` один source
-of truth для:
+Цель слоя — дать `prepare`, `plan`, `run`, `diff`, `alias check` и
+`alias create` один source of truth для:
 
 - парсинга file-bearing аргументов каждого поддерживаемого tool kind;
 - разрешения этих аргументов в host-side пути;
@@ -28,6 +28,7 @@ of truth для:
   - `run:*`
   - `sqlrs diff`
   - `sqlrs alias check`
+  - `sqlrs alias create`
   - позже `discover`, provenance и cache explanation
 
 ## 2. Правила дизайна
@@ -45,7 +46,8 @@ of truth для:
    - runtime args для `prepare:*` / `plan:*`;
    - run steps/stdin materialization для `run:*`;
    - file lists + hashes для `diff`;
-   - declared refs, closure checks и issues для `alias check`.
+   - declared refs, closure checks и issues для `alias check`;
+   - validated wrapped-command inputs для `alias create`.
 
 3. **Сначала parse, потом bind, потом collect**
 
@@ -70,12 +72,12 @@ of truth для:
 | Компонент                     | Ответственность                                                                                                                                                                                           | Основные consumers                                             |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `internal/inputset`           | Общие core-абстракции: path resolvers, filesystem abstraction, типы collected input set, shared hashing/ordering helpers.                                                                                 | `internal/app`, `internal/diff`, `internal/alias`              |
-| `internal/inputset/psql`      | Парсить `psql` file-bearing args, bind-ить пути, строить include closure, где обычные `\i` / `\include` резолвятся от effective command base dir, а `\ir` / `\include_relative` - от директории включающего файла, проектировать в prepare/run/diff/alias-check представления. | `prepare:psql`, `plan:psql`, `run:psql`, `diff`, `alias check` |
-| `internal/inputset/liquibase` | Парсить Liquibase path-bearing args (`--changelog-file`, `--defaults-file`, `--searchPath`), bind-ить search roots, строить changelog graph, проектировать в prepare/plan/diff/alias-check представления. | `prepare:lb`, `plan:lb`, `diff`, `alias check`                 |
-| `internal/inputset/pgbench`   | Парсить `pgbench` file-bearing args, bind-ить пути, materialize-ить runtime stdin projection, отдавать declared file refs для alias validation.                                                           | `run:pgbench`, `alias check`                                   |
+| `internal/inputset/psql`      | Парсить `psql` file-bearing args, bind-ить пути, строить include closure, где обычные `\i` / `\include` резолвятся от effective command base dir, а `\ir` / `\include_relative` - от директории включающего файла, проектировать в prepare/run/diff/alias-check/alias-create представления. | `prepare:psql`, `plan:psql`, `run:psql`, `diff`, `alias check`, `alias create` |
+| `internal/inputset/liquibase` | Парсить Liquibase path-bearing args (`--changelog-file`, `--defaults-file`, `--searchPath`), bind-ить search roots, строить changelog graph, проектировать в prepare/plan/diff/alias-check/alias-create представления. | `prepare:lb`, `plan:lb`, `diff`, `alias check`, `alias create` |
+| `internal/inputset/pgbench`   | Парсить `pgbench` file-bearing args, bind-ить пути, materialize-ить runtime stdin projection, отдавать declared file refs для alias validation.                                                           | `run:pgbench`, `alias check`, `alias create`                   |
 | `internal/app`                | Строить command context, выбирать kind component, передавать правильный path resolver, запрашивать runtime projection и вызывать transport executors.                                                     | Исполнение CLI-команд                                          |
 | `internal/diff`               | Разрешать left/right scope roots, вызывать тот же kind component для обеих сторон, сравнивать collected input sets и рендерить human/JSON diff.                                                           | `sqlrs diff`                                                   |
-| `internal/alias`              | Разрешать alias files и alias-relative base, затем вызывать тот же kind component для declared refs и optional closure checks.                                                                            | `sqlrs alias check`                                            |
+| `internal/alias`              | Разрешать alias files и alias-relative base, затем вызывать тот же kind component для declared refs и optional closure checks. Также переиспользовать тот же kind component при рендеринге новых alias files. | `sqlrs alias check`, `sqlrs alias create`                      |
 
 ## 4. Общий pipeline
 
@@ -123,6 +125,8 @@ collected set:
 - `run:*`: run steps, stdin bodies или command args;
 - `diff`: relative file list + content hashes/snippets;
 - `alias check`: issues по declared paths и, где включено, closure validation.
+- `alias create`: validated wrapped-command inputs, которые будут rendered в
+  repo-tracked alias file.
 
 ## 5. Предлагаемые core types
 

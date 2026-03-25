@@ -307,14 +307,34 @@ sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
 Правила дизайна:
 
 - `discover` read-only по умолчанию;
+- `discover` не предоставляет флаг `--apply` в этом срезе;
 - execution commands никогда не зависят от предыдущего discovery output;
-- `--aliases` - первый планируемый analyzer;
+- `discover` сейчас по умолчанию запускает aliases-анализатор, если analyzer
+  flags не указаны;
+- `--aliases` - первый реализованный analyzer; он использует cheap prefilter,
+  более глубокую специфичную для kind валидацию, ранжирование по топологии и
+  отбрасывание уже покрытого существующими псевдонимами;
+- `discover --aliases` предлагает вероятные кандидаты `*.prep.s9s.yaml` /
+  `*.run.s9s.yaml` для поддерживаемых SQL и Liquibase workflows и печатает готовую
+  к копированию и запуску команду `sqlrs alias create ...` для каждого сильного
+  кандидата;
+- `--gitignore`, `--vscode` и `--prepare-shaping` зарезервированы для более
+  поздних slices и пока не реализованы;
 - последующие analyzers могут предлагать улучшения для repository hygiene или
   cache shaping.
+- human output должен ранжировать кандидатов и показывать короткую причину,
+  предлагаемый путь к псевдониму и готовую к копированию и использованию команду
+  `sqlrs alias create ...`;
+- JSON output должен сохранять те же результаты и общую статистику в стабильной
+  форме, включая предлагаемые команды для создания псевдонимов.
 
 См.:
 
 - [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
+- [`alias-create-flow.RU.md`](alias-create-flow.RU.md)
+- [`alias-create-component-structure.RU.md`](alias-create-component-structure.RU.md)
+- [`discover-flow.RU.md`](discover-flow.RU.md)
+- [`discover-component-structure.RU.md`](discover-component-structure.RU.md)
 
 ---
 
@@ -324,15 +344,21 @@ sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
 repo-tracked workflow recipes:
 
 ```text
+sqlrs alias create <ref> <wrapped-command> [-- <command>...]
 sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]
 sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]
 ```
 
-Эти команды inspect-ят или статически проверяют alias files; они не заменяют
+Эти команды inspect-ят, проверяют или создают alias files; они не заменяют
 runtime `names`.
 
 Примечания к дизайну:
 
+- `create` materialize-ит repo-tracked alias file из wrapped `prepare:<kind>`
+  или `run:<kind>` command;
+- `create` переиспользует тот же wrapped-command parsing и file-bearing
+  semantics, что и execution commands;
+- `discover` печатает `alias create` command shape, но никогда не пишет файлы;
 - scan mode по умолчанию использует `--from cwd --depth recursive`
 - `check <ref>` переиспользует те же правила alias-ref resolution, что и
   execution-команды
@@ -344,6 +370,8 @@ runtime `names`.
 См.:
 
 - [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
+- [`alias-create-flow.RU.md`](alias-create-flow.RU.md)
+- [`alias-create-component-structure.RU.md`](alias-create-component-structure.RU.md)
 - [`alias-inspection-flow.RU.md`](alias-inspection-flow.RU.md)
 
 ---

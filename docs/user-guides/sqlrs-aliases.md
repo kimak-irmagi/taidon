@@ -19,6 +19,7 @@ Current local CLI support includes:
 Approved next slice:
 
 - explicit `sqlrs alias ...` management commands
+- explicit `sqlrs alias create`
 - `sqlrs discover ...`
 - alias-driven name binding flags such as `--name`
 
@@ -268,17 +269,20 @@ sqlrs should expose explicit alias-management commands that operate on the
 repo-tracked alias files:
 
 ```text
+sqlrs alias create <ref> <wrapped-command> [-- <command>...]
 sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]
 sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>] [<ref>]
 ```
 
 Purpose:
 
+- `create` - materialize a repo-tracked alias file from a wrapped execution
+  command
 - `ls` - list discovered alias refs from the workspace
 - `check` - validate schema and command-specific constraints
 
-These commands inspect or validate alias files. They do not create runtime
-instances and they do not replace `names`.
+These commands inspect, validate, or create alias files. They do not create
+runtime instances and they do not replace `names`.
 
 ### Common inspection rules
 
@@ -316,6 +320,35 @@ instances and they do not replace `names`.
 - If an exact-file escape is used with a non-standard filename in single-alias
   mode, the caller must provide `--prepare` or `--run` so sqlrs knows which
   alias schema to apply.
+
+### `sqlrs alias create`
+
+`create` writes a repo-tracked alias file from a wrapped execution command.
+
+Current slice shape:
+
+```text
+sqlrs alias create <ref> <wrapped-command> [-- <command>...]
+```
+
+Examples:
+
+```bash
+sqlrs alias create chinook prepare:psql -- -f chinook/prepare.sql
+sqlrs alias create flights prepare:lb -- update --changelog-file db/changelog.xml
+sqlrs alias create smoke run:pgbench -- -c 10 -T 30
+```
+
+Rules:
+
+- `<ref>` is a cwd-relative logical stem; sqlrs writes `<ref>.prep.s9s.yaml`
+  for `prepare:<kind>` and `<ref>.run.s9s.yaml` for `run:<kind>`.
+- The wrapped command is validated with the same shared file-bearing semantics
+  used by execution commands.
+- The initial slice treats an existing target alias file as an error and does
+  not overwrite it.
+- The command does not depend on `discover`; discover only prints this command
+  shape for strong candidates.
 
 ### `sqlrs alias ls`
 
@@ -415,16 +448,21 @@ sqlrs alias check --run scripts/smoke.run.s9s.yaml.
 It is broader than alias generation and should remain a **verb**, not a
 subcommand under `alias`.
 
-Initial command shape:
+Current slice:
 
 ```text
-sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
+sqlrs discover [--aliases]
 ```
+
+`discover` is advisory and read-only. In the current slice, bare `discover`
+behaves like `discover --aliases`.
 
 ### Intended analyzer roles
 
 - `--aliases`
-  - detect candidate prepare/run workflows and suggest alias files
+  - detect candidate prepare/run workflows, rank likely start files, and
+    emit copy-pasteable `sqlrs alias create ...` commands for repo-tracked
+    alias files
 - `--gitignore`
   - suggest repository hygiene changes such as ignoring `.sqlrs/`
 - `--vscode`
@@ -432,15 +470,31 @@ sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
 - `--prepare-shaping`
   - suggest decomposition opportunities that could improve cache reuse
 
+The non-alias analyzer flags are planned follow-ups and are not implemented in
+the current slice yet.
+
 ### Discover rules
 
 - `discover` is advisory and read-only by default
 - execution commands never depend on `discover`
 - alias resolution never falls back to discovery results
+- the aliases analyzer is a pipeline:
+  - cheap path/content prefilter;
+  - deeper validation and closure collection for supported kinds;
+  - topology/root ranking for likely alias entrypoints;
+  - suppression of suggestions already covered by existing repo-tracked aliases
+- the analyzer currently focuses on supported SQL and Liquibase workflow roots
 - analyzers may be added incrementally over time
+- human output should rank the strongest candidates and show a short reason,
+  the suggested alias file path, and a copy-paste `sqlrs alias create ...`
+  command;
+- JSON output should preserve the same findings and summary counts in a stable
+  shape, including the suggested create command string
 
 `discover --aliases` is the first expected discover slice because it directly
-supports the alias-file workflow.
+supports the alias-file workflow. It stays read-only and never writes alias
+files; the user materializes a suggestion by running the printed `alias
+create` command.
 
 ---
 
@@ -486,8 +540,8 @@ This design optimizes for low surprise:
 - local-only settings stay local;
 - alias refs are deterministic and cwd-relative;
 - file-bearing paths inside alias files stay local to the alias file;
-- `discover` helps authors improve a workspace but never becomes execution-time
-  magic;
+- `discover` helps authors improve a workspace by printing copy-paste
+  `alias create` commands, but never becomes execution-time magic;
 - runtime handles (`names`) stay distinct from repo-tracked recipes.
 
 ---
@@ -514,10 +568,24 @@ sqlrs alias ls --from cwd
 sqlrs alias check
 ```
 
+Materialize a suggested alias:
+
+```bash
+sqlrs alias create chinook prepare:psql -- -f chinook/prepare.sql
+```
+
 Advisory discovery:
 
 ```bash
 sqlrs discover
 sqlrs discover --aliases
-sqlrs discover --prepare-shaping
 ```
+
+Example discover output for a strong candidate should be copy-pasteable:
+
+```bash
+sqlrs alias create chinook prepare:psql -- -f chinook/prepare.sql
+```
+
+Future analyzer flags such as `--gitignore`, `--vscode`, and `--prepare-shaping`
+are reserved for later slices.

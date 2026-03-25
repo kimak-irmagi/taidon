@@ -41,6 +41,15 @@ Entry points for Taidon architecture and service design.
   `sqlrs alias ls` and `sqlrs alias check`.
 - [`alias-inspection-component-structure.md`][aics] -
   internal component structure for the alias-inspection CLI slice.
+- [`alias-create-flow.md`](alias-create-flow.md) - interaction flow for
+  `sqlrs alias create` and discover-emitted copy-paste alias suggestions.
+- [`alias-create-component-structure.md`](alias-create-component-structure.md) -
+  internal component structure for the alias-creation CLI slice.
+- [`discover-flow.md`](discover-flow.md) - interaction flow for
+  `sqlrs discover` with the aliases analyzer and copy-paste alias-create
+  output.
+- [`discover-component-structure.md`](discover-component-structure.md) -
+  internal component structure for the discover analyzer pipeline.
 - [`prepare-manager-refactor.md`](prepare-manager-refactor.md) - prepare manager
   split into coordinator/executor/snapshot roles.
 - [`local-engine-cli-maintainability-refactor.md`][lecmr] -
