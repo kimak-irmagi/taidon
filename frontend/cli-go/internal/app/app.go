@@ -73,6 +73,11 @@ func Run(args []string) error {
 				return fmt.Errorf("alias cannot be combined with other commands")
 			}
 			return runAliasCommand(os.Stdout, cmdCtx, cmd.Args)
+		case "discover":
+			if len(commands) > 1 {
+				return fmt.Errorf("discover cannot be combined with other commands")
+			}
+			return runDiscover(os.Stdout, cmdCtx, cmd.Args, cmdCtx.output)
 		case "ls":
 			if len(commands) > 1 {
 				return fmt.Errorf("ls cannot be combined with other commands")
