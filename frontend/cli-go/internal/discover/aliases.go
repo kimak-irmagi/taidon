@@ -13,6 +13,7 @@ import (
 	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
 	inputpgbench "github.com/sqlrs/cli/internal/inputset/pgbench"
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
+	"gopkg.in/yaml.v3"
 )
 
 // Options carries the workspace-bounded inputs for the advisory discover slice.
@@ -80,11 +81,19 @@ func AnalyzeAliases(opts Options) (Report, error) {
 	if workspaceRoot == "" {
 		return Report{}, fmt.Errorf("workspace root is required for discover")
 	}
+	workspaceRoot, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return Report{}, err
+	}
 	workspaceRoot = filepath.Clean(workspaceRoot)
 
 	cwd := strings.TrimSpace(opts.CWD)
 	if cwd == "" {
 		cwd = workspaceRoot
+	}
+	cwd, err = filepath.Abs(cwd)
+	if err != nil {
+		return Report{}, err
 	}
 	cwd = filepath.Clean(cwd)
 
@@ -188,8 +197,74 @@ func loadAliasCoverage(workspaceRoot string) (map[string]struct{}, error) {
 	coverage := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		coverage[entry.File] = struct{}{}
+		covered, err := aliasCoveragePaths(workspaceRoot, entry)
+		if err != nil {
+			continue
+		}
+		for path := range covered {
+			coverage[path] = struct{}{}
+		}
 	}
 	return coverage, nil
+}
+
+type discoverAliasDefinition struct {
+	Kind string   `yaml:"kind"`
+	Args []string `yaml:"args"`
+}
+
+func aliasCoveragePaths(workspaceRoot string, entry alias.Entry) (map[string]struct{}, error) {
+	if strings.TrimSpace(entry.Path) == "" {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(entry.Path)
+	if err != nil {
+		return nil, err
+	}
+	var def discoverAliasDefinition
+	if err := yaml.Unmarshal(data, &def); err != nil {
+		return nil, err
+	}
+
+	def.Kind = strings.ToLower(strings.TrimSpace(def.Kind))
+	if len(def.Args) == 0 {
+		return nil, nil
+	}
+
+	resolver := inputset.NewAliasResolver(workspaceRoot, entry.Path)
+	var inputSet inputset.InputSet
+	switch entry.Class {
+	case alias.ClassPrepare:
+		switch def.Kind {
+		case "psql":
+			inputSet, err = inputpsql.Collect(def.Args, resolver, inputset.OSFileSystem{})
+		case "lb":
+			inputSet, err = inputliquibase.Collect(def.Args, resolver, inputset.OSFileSystem{})
+		default:
+			return nil, nil
+		}
+	case alias.ClassRun:
+		switch def.Kind {
+		case "psql":
+			inputSet, err = inputpsql.Collect(def.Args, resolver, inputset.OSFileSystem{})
+		case "pgbench":
+			inputSet, err = inputpgbench.Collect(def.Args, resolver, inputset.OSFileSystem{})
+		default:
+			return nil, nil
+		}
+	default:
+		return nil, nil
+	}
+	if err != nil {
+		return nil, nil
+	}
+
+	covered := make(map[string]struct{}, len(inputSet.Entries))
+	for _, entry := range inputSet.Entries {
+		covered[entry.AbsPath] = struct{}{}
+	}
+	return covered, nil
 }
 
 func walkDiscoverFiles(workspaceRoot string, cwd string) ([]fileRecord, error) {
@@ -236,6 +311,9 @@ func classifyDiscoverFile(workspaceRoot string, cwd string, path string) (fileRe
 	lowerPath := strings.ToLower(filepath.ToSlash(relWorkspace))
 	lowerBase := strings.ToLower(filepath.Base(path))
 	ext := strings.ToLower(filepath.Ext(path))
+	if !isSupportedDiscoverExtension(ext) {
+		return fileRecord{}, false
+	}
 	binaryOnly := ext == ".class" || ext == ".jar"
 
 	record := fileRecord{
@@ -307,7 +385,16 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 		return result, nil
 	}
 
-	resolver := inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil)
+	workspaceResolver := inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil)
+	resolver := workspaceResolver
+	if target, err := alias.ResolveCreateTarget(alias.CreateOptions{
+		WorkspaceRoot: workspaceRoot,
+		CWD:           cwd,
+		Ref:           proposal.Ref,
+		Class:         proposal.Class,
+	}); err == nil {
+		resolver = inputset.NewAliasResolver(workspaceRoot, target.Path)
+	}
 	var (
 		inputSet inputset.InputSet
 		err      error
@@ -316,7 +403,7 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 	case proposal.Class == alias.ClassPrepare && proposal.Kind == "psql":
 		inputSet, err = inputpsql.Collect([]string{"-f", proposal.CwdRel}, resolver, inputset.OSFileSystem{})
 	case proposal.Class == alias.ClassPrepare && proposal.Kind == "lb":
-		inputSet, err = inputliquibase.Collect([]string{"update", "--changelog-file", proposal.CwdRel}, resolver, inputset.OSFileSystem{})
+		inputSet, err = inputliquibase.Collect(liquibaseDiscoverArgs(proposal.CwdRel), workspaceResolver, inputset.OSFileSystem{})
 	case proposal.Class == alias.ClassRun && proposal.Kind == "psql":
 		inputSet, err = inputpsql.Collect([]string{"-f", proposal.CwdRel}, resolver, inputset.OSFileSystem{})
 	case proposal.Class == alias.ClassRun && proposal.Kind == "pgbench":
@@ -364,7 +451,7 @@ func buildCreateCommand(ref string, class alias.Class, kind string, fileRef stri
 	case class == alias.ClassPrepare && kind == "psql":
 		return shellJoin([]string{"sqlrs", "alias", "create", ref, "prepare:psql", "--", "-f", fileRef})
 	case class == alias.ClassPrepare && kind == "lb":
-		return shellJoin([]string{"sqlrs", "alias", "create", ref, "prepare:lb", "--", "update", "--changelog-file", fileRef})
+		return shellJoin(liquibaseDiscoverCreateCommand(ref, fileRef))
 	case class == alias.ClassRun && kind == "psql":
 		return shellJoin([]string{"sqlrs", "alias", "create", ref, "run:psql", "--", "-f", fileRef})
 	case class == alias.ClassRun && kind == "pgbench":
@@ -409,43 +496,48 @@ func proposalPriority(proposal candidateProposal) int {
 
 func scorePrepareLiquibase(file fileRecord) candidateProposal {
 	result := candidateProposal{fileRecord: file, Class: alias.ClassPrepare, Kind: "lb"}
+	if !isLiquibaseCandidateExtension(file.Ext) {
+		return result
+	}
 	if file.BinaryOnly {
-		if points, reason := scoreContains(file.LowerPath, []string{"liquibase", "changelog", "change-log", "dbchangelog", "changeset", "master"}, 40, "Liquibase binary artifact path"); points > 0 {
+		if points, reason := scoreContains(file.LowerPath, []string{"liquibase", "changelog", "change-log", "dbchangelog", "changeset", "master", "migration", "migrations"}, 40, "Liquibase binary artifact path"); points > 0 {
 			result.Score += points
 			result.Reason = appendReason(result.Reason, reason)
 		}
 		result.Score += 5
 		result.Reason = appendReason(result.Reason, "binary Liquibase artifact")
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+		if result.Score > 0 {
+			result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+		}
 		return result
 	}
-	result.Score += 20
-	result.Reason = appendReason(result.Reason, "markup changelog file")
 	if points, reason := scoreContains(file.LowerPath, []string{"liquibase", "changelog", "change-log", "dbchangelog", "changeset", "master", "migration", "migrations"}, 40, "Liquibase changelog path"); points > 0 {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
-	if points, reason := scoreContains(file.Content, []string{"databasechangelog", "changeset", "includeall"}, 30, "Liquibase changelog markup"); points > 0 {
+	if points, reason := scoreContains(file.Content, []string{"databasechangelog", "changeset", "includeall", "<include", "relativeTochangelogfile", "--liquibase formatted sql", "--changeset", "--rollback"}, 30, "Liquibase changelog markup"); points > 0 {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
-	if points, reason := scoreContains(file.Content, []string{"include file=", "includeall path="}, 10, "Liquibase include graph"); points > 0 {
+	if points, reason := scoreContains(file.Content, []string{"include file=", "includeall path=", "file=\"", "path=\""}, 10, "Liquibase include graph"); points > 0 {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
-	if result.Score >= 35 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
-	}
-	if result.Ref == "" && result.Score > 0 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+	if result.Score > 0 {
+		if ref := liquibaseRootHint(file.CwdRel); ref != "" {
+			result.Ref = ref
+		} else {
+			result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+		}
 	}
 	return result
 }
 
 func scorePreparePsql(file fileRecord) candidateProposal {
 	result := candidateProposal{fileRecord: file, Class: alias.ClassPrepare, Kind: "psql"}
-	result.Score += 10
-	result.Reason = appendReason(result.Reason, "SQL file")
+	if file.Ext != ".sql" {
+		return result
+	}
 	if points, reason := scoreContains(file.LowerPath, []string{"schema", "migration", "migrations", "init", "setup", "seed", "bootstrap", "ddl", "prepare", "db"}, 40, "migration/setup path"); points > 0 {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
@@ -458,10 +550,7 @@ func scorePreparePsql(file fileRecord) candidateProposal {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
-	if result.Score >= 35 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
-	}
-	if result.Ref == "" && result.Score > 0 {
+	if result.Score > 0 {
 		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
 	}
 	return result
@@ -469,8 +558,9 @@ func scorePreparePsql(file fileRecord) candidateProposal {
 
 func scoreRunPgbench(file fileRecord) candidateProposal {
 	result := candidateProposal{fileRecord: file, Class: alias.ClassRun, Kind: "pgbench"}
-	result.Score += 10
-	result.Reason = appendReason(result.Reason, "SQL benchmark file")
+	if file.Ext != ".sql" {
+		return result
+	}
 	if points, reason := scoreContains(file.LowerPath, []string{"bench", "benchmark", "pgbench", "perf", "performance", "load", "stress", "tps"}, 40, "benchmark path"); points > 0 {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
@@ -479,10 +569,7 @@ func scoreRunPgbench(file fileRecord) candidateProposal {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
-	if result.Score >= 35 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
-	}
-	if result.Ref == "" && result.Score > 0 {
+	if result.Score > 0 {
 		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
 	}
 	return result
@@ -490,8 +577,9 @@ func scoreRunPgbench(file fileRecord) candidateProposal {
 
 func scoreRunPsql(file fileRecord) candidateProposal {
 	result := candidateProposal{fileRecord: file, Class: alias.ClassRun, Kind: "psql"}
-	result.Score += 10
-	result.Reason = appendReason(result.Reason, "SQL query file")
+	if file.Ext != ".sql" {
+		return result
+	}
 	if points, reason := scoreContains(file.LowerPath, []string{"query", "queries", "smoke", "test", "verify", "check", "report", "read", "readonly", "select", "run"}, 40, "query/test path"); points > 0 {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
@@ -504,10 +592,7 @@ func scoreRunPsql(file fileRecord) candidateProposal {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
-	if result.Score >= 35 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
-	}
-	if result.Ref == "" && result.Score > 0 {
+	if result.Score > 0 {
 		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
 	}
 	return result
@@ -544,4 +629,63 @@ func appendReason(base string, reason string) string {
 		return reason
 	}
 	return base + "; " + reason
+}
+
+func liquibaseDiscoverArgs(fileRef string) []string {
+	args := []string{"update"}
+	if hint := liquibaseRootHint(fileRef); hint != "" {
+		args = append(args, "--searchPath", hint)
+	}
+	args = append(args, "--changelog-file", fileRef)
+	return args
+}
+
+func liquibaseDiscoverCreateCommand(ref string, fileRef string) []string {
+	args := []string{"sqlrs", "alias", "create", ref, "prepare:lb", "--"}
+	return append(args, liquibaseDiscoverArgs(fileRef)...)
+}
+
+func liquibaseRootHint(cwdRel string) string {
+	rel := filepath.ToSlash(strings.TrimSpace(cwdRel))
+	if rel == "" {
+		return ""
+	}
+	parts := strings.Split(rel, "/")
+	markers := [][]string{
+		{"config", "liquibase"},
+		{"db", "changelog"},
+	}
+	for _, marker := range markers {
+		for i := 0; i+len(marker) <= len(parts); i++ {
+			match := true
+			for j, segment := range marker {
+				if !strings.EqualFold(parts[i+j], segment) {
+					match = false
+					break
+				}
+			}
+			if match && i > 0 {
+				return strings.Join(parts[:i], "/")
+			}
+		}
+	}
+	return ""
+}
+
+func isSupportedDiscoverExtension(ext string) bool {
+	switch strings.ToLower(strings.TrimSpace(ext)) {
+	case ".sql", ".xml", ".yaml", ".yml", ".json", ".class", ".jar":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLiquibaseCandidateExtension(ext string) bool {
+	switch strings.ToLower(strings.TrimSpace(ext)) {
+	case ".xml", ".yaml", ".yml", ".json", ".sql", ".class", ".jar":
+		return true
+	default:
+		return false
+	}
 }
