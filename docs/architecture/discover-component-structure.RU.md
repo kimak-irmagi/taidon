@@ -26,16 +26,20 @@ coverage.
   surviving findings, но сам файлы не пишет.
 - Анализатор может переиспользовать alias inventory, чтобы не дублировать
   существующие подсказки.
+- Финальный human output рендерится как numbered multi-line blocks, а не как
+  таблица.
+- Progress выводится отдельно в `stderr` и остаётся на granularity
+  stage/candidate.
 
 ## 2. CLI-модули и ответственность
 
 | Модуль | Ответственность | Примечания |
 | --- | --- | --- |
 | `internal/app` | Добавить dispatch для `discover`; парсить analyzer flags; определять workspace root, cwd и output mode; вызывать discovery orchestrator. | Владеет command-shape rules и mapping exit-кодов. |
-| `internal/discover` | Registry analyzers, candidate scoring, orchestration closure collection, topology graph construction, root selection, alias-coverage suppression, copy-paste create-command synthesis и aggregation report. | Владеет discovery semantics, а не execution semantics. |
+| `internal/discover` | Registry analyzers, candidate scoring, orchestration closure collection, topology graph construction, root selection, alias-coverage suppression, copy-paste create-command synthesis, aggregation report и emission progress events. | Владеет discovery semantics, а не execution semantics. |
 | `internal/alias` | Existing alias inventory и ref-resolution primitives, которые переиспользуются для suppression duplicate suggestions или для привязки discoveries к уже известному alias coverage. | Остаётся source of truth для repo-tracked alias files. |
 | `internal/inputset` | Общий CLI-side source of truth для file-bearing semantics `psql`, Liquibase и `pgbench`. | Discovery сначала переиспользует `psql` и Liquibase collectors. |
-| `internal/cli` | Рендер human и JSON discovery findings; печать copy-paste `alias create` commands; печать discover usage/help. | Отделяет форматирование от filesystem logic. |
+| `internal/cli` | Рендер human block и JSON discovery findings; печать copy-paste `alias create` commands; печать discover usage/help. | Отделяет форматирование от filesystem logic. |
 
 ## 3. Почему `internal/discover` выделен отдельно
 
@@ -49,6 +53,8 @@ coverage.
 - `internal/inputset` владеет kind-specific file-bearing semantics и closure
   collection.
 - `internal/alias` владеет write path для `sqlrs alias create`.
+- `internal/discover` выдаёт progress milestones, а app решает, показать ли
+  spinner или verbose lines в `stderr`.
 
 Без такого разделения команда либо начнёт дублировать alias logic, либо
 разрастётся heuristics прямо внутри `internal/app`.
@@ -115,6 +121,9 @@ workspace scan
 
 - `discover.Options`
   - Workspace root, cwd, selected analyzers и output mode.
+- `discover.Progress`
+  - Optional sink для stage/candidate milestones, используемый CLI progress
+    renderer.
 - `discover.Report`
   - Итоговый discovery output, включая summary counts и findings.
 - `discover.Finding`
@@ -141,6 +150,7 @@ workspace scan
 - **Discovery findings** живут только в памяти и исчезают после render.
 - **Suggested create commands** - ephemeral output only; discover их никуда не
   пишет.
+- **Progress events** - ephemeral CLI events only и рендерятся в `stderr`.
 - **Discovery cache** в этом slice не вводится.
 
 ## 7. Deployment units

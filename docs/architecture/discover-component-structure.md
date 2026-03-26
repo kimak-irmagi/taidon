@@ -26,16 +26,19 @@ modules.
   surviving findings, but it never writes files.
 - The analyzer is allowed to reuse alias inventory data to avoid duplicate
   suggestions.
+- Final human output is rendered as numbered multi-line blocks, not a table.
+- Progress is emitted separately on `stderr` and stays at stage/candidate
+  granularity.
 
 ## 2. CLI modules and responsibilities
 
 | Module | Responsibility | Notes |
 | --- | --- | --- |
 | `internal/app` | Extend command dispatch with `discover`; parse analyzer flags; resolve workspace root, cwd, and output mode; call the discovery orchestrator. | Owns command-shape rules and exit-code mapping. |
-| `internal/discover` | Analyzer registry, candidate scoring, closure collection orchestration, topology graph construction, root selection, alias-coverage suppression, copy-paste create-command synthesis, and report aggregation. | Owns discovery semantics, not execution semantics. |
+| `internal/discover` | Analyzer registry, candidate scoring, closure collection orchestration, topology graph construction, root selection, alias-coverage suppression, copy-paste create-command synthesis, report aggregation, and progress event emission. | Owns discovery semantics, not execution semantics. |
 | `internal/alias` | Existing alias inventory and ref-resolution primitives reused to suppress duplicate suggestions or anchor discoveries against known alias coverage. | Remains the source of truth for repo-tracked alias files. |
 | `internal/inputset` | Shared CLI-side source of truth for `psql`, Liquibase, and `pgbench` file-bearing semantics. | Discovery reuses the `psql` and Liquibase collectors first. |
-| `internal/cli` | Render human and JSON discovery findings; print copy-paste `alias create` commands; print discover usage/help. | Keeps formatting separate from filesystem logic. |
+| `internal/cli` | Render human block and JSON discovery findings; print copy-paste `alias create` commands; print discover usage/help. | Keeps formatting separate from filesystem logic. |
 
 ## 3. Why `internal/discover` is separate
 
@@ -49,6 +52,8 @@ modules.
 - `internal/inputset` owns kind-specific file-bearing semantics and closure
   collection.
 - `internal/alias` owns the write path for `sqlrs alias create`.
+- `internal/discover` emits progress milestones for the app to render on
+  `stderr`; it does not choose between spinner and verbose-line presentation.
 
 Without this split, the command would either duplicate `alias` logic or grow
 kind heuristics directly inside `internal/app`.
@@ -115,6 +120,9 @@ workspace scan
 
 - `discover.Options`
   - Workspace root, cwd, selected analyzers, and output mode.
+- `discover.Progress`
+  - Optional sink for stage/candidate milestones used by the CLI progress
+    renderer.
 - `discover.Report`
   - Overall discovery output, including summary counts and findings.
 - `discover.Finding`
@@ -141,6 +149,8 @@ workspace scan
 - **Discovery findings** live in memory only and are discarded after rendering.
 - **Suggested create commands** are ephemeral output only and are not written
   anywhere by discover.
+- **Progress events** are ephemeral CLI events only and are rendered to
+  `stderr`.
 - **No discovery cache** is introduced in this slice.
 
 ## 7. Deployment units

@@ -485,9 +485,13 @@ the current slice yet.
   - suppression of suggestions already covered by existing repo-tracked aliases
 - the analyzer currently focuses on supported SQL and Liquibase workflow roots
 - analyzers may be added incrementally over time
-- human output should rank the strongest candidates and show a short reason,
-  the suggested alias file path, and a copy-paste `sqlrs alias create ...`
-  command;
+- human output is rendered as numbered multi-line blocks rather than a wide
+  table; each block shows the ref, kind, source file, alias path, score, and
+  copy-paste `sqlrs alias create ...` command;
+- `discover` writes progress to `stderr` so `stdout` can be redirected safely;
+- in normal interactive mode, progress is shown with a delayed spinner;
+- in verbose mode, progress is written as line-based stage/candidate milestones;
+- progress does not trace every scanned file or folder;
 - JSON output should preserve the same findings and summary counts in a stable
   shape, including the suggested create command string
 

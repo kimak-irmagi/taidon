@@ -114,6 +114,25 @@ alias path и ready-to-copy `sqlrs alias create ...` command.
 - команду можно вставить в shell как есть или поправить перед запуском;
 - mutation происходит только если пользователь запускает `sqlrs alias create`.
 
+### 3.6 Каналы вывода и progress
+
+`discover` оставляет `stdout` для финального результата и использует `stderr`
+для progress.
+
+- Human output рендерится как numbered multi-line blocks, а не как широкая
+  таблица.
+- JSON output остаётся стабильным и machine-friendly.
+- В обычном интерактивном режиме progress показывается delayed spinner'ом в
+  `stderr`.
+- В verbose mode progress печатается line-based milestone'ами в `stderr`.
+- Granularity progress'а строится по stage/candidate:
+  - старт и summary workspace scan;
+  - promotion candidate в глубокую валидацию;
+  - success, suppression или invalidation candidate;
+  - финальная сводка.
+- Progress специально не трассирует каждую папку или каждый просмотренный
+  файл.
+
 ## 4. Обработка ошибок
 
 - Если workspace discovery не удаётся, команда завершается до анализа.

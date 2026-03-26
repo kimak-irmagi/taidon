@@ -35,10 +35,32 @@ func TestPrintDiscover(t *testing.T) {
 	if !strings.Contains(out, "scanned=3") {
 		t.Fatalf("unexpected output: %q", out)
 	}
+	if !strings.Contains(out, "1. VALID prepare") {
+		t.Fatalf("unexpected output: %q", out)
+	}
 	if !strings.Contains(out, "chinook.prep.s9s.yaml") {
 		t.Fatalf("unexpected output: %q", out)
 	}
 	if !strings.Contains(out, "sqlrs alias create chinook prepare:psql -- -f schema.sql") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+	if strings.Contains(out, "\t") {
+		t.Fatalf("expected block output without tabs, got %q", out)
+	}
+	if !strings.Contains(out, "   Ref           : chinook") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+	if !strings.Contains(out, "   Create command: sqlrs alias create chinook prepare:psql -- -f schema.sql") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestPrintDiscoverEmptyReport(t *testing.T) {
+	var buf bytes.Buffer
+	PrintDiscover(&buf, discover.Report{})
+
+	out := buf.String()
+	if !strings.Contains(out, "no advisory alias candidates found") {
 		t.Fatalf("unexpected output: %q", out)
 	}
 }

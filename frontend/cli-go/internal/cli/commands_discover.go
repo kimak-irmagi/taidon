@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/sqlrs/cli/internal/discover"
 )
@@ -17,16 +17,19 @@ func PrintDiscover(w io.Writer, report discover.Report) {
 		return
 	}
 
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "STATUS\tTYPE\tREF\tFILE\tALIAS PATH\tKIND\tSCORE\tDETAIL\tCREATE COMMAND")
-	for _, finding := range report.Findings {
+	for i, finding := range report.Findings {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
 		status := "VALID"
+		detailLabel := "Reason"
+		detail := strings.TrimSpace(finding.Reason)
 		if !finding.Valid {
 			status = "INVALID"
-		}
-		detail := strings.TrimSpace(finding.Reason)
-		if !finding.Valid && strings.TrimSpace(finding.Error) != "" {
-			detail = finding.Error
+			detailLabel = "Error"
+			if errorText := strings.TrimSpace(finding.Error); errorText != "" {
+				detail = errorText
+			}
 		}
 		if detail == "" {
 			detail = "-"
@@ -35,12 +38,22 @@ func PrintDiscover(w io.Writer, report discover.Report) {
 		if createCommand == "" {
 			createCommand = "-"
 		}
-		aliasPath := strings.TrimSpace(finding.AliasPath)
-		if aliasPath == "" {
-			aliasPath = "-"
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-			status, finding.Type, finding.Ref, finding.File, aliasPath, finding.Kind, finding.Score, detail, createCommand)
+
+		fmt.Fprintf(w, "%d. %s %s\n", i+1, status, strings.TrimSpace(string(finding.Type)))
+		printDiscoverField(w, "Ref", finding.Ref)
+		printDiscoverField(w, "Kind", finding.Kind)
+		printDiscoverField(w, "File", finding.File)
+		printDiscoverField(w, "Alias path", finding.AliasPath)
+		printDiscoverField(w, "Score", strconv.Itoa(finding.Score))
+		printDiscoverField(w, detailLabel, detail)
+		printDiscoverField(w, "Create command", createCommand)
 	}
-	_ = tw.Flush()
+}
+
+func printDiscoverField(w io.Writer, label string, value string) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		trimmed = "-"
+	}
+	fmt.Fprintf(w, "   %-14s: %s\n", label, trimmed)
 }

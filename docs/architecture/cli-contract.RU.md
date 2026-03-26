@@ -318,13 +318,16 @@ sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
   `*.run.s9s.yaml` для поддерживаемых SQL и Liquibase workflows и печатает готовую
   к копированию и запуску команду `sqlrs alias create ...` для каждого сильного
   кандидата;
+- human output рендерится как numbered multi-line blocks с ref, kind, file,
+  alias path, score и create command на отдельных строках;
+- `discover` пишет progress в `stderr`: delayed spinner в обычном режиме и
+  line-based milestones в verbose mode;
+- verbose progress использует stage/candidate granularity и не трассирует
+  каждый просмотренный файл;
 - `--gitignore`, `--vscode` и `--prepare-shaping` зарезервированы для более
   поздних slices и пока не реализованы;
 - последующие analyzers могут предлагать улучшения для repository hygiene или
   cache shaping.
-- human output должен ранжировать кандидатов и показывать короткую причину,
-  предлагаемый путь к псевдониму и готовую к копированию и использованию команду
-  `sqlrs alias create ...`;
 - JSON output должен сохранять те же результаты и общую статистику в стабильной
   форме, включая предлагаемые команды для создания псевдонимов.
 

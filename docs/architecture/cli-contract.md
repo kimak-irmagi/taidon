@@ -328,12 +328,16 @@ Design rules:
 - `discover --aliases` suggests likely `*.prep.s9s.yaml` / `*.run.s9s.yaml`
   candidates for supported SQL and Liquibase workflows and prints a
   copy-paste `sqlrs alias create ...` command for each strong suggestion;
+- human output is rendered as numbered multi-line blocks with the ref, kind,
+  file, alias path, score, and create command on separate lines;
+- `discover` writes progress to `stderr`: a delayed spinner in normal mode and
+  line-based milestones in verbose mode;
+- verbose progress uses stage/candidate granularity and does not trace every
+  scanned file;
 - `--gitignore`, `--vscode`, and `--prepare-shaping` are reserved for later
   slices and are not implemented yet;
 - follow-up analyzers may suggest repository hygiene or cache-shaping
   improvements.
-- human output should rank candidates and show a short reason, the suggested
-  alias path, and the copy-paste `sqlrs alias create ...` command;
 - JSON output should preserve the same findings and summary counts in a stable
   shape, including the suggested create command string.
 

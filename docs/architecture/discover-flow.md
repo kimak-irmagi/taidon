@@ -22,7 +22,8 @@ start containers, and does not depend on Git-ref resolution.
   files.
 - **Command suggester** - derives alias refs and renders copy-pasteable
   `sqlrs alias create` commands for the surviving findings.
-- **Renderer** - prints human or JSON findings.
+- **Renderer** - prints human block output or JSON findings.
+- **Progress reporter** - writes discovery progress to `stderr`.
 
 ## 2. Flow: `sqlrs discover`
 
@@ -47,7 +48,7 @@ sequenceDiagram
   DISCOVER->>SUGGEST: derive refs and render alias-create commands
   SUGGEST-->>DISCOVER: ranked alias suggestions
   DISCOVER-->>CLI: discovery report
-  CLI-->>User: human table or JSON findings
+  CLI-->>User: human blocks or JSON findings
 ```
 
 ## 3. Stage breakdown
@@ -112,6 +113,23 @@ That command is an output artifact only:
 - `discover` never writes the file itself;
 - the command can be pasted into the shell as-is or edited before execution;
 - mutation happens only if the user runs `sqlrs alias create`.
+
+### 3.6 Output channels and progress
+
+`discover` keeps `stdout` reserved for the final result and uses `stderr` for
+progress.
+
+- Human output is rendered as numbered multi-line blocks, not a wide table.
+- JSON output remains stable and machine-friendly.
+- In normal interactive mode, progress is shown with a delayed spinner on
+  `stderr`.
+- In verbose mode, progress is written as line-based milestones on `stderr`.
+- Progress granularity is stage/candidate based:
+  - workspace scan start and summary;
+  - candidate promotion into deeper validation;
+  - candidate validation success, suppression, or invalidation;
+  - final summary.
+- Progress intentionally does not trace every folder or every scanned file.
 
 ## 4. Failure handling
 

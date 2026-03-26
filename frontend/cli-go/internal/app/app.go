@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sqlrs/cli/internal/cli"
@@ -77,7 +78,7 @@ func Run(args []string) error {
 			if len(commands) > 1 {
 				return fmt.Errorf("discover cannot be combined with other commands")
 			}
-			return runDiscover(os.Stdout, cmdCtx, cmd.Args, cmdCtx.output)
+			return runDiscover(os.Stdout, os.Stderr, cmdCtx, cmd.Args, cmdCtx.output)
 		case "ls":
 			if len(commands) > 1 {
 				return fmt.Errorf("ls cannot be combined with other commands")
@@ -319,13 +320,14 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 
 	clearLen := len(label) + 2
 	done := make(chan struct{})
-	shown := make(chan struct{})
+	finished := make(chan struct{})
+	var once sync.Once
 	go func() {
+		defer close(finished)
 		timer := time.NewTimer(500 * time.Millisecond)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			close(shown)
 		case <-done:
 			return
 		}
@@ -346,12 +348,10 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 		}
 	}()
 	return func() {
-		close(done)
-		select {
-		case <-shown:
-			clearLineOut(out, clearLen)
-		default:
-		}
+		once.Do(func() {
+			close(done)
+			<-finished
+		})
 	}
 }
 

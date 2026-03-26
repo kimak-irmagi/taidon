@@ -31,10 +31,10 @@ func TestResolveCreateTarget(t *testing.T) {
 	if target.Ref != "aliases/chinook" {
 		t.Fatalf("unexpected ref: %+v", target)
 	}
-	if target.File != filepath.ToSlash(filepath.Join("aliases", "chinook.prep.s9s.yaml")) {
+	if target.File != filepath.ToSlash(filepath.Join("examples", "aliases", "chinook.prep.s9s.yaml")) {
 		t.Fatalf("unexpected file: %+v", target)
 	}
-	if !strings.HasSuffix(target.Path, filepath.Join("aliases", "chinook.prep.s9s.yaml")) {
+	if !strings.HasSuffix(target.Path, filepath.Join("examples", "aliases", "chinook.prep.s9s.yaml")) {
 		t.Fatalf("unexpected path: %+v", target)
 	}
 }

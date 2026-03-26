@@ -20,7 +20,10 @@ import (
 type Options struct {
 	WorkspaceRoot string
 	CWD           string
+	Progress      Progress
 }
+
+const discoverScanHeartbeat = 64
 
 // Finding is one ranked advisory suggestion or validation note.
 type Finding struct {
@@ -97,12 +100,14 @@ func AnalyzeAliases(opts Options) (Report, error) {
 	}
 	cwd = filepath.Clean(cwd)
 
+	emitProgress(opts.Progress, ProgressEvent{Stage: ProgressStageScanStart})
+
 	coverage, err := loadAliasCoverage(workspaceRoot)
 	if err != nil {
 		return Report{}, err
 	}
 
-	files, err := walkDiscoverFiles(workspaceRoot, cwd)
+	files, err := walkDiscoverFiles(workspaceRoot, cwd, opts.Progress)
 	if err != nil {
 		return Report{}, err
 	}
@@ -117,13 +122,38 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		proposals = append(proposals, proposal)
 	}
 	report.Prefiltered = len(proposals)
+	emitProgress(opts.Progress, ProgressEvent{
+		Stage:       ProgressStagePrefilterDone,
+		Scanned:     report.Scanned,
+		Prefiltered: report.Prefiltered,
+	})
 
 	validated := make([]validatedCandidate, 0, len(proposals))
 	for _, proposal := range proposals {
+		emitProgress(opts.Progress, ProgressEvent{
+			Stage:  ProgressStageCandidate,
+			Class:  proposal.Class,
+			Kind:   proposal.Kind,
+			Ref:    proposal.Ref,
+			File:   proposal.WorkspaceRel,
+			Score:  proposal.Score,
+			Reason: proposal.Reason,
+		})
 		result, err := validateCandidate(proposal, workspaceRoot, cwd)
 		if err != nil {
 			return Report{}, err
 		}
+		emitProgress(opts.Progress, ProgressEvent{
+			Stage:  ProgressStageValidated,
+			Class:  result.Class,
+			Kind:   result.Kind,
+			Ref:    result.Ref,
+			File:   result.WorkspaceRel,
+			Score:  result.Score,
+			Reason: result.Reason,
+			Error:  result.Error,
+			Valid:  result.Valid,
+		})
 		validated = append(validated, result)
 	}
 	report.Validated = len(validated)
@@ -133,6 +163,15 @@ func AnalyzeAliases(opts Options) (Report, error) {
 	for _, candidate := range validated {
 		if inbound[candidate.AbsPath] > 0 {
 			report.Suppressed++
+			emitProgress(opts.Progress, ProgressEvent{
+				Stage:  ProgressStageSuppressed,
+				Class:  candidate.Class,
+				Kind:   candidate.Kind,
+				Ref:    candidate.Ref,
+				File:   candidate.WorkspaceRel,
+				Score:  candidate.Score,
+				Reason: "covered by inbound dependency",
+			})
 			continue
 		}
 		target, err := alias.ResolveCreateTarget(alias.CreateOptions{
@@ -146,6 +185,15 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		}
 		if _, ok := coverage[target.File]; ok {
 			report.Suppressed++
+			emitProgress(opts.Progress, ProgressEvent{
+				Stage:  ProgressStageSuppressed,
+				Class:  candidate.Class,
+				Kind:   candidate.Kind,
+				Ref:    candidate.Ref,
+				File:   candidate.WorkspaceRel,
+				Score:  candidate.Score,
+				Reason: "covered by existing alias",
+			})
 			continue
 		}
 
@@ -181,6 +229,14 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		return findings[i].Kind < findings[j].Kind
 	})
 	report.Findings = findings
+	emitProgress(opts.Progress, ProgressEvent{
+		Stage:       ProgressStageSummary,
+		Scanned:     report.Scanned,
+		Prefiltered: report.Prefiltered,
+		Validated:   report.Validated,
+		Suppressed:  report.Suppressed,
+		Findings:    len(report.Findings),
+	})
 	return report, nil
 }
 
@@ -267,8 +323,9 @@ func aliasCoveragePaths(workspaceRoot string, entry alias.Entry) (map[string]str
 	return covered, nil
 }
 
-func walkDiscoverFiles(workspaceRoot string, cwd string) ([]fileRecord, error) {
+func walkDiscoverFiles(workspaceRoot string, cwd string, progress Progress) ([]fileRecord, error) {
 	records := make([]fileRecord, 0, 32)
+	scanned := 0
 	err := filepath.WalkDir(workspaceRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -280,6 +337,13 @@ func walkDiscoverFiles(workspaceRoot string, cwd string) ([]fileRecord, error) {
 				return fs.SkipDir
 			}
 			return nil
+		}
+		scanned++
+		if progress != nil && scanned%discoverScanHeartbeat == 0 {
+			emitProgress(progress, ProgressEvent{
+				Stage:   ProgressStageScanProgress,
+				Scanned: scanned,
+			})
 		}
 		lowerName := strings.ToLower(name)
 		if strings.HasSuffix(lowerName, ".prep.s9s.yaml") || strings.HasSuffix(lowerName, ".run.s9s.yaml") {
@@ -294,6 +358,12 @@ func walkDiscoverFiles(workspaceRoot string, cwd string) ([]fileRecord, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+	if progress != nil && scanned > 0 {
+		emitProgress(progress, ProgressEvent{
+			Stage:   ProgressStageScanProgress,
+			Scanned: scanned,
+		})
 	}
 	return records, nil
 }

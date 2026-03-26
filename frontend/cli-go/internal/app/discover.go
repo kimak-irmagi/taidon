@@ -8,6 +8,8 @@ import (
 	"github.com/sqlrs/cli/internal/discover"
 )
 
+var analyzeAliasesFn = discover.AnalyzeAliases
+
 func parseDiscoverArgs(args []string) (bool, error) {
 	if err := validateNoUnicodeDashFlags(args, 2); err != nil {
 		return false, err
@@ -28,7 +30,7 @@ func parseDiscoverArgs(args []string) (bool, error) {
 	return false, nil
 }
 
-func runDiscover(stdout io.Writer, cmdCtx commandContext, args []string, output string) error {
+func runDiscover(stdout io.Writer, stderr io.Writer, cmdCtx commandContext, args []string, output string) error {
 	showHelp, err := parseDiscoverArgs(args)
 	if err != nil {
 		return err
@@ -38,10 +40,22 @@ func runDiscover(stdout io.Writer, cmdCtx commandContext, args []string, output 
 		return nil
 	}
 
-	report, err := discover.AnalyzeAliases(discover.Options{
+	stopSpinner := func() {}
+	if !cmdCtx.verbose {
+		stopSpinner = startSpinner("discover: scanning workspace", false)
+	}
+
+	var progress discover.Progress
+	if cmdCtx.verbose {
+		progress = newDiscoverProgressWriter(stderr)
+	}
+
+	report, err := analyzeAliasesFn(discover.Options{
 		WorkspaceRoot: cmdCtx.workspaceRoot,
 		CWD:           cmdCtx.cwd,
+		Progress:      progress,
 	})
+	stopSpinner()
 	if err != nil {
 		return err
 	}

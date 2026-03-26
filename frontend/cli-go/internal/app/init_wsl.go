@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sqlrs/cli/internal/wsl"
@@ -1247,13 +1248,17 @@ func startSpinner(label string, verbose bool) func() {
 	}
 
 	done := make(chan struct{})
-	shown := make(chan struct{})
+	finished := make(chan struct{})
+	clear := func() {
+		clearLineOut(os.Stderr, len(label)+2)
+	}
+	var once sync.Once
 	go func() {
+		defer close(finished)
 		timer := time.NewTimer(500 * time.Millisecond)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			close(shown)
 		case <-done:
 			return
 		}
@@ -1264,22 +1269,20 @@ func startSpinner(label string, verbose bool) func() {
 		for {
 			select {
 			case <-done:
-				clearLine()
+				clear()
 				return
 			case <-ticker.C:
-				clearLine()
+				clear()
 				fmt.Fprintf(os.Stderr, "%s %s", label, spinner[idx])
 				idx = (idx + 1) % len(spinner)
 			}
 		}
 	}()
 	return func() {
-		close(done)
-		select {
-		case <-shown:
-			clearLine()
-		default:
-		}
+		once.Do(func() {
+			close(done)
+			<-finished
+		})
 	}
 }
 
@@ -1291,5 +1294,5 @@ func isTerminalWriter(w *os.File) bool {
 }
 
 func clearLine() {
-	fmt.Fprint(os.Stderr, "\r\033[2K")
+	clearLineOut(os.Stderr, 80)
 }

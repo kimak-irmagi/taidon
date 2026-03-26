@@ -26,6 +26,12 @@ func TestRunDiscoverHumanOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+	if !strings.Contains(out, "1. VALID prepare") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+	if !strings.Contains(out, "   Ref           : schema") {
+		t.Fatalf("unexpected output: %q", out)
+	}
 	if !strings.Contains(out, "sqlrs alias create schema prepare:psql -- -f schema.sql") {
 		t.Fatalf("unexpected output: %q", out)
 	}
@@ -34,6 +40,9 @@ func TestRunDiscoverHumanOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, "suppressed=1") {
 		t.Fatalf("expected suppression summary, got %q", out)
+	}
+	if strings.Contains(out, "\t") {
+		t.Fatalf("expected block output without tabs, got %q", out)
 	}
 }
 
