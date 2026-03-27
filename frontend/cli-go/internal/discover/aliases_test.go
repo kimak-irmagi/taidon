@@ -160,6 +160,90 @@ func TestAnalyzeAliasesRecognizesLiquibaseProjectRoot(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAliasesValidatesNestedPsqlAndPgbenchCandidates(t *testing.T) {
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "team", "workloads", "schema.sql"), []byte("create table users(id int);\n"))
+	mustWriteFile(t, filepath.Join(workspace, "team", "perf", "bench.sql"), []byte("select 1;\n"))
+
+	report, err := AnalyzeAliases(Options{WorkspaceRoot: workspace, CWD: workspace})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if len(report.Findings) != 2 {
+		t.Fatalf("expected two findings, got %+v", report)
+	}
+
+	findings := make(map[string]Finding, len(report.Findings))
+	for _, finding := range report.Findings {
+		findings[finding.AliasPath] = finding
+	}
+
+	psqlFinding, ok := findings[filepath.ToSlash(filepath.Join("team", "workloads.prep.s9s.yaml"))]
+	if !ok {
+		t.Fatalf("missing nested psql finding: %+v", report.Findings)
+	}
+	if !psqlFinding.Valid {
+		t.Fatalf("expected nested psql finding to be valid: %+v", psqlFinding)
+	}
+	if !strings.Contains(psqlFinding.CreateCommand, "sqlrs alias create team/workloads prepare:psql -- -f team/workloads/schema.sql") {
+		t.Fatalf("unexpected nested psql create command: %+v", psqlFinding)
+	}
+
+	pgbenchFinding, ok := findings[filepath.ToSlash(filepath.Join("team", "perf.run.s9s.yaml"))]
+	if !ok {
+		t.Fatalf("missing nested pgbench finding: %+v", report.Findings)
+	}
+	if !pgbenchFinding.Valid {
+		t.Fatalf("expected nested pgbench finding to be valid: %+v", pgbenchFinding)
+	}
+	if !strings.Contains(pgbenchFinding.CreateCommand, "sqlrs alias create team/perf run:pgbench -- -f team/perf/bench.sql") {
+		t.Fatalf("unexpected nested pgbench create command: %+v", pgbenchFinding)
+	}
+}
+
+func TestAnalyzeAliasesDeduplicatesAliasPathFindings(t *testing.T) {
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "batch", "001_init.sql"), []byte("create table users(id int);\n"))
+	mustWriteFile(t, filepath.Join(workspace, "batch", "002_users.sql"), []byte("create table orders(id int);\n"))
+
+	report, err := AnalyzeAliases(Options{WorkspaceRoot: workspace, CWD: workspace})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if report.Suppressed != 1 {
+		t.Fatalf("expected one duplicate suppression, got %+v", report)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("expected one deduplicated finding, got %+v", report)
+	}
+
+	finding := report.Findings[0]
+	if finding.AliasPath != filepath.ToSlash("batch.prep.s9s.yaml") {
+		t.Fatalf("unexpected alias path: %+v", finding)
+	}
+	if finding.File != filepath.ToSlash(filepath.Join("batch", "001_init.sql")) {
+		t.Fatalf("unexpected winning finding: %+v", finding)
+	}
+}
+
+func TestAnalyzeAliasesCountsAllScannedFiles(t *testing.T) {
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "README.md"), []byte("create table ignored(id int);\n"))
+	mustWriteFile(t, filepath.Join(workspace, "notes.txt"), []byte("select 1;\n"))
+	mustWriteFile(t, filepath.Join(workspace, "schema.sql"), []byte("create table users(id int);\n"))
+
+	report, err := AnalyzeAliases(Options{WorkspaceRoot: workspace, CWD: workspace})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if report.Scanned != 3 {
+		t.Fatalf("expected all visited files to be counted, got %+v", report)
+	}
+	if report.Prefiltered != 1 || report.Validated != 1 || len(report.Findings) != 1 {
+		t.Fatalf("unexpected report counts: %+v", report)
+	}
+}
+
 func mustWriteFile(t *testing.T, path string, contents []byte) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

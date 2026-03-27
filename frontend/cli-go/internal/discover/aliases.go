@@ -107,12 +107,12 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		return Report{}, err
 	}
 
-	files, err := walkDiscoverFiles(workspaceRoot, cwd, opts.Progress)
+	files, scanned, err := walkDiscoverFiles(workspaceRoot, cwd, opts.Progress)
 	if err != nil {
 		return Report{}, err
 	}
 
-	report := Report{Scanned: len(files)}
+	report := Report{Scanned: scanned}
 	proposals := make([]candidateProposal, 0, len(files))
 	for _, file := range files {
 		proposal, ok := proposeCandidate(file)
@@ -158,8 +158,22 @@ func AnalyzeAliases(opts Options) (Report, error) {
 	}
 	report.Validated = len(validated)
 
+	sort.Slice(validated, func(i, j int) bool {
+		if validated[i].Score != validated[j].Score {
+			return validated[i].Score > validated[j].Score
+		}
+		if validated[i].WorkspaceRel != validated[j].WorkspaceRel {
+			return validated[i].WorkspaceRel < validated[j].WorkspaceRel
+		}
+		if validated[i].Class != validated[j].Class {
+			return validated[i].Class < validated[j].Class
+		}
+		return validated[i].Kind < validated[j].Kind
+	})
+
 	inbound := inboundEdges(validated)
 	findings := make([]Finding, 0, len(validated))
+	seenAliasPaths := make(map[string]struct{}, len(validated))
 	for _, candidate := range validated {
 		if inbound[candidate.AbsPath] > 0 {
 			report.Suppressed++
@@ -183,6 +197,20 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		if err != nil {
 			return Report{}, err
 		}
+		if _, ok := seenAliasPaths[target.File]; ok {
+			report.Suppressed++
+			emitProgress(opts.Progress, ProgressEvent{
+				Stage:  ProgressStageSuppressed,
+				Class:  candidate.Class,
+				Kind:   candidate.Kind,
+				Ref:    candidate.Ref,
+				File:   candidate.WorkspaceRel,
+				Score:  candidate.Score,
+				Reason: "duplicate alias path",
+			})
+			continue
+		}
+		seenAliasPaths[target.File] = struct{}{}
 		if _, ok := coverage[target.File]; ok {
 			report.Suppressed++
 			emitProgress(opts.Progress, ProgressEvent{
@@ -323,7 +351,7 @@ func aliasCoveragePaths(workspaceRoot string, entry alias.Entry) (map[string]str
 	return covered, nil
 }
 
-func walkDiscoverFiles(workspaceRoot string, cwd string, progress Progress) ([]fileRecord, error) {
+func walkDiscoverFiles(workspaceRoot string, cwd string, progress Progress) ([]fileRecord, int, error) {
 	records := make([]fileRecord, 0, 32)
 	scanned := 0
 	err := filepath.WalkDir(workspaceRoot, func(path string, d fs.DirEntry, err error) error {
@@ -357,7 +385,7 @@ func walkDiscoverFiles(workspaceRoot string, cwd string, progress Progress) ([]f
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if progress != nil && scanned > 0 {
 		emitProgress(progress, ProgressEvent{
@@ -365,7 +393,7 @@ func walkDiscoverFiles(workspaceRoot string, cwd string, progress Progress) ([]f
 			Scanned: scanned,
 		})
 	}
-	return records, nil
+	return records, scanned, nil
 }
 
 func classifyDiscoverFile(workspaceRoot string, cwd string, path string) (fileRecord, bool) {
@@ -457,6 +485,7 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 
 	workspaceResolver := inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil)
 	resolver := workspaceResolver
+	aliasDir := ""
 	if target, err := alias.ResolveCreateTarget(alias.CreateOptions{
 		WorkspaceRoot: workspaceRoot,
 		CWD:           cwd,
@@ -464,6 +493,7 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 		Class:         proposal.Class,
 	}); err == nil {
 		resolver = inputset.NewAliasResolver(workspaceRoot, target.Path)
+		aliasDir = filepath.Dir(target.Path)
 	}
 	var (
 		inputSet inputset.InputSet
@@ -471,13 +501,13 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 	)
 	switch {
 	case proposal.Class == alias.ClassPrepare && proposal.Kind == "psql":
-		inputSet, err = inputpsql.Collect([]string{"-f", proposal.CwdRel}, resolver, inputset.OSFileSystem{})
+		inputSet, err = inputpsql.Collect([]string{"-f", validationPathForAliasDir(proposal.AbsPath, proposal.CwdRel, aliasDir)}, resolver, inputset.OSFileSystem{})
 	case proposal.Class == alias.ClassPrepare && proposal.Kind == "lb":
 		inputSet, err = inputliquibase.Collect(liquibaseDiscoverArgs(proposal.CwdRel), workspaceResolver, inputset.OSFileSystem{})
 	case proposal.Class == alias.ClassRun && proposal.Kind == "psql":
-		inputSet, err = inputpsql.Collect([]string{"-f", proposal.CwdRel}, resolver, inputset.OSFileSystem{})
+		inputSet, err = inputpsql.Collect([]string{"-f", validationPathForAliasDir(proposal.AbsPath, proposal.CwdRel, aliasDir)}, resolver, inputset.OSFileSystem{})
 	case proposal.Class == alias.ClassRun && proposal.Kind == "pgbench":
-		inputSet, err = inputpgbench.Collect([]string{"-f", proposal.CwdRel}, resolver, inputset.OSFileSystem{})
+		inputSet, err = inputpgbench.Collect([]string{"-f", validationPathForAliasDir(proposal.AbsPath, proposal.CwdRel, aliasDir)}, resolver, inputset.OSFileSystem{})
 	default:
 		err = fmt.Errorf("unsupported discover candidate kind: %s:%s", proposal.Class, proposal.Kind)
 	}
@@ -496,6 +526,18 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 	}
 	result.Command = buildCreateCommand(proposal.Ref, proposal.Class, proposal.Kind, proposal.CwdRel)
 	return result, nil
+}
+
+func validationPathForAliasDir(absPath string, fallback string, aliasDir string) string {
+	rel, err := filepath.Rel(aliasDir, absPath)
+	if err != nil {
+		return fallback
+	}
+	rel = filepath.ToSlash(rel)
+	if strings.TrimSpace(rel) == "" || rel == "." {
+		return fallback
+	}
+	return rel
 }
 
 func inboundEdges(candidates []validatedCandidate) map[string]int {
