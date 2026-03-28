@@ -473,16 +473,7 @@ func proposeCandidate(file fileRecord) (candidateProposal, bool) {
 func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd string) (validatedCandidate, error) {
 	result := validatedCandidate{
 		candidateProposal: proposal,
-		Closure:           map[string]struct{}{},
-	}
-
-	if proposal.BinaryOnly {
-		result.Valid = false
-		result.Error = "binary Liquibase artifacts are not yet supported"
-		result.Command = buildCreateCommand(proposal.Ref, proposal.Class, proposal.Kind, proposal.CwdRel)
-		return result, nil
-	}
-
+		Closure:           map[string]struc
 	workspaceResolver := inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil)
 	resolver := workspaceResolver
 	aliasDir := ""
@@ -615,10 +606,8 @@ func scorePrepareLiquibase(file fileRecord) candidateProposal {
 		if points, reason := scoreContains(file.LowerPath, []string{"liquibase", "changelog", "change-log", "dbchangelog", "changeset", "master", "migration", "migrations"}, 40, "Liquibase binary artifact path"); points > 0 {
 			result.Score += points
 			result.Reason = appendReason(result.Reason, reason)
-		}
-		result.Score += 5
-		result.Reason = appendReason(result.Reason, "binary Liquibase artifact")
-		if result.Score > 0 {
+			result.Score += 5
+			result.Reason = appendReason(result.Reason, "binary Liquibase artifact")
 			result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
 		}
 		return result

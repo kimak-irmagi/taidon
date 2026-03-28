@@ -160,6 +160,44 @@ func TestAnalyzeAliasesRecognizesLiquibaseProjectRoot(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAliasesSkipsUnrelatedBinaryArtifactsAndValidatesLiquibaseJar(t *testing.T) {
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "build", "app.jar"), []byte("binary payload"))
+	mustWriteFile(t, filepath.Join(workspace, "build", "Worker.class"), []byte("binary payload"))
+	mustWriteFile(t, filepath.Join(workspace, "liquibase", "master.jar"), []byte("binary payload"))
+
+	report, err := AnalyzeAliases(Options{WorkspaceRoot: workspace, CWD: workspace})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if report.Prefiltered != 1 {
+		t.Fatalf("expected only the Liquibase-named jar to be promoted, got %+v", report)
+	}
+	if report.Validated != 1 {
+		t.Fatalf("expected one validated binary candidate, got %+v", report)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("expected one finding, got %+v", report)
+	}
+
+	finding := report.Findings[0]
+	if finding.Type != alias.ClassPrepare || finding.Kind != "lb" {
+		t.Fatalf("unexpected binary Liquibase finding: %+v", finding)
+	}
+	if !finding.Valid {
+		t.Fatalf("expected binary Liquibase finding to be valid: %+v", finding)
+	}
+	if finding.File != filepath.ToSlash(filepath.Join("liquibase", "master.jar")) {
+		t.Fatalf("unexpected binary Liquibase file: %+v", finding)
+	}
+	if finding.AliasPath != "liquibase.prep.s9s.yaml" {
+		t.Fatalf("unexpected binary Liquibase alias path: %+v", finding)
+	}
+	if !strings.Contains(finding.CreateCommand, "sqlrs alias create liquibase prepare:lb -- update --changelog-file liquibase/master.jar") {
+		t.Fatalf("unexpected binary Liquibase create command: %+v", finding)
+	}
+}
+
 func TestAnalyzeAliasesValidatesNestedPsqlAndPgbenchCandidates(t *testing.T) {
 	workspace := t.TempDir()
 	mustWriteFile(t, filepath.Join(workspace, "team", "workloads", "schema.sql"), []byte("create table users(id int);\n"))
