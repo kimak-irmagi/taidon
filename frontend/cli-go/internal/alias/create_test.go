@@ -1,6 +1,8 @@
 package alias
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,5 +174,43 @@ func TestCreateRejectsOverwrite(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected overwrite error, got %v", err)
+	}
+}
+
+func TestCreateRemovesPartialFileOnWriteError(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "seed.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatalf("write seed.sql: %v", err)
+	}
+
+	target, err := ResolveCreateTarget(CreateOptions{
+		WorkspaceRoot: workspace,
+		CWD:           workspace,
+		Ref:           "demo",
+		Class:         ClassPrepare,
+	})
+	if err != nil {
+		t.Fatalf("ResolveCreateTarget: %v", err)
+	}
+
+	prev := createWritePayloadFn
+	createWritePayloadFn = func(io.Writer, []byte) (int, error) {
+		return 0, errors.New("boom")
+	}
+	t.Cleanup(func() { createWritePayloadFn = prev })
+
+	_, err = Create(CreateOptions{
+		WorkspaceRoot: workspace,
+		CWD:           workspace,
+		Ref:           "demo",
+		Class:         ClassPrepare,
+		Kind:          "psql",
+		Args:          []string{"--", "-f", "seed.sql"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected write error, got %v", err)
+	}
+	if _, statErr := os.Stat(target.Path); !os.IsNotExist(statErr) {
+		t.Fatalf("expected partial file to be removed, got stat err=%v", statErr)
 	}
 }

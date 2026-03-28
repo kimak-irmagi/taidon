@@ -2,6 +2,7 @@ package alias
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,10 @@ import (
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
 	"gopkg.in/yaml.v3"
 )
+
+var createWritePayloadFn = func(w io.Writer, payload []byte) (int, error) {
+	return w.Write(payload)
+}
 
 // CreateOptions carries the workspace-bounded inputs for materializing a new
 // repo-tracked alias file, as described in docs/architecture/alias-create-flow.md.
@@ -98,7 +103,7 @@ func ResolveCreateTarget(opts CreateOptions) (Target, error) {
 
 // Create validates the wrapped command, derives the target alias file, and
 // writes the repo-tracked payload without overwriting an existing file.
-func Create(opts CreateOptions) (CreateResult, error) {
+func Create(opts CreateOptions) (result CreateResult, err error) {
 	target, err := ResolveCreateTarget(opts)
 	if err != nil {
 		return CreateResult{}, err
@@ -151,20 +156,32 @@ func Create(opts CreateOptions) (CreateResult, error) {
 	if err != nil {
 		return CreateResult{}, err
 	}
-	defer f.Close()
+	defer func() {
+		closeErr := f.Close()
+		if err != nil {
+			if removeErr := os.Remove(target.Path); removeErr != nil && !os.IsNotExist(removeErr) {
+				err = fmt.Errorf("%w (cleanup failed: %v)", err, removeErr)
+			}
+			return
+		}
+		if closeErr != nil {
+			err = closeErr
+		}
+	}()
 
-	if _, err := f.Write(plan.Payload); err != nil {
+	if _, err = createWritePayloadFn(f, plan.Payload); err != nil {
 		return CreateResult{}, err
 	}
 
-	return CreateResult{
+	result = CreateResult{
 		Type:  target.Class,
 		Ref:   target.Ref,
 		File:  target.File,
 		Path:  target.Path,
 		Kind:  kind,
 		Image: image,
-	}, nil
+	}
+	return result, nil
 }
 
 func validateCreateKind(class Class, kind string) error {

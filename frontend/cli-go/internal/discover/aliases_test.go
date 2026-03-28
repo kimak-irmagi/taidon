@@ -41,6 +41,95 @@ func TestAnalyzeAliasesRanksRootAndBuildsCopyPasteCommand(t *testing.T) {
 	}
 }
 
+func TestShellQuoteForGoOS(t *testing.T) {
+	tests := []struct {
+		name  string
+		goos  string
+		value string
+		want  string
+	}{
+		{
+			name:  "windows apostrophe",
+			goos:  "windows",
+			value: "O'Brien",
+			want:  "'O''Brien'",
+		},
+		{
+			name:  "windows comma",
+			goos:  "windows",
+			value: "liquibase/jhipster-sample-app,shared",
+			want:  "'liquibase/jhipster-sample-app,shared'",
+		},
+		{
+			name:  "posix apostrophe",
+			goos:  "linux",
+			value: "O'Brien",
+			want:  `'O'"'"'Brien'`,
+		},
+		{
+			name:  "posix comma",
+			goos:  "linux",
+			value: "liquibase/jhipster-sample-app,shared",
+			want:  "liquibase/jhipster-sample-app,shared",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shellQuoteForGoOS(tt.goos, tt.value); got != tt.want {
+				t.Fatalf("unexpected shell quote: got %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShellJoinUsesCurrentShellQuoting(t *testing.T) {
+	got := shellJoin([]string{"sqlrs", "alias", "create", "O'Brien", "prepare:psql", "--", "-f", "O'Brien.sql"})
+	want := `sqlrs alias create 'O''Brien' prepare:psql -- -f 'O''Brien.sql'`
+	if runtime.GOOS != "windows" {
+		want = `sqlrs alias create 'O'"'"'Brien' prepare:psql -- -f 'O'"'"'Brien.sql'`
+	}
+	if got != want {
+		t.Fatalf("unexpected shell join: got %q want %q", got, want)
+	}
+}
+
+func TestShellJoinQuotesCommaSeparatedLiquibaseSearchPath(t *testing.T) {
+	got := shellJoin([]string{
+		"sqlrs", "alias", "create", "liquibase", "prepare:lb", "--",
+		"update", "--searchPath", "liquibase/jhipster-sample-app,shared",
+		"--changelog-file", "liquibase/jhipster-sample-app/config/liquibase/master.xml",
+	})
+	if runtime.GOOS == "windows" {
+		if !strings.Contains(got, "'liquibase/jhipster-sample-app,shared'") {
+			t.Fatalf("expected comma-separated searchPath to be quoted, got %q", got)
+		}
+		return
+	}
+	if strings.Contains(got, "'liquibase/jhipster-sample-app,shared'") {
+		t.Fatalf("expected POSIX shell to keep comma-separated searchPath bare, got %q", got)
+	}
+	if !strings.Contains(got, "liquibase/jhipster-sample-app,shared") {
+		t.Fatalf("expected comma-separated searchPath to be preserved, got %q", got)
+	}
+}
+
+func TestScorePrepareLiquibaseRecognizesRelativeToChangelogFile(t *testing.T) {
+	workspace := t.TempDir()
+	got := scorePrepareLiquibase(fileRecord{
+		AbsPath:       filepath.Join(workspace, "db", "root.xml"),
+		WorkspaceRoot: workspace,
+		WorkspaceRel:  filepath.ToSlash(filepath.Join("db", "root.xml")),
+		CwdRel:        filepath.ToSlash(filepath.Join("db", "root.xml")),
+		Ext:           ".xml",
+		LowerPath:     "db/root.xml",
+		Content:       `relativetochangelogfile true`,
+	})
+	if got.Score != 30 {
+		t.Fatalf("expected lowercase relativeToChangelogFile signal to score 30, got %+v", got)
+	}
+}
+
 func TestAnalyzeAliasesUsesAncestorRefForParentDirectoryCandidate(t *testing.T) {
 	workspace := t.TempDir()
 	mustWriteFile(t, filepath.Join(workspace, "schema.sql"), []byte("create table users(id int);\n"))

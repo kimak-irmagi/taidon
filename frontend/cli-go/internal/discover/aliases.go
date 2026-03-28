@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -570,21 +571,50 @@ func buildCreateCommand(ref string, class alias.Class, kind string, fileRef stri
 }
 
 func shellJoin(args []string) string {
+	return shellJoinForGoOS(runtime.GOOS, args)
+}
+
+func shellJoinForGoOS(goos string, args []string) string {
 	parts := make([]string, 0, len(args))
 	for _, arg := range args {
-		parts = append(parts, shellQuote(arg))
+		parts = append(parts, shellQuoteForGoOS(goos, arg))
 	}
 	return strings.Join(parts, " ")
 }
 
-func shellQuote(value string) string {
+func shellQuoteForGoOS(goos string, value string) string {
 	if value == "" {
 		return "''"
 	}
-	if !strings.ContainsAny(value, " \t\n\r'\"$&|<>;()[]{}*?!`\\") {
-		return value
+	switch strings.ToLower(strings.TrimSpace(goos)) {
+	case "windows":
+		if isPowerShellBareWord(value) {
+			return value
+		}
+		return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	default:
+		if !strings.ContainsAny(value, " \t\n\r'\"$&|<>;()[]{}*?!`\\") {
+			return value
+		}
+		return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 	}
-	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
+func isPowerShellBareWord(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '.' || r == '_' || r == '/' || r == ':' || r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func proposalPriority(proposal candidateProposal) int {
@@ -621,7 +651,7 @@ func scorePrepareLiquibase(file fileRecord) candidateProposal {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
-	if points, reason := scoreContains(file.Content, []string{"databasechangelog", "changeset", "includeall", "<include", "relativeTochangelogfile", "--liquibase formatted sql", "--changeset", "--rollback"}, 30, "Liquibase changelog markup"); points > 0 {
+	if points, reason := scoreContains(file.Content, []string{"databasechangelog", "changeset", "includeall", "<include", "relativetochangelogfile", "--liquibase formatted sql", "--changeset", "--rollback"}, 30, "Liquibase changelog markup"); points > 0 {
 		result.Score += points
 		result.Reason = appendReason(result.Reason, reason)
 	}
