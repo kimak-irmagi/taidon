@@ -49,14 +49,15 @@ type Report struct {
 }
 
 type fileRecord struct {
-	AbsPath      string
-	WorkspaceRel string
-	CwdRel       string
-	Ext          string
-	LowerPath    string
-	LowerBase    string
-	Content      string
-	BinaryOnly   bool
+	AbsPath       string
+	WorkspaceRoot string
+	WorkspaceRel  string
+	CwdRel        string
+	Ext           string
+	LowerPath     string
+	LowerBase     string
+	Content       string
+	BinaryOnly    bool
 }
 
 type candidateProposal struct {
@@ -403,7 +404,9 @@ func classifyDiscoverFile(workspaceRoot string, cwd string, path string) (fileRe
 	}
 	relCWD, err := filepath.Rel(cwd, path)
 	if err != nil {
-		relCWD = filepath.Base(path)
+		// Keep the full path when a cwd-relative path cannot be formed
+		// (for example, when cwd and the workspace live on different drives).
+		relCWD = filepath.ToSlash(path)
 	}
 
 	lowerPath := strings.ToLower(filepath.ToSlash(relWorkspace))
@@ -415,13 +418,14 @@ func classifyDiscoverFile(workspaceRoot string, cwd string, path string) (fileRe
 	binaryOnly := ext == ".class" || ext == ".jar"
 
 	record := fileRecord{
-		AbsPath:      path,
-		WorkspaceRel: filepath.ToSlash(relWorkspace),
-		CwdRel:       filepath.ToSlash(relCWD),
-		Ext:          ext,
-		LowerPath:    lowerPath,
-		LowerBase:    lowerBase,
-		BinaryOnly:   binaryOnly,
+		AbsPath:       path,
+		WorkspaceRoot: workspaceRoot,
+		WorkspaceRel:  filepath.ToSlash(relWorkspace),
+		CwdRel:        filepath.ToSlash(relCWD),
+		Ext:           ext,
+		LowerPath:     lowerPath,
+		LowerBase:     lowerBase,
+		BinaryOnly:    binaryOnly,
 	}
 
 	if !binaryOnly {
@@ -473,7 +477,8 @@ func proposeCandidate(file fileRecord) (candidateProposal, bool) {
 func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd string) (validatedCandidate, error) {
 	result := validatedCandidate{
 		candidateProposal: proposal,
-		Closure:           map[string]struc
+		Closure:           map[string]struct{}{},
+	}
 	workspaceResolver := inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil)
 	resolver := workspaceResolver
 	aliasDir := ""
@@ -608,7 +613,7 @@ func scorePrepareLiquibase(file fileRecord) candidateProposal {
 			result.Reason = appendReason(result.Reason, reason)
 			result.Score += 5
 			result.Reason = appendReason(result.Reason, "binary Liquibase artifact")
-			result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+			result.Ref = suggestedAliasRef(file)
 		}
 		return result
 	}
@@ -628,7 +633,7 @@ func scorePrepareLiquibase(file fileRecord) candidateProposal {
 		if ref := liquibaseRootHint(file.CwdRel); ref != "" {
 			result.Ref = ref
 		} else {
-			result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+			result.Ref = suggestedAliasRef(file)
 		}
 	}
 	return result
@@ -652,7 +657,7 @@ func scorePreparePsql(file fileRecord) candidateProposal {
 		result.Reason = appendReason(result.Reason, reason)
 	}
 	if result.Score > 0 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+		result.Ref = suggestedAliasRef(file)
 	}
 	return result
 }
@@ -671,7 +676,7 @@ func scoreRunPgbench(file fileRecord) candidateProposal {
 		result.Reason = appendReason(result.Reason, reason)
 	}
 	if result.Score > 0 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+		result.Ref = suggestedAliasRef(file)
 	}
 	return result
 }
@@ -694,22 +699,65 @@ func scoreRunPsql(file fileRecord) candidateProposal {
 		result.Reason = appendReason(result.Reason, reason)
 	}
 	if result.Score > 0 {
-		result.Ref = suggestedAliasRef(file.CwdRel, file.AbsPath)
+		result.Ref = suggestedAliasRef(file)
 	}
 	return result
 }
 
-func suggestedAliasRef(cwdRel string, absPath string) string {
-	base := filepath.Base(absPath)
-	baseStem := strings.TrimSuffix(base, filepath.Ext(base))
-	dir := filepath.Dir(cwdRel)
-	if dir == "." || dir == "" {
-		if baseStem == "" {
-			return strings.TrimSpace(base)
-		}
-		return filepath.ToSlash(baseStem)
+func suggestedAliasRef(file fileRecord) string {
+	workspaceRoot := filepath.ToSlash(strings.TrimSpace(file.WorkspaceRoot))
+	cwdRel := filepath.ToSlash(strings.TrimSpace(file.CwdRel))
+	if cwdRel == "" {
+		return filepath.ToSlash(filepath.Join(workspaceRoot, pathStem(file.AbsPath)))
 	}
-	return filepath.ToSlash(dir)
+	if filepath.IsAbs(cwdRel) {
+		if filepath.Dir(file.WorkspaceRel) == "." {
+			return filepath.ToSlash(filepath.Join(workspaceRoot, pathStem(file.AbsPath)))
+		}
+		return filepath.ToSlash(filepath.Join(workspaceRoot, filepath.Dir(file.WorkspaceRel)))
+	}
+
+	dir := filepath.ToSlash(filepath.Dir(cwdRel))
+	if dir == "." || dir == "" {
+		return pathStem(file.AbsPath)
+	}
+	if isAncestorOnlyPath(dir) {
+		stem := pathStem(cwdRel)
+		if stem == "" {
+			return dir
+		}
+		return filepath.ToSlash(filepath.Join(filepath.FromSlash(dir), stem))
+	}
+	return dir
+}
+
+func pathStem(value string) string {
+	base := filepath.Base(strings.TrimSpace(value))
+	if base == "" {
+		return ""
+	}
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if stem == "" {
+		return base
+	}
+	return stem
+}
+
+func isAncestorOnlyPath(value string) bool {
+	cleaned := filepath.ToSlash(strings.TrimSpace(value))
+	if cleaned == "" {
+		return false
+	}
+	parts := strings.Split(cleaned, "/")
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		if part != ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func scoreContains(value string, keywords []string, points int, reason string) (int, string) {

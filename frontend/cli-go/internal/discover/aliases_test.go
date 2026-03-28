@@ -3,6 +3,7 @@ package discover
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,6 +38,62 @@ func TestAnalyzeAliasesRanksRootAndBuildsCopyPasteCommand(t *testing.T) {
 	}
 	if !strings.Contains(finding.CreateCommand, "sqlrs alias create schema prepare:psql -- -f schema.sql") {
 		t.Fatalf("unexpected create command: %+v", finding)
+	}
+}
+
+func TestAnalyzeAliasesUsesAncestorRefForParentDirectoryCandidate(t *testing.T) {
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "schema.sql"), []byte("create table users(id int);\n"))
+
+	cwd := filepath.Join(workspace, "nested")
+	report, err := AnalyzeAliases(Options{WorkspaceRoot: workspace, CWD: cwd})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("expected one root finding, got %+v", report)
+	}
+
+	finding := report.Findings[0]
+	if finding.Ref != "../schema" {
+		t.Fatalf("unexpected ref: %+v", finding)
+	}
+	if finding.AliasPath != "schema.prep.s9s.yaml" {
+		t.Fatalf("unexpected alias path: %+v", finding)
+	}
+	if !strings.Contains(finding.CreateCommand, "sqlrs alias create ../schema prepare:psql -- -f ../schema.sql") {
+		t.Fatalf("unexpected create command: %+v", finding)
+	}
+}
+
+func TestAnalyzeAliasesKeepsAbsoluteSourcePathWhenCwdRelFails(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("cross-drive fallback is Windows-specific")
+	}
+
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "schema.sql"), []byte("create table users(id int);\n"))
+
+	report, err := AnalyzeAliases(Options{
+		WorkspaceRoot: workspace,
+		CWD:           `D:\discover-cwd`,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("expected one root finding, got %+v", report)
+	}
+
+	finding := report.Findings[0]
+	if !strings.HasPrefix(finding.Ref, filepath.ToSlash(filepath.Clean(workspace))+string('/')) {
+		t.Fatalf("unexpected absolute ref: %+v", finding)
+	}
+	if finding.AliasPath != "schema.prep.s9s.yaml" {
+		t.Fatalf("unexpected alias path: %+v", finding)
+	}
+	if !strings.Contains(finding.CreateCommand, filepath.ToSlash(filepath.Join(workspace, "schema.sql"))) {
+		t.Fatalf("expected absolute source path in create command, got %+v", finding)
 	}
 }
 
