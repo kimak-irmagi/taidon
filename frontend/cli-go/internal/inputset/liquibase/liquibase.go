@@ -156,15 +156,26 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 
 	entries := make([]inputset.InputEntry, 0, len(order))
 	for _, path := range order {
-		content, err := fs.ReadFile(path)
-		if err != nil {
-			return inputset.InputSet{}, fmt.Errorf("read %s: %w", path, err)
-		}
 		rel, _ := filepath.Rel(resolver.Root, path)
+		rel = filepath.ToSlash(rel)
+		var hash string
+		if oid, ok := fs.(inputset.BlobOIDer); ok {
+			h, err := oid.BlobOID(path)
+			if err != nil {
+				return inputset.InputSet{}, fmt.Errorf("hash %s: %w", path, err)
+			}
+			hash = h
+		} else {
+			content, err := fs.ReadFile(path)
+			if err != nil {
+				return inputset.InputSet{}, fmt.Errorf("read %s: %w", path, err)
+			}
+			hash = inputset.HashContent(content)
+		}
 		entries = append(entries, inputset.InputEntry{
-			Path:    filepath.ToSlash(rel),
+			Path:    rel,
 			AbsPath: path,
-			Hash:    inputset.HashContent(content),
+			Hash:    hash,
 		})
 	}
 	return inputset.InputSet{Entries: entries}, nil
