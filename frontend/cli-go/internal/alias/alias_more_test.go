@@ -97,6 +97,29 @@ func TestReadInventoryKindAndHelpers(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRelativePathAndInvocationRefPreferCanonicalSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	realRoot := filepath.Join(root, "real")
+	linkRoot := filepath.Join(root, "link")
+	workspace := filepath.Join(realRoot, "workspace")
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		t.Fatalf("mkdir workspace: %v", err)
+	}
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	target := writeAliasFile(t, workspace, "schema.prep.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
+	base := filepath.Join(linkRoot, "workspace")
+
+	if got := workspaceRelativePath(target, base); got != "schema.prep.s9s.yaml" {
+		t.Fatalf("workspaceRelativePath = %q, want %q", got, "schema.prep.s9s.yaml")
+	}
+	if got := invocationRef(target, base, ClassPrepare); got != "schema" {
+		t.Fatalf("invocationRef = %q, want %q", got, "schema")
+	}
+}
+
 func TestResolveTargetErrorPaths(t *testing.T) {
 	workspace := t.TempDir()
 	cwd := filepath.Join(workspace, "examples")

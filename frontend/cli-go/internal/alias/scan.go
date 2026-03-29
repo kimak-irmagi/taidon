@@ -202,7 +202,40 @@ func portableRelativePath(base string, target string) (string, error) {
 		}
 		return slashRelativePath(normalizeWindowsLikePath(base[len(baseVolume):]), normalizeWindowsLikePath(target[len(targetVolume):])), nil
 	}
-	return filepath.Rel(base, target)
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		canonicalBase := canonicalizeBoundaryPath(base)
+		canonicalTarget := canonicalizeBoundaryPath(target)
+		if canonicalBase != "" && canonicalTarget != "" {
+			if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
+				return canonicalRel, nil
+			}
+		}
+		return "", err
+	}
+
+	canonicalBase := canonicalizeBoundaryPath(base)
+	canonicalTarget := canonicalizeBoundaryPath(target)
+	if canonicalBase != "" && canonicalTarget != "" {
+		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil && shouldPreferCanonicalRelativePath(rel, canonicalRel) {
+			return canonicalRel, nil
+		}
+	}
+	return rel, nil
+}
+
+// shouldPreferCanonicalRelativePath keeps symlinked base/target pairs stable
+// when the raw relative path would otherwise walk out of the workspace.
+func shouldPreferCanonicalRelativePath(rawRel string, canonicalRel string) bool {
+	rawRel = filepath.ToSlash(strings.TrimSpace(rawRel))
+	canonicalRel = filepath.ToSlash(strings.TrimSpace(canonicalRel))
+	if rawRel == "" || rawRel == "." || rawRel == canonicalRel {
+		return false
+	}
+	if strings.HasPrefix(rawRel, "..") && !strings.HasPrefix(canonicalRel, "..") {
+		return true
+	}
+	return false
 }
 
 func windowsVolumeName(value string) string {

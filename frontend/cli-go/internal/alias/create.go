@@ -488,7 +488,7 @@ func relativizeCreatePathArg(value string, workspaceRoot string, cwd string, ali
 	if err != nil {
 		return "", err
 	}
-	rel, err := filepath.Rel(aliasDir, resolved)
+	rel, err := portableRelativePath(aliasDir, resolved)
 	if err != nil {
 		return filepath.ToSlash(resolved), nil
 	}

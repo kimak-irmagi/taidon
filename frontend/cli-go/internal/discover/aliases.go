@@ -399,12 +399,12 @@ func walkDiscoverFiles(workspaceRoot string, cwd string, progress Progress) ([]f
 }
 
 func classifyDiscoverFile(workspaceRoot string, cwd string, path string) (fileRecord, bool) {
-	relWorkspace, err := filepath.Rel(workspaceRoot, path)
-	if err != nil {
+	relWorkspace, ok := stableDiscoverRelativePath(workspaceRoot, path, false)
+	if !ok {
 		return fileRecord{}, false
 	}
-	relCWD, err := filepath.Rel(cwd, path)
-	if err != nil {
+	relCWD, ok := stableDiscoverRelativePath(cwd, path, true)
+	if !ok {
 		// Keep the full path when a cwd-relative path cannot be formed
 		// (for example, when cwd and the workspace live on different drives).
 		relCWD = filepath.ToSlash(path)
@@ -438,6 +438,31 @@ func classifyDiscoverFile(workspaceRoot string, cwd string, path string) (fileRe
 	}
 
 	return record, true
+}
+
+// stableDiscoverRelativePath keeps discover output stable when the same
+// workspace is reachable through different symlinked path forms.
+func stableDiscoverRelativePath(base string, target string, fallbackAbsolute bool) (string, bool) {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		if fallbackAbsolute {
+			return filepath.ToSlash(target), true
+		}
+		return "", false
+	}
+
+	canonicalBase := inputset.CanonicalizeBoundaryPath(base)
+	canonicalTarget := inputset.CanonicalizeBoundaryPath(target)
+	if canonicalBase != "" && canonicalTarget != "" {
+		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
+			rawRel := filepath.ToSlash(strings.TrimSpace(rel))
+			canonicalRel = filepath.ToSlash(strings.TrimSpace(canonicalRel))
+			if rawRel != "" && rawRel != "." && strings.HasPrefix(rawRel, "..") && !strings.HasPrefix(canonicalRel, "..") {
+				return canonicalRel, true
+			}
+		}
+	}
+	return filepath.ToSlash(rel), true
 }
 
 func readDiscoverSnippet(path string) (string, error) {
@@ -529,6 +554,9 @@ func validationPathForAliasDir(absPath string, fallback string, aliasDir string)
 	rel, err := filepath.Rel(aliasDir, absPath)
 	if err != nil {
 		return fallback
+	}
+	if canonicalRel, ok := stableDiscoverRelativePath(aliasDir, absPath, false); ok {
+		rel = canonicalRel
 	}
 	rel = filepath.ToSlash(rel)
 	if strings.TrimSpace(rel) == "" || rel == "." {

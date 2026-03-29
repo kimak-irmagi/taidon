@@ -106,7 +106,7 @@ func resolveExactTarget(workspaceRoot string, cwd string, ref string, class Clas
 	if inferredClass != "" {
 		target.Ref = invocationRef(path, cwd, inferredClass)
 	} else {
-		rel, relErr := filepath.Rel(cwd, path)
+		rel, relErr := portableRelativePath(cwd, path)
 		if relErr != nil {
 			rel = filepath.Base(path)
 		}

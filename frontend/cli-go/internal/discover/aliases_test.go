@@ -41,6 +41,36 @@ func TestAnalyzeAliasesRanksRootAndBuildsCopyPasteCommand(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAliasesUsesStableRelativePathsThroughSymlinkedWorkspace(t *testing.T) {
+	root := t.TempDir()
+	realRoot := filepath.Join(root, "real")
+	linkRoot := filepath.Join(root, "link")
+	workspace := filepath.Join(realRoot, "workspace")
+	mustWriteFile(t, filepath.Join(workspace, "schema.sql"), []byte("create table users(id int);\n"))
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	record, ok := classifyDiscoverFile(filepath.Join(linkRoot, "workspace"), workspace, filepath.Join(workspace, "schema.sql"))
+	if !ok {
+		t.Fatalf("expected discover file record")
+	}
+	if record.WorkspaceRel != "schema.sql" {
+		t.Fatalf("WorkspaceRel = %q, want %q", record.WorkspaceRel, "schema.sql")
+	}
+	if record.CwdRel != "schema.sql" {
+		t.Fatalf("CwdRel = %q, want %q", record.CwdRel, "schema.sql")
+	}
+
+	proposal, ok := proposeCandidate(record)
+	if !ok {
+		t.Fatalf("expected candidate proposal")
+	}
+	if proposal.Ref != "schema" {
+		t.Fatalf("Ref = %q, want %q", proposal.Ref, "schema")
+	}
+}
+
 func TestShellQuoteForGoOS(t *testing.T) {
 	tests := []struct {
 		name  string

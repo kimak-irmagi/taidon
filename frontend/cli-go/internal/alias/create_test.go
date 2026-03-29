@@ -106,6 +106,56 @@ func TestCreateWritesPrepareAlias(t *testing.T) {
 	}
 }
 
+func TestCreateUsesCanonicalSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	realRoot := filepath.Join(root, "real")
+	linkRoot := filepath.Join(root, "link")
+	workspace := filepath.Join(realRoot, "workspace")
+	if err := os.MkdirAll(filepath.Join(workspace, "inputs"), 0o700); err != nil {
+		t.Fatalf("mkdir inputs: %v", err)
+	}
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "inputs", "seed.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatalf("write seed.sql: %v", err)
+	}
+
+	result, err := Create(CreateOptions{
+		WorkspaceRoot: filepath.Join(linkRoot, "workspace"),
+		CWD:           workspace,
+		Ref:           "aliases/chinook",
+		Class:         ClassPrepare,
+		Kind:          "psql",
+		Args: []string{
+			"--",
+			"-f", "inputs/seed.sql",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if result.File != filepath.ToSlash(filepath.Join("aliases", "chinook.prep.s9s.yaml")) {
+		t.Fatalf("unexpected file: %+v", result)
+	}
+
+	data, err := os.ReadFile(result.Path)
+	if err != nil {
+		t.Fatalf("read result: %v", err)
+	}
+	var rendered struct {
+		Kind  string   `yaml:"kind"`
+		Image string   `yaml:"image"`
+		Args  []string `yaml:"args"`
+	}
+	if err := yaml.Unmarshal(data, &rendered); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if got := strings.Join(rendered.Args, "|"); got != "-f|../inputs/seed.sql" {
+		t.Fatalf("unexpected args: %q", got)
+	}
+}
+
 func TestCreateWritesRunAlias(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "bench.sql"), []byte("select 1;\n"), 0o600); err != nil {
