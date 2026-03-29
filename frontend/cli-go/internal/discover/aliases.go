@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 
@@ -177,7 +178,8 @@ func AnalyzeAliases(opts Options) (Report, error) {
 	findings := make([]Finding, 0, len(validated))
 	seenAliasPaths := make(map[string]struct{}, len(validated))
 	for _, candidate := range validated {
-		if inbound[candidate.AbsPath] > 0 {
+		candidateKeys := discoverPathKeys(candidate.WorkspaceRoot, candidate.WorkspaceRel, candidate.AbsPath)
+		if hasAnyInbound(inbound, candidateKeys) {
 			report.Suppressed++
 			emitProgress(opts.Progress, ProgressEvent{
 				Stage:  ProgressStageSuppressed,
@@ -288,7 +290,9 @@ func loadAliasCoverage(workspaceRoot string) (map[string]struct{}, error) {
 			continue
 		}
 		for path := range covered {
-			coverage[stableDiscoverAbsPath(path)] = struct{}{}
+			for _, key := range discoverPathKeys(workspaceRoot, "", path) {
+				coverage[key] = struct{}{}
+			}
 		}
 	}
 	return coverage, nil
@@ -455,11 +459,7 @@ func stableDiscoverRelativePath(base string, target string, fallbackAbsolute boo
 	canonicalTarget := inputset.CanonicalizeBoundaryPath(target)
 	if canonicalBase != "" && canonicalTarget != "" {
 		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
-			rawRel := filepath.ToSlash(strings.TrimSpace(rel))
-			canonicalRel = filepath.ToSlash(strings.TrimSpace(canonicalRel))
-			if rawRel != "" && rawRel != "." && strings.HasPrefix(rawRel, "..") && !strings.HasPrefix(canonicalRel, "..") {
-				return canonicalRel, true
-			}
+			return filepath.ToSlash(canonicalRel), true
 		}
 	}
 	return filepath.ToSlash(rel), true
@@ -544,7 +544,9 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 	result.Valid = true
 	result.Closure = make(map[string]struct{}, len(inputSet.Entries))
 	for _, entry := range inputSet.Entries {
-		result.Closure[stableDiscoverAbsPath(entry.AbsPath)] = struct{}{}
+		for _, key := range discoverPathKeys(workspaceRoot, entry.Path, entry.AbsPath) {
+			result.Closure[key] = struct{}{}
+		}
 	}
 	result.Command = buildCreateCommand(proposal.Ref, proposal.Class, proposal.Kind, proposal.CwdRel)
 	return result, nil
@@ -565,8 +567,8 @@ func validationPathForAliasDir(absPath string, fallback string, aliasDir string)
 	return rel
 }
 
-// stableDiscoverAbsPath normalizes absolute workspace paths before closure and
-// inbound-edge comparisons so symlinked forms of the same file compare equal.
+// stableDiscoverAbsPath normalizes absolute workspace paths for alias coverage
+// lookups so symlinked forms of the same file compare equal.
 func stableDiscoverAbsPath(path string) string {
 	cleaned := filepath.Clean(strings.TrimSpace(path))
 	if cleaned == "" {
@@ -581,19 +583,71 @@ func stableDiscoverAbsPath(path string) string {
 	return cleaned
 }
 
+func discoverPathKeys(workspaceRoot string, relPath string, absPath string) []string {
+	keys := make([]string, 0, 2)
+	add := func(value string) {
+		cleaned := filepath.ToSlash(strings.TrimSpace(value))
+		if cleaned == "" {
+			return
+		}
+		if slices.Contains(keys, cleaned) {
+			return
+		}
+		keys = append(keys, cleaned)
+	}
+
+	add(relPath)
+	if workspaceRoot != "" && filepath.IsAbs(absPath) {
+		if rel, err := filepath.Rel(workspaceRoot, absPath); err == nil {
+			add(rel)
+		}
+	}
+	add(stableDiscoverAbsPath(absPath))
+	return keys
+}
+
+func containsAnyKey(set map[string]struct{}, keys []string) bool {
+	for _, key := range keys {
+		if _, ok := set[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func keySet(keys []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		set[key] = struct{}{}
+	}
+	return set
+}
+
+func hasAnyInbound(inbound map[string]int, keys []string) bool {
+	for _, key := range keys {
+		if inbound[key] > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func inboundEdges(candidates []validatedCandidate) map[string]int {
 	inbound := make(map[string]int, len(candidates))
 	for _, candidate := range candidates {
-		candidateAbsPath := stableDiscoverAbsPath(candidate.AbsPath)
+		candidateKeys := discoverPathKeys(candidate.WorkspaceRoot, candidate.WorkspaceRel, candidate.AbsPath)
 		if len(candidate.Closure) == 0 {
 			continue
 		}
 		for _, other := range candidates {
-			if stableDiscoverAbsPath(other.AbsPath) == candidateAbsPath {
+			otherKeys := discoverPathKeys(other.WorkspaceRoot, other.WorkspaceRel, other.AbsPath)
+			if containsAnyKey(keySet(otherKeys), candidateKeys) {
 				continue
 			}
-			if _, ok := other.Closure[candidateAbsPath]; ok {
-				inbound[candidateAbsPath]++
+			if containsAnyKey(other.Closure, candidateKeys) {
+				for _, key := range candidateKeys {
+					inbound[key]++
+				}
 			}
 		}
 	}
