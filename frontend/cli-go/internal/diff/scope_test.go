@@ -34,7 +34,7 @@ func TestParseDiffScope_RefValid(t *testing.T) {
 }
 
 func TestParseDiffScope_RefKeepWorktree(t *testing.T) {
-	parsed, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-keep-worktree", "prepare:lb", "--", "x"})
+	parsed, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "worktree", "--ref-keep-worktree", "prepare:lb", "--", "x"})
 	if err != nil {
 		t.Fatalf("ParseDiffScope: %v", err)
 	}
@@ -44,11 +44,16 @@ func TestParseDiffScope_RefKeepWorktree(t *testing.T) {
 }
 
 func TestParseDiffScope_RefModeBlobExplicit(t *testing.T) {
+<<<<<<< Updated upstream
 	parsed, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "blob", "plan:psql", "--", "-f", "x.sql"})
+=======
+	parsed, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "blob", "plan:psql"})
+>>>>>>> Stashed changes
 	if err != nil {
 		t.Fatalf("ParseDiffScope: %v", err)
 	}
 	if parsed.Scope.RefMode != "blob" {
+<<<<<<< Updated upstream
 		t.Fatalf("expected ref-mode blob, got %q", parsed.Scope.RefMode)
 	}
 }
@@ -56,6 +61,22 @@ func TestParseDiffScope_RefModeBlobExplicit(t *testing.T) {
 func TestParseDiffScope_RefModeInvalid(t *testing.T) {
 	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "nosuch", "plan:psql"})
 	if err == nil {
+=======
+		t.Fatalf("expected blob, got %q", parsed.Scope.RefMode)
+	}
+}
+
+func TestParseDiffScope_RefKeepWorktreeRequiresWorktreeMode(t *testing.T) {
+	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-keep-worktree", "plan:psql"})
+	if err == nil {
+		t.Fatal("expected error when --ref-keep-worktree without worktree mode")
+	}
+}
+
+func TestParseDiffScope_RefModeInvalid(t *testing.T) {
+	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "nope", "plan:psql"})
+	if err == nil {
+>>>>>>> Stashed changes
 		t.Fatal("expected error for invalid ref-mode")
 	}
 }

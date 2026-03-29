@@ -260,10 +260,17 @@ func TestResolveScope_RefBlobNoWorktree(t *testing.T) {
 		t.Fatalf("ResolveScope: %v", err)
 	}
 	if cleanup != nil {
+<<<<<<< Updated upstream
 		t.Fatal("blob ref mode should not return cleanup")
 	}
 	if fromCtx.GitRef != parent || toCtx.GitRef != head {
 		t.Fatalf("expected GitRef on contexts, from=%+v to=%+v", fromCtx, toCtx)
+=======
+		t.Fatal("expected nil cleanup for blob ref mode")
+	}
+	if fromCtx.GitRef != parent || toCtx.GitRef != head {
+		t.Fatalf("unexpected GitRef: from=%q to=%q", fromCtx.GitRef, toCtx.GitRef)
+>>>>>>> Stashed changes
 	}
 	fromList, err := BuildPsqlFileList(fromCtx, []string{"-f", "a.sql"})
 	if err != nil {

@@ -1,8 +1,15 @@
 package inputset
 
 import (
+<<<<<<< Updated upstream
 	"fmt"
 	"io/fs"
+=======
+	"bytes"
+	"fmt"
+	"io/fs"
+	"os"
+>>>>>>> Stashed changes
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -10,14 +17,22 @@ import (
 	"time"
 )
 
+<<<<<<< Updated upstream
 // GitRevFileSystem reads the Git object database at a fixed revision without
 // checkout. Absolute paths must lie under RepoRoot; they are mapped to
 // ref-relative paths for git show / ls-tree / cat-file.
+=======
+// GitRevFileSystem reads tree/blob objects from a Git revision without a
+// worktree checkout. Paths passed to Stat, ReadFile, and ReadDir are absolute
+// host paths that must lie under RepoRoot (same contract as OSFileSystem for
+// collectors using WorkspaceResolver).
+>>>>>>> Stashed changes
 type GitRevFileSystem struct {
 	RepoRoot string
 	Ref      string
 }
 
+<<<<<<< Updated upstream
 // NewGitRevFileSystem returns a FileSystem backed by git objects at Ref.
 func NewGitRevFileSystem(repoRoot, ref string) *GitRevFileSystem {
 	repoRoot = strings.TrimSpace(repoRoot)
@@ -122,6 +137,58 @@ func (g *GitRevFileSystem) verifyRef() error {
 
 func gitCatFileSize(repo, spec string) (int64, error) {
 	cmd := exec.Command("git", "-C", repo, "cat-file", "-s", spec)
+=======
+// NewGitRevFileSystem returns a FileSystem backed by `git cat-file` / `git ls-tree`
+// at the given revision. RepoRoot must be the repository toplevel; Ref is any
+// revision accepted by Git (branch, tag, SHA).
+func NewGitRevFileSystem(repoRoot, ref string) GitRevFileSystem {
+	return GitRevFileSystem{
+		RepoRoot: filepath.Clean(strings.TrimSpace(repoRoot)),
+		Ref:      strings.TrimSpace(ref),
+	}
+}
+
+func (g GitRevFileSystem) absToRel(abs string) (string, error) {
+	if g.RepoRoot == "" || g.Ref == "" {
+		return "", fmt.Errorf("git rev fs: empty repo root or ref")
+	}
+	root := CanonicalizeBoundaryPath(g.RepoRoot)
+	target := CanonicalizeBoundaryPath(abs)
+	if root == "" || target == "" {
+		return "", fmt.Errorf("git rev fs: invalid path")
+	}
+	if !IsWithin(root, target) {
+		return "", fmt.Errorf("git rev fs: path outside repo root")
+	}
+	if target == root {
+		return "", nil
+	}
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(filepath.Clean(rel)), nil
+}
+
+func (g GitRevFileSystem) objectSpecForRel(rel string) string {
+	if rel == "" {
+		return g.Ref + "^{tree}"
+	}
+	return g.Ref + ":" + rel
+}
+
+func (g GitRevFileSystem) catFileType(spec string) (string, error) {
+	cmd := exec.Command("git", "-C", g.RepoRoot, "cat-file", "-t", spec)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (g GitRevFileSystem) catBlobSize(spec string) (int64, error) {
+	cmd := exec.Command("git", "-C", g.RepoRoot, "cat-file", "-s", spec)
+>>>>>>> Stashed changes
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, err
@@ -133,6 +200,7 @@ func gitCatFileSize(repo, spec string) (int64, error) {
 	return n, nil
 }
 
+<<<<<<< Updated upstream
 // ReadDir lists one level under ref[:rel] (only blobs and trees as immediate children).
 func (g *GitRevFileSystem) ReadDir(abs string) ([]fs.DirEntry, error) {
 	rel, err := g.absToRel(abs)
@@ -214,3 +282,143 @@ func (e gitDirEntry) Name() string               { return e.info.Name() }
 func (e gitDirEntry) IsDir() bool               { return e.info.IsDir() }
 func (e gitDirEntry) Type() fs.FileMode         { return e.info.Mode().Type() }
 func (e gitDirEntry) Info() (fs.FileInfo, error) { return e.info, nil }
+=======
+// Stat implements FileSystem.
+func (g GitRevFileSystem) Stat(path string) (fs.FileInfo, error) {
+	rel, err := g.absToRel(path)
+	if err != nil {
+		return nil, &fs.PathError{Op: "stat", Path: path, Err: err}
+	}
+	spec := g.objectSpecForRel(rel)
+	typ, err := g.catFileType(spec)
+	if err != nil {
+		return nil, &fs.PathError{Op: "stat", Path: path, Err: os.ErrNotExist}
+	}
+	switch typ {
+	case "blob":
+		sz, err := g.catBlobSize(spec)
+		if err != nil {
+			return nil, &fs.PathError{Op: "stat", Path: path, Err: os.ErrNotExist}
+		}
+		name := filepath.Base(path)
+		if rel == "" {
+			name = "."
+		}
+		return gitFileInfo{name: name, size: sz, dir: false}, nil
+	case "tree":
+		name := filepath.Base(path)
+		if rel == "" {
+			name = filepath.Base(g.RepoRoot)
+			if name == "" || name == "." {
+				name = "."
+			}
+		}
+		return gitFileInfo{name: name, size: 0, dir: true}, nil
+	default:
+		return nil, &fs.PathError{Op: "stat", Path: path, Err: os.ErrNotExist}
+	}
+}
+
+// ReadFile implements FileSystem.
+func (g GitRevFileSystem) ReadFile(path string) ([]byte, error) {
+	rel, err := g.absToRel(path)
+	if err != nil {
+		return nil, err
+	}
+	if rel == "" {
+		return nil, fmt.Errorf("git rev fs: is a directory")
+	}
+	spec := g.objectSpecForRel(rel)
+	typ, err := g.catFileType(spec)
+	if err != nil {
+		return nil, err
+	}
+	if typ != "blob" {
+		return nil, fmt.Errorf("git rev fs: not a regular file")
+	}
+	cmd := exec.Command("git", "-C", g.RepoRoot, "cat-file", "-p", spec)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReadDir implements FileSystem.
+func (g GitRevFileSystem) ReadDir(path string) ([]fs.DirEntry, error) {
+	rel, err := g.absToRel(path)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := g.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.IsDir() {
+		return nil, &fs.PathError{Op: "readdir", Path: path, Err: fmt.Errorf("not a directory")}
+	}
+	// Use rev:path so Git lists the tree's children (git ls-tree rev -- path
+	// only prints the path's own ls-tree record, not directory contents).
+	args := []string{"-C", g.RepoRoot, "ls-tree", "-z"}
+	if rel == "" {
+		args = append(args, g.objectSpecForRel(""))
+	} else {
+		args = append(args, g.Ref+":"+rel)
+	}
+	cmd := exec.Command("git", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var entries []fs.DirEntry
+	for _, rec := range bytes.Split(out, []byte{0}) {
+		if len(rec) == 0 {
+			continue
+		}
+		tab := bytes.IndexByte(rec, '\t')
+		if tab < 0 {
+			continue
+		}
+		name := string(rec[tab+1:])
+		if name == "" {
+			continue
+		}
+		head := strings.Fields(string(rec[:tab]))
+		if len(head) < 2 {
+			continue
+		}
+		typ := head[1]
+		isDir := typ == "tree"
+		entries = append(entries, gitDirEntry{name: name, isDir: isDir})
+	}
+	return entries, nil
+}
+
+type gitFileInfo struct {
+	name string
+	size int64
+	dir  bool
+}
+
+func (g gitFileInfo) Name() string       { return g.name }
+func (g gitFileInfo) Size() int64        { return g.size }
+func (g gitFileInfo) Mode() fs.FileMode  { return 0o644 }
+func (g gitFileInfo) ModTime() time.Time { return time.Time{} }
+func (g gitFileInfo) IsDir() bool        { return g.dir }
+func (g gitFileInfo) Sys() any           { return nil }
+
+type gitDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (e gitDirEntry) Name() string { return e.name }
+func (e gitDirEntry) IsDir() bool  { return e.isDir }
+func (e gitDirEntry) Type() fs.FileMode {
+	if e.isDir {
+		return fs.ModeDir
+	}
+	return 0
+}
+func (e gitDirEntry) Info() (fs.FileInfo, error) { return gitFileInfo{name: e.name, dir: e.isDir}, nil }
+>>>>>>> Stashed changes

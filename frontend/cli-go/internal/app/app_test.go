@@ -853,4 +853,12 @@ func setTestDirs(t *testing.T, root string) {
 	t.Setenv("XDG_STATE_HOME", stateDir)
 	t.Setenv("XDG_CACHE_HOME", cacheDir)
 	t.Setenv("SQLRSROOT", stateDir)
+
+	// Project config is discovered by walking up from cwd; without this, tests run
+	// inside the module tree and merge the real checkout's .sqlrs over synthetic HOME.
+	workDir := filepath.Join(root, "work")
+	if err := os.MkdirAll(workDir, 0o700); err != nil {
+		t.Fatalf("mkdir test work dir: %v", err)
+	}
+	t.Chdir(workDir)
 }

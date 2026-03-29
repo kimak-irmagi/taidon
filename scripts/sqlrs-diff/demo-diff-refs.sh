@@ -7,6 +7,9 @@
 # Usage (from anywhere; script must live inside the taidon repo):
 #   ./scripts/sqlrs-diff/demo-diff-refs.sh
 #
+# To diff two refs *inside* the taidon Git tree (tracked entry SQL), use:
+#   ./scripts/sqlrs-diff/diff-refs-taidon.sh
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

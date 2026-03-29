@@ -10,10 +10,17 @@ import (
 	"github.com/sqlrs/cli/internal/inputset"
 )
 
+<<<<<<< Updated upstream
 // ResolveScope turns a Scope into two Context values. Ref mode with RefMode
 // "blob" (default) reads objects via git show/ls-tree without checkout; cleanup
 // is nil. RefMode "worktree" creates temporary git worktrees and returns a
 // non-nil cleanup unless RefKeepWorktree is set. Path mode cleanup is nil.
+=======
+// ResolveScope turns a Scope into two filesystem Context roots. For ref mode with
+// RefMode "blob", both sides use the repository root on disk and read objects via
+// Git (cleanup is nil). For "worktree", temporary worktrees are created and cleanup
+// removes them unless RefKeepWorktree is set.
+>>>>>>> Stashed changes
 func ResolveScope(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() error, err error) {
 	if strings.TrimSpace(cwd) == "" {
 		cwd = "."
@@ -23,13 +30,52 @@ func ResolveScope(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() e
 		fromCtx, toCtx, err = resolvePathScopeStrings(s.FromPath, s.ToPath, cwd)
 		return fromCtx, toCtx, nil, err
 	case ScopeKindRef:
+<<<<<<< Updated upstream
 		if strings.TrimSpace(s.RefMode) == "worktree" {
 			return resolveRefWorktrees(s, cwd)
 		}
 		return resolveRefGitObjects(s, cwd)
+=======
+		rm := strings.TrimSpace(strings.ToLower(s.RefMode))
+		if rm == "" {
+			rm = "blob"
+		}
+		if rm == "blob" {
+			return resolveRefGitObjects(s, cwd)
+		}
+		if rm == "worktree" {
+			return resolveRefWorktrees(s, cwd)
+		}
+		return Context{}, Context{}, nil, fmt.Errorf("diff: unknown ref mode %q", s.RefMode)
+>>>>>>> Stashed changes
 	default:
 		return Context{}, Context{}, nil, fmt.Errorf("diff: unknown scope kind %q", s.Kind)
 	}
+}
+
+func resolveRefGitObjects(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() error, err error) {
+	if refWorktreeUnavailable() != "" {
+		return Context{}, Context{}, nil, fmt.Errorf("git: %s", refWorktreeUnavailable())
+	}
+	repoRoot, err := gitTopLevel(cwd)
+	if err != nil {
+		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: %w", err)
+	}
+	relCwd, err := cwdWithinRepo(repoRoot, cwd)
+	if err != nil {
+		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: resolve cwd: %w", err)
+	}
+	root := inputset.CanonicalizeBoundaryPath(repoRoot)
+	base := inputset.CanonicalizeBoundaryPath(filepath.Join(repoRoot, relCwd))
+	return Context{
+			Root:    root,
+			BaseDir: base,
+			GitRef:  s.FromRef,
+		}, Context{
+			Root:    root,
+			BaseDir: base,
+			GitRef:  s.ToRef,
+		}, nil, nil
 }
 
 func resolvePathScopeStrings(fromPath, toPath, cwd string) (fromCtx, toCtx Context, err error) {
