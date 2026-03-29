@@ -71,6 +71,35 @@ func TestAnalyzeAliasesUsesStableRelativePathsThroughSymlinkedWorkspace(t *testi
 	}
 }
 
+func TestAnalyzeAliasesSuppressesInboundDependencyThroughSymlinkedWorkspace(t *testing.T) {
+	root := t.TempDir()
+	realRoot := filepath.Join(root, "real")
+	linkRoot := filepath.Join(root, "link")
+	workspace := filepath.Join(realRoot, "workspace")
+	mustWriteFile(t, filepath.Join(workspace, "schema.sql"), []byte("create table users(id int);\n\\i child.sql\n"))
+	mustWriteFile(t, filepath.Join(workspace, "child.sql"), []byte("select 1;\n"))
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	symlinkedWorkspace := filepath.Join(linkRoot, "workspace")
+	report, err := AnalyzeAliases(Options{WorkspaceRoot: symlinkedWorkspace, CWD: symlinkedWorkspace})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if report.Suppressed != 1 {
+		t.Fatalf("expected child candidate to be suppressed, got %+v", report)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("expected only the root finding to remain, got %+v", report)
+	}
+
+	finding := report.Findings[0]
+	if finding.File != "schema.sql" {
+		t.Fatalf("unexpected root finding: %+v", finding)
+	}
+}
+
 func TestShellQuoteForGoOS(t *testing.T) {
 	tests := []struct {
 		name  string

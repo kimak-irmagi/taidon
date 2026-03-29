@@ -288,7 +288,7 @@ func loadAliasCoverage(workspaceRoot string) (map[string]struct{}, error) {
 			continue
 		}
 		for path := range covered {
-			coverage[path] = struct{}{}
+			coverage[stableDiscoverAbsPath(path)] = struct{}{}
 		}
 	}
 	return coverage, nil
@@ -544,7 +544,7 @@ func validateCandidate(proposal candidateProposal, workspaceRoot string, cwd str
 	result.Valid = true
 	result.Closure = make(map[string]struct{}, len(inputSet.Entries))
 	for _, entry := range inputSet.Entries {
-		result.Closure[entry.AbsPath] = struct{}{}
+		result.Closure[stableDiscoverAbsPath(entry.AbsPath)] = struct{}{}
 	}
 	result.Command = buildCreateCommand(proposal.Ref, proposal.Class, proposal.Kind, proposal.CwdRel)
 	return result, nil
@@ -565,18 +565,35 @@ func validationPathForAliasDir(absPath string, fallback string, aliasDir string)
 	return rel
 }
 
+// stableDiscoverAbsPath normalizes absolute workspace paths before closure and
+// inbound-edge comparisons so symlinked forms of the same file compare equal.
+func stableDiscoverAbsPath(path string) string {
+	cleaned := filepath.Clean(strings.TrimSpace(path))
+	if cleaned == "" {
+		return cleaned
+	}
+	if !filepath.IsAbs(cleaned) {
+		return cleaned
+	}
+	if canonical := inputset.CanonicalizeBoundaryPath(cleaned); canonical != "" {
+		return filepath.Clean(canonical)
+	}
+	return cleaned
+}
+
 func inboundEdges(candidates []validatedCandidate) map[string]int {
 	inbound := make(map[string]int, len(candidates))
 	for _, candidate := range candidates {
+		candidateAbsPath := stableDiscoverAbsPath(candidate.AbsPath)
 		if len(candidate.Closure) == 0 {
 			continue
 		}
 		for _, other := range candidates {
-			if other.AbsPath == candidate.AbsPath {
+			if stableDiscoverAbsPath(other.AbsPath) == candidateAbsPath {
 				continue
 			}
-			if _, ok := other.Closure[candidate.AbsPath]; ok {
-				inbound[candidate.AbsPath]++
+			if _, ok := other.Closure[candidateAbsPath]; ok {
+				inbound[candidateAbsPath]++
 			}
 		}
 	}
