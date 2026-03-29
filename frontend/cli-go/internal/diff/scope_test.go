@@ -28,8 +28,8 @@ func TestParseDiffScope_RefValid(t *testing.T) {
 	if parsed.Scope.Kind != ScopeKindRef || parsed.Scope.FromRef != "main" || parsed.Scope.ToRef != "HEAD" {
 		t.Fatalf("unexpected scope: %+v", parsed.Scope)
 	}
-	if parsed.Scope.RefMode != "worktree" {
-		t.Fatalf("expected default ref-mode worktree, got %q", parsed.Scope.RefMode)
+	if parsed.Scope.RefMode != "blob" {
+		t.Fatalf("expected default ref-mode blob, got %q", parsed.Scope.RefMode)
 	}
 }
 
@@ -43,10 +43,20 @@ func TestParseDiffScope_RefKeepWorktree(t *testing.T) {
 	}
 }
 
-func TestParseDiffScope_RefModeBlobRejected(t *testing.T) {
-	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "blob", "plan:psql"})
+func TestParseDiffScope_RefModeBlobExplicit(t *testing.T) {
+	parsed, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "blob", "plan:psql", "--", "-f", "x.sql"})
+	if err != nil {
+		t.Fatalf("ParseDiffScope: %v", err)
+	}
+	if parsed.Scope.RefMode != "blob" {
+		t.Fatalf("expected ref-mode blob, got %q", parsed.Scope.RefMode)
+	}
+}
+
+func TestParseDiffScope_RefModeInvalid(t *testing.T) {
+	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "nosuch", "plan:psql"})
 	if err == nil {
-		t.Fatal("expected error for blob ref-mode")
+		t.Fatal("expected error for invalid ref-mode")
 	}
 }
 

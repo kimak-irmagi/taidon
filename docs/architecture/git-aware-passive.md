@@ -117,8 +117,8 @@ Rules:
   `inputset` component for the selected kind;
 - **Current CLI slice** (`frontend/cli-go`): exactly **one** wrapped token among
   `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb`; compares **file-list
-  closures** (hashes) only—no engine. **Ref mode** uses **`git worktree` only**
-  (not blob reads).
+  closures** (hashes) only—no engine. **Ref mode** defaults to **`blob`** reads
+  (`git show` / `git ls-tree`); **`worktree`** remains available explicitly.
 - **Design / later**: two-stage `prepare ... run` composites and alias-backed
   `prepare <ref>`; full derived representations (task plans, prepare payloads).
 - Future standalone `run:*` support is possible only for file-backed inputs,
