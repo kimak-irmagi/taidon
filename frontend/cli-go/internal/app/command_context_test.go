@@ -4,12 +4,24 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/paths"
 )
+
+// sameLocalPath compares filesystem paths in a way that tolerates Windows slash
+// mixing and drive-letter case (filepath.Abs/Clean may change casing).
+func sameLocalPath(want, got string) bool {
+	want = filepath.Clean(filepath.FromSlash(strings.TrimSpace(want)))
+	got = filepath.Clean(filepath.FromSlash(strings.TrimSpace(got)))
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(want, got)
+	}
+	return want == got
+}
 
 func TestResolveCommandContextDefaultsFromProjectConfig(t *testing.T) {
 	temp := t.TempDir()
@@ -54,7 +66,7 @@ func TestResolveCommandContextDefaultsFromProjectConfig(t *testing.T) {
 		t.Fatalf("resolveCommandContext: %v", err)
 	}
 
-	if ctx.workspaceRoot != workspace {
+	if !sameLocalPath(workspace, ctx.workspaceRoot) {
 		t.Fatalf("workspaceRoot = %q, want %q", ctx.workspaceRoot, workspace)
 	}
 	if ctx.profileName != "remote" {
@@ -79,11 +91,11 @@ func TestResolveCommandContextDefaultsFromProjectConfig(t *testing.T) {
 		t.Fatalf("authToken = %q, want env-token", ctx.authToken)
 	}
 	wantDaemon := filepath.Join(projectDir, "bin", "sqlrs-engine")
-	if ctx.daemonPath != wantDaemon {
+	if !sameLocalPath(wantDaemon, ctx.daemonPath) {
 		t.Fatalf("daemonPath = %q, want %q", ctx.daemonPath, wantDaemon)
 	}
 	wantRunDir := filepath.Join(dirs.StateDir, "run")
-	if ctx.runDir != wantRunDir {
+	if !sameLocalPath(wantRunDir, ctx.runDir) {
 		t.Fatalf("runDir = %q, want %q", ctx.runDir, wantRunDir)
 	}
 }
@@ -151,10 +163,9 @@ func TestResolveCommandContextAppliesCLIOverrides(t *testing.T) {
 	if ctx.daemonPath != "/env/sqlrs-engine" {
 		t.Fatalf("daemonPath = %q, want /env/sqlrs-engine", ctx.daemonPath)
 	}
-	// Config strings keep YAML slashes; filepath.Clean normalizes for the host OS (e.g. Windows).
-	wantRunDir := filepath.Clean("/var/sqlrs/run")
-	if filepath.Clean(ctx.runDir) != wantRunDir {
-		t.Fatalf("runDir = %q, want %q", ctx.runDir, wantRunDir)
+	// Config strings keep YAML slashes; host OS normalizes separators (and may change drive case).
+	if !sameLocalPath("/var/sqlrs/run", ctx.runDir) {
+		t.Fatalf("runDir = %q, want equivalent of /var/sqlrs/run", ctx.runDir)
 	}
 	wantEngineStoreDir := "/var/sqlrs/store"
 	if runtime.GOOS == "windows" {
@@ -163,9 +174,8 @@ func TestResolveCommandContextAppliesCLIOverrides(t *testing.T) {
 	if ctx.engineStoreDir != wantEngineStoreDir {
 		t.Fatalf("engineStoreDir = %q, want %q", ctx.engineStoreDir, wantEngineStoreDir)
 	}
-	wantEngineHost := filepath.Clean("/var/sqlrs/store")
-	if filepath.Clean(ctx.engineHostStorePath) != wantEngineHost {
-		t.Fatalf("engineHostStorePath = %q, want %q", ctx.engineHostStorePath, wantEngineHost)
+	if !sameLocalPath("/var/sqlrs/store", ctx.engineHostStorePath) {
+		t.Fatalf("engineHostStorePath = %q, want equivalent of /var/sqlrs/store", ctx.engineHostStorePath)
 	}
 	if ctx.authToken != "config-token" {
 		t.Fatalf("authToken = %q, want config-token", ctx.authToken)
@@ -189,7 +199,7 @@ func TestResolveCommandContextUsesWorkspaceFlagAsFallbackRoot(t *testing.T) {
 		t.Fatalf("resolveCommandContext: %v", err)
 	}
 
-	if ctx.workspaceRoot != workspace {
+	if !sameLocalPath(workspace, ctx.workspaceRoot) {
 		t.Fatalf("workspaceRoot = %q, want %q", ctx.workspaceRoot, workspace)
 	}
 }
