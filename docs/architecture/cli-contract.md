@@ -287,7 +287,8 @@ normal syntax.
 **Implemented today**
 
 - scope: `--from-path`/`--to-path` or `--from-ref`/`--to-ref`
-- ref mode: **worktree only** (`git worktree add --detach`); `--ref-mode blob` is not implemented
+- ref mode: **`blob` by default** (read Git objects, no checkout); optional
+  **`worktree`** (`git worktree add --detach`)
 - wrapped commands: `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb` only
 - global `-v` and `--output` as elsewhere
 

@@ -33,7 +33,7 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		for _, e := range added {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
-				snip := strings.TrimSuffix(fileSnippet(toCtx.Root, e.Path), "\n")
+				snip := strings.TrimSuffix(fileSnippetCtx(toCtx, e.Path), "\n")
 				for _, line := range strings.Split(snip, "\n") {
 					fmt.Fprintf(w, "    │ %s\n", line)
 				}
@@ -49,7 +49,7 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		for _, e := range modified {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
-				snip := strings.TrimSuffix(fileSnippet(toCtx.Root, e.Path), "\n")
+				snip := strings.TrimSuffix(fileSnippetCtx(toCtx, e.Path), "\n")
 				for _, line := range strings.Split(snip, "\n") {
 					fmt.Fprintf(w, "    │ %s\n", line)
 				}
@@ -65,7 +65,7 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		for _, e := range removed {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
-				snip := strings.TrimSuffix(fileSnippet(fromCtx.Root, e.Path), "\n")
+				snip := strings.TrimSuffix(fileSnippetCtx(fromCtx, e.Path), "\n")
 				for _, line := range strings.Split(snip, "\n") {
 					fmt.Fprintf(w, "    │ %s\n", line)
 				}
@@ -135,7 +135,7 @@ func RenderJSON(w io.Writer, result DiffResult, scope Scope, wrappedCommand stri
 	for i, e := range added {
 		ent := JSONEntry{Path: e.Path, Hash: e.Hash}
 		if opts.IncludeContent {
-			ent.Content = fileSnippet(toCtx.Root, e.Path)
+			ent.Content = fileSnippetCtx(toCtx, e.Path)
 		}
 		addedJ[i] = ent
 	}
@@ -143,7 +143,7 @@ func RenderJSON(w io.Writer, result DiffResult, scope Scope, wrappedCommand stri
 	for i, e := range modified {
 		ent := JSONEntry{Path: e.Path, Hash: e.Hash}
 		if opts.IncludeContent {
-			ent.Content = fileSnippet(toCtx.Root, e.Path)
+			ent.Content = fileSnippetCtx(toCtx, e.Path)
 		}
 		modifiedJ[i] = ent
 	}
@@ -151,7 +151,7 @@ func RenderJSON(w io.Writer, result DiffResult, scope Scope, wrappedCommand stri
 	for i, e := range removed {
 		ent := JSONEntry{Path: e.Path, Hash: e.Hash}
 		if opts.IncludeContent {
-			ent.Content = fileSnippet(fromCtx.Root, e.Path)
+			ent.Content = fileSnippetCtx(fromCtx, e.Path)
 		}
 		removedJ[i] = ent
 	}
@@ -177,7 +177,7 @@ func formatDiffCommandLine(scope Scope, wrapped string) string {
 	case ScopeKindRef:
 		var b strings.Builder
 		fmt.Fprintf(&b, "diff --from-ref %s --to-ref %s", scope.FromRef, scope.ToRef)
-		if scope.RefMode != "" && scope.RefMode != "worktree" {
+		if scope.RefMode != "" && scope.RefMode != "blob" {
 			fmt.Fprintf(&b, " --ref-mode %s", scope.RefMode)
 		}
 		if scope.RefKeepWorktree {
