@@ -128,10 +128,13 @@ func finishParseDiffScope(
 	if fromRef != nil && toRef != nil {
 		rm := refMode
 		if rm == "" {
-			rm = "worktree"
+			rm = "blob"
 		}
-		if rm != "worktree" {
-			return ParsedDiff{}, fmt.Errorf("diff: --ref-mode %q is not supported (only worktree)", rm)
+		if rm != "blob" && rm != "worktree" {
+			return ParsedDiff{}, fmt.Errorf("diff: --ref-mode %q is not supported (use blob or worktree)", rm)
+		}
+		if refKeep && rm != "worktree" {
+			return ParsedDiff{}, errors.New("diff: --ref-keep-worktree is only valid with --ref-mode worktree")
 		}
 		return ParsedDiff{
 			Scope: Scope{

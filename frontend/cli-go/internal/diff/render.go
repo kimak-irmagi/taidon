@@ -12,8 +12,9 @@ import (
 // When opts.IncludeContent is true, fromCtx and toCtx supply roots to read file snippets:
 // added and modified show content from toCtx; removed from fromCtx.
 func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand string, opts Options, fromCtx, toCtx Context) {
-	fmt.Fprintln(w, formatDiffCommandLine(scope, wrappedCommand))
-	fmt.Fprintln(w)
+	// Explicit \n: fmt.Fprintln uses CRLF on Windows; keep CLI output stable.
+	fmt.Fprintf(w, "%s\n", formatDiffCommandLine(scope, wrappedCommand))
+	fmt.Fprint(w, "\n")
 	added := result.Added
 	modified := result.Modified
 	removed := result.Removed
@@ -29,11 +30,11 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		}
 	}
 	if len(result.Added) > 0 {
-		fmt.Fprintln(w, "Added:")
+		fmt.Fprint(w, "Added:\n")
 		for _, e := range added {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
-				snip := strings.TrimSuffix(fileSnippet(toCtx.Root, e.Path), "\n")
+				snip := strings.TrimSuffix(fileSnippetCtx(toCtx, e.Path), "\n")
 				for _, line := range strings.Split(snip, "\n") {
 					fmt.Fprintf(w, "    │ %s\n", line)
 				}
@@ -42,14 +43,14 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		if opts.Limit > 0 && len(result.Added) > opts.Limit {
 			fmt.Fprintf(w, "  ... (%d more)\n", len(result.Added)-opts.Limit)
 		}
-		fmt.Fprintln(w)
+		fmt.Fprint(w, "\n")
 	}
 	if len(result.Modified) > 0 {
-		fmt.Fprintln(w, "Modified:")
+		fmt.Fprint(w, "Modified:\n")
 		for _, e := range modified {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
-				snip := strings.TrimSuffix(fileSnippet(toCtx.Root, e.Path), "\n")
+				snip := strings.TrimSuffix(fileSnippetCtx(toCtx, e.Path), "\n")
 				for _, line := range strings.Split(snip, "\n") {
 					fmt.Fprintf(w, "    │ %s\n", line)
 				}
@@ -58,14 +59,14 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		if opts.Limit > 0 && len(result.Modified) > opts.Limit {
 			fmt.Fprintf(w, "  ... (%d more)\n", len(result.Modified)-opts.Limit)
 		}
-		fmt.Fprintln(w)
+		fmt.Fprint(w, "\n")
 	}
 	if len(result.Removed) > 0 {
-		fmt.Fprintln(w, "Removed:")
+		fmt.Fprint(w, "Removed:\n")
 		for _, e := range removed {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
-				snip := strings.TrimSuffix(fileSnippet(fromCtx.Root, e.Path), "\n")
+				snip := strings.TrimSuffix(fileSnippetCtx(fromCtx, e.Path), "\n")
 				for _, line := range strings.Split(snip, "\n") {
 					fmt.Fprintf(w, "    │ %s\n", line)
 				}
@@ -74,7 +75,7 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		if opts.Limit > 0 && len(result.Removed) > opts.Limit {
 			fmt.Fprintf(w, "  ... (%d more)\n", len(result.Removed)-opts.Limit)
 		}
-		fmt.Fprintln(w)
+		fmt.Fprint(w, "\n")
 	}
 	fmt.Fprintf(w, "Summary: %d added, %d modified, %d removed\n",
 		len(result.Added), len(result.Modified), len(result.Removed))
@@ -135,7 +136,7 @@ func RenderJSON(w io.Writer, result DiffResult, scope Scope, wrappedCommand stri
 	for i, e := range added {
 		ent := JSONEntry{Path: e.Path, Hash: e.Hash}
 		if opts.IncludeContent {
-			ent.Content = fileSnippet(toCtx.Root, e.Path)
+			ent.Content = fileSnippetCtx(toCtx, e.Path)
 		}
 		addedJ[i] = ent
 	}
@@ -143,7 +144,7 @@ func RenderJSON(w io.Writer, result DiffResult, scope Scope, wrappedCommand stri
 	for i, e := range modified {
 		ent := JSONEntry{Path: e.Path, Hash: e.Hash}
 		if opts.IncludeContent {
-			ent.Content = fileSnippet(toCtx.Root, e.Path)
+			ent.Content = fileSnippetCtx(toCtx, e.Path)
 		}
 		modifiedJ[i] = ent
 	}
@@ -151,7 +152,7 @@ func RenderJSON(w io.Writer, result DiffResult, scope Scope, wrappedCommand stri
 	for i, e := range removed {
 		ent := JSONEntry{Path: e.Path, Hash: e.Hash}
 		if opts.IncludeContent {
-			ent.Content = fileSnippet(fromCtx.Root, e.Path)
+			ent.Content = fileSnippetCtx(fromCtx, e.Path)
 		}
 		removedJ[i] = ent
 	}
@@ -177,7 +178,7 @@ func formatDiffCommandLine(scope Scope, wrapped string) string {
 	case ScopeKindRef:
 		var b strings.Builder
 		fmt.Fprintf(&b, "diff --from-ref %s --to-ref %s", scope.FromRef, scope.ToRef)
-		if scope.RefMode != "" && scope.RefMode != "worktree" {
+		if scope.RefMode != "" && scope.RefMode != "blob" {
 			fmt.Fprintf(&b, " --ref-mode %s", scope.RefMode)
 		}
 		if scope.RefKeepWorktree {

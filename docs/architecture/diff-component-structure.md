@@ -9,8 +9,9 @@ the CLI contract, user guide, and the shared `inputset` decision.
   CLI-only.
 - Today the command compares file-list closures and content hashes; no engine
   API is involved.
-- Ref mode currently uses detached `git worktree` contexts; blob mode is not
-  implemented.
+- Ref mode defaults to **blob** reads via `internal/inputset.GitRevFileSystem`
+  (`git show` / `git ls-tree`); optional **`worktree`** still uses detached
+  checkouts.
 - The wrapped command currently remains one token among `plan:psql`, `plan:lb`,
   `prepare:psql`, and `prepare:lb`.
 - The approved architecture is that `internal/diff` owns scope parsing,

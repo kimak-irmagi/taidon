@@ -138,7 +138,8 @@ sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sq
   компонента `inputset`, выбранного по kind;
 - **Текущий CLI** (`frontend/cli-go`): ровно **один** wrapped-токен из
   `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb`; сравниваются **closures
-  файлов** (хеши), без engine. **Режим ref** — только **`git worktree`**, не blob.
+  файлов** (хеши), без engine. **Режим ref** по умолчанию — **`blob`**
+  (`git show` / `git ls-tree`); **`worktree`** — явно.
 - **Дизайн / потом**: composite `prepare ... run`, alias `prepare <ref>`; полные
   производные представления (планы, payload prepare).
 - будущая standalone-поддержка `run:*` возможна только для file-backed входов,
