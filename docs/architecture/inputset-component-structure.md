@@ -3,8 +3,8 @@
 This document defines the approved shared CLI-side component layer for
 **file-bearing command semantics** in `sqlrs`.
 
-The goal is to give `prepare`, `plan`, `run`, `diff`, and `alias check` one
-source of truth for:
+The goal is to give `prepare`, `plan`, `run`, `diff`, `alias check`, and
+`alias create` one source of truth for:
 
 - parsing file-bearing arguments for each supported tool kind;
 - resolving those arguments into host-side paths;
@@ -27,6 +27,7 @@ source of truth for:
   - `run:*`
   - `sqlrs diff`
   - `sqlrs alias check`
+  - `sqlrs alias create`
   - later `discover`, provenance, and cache explanation
 
 ## 2. Design rules
@@ -44,7 +45,8 @@ source of truth for:
    - runtime args for `prepare:*` / `plan:*`;
    - run steps/stdin materialization for `run:*`;
    - file lists + hashes for `diff`;
-   - declared refs, closure checks, and issues for `alias check`.
+   - declared refs, closure checks, and issues for `alias check`;
+   - validated wrapped-command inputs for `alias create`.
 
 3. **Parse, then bind, then collect**
 
@@ -69,12 +71,12 @@ source of truth for:
 | Component                     | Responsibility                                                                                                                                                                         | Primary consumers                                              |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `internal/inputset`           | Shared core abstractions: path resolvers, filesystem abstraction, collected input-set types, shared hashing/ordering helpers.                                                          | `internal/app`, `internal/diff`, `internal/alias`              |
-| `internal/inputset/psql`      | Parse `psql` file-bearing args, bind paths, collect include closure where plain `\i` / `\include` resolve from the effective command base dir and `\ir` / `\include_relative` resolve from the including file directory, project to prepare/run/diff/alias-check views. | `prepare:psql`, `plan:psql`, `run:psql`, `diff`, `alias check` |
-| `internal/inputset/liquibase` | Parse Liquibase path-bearing args (`--changelog-file`, `--defaults-file`, `--searchPath`), bind search roots, collect changelog graph, project to prepare/plan/diff/alias-check views. | `prepare:lb`, `plan:lb`, `diff`, `alias check`                 |
-| `internal/inputset/pgbench`   | Parse `pgbench` file-bearing args, bind paths, materialize runtime stdin projection, expose declared file refs for alias validation.                                                   | `run:pgbench`, `alias check`                                   |
+| `internal/inputset/psql`      | Parse `psql` file-bearing args, bind paths, collect include closure where plain `\i` / `\include` resolve from the effective command base dir and `\ir` / `\include_relative` resolve from the including file directory, project to prepare/run/diff/alias-check/alias-create views. | `prepare:psql`, `plan:psql`, `run:psql`, `diff`, `alias check`, `alias create` |
+| `internal/inputset/liquibase` | Parse Liquibase path-bearing args (`--changelog-file`, `--defaults-file`, `--searchPath`), bind search roots, collect changelog graph, project to prepare/plan/diff/alias-check/alias-create views. | `prepare:lb`, `plan:lb`, `diff`, `alias check`, `alias create` |
+| `internal/inputset/pgbench`   | Parse `pgbench` file-bearing args, bind paths, materialize runtime stdin projection, expose declared file refs for alias validation.                                                   | `run:pgbench`, `alias check`, `alias create`                   |
 | `internal/app`                | Build command context, choose the kind component, provide the right path resolver, request runtime projections, and call transport executors.                                          | CLI execution                                                  |
 | `internal/diff`               | Resolve left/right scope roots, call the same kind component on each side, compare collected input sets, render human/JSON diff.                                                       | `sqlrs diff`                                                   |
-| `internal/alias`              | Resolve alias files and alias-relative bases, then call the same kind component for declared refs and optional closure checks.                                                         | `sqlrs alias check`                                            |
+| `internal/alias`              | Resolve alias files and alias-relative bases, then call the same kind component for declared refs and optional closure checks. Also reuse the same kind component when rendering new alias files. | `sqlrs alias check`, `sqlrs alias create`                      |
 
 ## 4. Shared pipeline
 
@@ -121,6 +123,8 @@ Consumers derive their own outputs from the same bound spec or collected set:
 - `run:*`: run steps, stdin bodies, or command args;
 - `diff`: relative file list + content hashes/snippets;
 - `alias check`: declared-path issues and, where enabled, closure validation.
+- `alias create`: validated wrapped-command inputs that will be rendered into
+  a repo-tracked alias file.
 
 ## 5. Suggested core types
 

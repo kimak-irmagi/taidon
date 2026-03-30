@@ -9,7 +9,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   rendering separated.
 - Keep one CLI-side source of truth for file-bearing arguments and closure rules
   for each supported tool kind.
-- Reuse the same kind components across execution, `diff`, and `alias check`.
+- Reuse the same kind components across execution, `diff`, `alias check`,
+  `alias create`, and `discover`.
 - Reuse one transport layer for local and remote profiles.
 
 ## 2. Packages and responsibilities
@@ -19,24 +20,31 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `internal/app`
   - Loads workspace/global config and resolves profile/mode.
   - Dispatches the command graph (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
-    `status`, `config`, `init`, `alias`, `diff`).
+    `status`, `config`, `init`, `alias`, `discover`, `diff`).
   - Builds command context and chooses path resolvers and runtime projections
     from `internal/inputset`.
+- `internal/discover`
+  - Advisory workspace-analysis pipeline for `sqlrs discover`.
+  - Owns candidate scoring, topology ranking, alias-coverage suppression,
+    copy-paste `alias create` command synthesis, and report aggregation.
+  - Reuses `internal/alias` and `internal/inputset` for the aliases analyzer.
 - `internal/inputset`
   - Shared CLI-side source of truth for file-bearing command semantics.
   - Owns staged parse/bind/collect/project abstractions and common helper types.
 - `internal/inputset/psql`
   - `psql` file-bearing args and include-closure semantics reused by
-    `prepare:psql`, `plan:psql`, `run:psql`, `diff`, and `alias check`.
+    `prepare:psql`, `plan:psql`, `run:psql`, `diff`, `alias check`,
+    `alias create`, and `discover`.
 - `internal/inputset/liquibase`
   - Liquibase path-bearing args, search-path binding, and changelog-graph
-    semantics reused by `prepare:lb`, `plan:lb`, `diff`, and `alias check`.
+    semantics reused by `prepare:lb`, `plan:lb`, `diff`, `alias check`,
+    `alias create`, and `discover`.
 - `internal/inputset/pgbench`
   - `pgbench` file-bearing args and runtime projection reused by `run:pgbench`
-    and alias validation.
+    and alias validation / alias creation.
 - `internal/alias`
   - Alias discovery, scan-scope handling, single-alias resolution, YAML loading,
-    and static validation orchestration.
+    alias file creation, and static validation orchestration.
   - Delegates kind-specific file semantics to `internal/inputset`.
 - `internal/diff`
   - Diff-scope parsing, side-root resolution, comparison, and rendering.
@@ -71,6 +79,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - Shared prepare/plan options and plan rendering model.
 - `cli.RunOptions`, `cli.RunStep`, `cli.RunResult`
   - Run invocation options (kind, args, stdin/steps) and terminal run result.
+- `alias.CreateOptions`, `alias.CreatePlan`, `alias.CreateResult`
+  - Alias creation options, derived write plan, and terminal result.
 - `inputset.PathResolver`, `inputset.CommandSpec`, `inputset.BoundSpec`
   - Shared staged interfaces for parsing, host-side binding, and collection of
     file-bearing inputs.
@@ -78,6 +88,9 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - Deterministic collected view of declared and discovered files.
 - `alias.Target`, `alias.CheckResult`
   - Single-alias resolution target and static validation result.
+- `discover.Report`, `discover.Finding`, `discover.Candidate`
+  - Advisory discovery output, one finding, and a scored workspace file
+    candidate, including copy-paste create commands.
 - `diff.Scope`, `diff.Context`, `diff.DiffResult`
   - `diff` comparison scope, resolved side roots, and rendered comparison model.
 - `client.PrepareJobRequest`, `client.PrepareJobStatus`, `client.PrepareJobEvent`
@@ -98,6 +111,7 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   only for one CLI invocation.
 - Engine discovery state (`engine.json`, daemon lock/process metadata) is
   managed via `internal/daemon`.
+- Rendered alias-create commands are ephemeral and exist only in CLI output.
 - Server config is owned by engine-side storage and accessed via HTTP
   (`/v1/config*`), not cached by the CLI.
 
@@ -110,6 +124,7 @@ flowchart LR
   CLI["internal/cli"]
   INPUTSET["internal/inputset"]
   ALIAS["internal/alias"]
+  DISCOVER["internal/discover"]
   DIFF["internal/diff"]
   RUNKIND["internal/cli/runkind"]
   CLIENT["internal/client"]
@@ -118,6 +133,7 @@ flowchart LR
   PATHS["internal/paths"]
   WSL["internal/wsl"]
   UTIL["internal/util"]
+  FS["workspace filesystem"]
 
   CMD --> APP
   APP --> CLI
@@ -130,7 +146,11 @@ flowchart LR
   CLI --> DAEMON
   CLI --> RUNKIND
   CLI --> ALIAS
+  CLI --> DISCOVER
   CLI --> DIFF
   ALIAS --> INPUTSET
+  DISCOVER --> ALIAS
+  DISCOVER --> INPUTSET
+  DISCOVER --> FS
   DIFF --> INPUTSET
 ```

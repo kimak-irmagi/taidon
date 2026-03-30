@@ -131,9 +131,9 @@ gantt
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
 - **Следующий публичный local-фокус**: закрыть оставшиеся M2 local DX слои через
-  `sqlrs discover --aliases`, последующие discover analyzers и более поздний
-  Git-aware CLI follow-up для `sqlrs diff`/prepare provenance (`--ref`,
-  provenance, cache explain).
+  `sqlrs alias create`, `sqlrs discover --aliases`, последующие discover
+  analyzers и более поздний Git-aware CLI follow-up для `sqlrs diff`/prepare
+  provenance (`--ref`, provenance, cache explain).
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -151,7 +151,8 @@ gantt
   - переиспользовать alias scan / resolve / check primitives, уже добавленные
     для `sqlrs alias ls/check`, чтобы discovery не дублировал inventory logic;
   - показывать actionable alias-oriented findings для текущего repo slice перед
-    добавлением более широких discover analyzers;
+    добавлением более широких discover analyzers, включая copy-paste
+    `sqlrs alias create ...` commands;
   - сохранить discover layer расширяемым для последующих analyzers над
     `.gitignore`, `.vscode` и prepare-shaping heuristics;
   - покрыть workspace-scope defaults, filtering и human/JSON rendering в docs
@@ -252,8 +253,10 @@ gantt
     alias files
   - обычная композиция `prepare ... run` через raw и alias modes
   - явный alias inspection через `sqlrs alias ls/check`
+  - явный alias creation через `sqlrs alias create`
 - Advisory discovery tooling:
-  - `sqlrs discover --aliases`
+  - `sqlrs discover --aliases` с copy-paste `sqlrs alias create ...`
+    suggestions
   - последующие analyzers для `.gitignore`, `.vscode` и prepare shaping
 - Git-aware CLI (passive):
   - `diff` в path mode

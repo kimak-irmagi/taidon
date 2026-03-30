@@ -100,16 +100,9 @@ local workspace config.
   `<run-ref>.run.s9s.yaml` от текущего рабочего каталога
 - `prepare ... run ...` принимает смешанные raw/alias комбинации
 - `sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]`
-- :
-
-  ```bash
-  sqlrs alias check \ 
-    [--prepare] \ 
-    [--run] \
-    [--from <workspace|cwd|path>] \
-    [--depth <self|children|recursive>] \
-    [<ref>]
-  ```
+- `sqlrs alias create <ref> <wrapped-command> [-- <command>...]`
+- `sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>]`
+  `[--depth <self|children|recursive>] [<ref>]`
 
 **Ожидаемая работа**:
 
@@ -119,6 +112,7 @@ local workspace config.
 - запретить `--instance`, если target instance уже выбран предшествующим
   `prepare`
 - реализовать alias listing/check команды с ограниченной настройкой scan scope
+- реализовать alias creation из wrapped execution commands
 - сохранить raw `run:<kind>` mode рядом с alias mode
 
 **Ожидаемые тесты**:
@@ -126,6 +120,7 @@ local workspace config.
 - тесты run alias resolution
 - тесты composite grammar для смешанных raw/alias стадий
 - тесты alias inspection commands
+- тесты alias create validation и write-path
 - тесты scan root и scan depth для `alias ls` / `alias check`
 - тесты single-alias `check <ref>`, включая ambiguity и exact-file escape
 - тесты валидации kind-specific constraints
@@ -145,14 +140,15 @@ local workspace config.
 
 **Основной результат**:
 
-- `sqlrs discover --aliases` анализирует workspace и сообщает candidate alias files
+- `sqlrs discover --aliases` анализирует workspace и сообщает candidate alias
+  files как ready-to-copy `sqlrs alias create ...` commands
 - команда advisory и read-only по умолчанию
 
 **Ожидаемая работа**:
 
 - добавить семейство команд `discover`
 - реализовать analyzer `--aliases`
-- определить стабильный human и JSON output для findings
+- определить стабильный human и JSON output для findings и create-command strings
 - сохранить жесткое разделение между discovery и execution semantics
 
 **Ожидаемые тесты**:

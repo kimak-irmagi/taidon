@@ -54,6 +54,9 @@ func TestStartSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 	if !strings.Contains(string(data), "init") {
 		t.Fatalf("expected spinner output, got %q", string(data))
 	}
+	if strings.Contains(string(data), "\x1b[2K") {
+		t.Fatalf("expected ANSI-free spinner output, got %q", string(data))
+	}
 }
 
 func TestStartCleanupSpinnerForcedTerminalStopsBeforeShown(t *testing.T) {
@@ -101,5 +104,8 @@ func TestStartCleanupSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Deleting instance inst") {
 		t.Fatalf("expected spinner output, got %q", string(data))
+	}
+	if strings.Contains(string(data), "\x1b[2K") {
+		t.Fatalf("expected ANSI-free spinner output, got %q", string(data))
 	}
 }
