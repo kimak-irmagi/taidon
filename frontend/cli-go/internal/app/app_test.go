@@ -860,5 +860,12 @@ func setTestDirs(t *testing.T, root string) {
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		t.Fatalf("mkdir test work dir: %v", err)
 	}
-	t.Chdir(workDir)
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("chdir test work dir: %v", err)
+	}
 }
