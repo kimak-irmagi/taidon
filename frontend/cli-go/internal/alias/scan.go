@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -194,28 +195,44 @@ func classifyPath(path string) Class {
 }
 
 func portableRelativePath(base string, target string) (string, error) {
-	// Prefer the canonical form first so symlinked paths collapse to a stable relative path.
-	canonicalBase := canonicalizeBoundaryPath(base)
-	canonicalTarget := canonicalizeBoundaryPath(target)
-	if canonicalBase != "" && canonicalTarget != "" {
-		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
-			return canonicalRel, nil
-		}
-	}
-
+	// Prefer the canonical form first for native paths so symlinked paths collapse to a stable relative path.
 	baseVolume := windowsVolumeName(base)
 	targetVolume := windowsVolumeName(target)
-	if baseVolume != "" || targetVolume != "" {
-		if baseVolume == "" || targetVolume == "" || !strings.EqualFold(baseVolume, targetVolume) {
-			return "", fmt.Errorf("paths have different roots")
-		}
-		return slashRelativePath(normalizeWindowsLikePath(base[len(baseVolume):]), normalizeWindowsLikePath(target[len(targetVolume):])), nil
+	if runtime.GOOS != "windows" && (baseVolume != "" || targetVolume != "") {
+		return portableWindowsRelativePath(base, target, baseVolume, targetVolume)
 	}
+
+	if canonicalRel, ok := canonicalRelativePath(base, target); ok {
+		return canonicalRel, nil
+	}
+
+	if baseVolume != "" || targetVolume != "" {
+		return portableWindowsRelativePath(base, target, baseVolume, targetVolume)
+	}
+
 	rel, err := filepath.Rel(base, target)
 	if err != nil {
 		return "", err
 	}
 	return rel, nil
+}
+
+func portableWindowsRelativePath(base string, target string, baseVolume string, targetVolume string) (string, error) {
+	if baseVolume == "" || targetVolume == "" || !strings.EqualFold(baseVolume, targetVolume) {
+		return "", fmt.Errorf("paths have different roots")
+	}
+	return slashRelativePath(normalizeWindowsLikePath(base[len(baseVolume):]), normalizeWindowsLikePath(target[len(targetVolume):])), nil
+}
+
+func canonicalRelativePath(base string, target string) (string, bool) {
+	canonicalBase := canonicalizeBoundaryPath(base)
+	canonicalTarget := canonicalizeBoundaryPath(target)
+	if canonicalBase != "" && canonicalTarget != "" {
+		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
+			return canonicalRel, true
+		}
+	}
+	return "", false
 }
 
 func windowsVolumeName(value string) string {
