@@ -194,6 +194,15 @@ func classifyPath(path string) Class {
 }
 
 func portableRelativePath(base string, target string) (string, error) {
+	// Prefer the canonical form first so symlinked paths collapse to a stable relative path.
+	canonicalBase := canonicalizeBoundaryPath(base)
+	canonicalTarget := canonicalizeBoundaryPath(target)
+	if canonicalBase != "" && canonicalTarget != "" {
+		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
+			return canonicalRel, nil
+		}
+	}
+
 	baseVolume := windowsVolumeName(base)
 	targetVolume := windowsVolumeName(target)
 	if baseVolume != "" || targetVolume != "" {
@@ -204,22 +213,7 @@ func portableRelativePath(base string, target string) (string, error) {
 	}
 	rel, err := filepath.Rel(base, target)
 	if err != nil {
-		canonicalBase := canonicalizeBoundaryPath(base)
-		canonicalTarget := canonicalizeBoundaryPath(target)
-		if canonicalBase != "" && canonicalTarget != "" {
-			if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
-				return canonicalRel, nil
-			}
-		}
 		return "", err
-	}
-
-	canonicalBase := canonicalizeBoundaryPath(base)
-	canonicalTarget := canonicalizeBoundaryPath(target)
-	if canonicalBase != "" && canonicalTarget != "" {
-		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
-			return canonicalRel, nil
-		}
 	}
 	return rel, nil
 }
