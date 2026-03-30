@@ -12,8 +12,9 @@ import (
 // When opts.IncludeContent is true, fromCtx and toCtx supply roots to read file snippets:
 // added and modified show content from toCtx; removed from fromCtx.
 func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand string, opts Options, fromCtx, toCtx Context) {
-	fmt.Fprintln(w, formatDiffCommandLine(scope, wrappedCommand))
-	fmt.Fprintln(w)
+	// Explicit \n: fmt.Fprintln uses CRLF on Windows; keep CLI output stable.
+	fmt.Fprintf(w, "%s\n", formatDiffCommandLine(scope, wrappedCommand))
+	fmt.Fprint(w, "\n")
 	added := result.Added
 	modified := result.Modified
 	removed := result.Removed
@@ -29,7 +30,7 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		}
 	}
 	if len(result.Added) > 0 {
-		fmt.Fprintln(w, "Added:")
+		fmt.Fprint(w, "Added:\n")
 		for _, e := range added {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
@@ -42,10 +43,10 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		if opts.Limit > 0 && len(result.Added) > opts.Limit {
 			fmt.Fprintf(w, "  ... (%d more)\n", len(result.Added)-opts.Limit)
 		}
-		fmt.Fprintln(w)
+		fmt.Fprint(w, "\n")
 	}
 	if len(result.Modified) > 0 {
-		fmt.Fprintln(w, "Modified:")
+		fmt.Fprint(w, "Modified:\n")
 		for _, e := range modified {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
@@ -58,10 +59,10 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		if opts.Limit > 0 && len(result.Modified) > opts.Limit {
 			fmt.Fprintf(w, "  ... (%d more)\n", len(result.Modified)-opts.Limit)
 		}
-		fmt.Fprintln(w)
+		fmt.Fprint(w, "\n")
 	}
 	if len(result.Removed) > 0 {
-		fmt.Fprintln(w, "Removed:")
+		fmt.Fprint(w, "Removed:\n")
 		for _, e := range removed {
 			fmt.Fprintf(w, "  %s\n", e.Path)
 			if opts.IncludeContent {
@@ -74,7 +75,7 @@ func RenderHuman(w io.Writer, result DiffResult, scope Scope, wrappedCommand str
 		if opts.Limit > 0 && len(result.Removed) > opts.Limit {
 			fmt.Fprintf(w, "  ... (%d more)\n", len(result.Removed)-opts.Limit)
 		}
-		fmt.Fprintln(w)
+		fmt.Fprint(w, "\n")
 	}
 	fmt.Fprintf(w, "Summary: %d added, %d modified, %d removed\n",
 		len(result.Added), len(result.Modified), len(result.Removed))
