@@ -76,6 +76,36 @@ func TestRunConfigGetLocalAuto(t *testing.T) {
 	}
 }
 
+func TestConfigClientLocalBlankEndpointConnectError(t *testing.T) {
+	prev := connectOrStart
+	connectOrStart = func(ctx context.Context, opts daemon.ConnectOptions) (daemon.ConnectResult, error) {
+		return daemon.ConnectResult{}, io.ErrUnexpectedEOF
+	}
+	t.Cleanup(func() { connectOrStart = prev })
+
+	if _, err := configClient(context.Background(), ConfigOptions{
+		Mode:     "local",
+		Endpoint: "",
+		Timeout:  time.Second,
+	}); err == nil {
+		t.Fatalf("expected connect error")
+	}
+}
+
+func TestConfigClientRemoteVerboseUsesEndpoint(t *testing.T) {
+	client, err := configClient(context.Background(), ConfigOptions{
+		Mode:     "remote",
+		Endpoint: "http://example.com",
+		Verbose:  true,
+	})
+	if err != nil {
+		t.Fatalf("configClient: %v", err)
+	}
+	if client == nil {
+		t.Fatalf("expected client")
+	}
+}
+
 func TestRunConfigSetRemote(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/config" || r.Method != http.MethodPatch {

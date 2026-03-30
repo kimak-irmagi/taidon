@@ -223,6 +223,66 @@ func TestRunRmAmbiguousInstancePrefix(t *testing.T) {
 	}
 }
 
+func TestRunRmAmbiguousStatePrefix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/instances":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		case "/v1/states":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"state_id":"abc12345aaaa1111","image_id":"img","prepare_kind":"psql","prepare_args_normalized":"","created_at":"2025-01-01T00:00:00Z","refcount":0},{"state_id":"abc12345bbbb2222","image_id":"img","prepare_kind":"psql","prepare_args_normalized":"","created_at":"2025-01-01T00:00:00Z","refcount":0}]`)
+		case "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	_, err := RunRm(context.Background(), RmOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+		IDPrefix: "abc12345",
+	})
+	var ambErr *AmbiguousPrefixError
+	if !errors.As(err, &ambErr) || ambErr.Kind != "state" {
+		t.Fatalf("expected AmbiguousPrefixError for state, got %v", err)
+	}
+}
+
+func TestRunRmAmbiguousJobPrefix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/instances":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		case "/v1/states":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[]`)
+		case "/v1/prepare-jobs":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `[{"job_id":"abc12345-job-1","status":"queued","prepare_kind":"psql","image_id":"img"},{"job_id":"abc12345-job-2","status":"queued","prepare_kind":"psql","image_id":"img"}]`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	_, err := RunRm(context.Background(), RmOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+		IDPrefix: "abc12345",
+	})
+	var ambErr *AmbiguousPrefixError
+	if !errors.As(err, &ambErr) || ambErr.Kind != "job" {
+		t.Fatalf("expected AmbiguousPrefixError for job, got %v", err)
+	}
+}
+
 func TestRunRmNoMatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

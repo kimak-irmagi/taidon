@@ -715,9 +715,6 @@ func parseEventsContentRange(value string) (int, error) {
 	}
 	value = strings.TrimPrefix(value, "events ")
 	parts := strings.SplitN(value, "/", 2)
-	if len(parts) == 0 {
-		return 0, fmt.Errorf("invalid content range: %s", value)
-	}
 	rangePart := parts[0]
 	dash := strings.Index(rangePart, "-")
 	if dash == -1 {

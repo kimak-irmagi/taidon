@@ -42,3 +42,27 @@ func TestPrintAliasCheck(t *testing.T) {
 		}
 	}
 }
+
+func TestPrintAliasCreate(t *testing.T) {
+	var buf bytes.Buffer
+	PrintAliasCreate(&buf, alias.CreateResult{
+		File:  "chinook.prep.s9s.yaml",
+		Type:  alias.ClassPrepare,
+		Ref:   "chinook",
+		Kind:  "psql",
+		Image: "postgres:17",
+	})
+
+	out := buf.String()
+	for _, want := range []string{
+		"created alias file: chinook.prep.s9s.yaml",
+		"type: prepare",
+		"ref: chinook",
+		"kind: psql",
+		"image: postgres:17",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in output, got %q", want, out)
+		}
+	}
+}
