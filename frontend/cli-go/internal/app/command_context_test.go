@@ -151,8 +151,9 @@ func TestResolveCommandContextAppliesCLIOverrides(t *testing.T) {
 	if ctx.daemonPath != "/env/sqlrs-engine" {
 		t.Fatalf("daemonPath = %q, want /env/sqlrs-engine", ctx.daemonPath)
 	}
+	// Config strings keep YAML slashes; filepath.Clean normalizes for the host OS (e.g. Windows).
 	wantRunDir := filepath.Clean("/var/sqlrs/run")
-	if ctx.runDir != wantRunDir {
+	if filepath.Clean(ctx.runDir) != wantRunDir {
 		t.Fatalf("runDir = %q, want %q", ctx.runDir, wantRunDir)
 	}
 	wantEngineStoreDir := "/var/sqlrs/store"
@@ -162,8 +163,9 @@ func TestResolveCommandContextAppliesCLIOverrides(t *testing.T) {
 	if ctx.engineStoreDir != wantEngineStoreDir {
 		t.Fatalf("engineStoreDir = %q, want %q", ctx.engineStoreDir, wantEngineStoreDir)
 	}
-	if ctx.engineHostStorePath != "/var/sqlrs/store" {
-		t.Fatalf("engineHostStorePath = %q, want /var/sqlrs/store", ctx.engineHostStorePath)
+	wantEngineHost := filepath.Clean("/var/sqlrs/store")
+	if filepath.Clean(ctx.engineHostStorePath) != wantEngineHost {
+		t.Fatalf("engineHostStorePath = %q, want %q", ctx.engineHostStorePath, wantEngineHost)
 	}
 	if ctx.authToken != "config-token" {
 		t.Fatalf("authToken = %q, want config-token", ctx.authToken)
