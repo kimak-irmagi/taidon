@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-03-23)
+## Статус (на 2026-03-31)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -127,6 +127,9 @@ gantt
 - **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
   гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
   Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.
+- **Сделано (CLI alias coverage hardening)**: регрессионные тесты `internal/alias`
+  закрыли оставшиеся ветки create, resolve и scan, доведя coverage CLI alias
+  package выше минимального порога в `go test --cover ./...`.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.

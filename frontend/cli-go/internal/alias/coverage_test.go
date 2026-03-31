@@ -253,6 +253,9 @@ func TestCreateRelativizeHelpers(t *testing.T) {
 		if !reflect.DeepEqual(got, []string{"--file"}) {
 			t.Fatalf("relativizePsqlCreateArgs trailing flag = %v", got)
 		}
+		if _, err := relativizePsqlCreateArgs([]string{"-f", filepath.Join("..", "outside.sql")}, workspace, cwd, aliasDir); err == nil || !strings.Contains(err.Error(), "within workspace root") {
+			t.Fatalf("relativizePsqlCreateArgs outside path: %v", err)
+		}
 	})
 
 	t.Run("relativizePgbenchCreateArgs", func(t *testing.T) {
@@ -271,6 +274,9 @@ func TestCreateRelativizeHelpers(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, []string{"--file"}) {
 			t.Fatalf("relativizePgbenchCreateArgs trailing flag = %v", got)
+		}
+		if _, err := relativizePgbenchCreateArgs([]string{"-f", filepath.Join("..", "outside.sql")}, workspace, cwd, aliasDir); err == nil || !strings.Contains(err.Error(), "within workspace root") {
+			t.Fatalf("relativizePgbenchCreateArgs outside path: %v", err)
 		}
 	})
 
@@ -302,6 +308,30 @@ func TestCreateRelativizeHelpers(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, []string{"--searchPath"}) {
 			t.Fatalf("relativizeLiquibaseCreateArgs trailing flag = %v", got)
+		}
+		for _, tc := range []struct {
+			name string
+			args []string
+		}{
+			{name: "missing changelog value", args: []string{"--changelog-file"}},
+			{name: "missing search path value", args: []string{"--searchPath"}},
+			{name: "outside changelog path", args: []string{"--changelog-file", filepath.Join("..", "outside.sql")}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				got, err := relativizeLiquibaseCreateArgs(tc.args, workspace, cwd, aliasDir)
+				if strings.Contains(tc.name, "outside") {
+					if err == nil || !strings.Contains(err.Error(), "within workspace root") {
+						t.Fatalf("relativizeLiquibaseCreateArgs(%v) error = %v, want workspace-bound error", tc.args, err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("relativizeLiquibaseCreateArgs(%v) = %v", tc.args, err)
+				}
+				if !reflect.DeepEqual(got, tc.args) {
+					t.Fatalf("relativizeLiquibaseCreateArgs(%v) = %v, want %v", tc.args, got, tc.args)
+				}
+			})
 		}
 	})
 
@@ -556,6 +586,63 @@ func TestCreateEndToEndCoverage(t *testing.T) {
 	})
 }
 
+func TestCreateAndRewriteFallbackBranches(t *testing.T) {
+	workspace := t.TempDir()
+	cwd := workspace
+	aliasDir := filepath.Join(workspace, "db")
+	mkdirAll(t, aliasDir)
+	writePlainFile(t, aliasDir, "seed.sql", "select 1;\n")
+
+	targetPath := filepath.Join(workspace, "demo.prep.s9s.yaml")
+	if err := os.WriteFile(targetPath, []byte("kind: psql\nargs:\n  - -c\n  - select 1\n"), 0o600); err != nil {
+		t.Fatalf("write existing alias: %v", err)
+	}
+
+	_, err := Create(CreateOptions{
+		WorkspaceRoot: workspace,
+		CWD:           cwd,
+		Ref:           "demo",
+		Class:         ClassPrepare,
+		Kind:          "psql",
+		Args:          []string{"--", "-c", "select 1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected already exists error, got %v", err)
+	}
+
+	if _, err := Create(CreateOptions{Class: ClassPrepare, Kind: "psql"}); err == nil || !strings.Contains(err.Error(), "workspace root is required to create aliases") {
+		t.Fatalf("expected resolve target error, got %v", err)
+	}
+
+	if _, err := rewriteCreateArgs("", "psql", []string{"-c", "select 1"}, workspace, cwd, aliasDir); err == nil || !strings.Contains(err.Error(), "alias class is required") {
+		t.Fatalf("expected missing class error, got %v", err)
+	}
+	if _, err := rewriteCreateArgs(ClassPrepare, "weird", []string{"-c", "select 1"}, workspace, cwd, aliasDir); err == nil || !strings.Contains(err.Error(), "unknown prepare alias kind") {
+		t.Fatalf("expected prepare kind error, got %v", err)
+	}
+	if _, err := rewriteCreateArgs(ClassRun, "weird", []string{"-c", "select 1"}, workspace, cwd, aliasDir); err == nil || !strings.Contains(err.Error(), "unknown run alias kind") {
+		t.Fatalf("expected run kind error, got %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		class   Class
+		kind    string
+		args    []string
+		wantErr string
+	}{
+		{name: "prepare liquibase validation", class: ClassPrepare, kind: "lb", args: []string{"--changelog-file"}, wantErr: "missing value for --changelog-file"},
+		{name: "run psql validation", class: ClassRun, kind: runkind.KindPsql, args: []string{"--file"}, wantErr: "missing value for --file"},
+		{name: "run pgbench validation", class: ClassRun, kind: runkind.KindPgbench, args: []string{"--file"}, wantErr: "missing value for --file"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := rewriteCreateArgs(tc.class, tc.kind, tc.args, workspace, cwd, aliasDir); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("rewriteCreateArgs(%q, %q, %v) error = %v, want %q", tc.class, tc.kind, tc.args, err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestResolveCreateTargetCoverage(t *testing.T) {
 	workspace := t.TempDir()
 	cwd := filepath.Join(workspace, "examples")
@@ -629,6 +716,22 @@ func TestResolveCreateTargetCoverage(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("run stem fallback when prepare is absent", func(t *testing.T) {
+		runPath := writeAliasFile(t, workspace, filepath.Join("jobs", "demo.run.s9s.yaml"), "kind: psql\nargs:\n  - -c\n  - select 1\n")
+		got, err := ResolveTarget(ResolveOptions{
+			WorkspaceRoot: workspace,
+			CWD:           workspace,
+			Ref:           filepath.ToSlash(filepath.Join("jobs", "demo")),
+			Class:         "",
+		})
+		if err != nil {
+			t.Fatalf("ResolveTarget: %v", err)
+		}
+		if got.Class != ClassRun || got.Ref != "jobs/demo" || got.File != filepath.ToSlash(filepath.Join("jobs", "demo.run.s9s.yaml")) || got.Path != runPath {
+			t.Fatalf("unexpected run fallback target: %+v", got)
+		}
+	})
 }
 
 func TestAliasPathAndScanCoverage(t *testing.T) {
@@ -645,10 +748,6 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 		if filepath.ToSlash(got) != "sub/file.txt" {
 			t.Fatalf("portableRelativePath = %q", got)
 		}
-		if _, err := portableRelativePath(`C:\base`, `D:\base\file.txt`); err == nil {
-			t.Fatalf("expected portableRelativePath to reject different roots")
-		}
-
 		got, err = portableWindowsRelativePath(`C:\base`, `C:\base\sub\file.txt`, "C:", "C:")
 		if err != nil {
 			t.Fatalf("portableWindowsRelativePath: %v", err)
@@ -660,11 +759,21 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 			t.Fatalf("expected different-root error")
 		}
 
+		if got, err := portableRelativePath(`C:base`, `C:\other`); err != nil || got != "../other" {
+			t.Fatalf("portableRelativePath(mixed drive path) = %q, %v", got, err)
+		}
+		if _, err := portableRelativePath(string(filepath.Separator)+"abs", "rel"); err == nil {
+			t.Fatalf("expected portableRelativePath to reject absolute/relative mismatch")
+		}
+
 		if windowsVolumeName(`C:\base`) != "C:" {
 			t.Fatalf("expected drive letter volume")
 		}
 		if windowsVolumeName(`base`) != "" {
 			t.Fatalf("expected empty volume name")
+		}
+		if windowsVolumeName("1:base") != "" {
+			t.Fatalf("expected non-letter drive prefix to be rejected")
 		}
 
 		if normalizeWindowsLikePath("") != "/" {
@@ -710,8 +819,25 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 		if !isWithin(root, root) {
 			t.Fatalf("expected boundary path to be considered within itself")
 		}
+		existing := filepath.Join(root, "existing")
+		mkdirAll(t, existing)
+		if got := canonicalizeBoundaryPath(existing); got != filepath.Clean(existing) {
+			t.Fatalf("canonicalizeBoundaryPath(existing) = %q, want %q", got, filepath.Clean(existing))
+		}
+		if vol := filepath.VolumeName(root); vol != "" {
+			driveRoot := vol + `\`
+			if !isWithin(driveRoot, driveRoot) {
+				t.Fatalf("expected drive root to be considered within itself")
+			}
+			if got := canonicalizeBoundaryPath(driveRoot); got != driveRoot {
+				t.Fatalf("canonicalizeBoundaryPath(root) = %q, want %q", got, driveRoot)
+			}
+		}
 		if isWithin(root, filepath.Join(filepath.Dir(root), "outside")) {
 			t.Fatalf("expected outside path to be rejected")
+		}
+		if isWithin(`C:\base`, `D:\other`) {
+			t.Fatalf("expected different-volume paths to be rejected")
 		}
 
 		missingLeaf := filepath.Join(root, "missing", "leaf")
@@ -726,6 +852,16 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 			t.Fatalf("expected CheckScan workspace error, got %v", err)
 		}
 
+		workspace := t.TempDir()
+		outside := filepath.Join(filepath.Dir(workspace), "outside")
+		mkdirAll(t, outside)
+		if _, err := Scan(ScanOptions{WorkspaceRoot: workspace, CWD: outside}); err == nil || !strings.Contains(err.Error(), "current working directory must stay within workspace root") {
+			t.Fatalf("expected cwd boundary error, got %v", err)
+		}
+		if _, err := Scan(ScanOptions{WorkspaceRoot: workspace, CWD: outside, From: "nested"}); err == nil || !strings.Contains(err.Error(), "current working directory must stay within workspace root") {
+			t.Fatalf("expected relative scan boundary error, got %v", err)
+		}
+
 		if err := walkDirectory(filepath.Join(t.TempDir(), "missing"), 0, DepthRecursive, func(string) error { return nil }); err == nil {
 			t.Fatalf("expected walkDirectory to fail for missing directory")
 		}
@@ -733,15 +869,25 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 		if got := inventoryReadError("", os.ErrInvalid); !reflect.DeepEqual(got, os.ErrInvalid) {
 			t.Fatalf("inventoryReadError default = %v", got)
 		}
+		if got := inventoryReadError(ClassPrepare, os.ErrInvalid); got == nil || !strings.Contains(got.Error(), "read prepare alias") {
+			t.Fatalf("inventoryReadError prepare = %v", got)
+		}
 
-		workspace := t.TempDir()
+		aliasPath := writeAliasFile(t, workspace, filepath.Join("scripts", "demo.alias.yaml"), "kind: psql\nargs:\n  - -c\n  - select 1\n")
+		mkdirAll(t, filepath.Join(filepath.Dir(aliasPath), "db", "migrations"))
+		if got := validateSearchPath("", aliasPath, workspace); len(got) != 1 || got[0].Code != "empty_search_path" {
+			t.Fatalf("validateSearchPath(empty) = %+v", got)
+		}
+		if got := validateSearchPath("db/migrations,,classpath:db", aliasPath, workspace); len(got) != 1 || got[0].Code != "empty_search_path_item" {
+			t.Fatalf("validateSearchPath(item) = %+v", got)
+		}
+
 		cwd := filepath.Join(workspace, "examples")
 		mkdirAll(t, cwd)
 		if _, err := ResolveTarget(ResolveOptions{WorkspaceRoot: workspace, CWD: cwd, Ref: "missing"}); err == nil || !strings.Contains(err.Error(), "not found") {
 			t.Fatalf("expected missing stem error, got %v", err)
 		}
 
-		aliasPath := writeAliasFile(t, workspace, filepath.Join("scripts", "demo.alias.yaml"), "kind: psql\nargs:\n  - -c\n  - select 1\n")
 		absPath, err := filepath.Abs(aliasPath)
 		if err != nil {
 			t.Fatalf("filepath.Abs: %v", err)
@@ -757,6 +903,24 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 		}
 		if target.Class != ClassRun || target.Ref != "demo.alias.yaml" {
 			t.Fatalf("unexpected exact target fallback: %+v", target)
+		}
+	})
+
+	t.Run("walk directory recursive error", func(t *testing.T) {
+		workspace := t.TempDir()
+		root := filepath.Join(workspace, "root")
+		child := filepath.Join(root, "child")
+		mkdirAll(t, child)
+		writePlainFile(t, child, "inner.txt", "hello\n")
+
+		err := walkDirectory(root, 0, DepthRecursive, func(path string) error {
+			if strings.HasSuffix(path, "inner.txt") {
+				return os.ErrInvalid
+			}
+			return nil
+		})
+		if err != os.ErrInvalid {
+			t.Fatalf("expected recursive walk error, got %v", err)
 		}
 	})
 }

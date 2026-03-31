@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-23)
+## Status (as of 2026-03-31)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -125,6 +125,9 @@ gantt
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under
   verification.
+- **Done (CLI alias coverage hardening)**: `internal/alias` regression tests now
+  cover the remaining create, resolve, and scan edge branches, bringing the CLI
+  alias package above the minimum coverage threshold in `go test --cover ./...`.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.

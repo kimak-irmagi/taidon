@@ -35,6 +35,25 @@ func TestRunDiff_PlanPsql(t *testing.T) {
 	}
 }
 
+func TestRunDiffCommandDispatchCoverage(t *testing.T) {
+	left := t.TempDir()
+	right := t.TempDir()
+	if err := writeFile(filepath.Join(left, "a.sql"), "select 1;\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(filepath.Join(right, "a.sql"), "select 1;\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run([]string{
+		"diff",
+		"--from-path", left,
+		"--to-path", right,
+		"plan:psql", "--", "-f", "a.sql",
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
 func TestRunDiff_UnsupportedWrappedCommand(t *testing.T) {
 	dir := t.TempDir()
 	var out bytes.Buffer

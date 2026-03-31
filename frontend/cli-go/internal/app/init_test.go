@@ -321,6 +321,9 @@ func TestIsWithin(t *testing.T) {
 	if isWithin(dir, filepath.Join(dir, "..")) {
 		t.Fatalf("expected outside dir to be false")
 	}
+	if runtime.GOOS == "windows" && isWithin(`C:\base`, `D:\target`) {
+		t.Fatalf("expected cross-drive path to be outside")
+	}
 }
 
 func TestResolveExistingPathAbsolute(t *testing.T) {

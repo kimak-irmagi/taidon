@@ -229,11 +229,6 @@ func AnalyzeAliases(opts Options) (Report, error) {
 			continue
 		}
 
-		createCommand := candidate.Command
-		if strings.TrimSpace(createCommand) == "" {
-			createCommand = buildCreateCommand(candidate.Ref, candidate.Class, candidate.Kind, candidate.CwdRel)
-		}
-
 		findings = append(findings, Finding{
 			Type:          candidate.Class,
 			Kind:          candidate.Kind,
@@ -241,7 +236,7 @@ func AnalyzeAliases(opts Options) (Report, error) {
 			File:          candidate.WorkspaceRel,
 			AliasPath:     target.File,
 			Reason:        candidate.Reason,
-			CreateCommand: createCommand,
+			CreateCommand: candidate.Command,
 			Score:         candidate.Score,
 			Valid:         candidate.Valid,
 			Error:         candidate.Error,
@@ -571,16 +566,10 @@ func validationPathForAliasDir(absPath string, fallback string, aliasDir string)
 // lookups so symlinked forms of the same file compare equal.
 func stableDiscoverAbsPath(path string) string {
 	cleaned := filepath.Clean(strings.TrimSpace(path))
-	if cleaned == "" {
-		return cleaned
-	}
 	if !filepath.IsAbs(cleaned) {
 		return cleaned
 	}
-	if canonical := inputset.CanonicalizeBoundaryPath(cleaned); canonical != "" {
-		return filepath.Clean(canonical)
-	}
-	return cleaned
+	return filepath.Clean(inputset.CanonicalizeBoundaryPath(cleaned))
 }
 
 func discoverPathKeys(workspaceRoot string, relPath string, absPath string) []string {
@@ -852,9 +841,6 @@ func suggestedAliasRef(file fileRecord) string {
 	}
 	if isAncestorOnlyPath(dir) {
 		stem := pathStem(cwdRel)
-		if stem == "" {
-			return dir
-		}
 		return filepath.ToSlash(filepath.Join(filepath.FromSlash(dir), stem))
 	}
 	return dir
@@ -862,9 +848,6 @@ func suggestedAliasRef(file fileRecord) string {
 
 func pathStem(value string) string {
 	base := filepath.Base(strings.TrimSpace(value))
-	if base == "" {
-		return ""
-	}
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 	if stem == "" {
 		return base
@@ -878,9 +861,6 @@ func isAncestorOnlyPath(value string) bool {
 		return false
 	}
 	parts := strings.Split(cleaned, "/")
-	if len(parts) == 0 {
-		return false
-	}
 	for _, part := range parts {
 		if part != ".." {
 			return false
