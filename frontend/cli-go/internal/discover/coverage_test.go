@@ -141,9 +141,15 @@ func TestDiscoverHelperCoverage(t *testing.T) {
 			if err := os.Symlink(realRoot, linkRoot); err != nil {
 				t.Skipf("symlink unsupported: %v", err)
 			}
-			want := filepath.Clean(filepath.Join(realRoot, "schema.sql"))
-			if got := stableDiscoverAbsPath(filepath.Join(linkRoot, "schema.sql")); got != want {
-				t.Fatalf("stableDiscoverAbsPath(symlink) = %q, want %q", got, want)
+			linkPath := filepath.Join(linkRoot, "schema.sql")
+			got := stableDiscoverAbsPath(linkPath)
+			if got == filepath.Clean(linkPath) {
+				t.Fatalf("stableDiscoverAbsPath(symlink) did not resolve link path: %q", got)
+			}
+			want := filepath.Clean(inputset.CanonicalizeBoundaryPath(filepath.Join(realRoot, "schema.sql")))
+			gotCanonical := filepath.Clean(inputset.CanonicalizeBoundaryPath(got))
+			if gotCanonical != want {
+				t.Fatalf("stableDiscoverAbsPath(symlink) = %q (canonical %q), want canonical %q", got, gotCanonical, want)
 			}
 		}
 
