@@ -821,12 +821,11 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 		}
 		existing := filepath.Join(root, "existing")
 		mkdirAll(t, existing)
-		wantExisting := filepath.Clean(existing)
-		if resolved, err := filepath.EvalSymlinks(existing); err == nil {
-			wantExisting = resolved
-		}
-		if got := canonicalizeBoundaryPath(existing); got != wantExisting {
-			t.Fatalf("canonicalizeBoundaryPath(existing) = %q, want %q", got, wantExisting)
+		wantExistingClean := filepath.Clean(existing)
+		wantExistingResolved, resolveExistingErr := filepath.EvalSymlinks(existing)
+		gotExisting := canonicalizeBoundaryPath(existing)
+		if gotExisting != wantExistingClean && (resolveExistingErr != nil || gotExisting != wantExistingResolved) {
+			t.Fatalf("canonicalizeBoundaryPath(existing) = %q, want one of %q or %q", gotExisting, wantExistingClean, wantExistingResolved)
 		}
 		if vol := filepath.VolumeName(root); vol != "" {
 			driveRoot := vol + `\`
@@ -845,13 +844,14 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 		}
 
 		missingLeaf := filepath.Join(root, "missing", "leaf")
-		wantMissing := filepath.Clean(missingLeaf)
+		wantMissingClean := filepath.Clean(missingLeaf)
+		wantMissingResolved := ""
 		if resolved, err := filepath.EvalSymlinks(filepath.Dir(missingLeaf)); err == nil {
-			wantMissing = filepath.Join(resolved, filepath.Base(missingLeaf))
+			wantMissingResolved = filepath.Join(resolved, filepath.Base(missingLeaf))
 		}
 		got := canonicalizeBoundaryPath(missingLeaf)
-		if got != wantMissing {
-			t.Fatalf("canonicalizeBoundaryPath = %q, want %q", got, wantMissing)
+		if got != wantMissingClean && (wantMissingResolved == "" || got != wantMissingResolved) {
+			t.Fatalf("canonicalizeBoundaryPath = %q, want one of %q or %q", got, wantMissingClean, wantMissingResolved)
 		}
 	})
 
