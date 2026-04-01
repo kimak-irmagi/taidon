@@ -844,14 +844,21 @@ func TestAliasPathAndScanCoverage(t *testing.T) {
 		}
 
 		missingLeaf := filepath.Join(root, "missing", "leaf")
-		wantMissingClean := filepath.Clean(missingLeaf)
-		wantMissingResolved := ""
-		if resolved, err := filepath.EvalSymlinks(filepath.Dir(missingLeaf)); err == nil {
-			wantMissingResolved = filepath.Join(resolved, filepath.Base(missingLeaf))
-		}
 		got := canonicalizeBoundaryPath(missingLeaf)
-		if got != wantMissingClean && (wantMissingResolved == "" || got != wantMissingResolved) {
-			t.Fatalf("canonicalizeBoundaryPath = %q, want one of %q or %q", got, wantMissingClean, wantMissingResolved)
+		if filepath.Base(filepath.Dir(got)) != "missing" || filepath.Base(got) != "leaf" {
+			t.Fatalf("canonicalizeBoundaryPath = %q, want path ending with missing%cleaf", got, filepath.Separator)
+		}
+		gotRoot := filepath.Dir(filepath.Dir(got))
+		gotRootInfo, err := os.Stat(gotRoot)
+		if err != nil {
+			t.Fatalf("stat canonicalized root %q: %v", gotRoot, err)
+		}
+		wantRootInfo, err := os.Stat(root)
+		if err != nil {
+			t.Fatalf("stat original root %q: %v", root, err)
+		}
+		if !os.SameFile(gotRootInfo, wantRootInfo) {
+			t.Fatalf("canonicalizeBoundaryPath = %q, want boundary rooted at %q", got, root)
 		}
 	})
 
