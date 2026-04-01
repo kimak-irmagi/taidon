@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/alias"
+	"github.com/sqlrs/cli/internal/inputset"
 )
 
 func TestDiscoverHelperCoverage(t *testing.T) {
@@ -127,8 +128,9 @@ func TestDiscoverHelperCoverage(t *testing.T) {
 		if got := stableDiscoverAbsPath("dir/schema.sql"); got != filepath.Clean("dir/schema.sql") {
 			t.Fatalf("stableDiscoverAbsPath(relative) = %q", got)
 		}
-		if got := stableDiscoverAbsPath(absPath); got != filepath.Clean(absPath) {
-			t.Fatalf("stableDiscoverAbsPath(abs) = %q, want %q", got, filepath.Clean(absPath))
+		wantAbs := filepath.Clean(inputset.CanonicalizeBoundaryPath(absPath))
+		if got := stableDiscoverAbsPath(absPath); got != wantAbs {
+			t.Fatalf("stableDiscoverAbsPath(abs) = %q, want %q", got, wantAbs)
 		}
 		if runtime.GOOS == "windows" {
 			linkRoot := filepath.Join(workspace, "link")
