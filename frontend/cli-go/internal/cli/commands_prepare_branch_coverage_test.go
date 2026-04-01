@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,6 +43,40 @@ func TestRunWatchResolvedPrefixSecondLookupError(t *testing.T) {
 	}, prefix)
 	if err == nil {
 		t.Fatalf("expected second get status error after prefix resolution")
+	}
+}
+
+func TestRunWatchRunningStreamsToCompletion(t *testing.T) {
+	var statusCalls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			call := atomic.AddInt32(&statusCalls, 1)
+			w.Header().Set("Content-Type", "application/json")
+			if call == 1 {
+				io.WriteString(w, `{"job_id":"job-1","status":"running","prepare_kind":"psql","image_id":"image"}`)
+				return
+			}
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","result":{"dsn":"dsn","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-c select 1"}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"running"}`+"\n")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	status, err := RunWatch(context.Background(), PrepareOptions{
+		Mode:     "remote",
+		Endpoint: server.URL,
+		Timeout:  time.Second,
+	}, "job-1")
+	if err != nil {
+		t.Fatalf("RunWatch: %v", err)
+	}
+	if status.Status != "succeeded" {
+		t.Fatalf("expected succeeded status, got %q", status.Status)
 	}
 }
 
@@ -204,6 +239,16 @@ func TestEnableRawStdinCoverageBranches(t *testing.T) {
 }
 
 func TestPromptPrepareControlDefaultCoverageBranches(t *testing.T) {
+	withTestStdin(t, "", func() {
+		action, err := promptPrepareControlDefault(io.Discard, make(chan os.Signal, 1))
+		if err != nil {
+			t.Fatalf("promptPrepareControlDefault: %v", err)
+		}
+		if action != prepareControlContinue {
+			t.Fatalf("expected continue for EOF, got %v", action)
+		}
+	})
+
 	withTestStdin(t, "sN", func() {
 		action, err := promptPrepareControlDefault(io.Discard, make(chan os.Signal, 1))
 		if err != nil {

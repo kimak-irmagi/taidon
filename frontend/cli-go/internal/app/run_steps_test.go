@@ -335,6 +335,75 @@ func TestBuildFileStepReadFileError(t *testing.T) {
 	}
 }
 
+func TestRunStepHelpersAdditionalCoverage(t *testing.T) {
+	t.Run("build file step reads content", func(t *testing.T) {
+		root := t.TempDir()
+		filePath := filepath.Join(root, "query.sql")
+		if err := os.WriteFile(filePath, []byte("select 1;\n"), 0o600); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+
+		step, isStdin, err := buildFileStep([]string{"-v"}, "query.sql", root, root)
+		if err != nil {
+			t.Fatalf("buildFileStep: %v", err)
+		}
+		if isStdin {
+			t.Fatalf("expected file-backed step, got stdin marker")
+		}
+		if got := strings.Join(step.Args, " "); got != "-v -f -" {
+			t.Fatalf("unexpected args: %q", got)
+		}
+		if step.Stdin == nil || *step.Stdin != "select 1;\n" {
+			t.Fatalf("unexpected stdin: %+v", step.Stdin)
+		}
+	})
+
+	t.Run("pgbench helpers", func(t *testing.T) {
+		root := t.TempDir()
+		filePath := filepath.Join(root, "bench.sql")
+		if err := os.WriteFile(filePath, []byte("\\set aid random(1, 100000)\n"), 0o600); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+
+		out, source, err := rewritePgbenchFileArg("bench.sql@3", root, root)
+		if err != nil {
+			t.Fatalf("rewritePgbenchFileArg: %v", err)
+		}
+		if out != pgbenchStdinPath+"@3" || source == nil || source.Path != filePath {
+			t.Fatalf("unexpected rewrite result: out=%q source=%+v", out, source)
+		}
+
+		out, source, err = rewritePgbenchFileArg("-", root, root)
+		if err != nil {
+			t.Fatalf("rewritePgbenchFileArg stdin: %v", err)
+		}
+		if out != pgbenchStdinPath || source == nil || !source.UsesStdin {
+			t.Fatalf("unexpected stdin rewrite result: out=%q source=%+v", out, source)
+		}
+
+		if got, err := readPgbenchFileSource(pgbenchFileSource{UsesStdin: true}, strings.NewReader("stdin data")); err != nil || got != "stdin data" {
+			t.Fatalf("unexpected stdin read result: %q err=%v", got, err)
+		}
+		if got, err := readPgbenchFileSource(pgbenchFileSource{Path: filePath}, nil); err != nil || got != "\\set aid random(1, 100000)\n" {
+			t.Fatalf("unexpected file read result: %q err=%v", got, err)
+		}
+
+		if path, suffix := splitPgbenchFileArgValue("bench.sql@3"); path != "bench.sql" || suffix != "@3" {
+			t.Fatalf("unexpected split result: path=%q suffix=%q", path, suffix)
+		}
+		if _, _, err := rewritePgbenchFileArg(" ", root, root); err == nil {
+			t.Fatalf("expected missing pgbench file error")
+		}
+	})
+
+	t.Run("runRun pgbench materialize error", func(t *testing.T) {
+		err := runRun(&bytes.Buffer{}, &bytes.Buffer{}, cli.RunOptions{InstanceRef: "inst"}, "pgbench", []string{"-f"}, "", "")
+		if err == nil || !strings.Contains(err.Error(), "Missing value") {
+			t.Fatalf("expected pgbench materialize error, got %v", err)
+		}
+	})
+}
+
 func TestBuildPsqlRunStepsNoSourcesUsesShared(t *testing.T) {
 	steps, err := buildPsqlRunSteps([]string{"-v", "ON_ERROR_STOP=1"}, "", "", bytes.NewBuffer(nil))
 	if err != nil {

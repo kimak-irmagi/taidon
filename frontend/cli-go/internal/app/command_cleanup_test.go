@@ -122,3 +122,27 @@ func TestCleanupPreparedInstanceErrorNonVerbose(t *testing.T) {
 		t.Fatalf("expected non-verbose output without instance id, got %q", out)
 	}
 }
+
+func TestCleanupPreparedInstanceBlankInstanceSkipsWork(t *testing.T) {
+	prevDelete := deleteInstanceDetailedFn
+	prevSpinner := startCleanupSpinnerFn
+	t.Cleanup(func() {
+		deleteInstanceDetailedFn = prevDelete
+		startCleanupSpinnerFn = prevSpinner
+	})
+
+	called := false
+	startCleanupSpinnerFn = func(instanceID string, verbose bool) func() {
+		called = true
+		return func() {}
+	}
+	deleteInstanceDetailedFn = func(ctx context.Context, opts cli.RunOptions, instanceID string) (client.DeleteResult, int, error) {
+		t.Fatalf("deleteInstanceDetailedFn should not be called")
+		return client.DeleteResult{}, 0, nil
+	}
+
+	cleanupPreparedInstance(context.Background(), &bytes.Buffer{}, cli.RunOptions{}, "  ", false)
+	if called {
+		t.Fatalf("expected blank instance to skip spinner")
+	}
+}

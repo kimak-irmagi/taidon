@@ -20,9 +20,18 @@ func TestSplitConfigAssignment(t *testing.T) {
 	if !ok || path != "log.level" || value != "info" {
 		t.Fatalf("unexpected assignment parse: %q %q ok=%v", path, value, ok)
 	}
+	if _, _, ok := splitConfigAssignment("log.level = "); ok {
+		t.Fatalf("expected trimmed empty value to fail")
+	}
+	if _, _, ok := splitConfigAssignment(" =info"); ok {
+		t.Fatalf("expected trimmed empty path to fail")
+	}
 }
 
 func TestAutoQuoteJSONValue(t *testing.T) {
+	if _, ok := autoQuoteJSONValue(" "); ok {
+		t.Fatalf("expected empty raw value to skip auto-quote")
+	}
 	if value, ok := autoQuoteJSONValue("info"); !ok || value != "info" {
 		t.Fatalf("expected bareword to auto-quote, got %v ok=%v", value, ok)
 	}
@@ -59,6 +68,9 @@ func TestLooksLikeJSONValue(t *testing.T) {
 func TestIsBareword(t *testing.T) {
 	if !isBareword("alpha-1_2.beta") {
 		t.Fatalf("expected bareword to be allowed")
+	}
+	if !isBareword("ALPHA") {
+		t.Fatalf("expected uppercase bareword to be allowed")
 	}
 	if isBareword("with space") {
 		t.Fatalf("expected space to be rejected")

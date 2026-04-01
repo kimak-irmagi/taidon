@@ -47,3 +47,13 @@ func PrintAliasCheck(w io.Writer, report alias.CheckReport) {
 	_ = tw.Flush()
 	fmt.Fprintf(w, "checked=%d valid=%d invalid=%d\n", report.Checked, report.ValidCount, report.InvalidCount)
 }
+
+func PrintAliasCreate(w io.Writer, result alias.CreateResult) {
+	fmt.Fprintf(w, "created alias file: %s\n", result.File)
+	fmt.Fprintf(w, "type: %s\n", result.Type)
+	fmt.Fprintf(w, "ref: %s\n", result.Ref)
+	fmt.Fprintf(w, "kind: %s\n", result.Kind)
+	if strings.TrimSpace(result.Image) != "" {
+		fmt.Fprintf(w, "image: %s\n", result.Image)
+	}
+}
