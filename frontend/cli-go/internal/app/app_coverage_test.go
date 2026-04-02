@@ -64,7 +64,7 @@ func TestRunWorkspaceRootResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	t.Cleanup(func() { restoreWorkingDirForTest(cwd) })
 	if err := os.Chdir(project); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
