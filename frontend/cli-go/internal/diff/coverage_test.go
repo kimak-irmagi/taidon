@@ -27,7 +27,7 @@ func TestDiffCoverageHelpers(t *testing.T) {
 			{name: "missing ref mode value", args: []string{"--from-ref", "a", "--to-ref", "b", "--ref-mode"}, want: "missing value for --ref-mode"},
 			{name: "missing limit value", args: []string{"--from-path", "a", "--to-path", "b", "--limit"}, want: "missing value for --limit"},
 			{name: "invalid limit", args: []string{"--from-path", "a", "--to-path", "b", "--limit", "nope", "plan:psql"}, want: "--limit must be a non-negative integer"},
-			{name: "unsupported ref mode", args: []string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "blob", "plan:psql"}, want: "diff: --ref-mode \"blob\" is not supported (only worktree)"},
+			{name: "ref keep worktree rejected for blob", args: []string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "blob", "--ref-keep-worktree", "plan:psql"}, want: "diff: --ref-keep-worktree is only valid with --ref-mode worktree"},
 			{name: "scope required", args: []string{"plan:psql"}, want: "diff requires a scope: --from-path/--to-path or --from-ref/--to-ref"},
 			{name: "from ref only", args: []string{"--from-ref", "a", "plan:psql"}, want: "diff requires both --from-path and --to-path, or both --from-ref and --to-ref"},
 			{name: "to ref only", args: []string{"--to-ref", "b", "plan:psql"}, want: "diff requires both --from-path and --to-path, or both --from-ref and --to-ref"},

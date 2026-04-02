@@ -112,6 +112,11 @@ gantt
   default `cwd + recursive`, explicit `--from` / `--depth` controls, static
   validation for both scan and single-alias modes, and invalid-entry reporting
   for malformed alias files.
+- **Done (M2 alias authoring + advisory discovery baseline)**: the CLI now also
+  ships `sqlrs alias create` plus `sqlrs discover --aliases`, including
+  copy-paste alias creation commands, bounded workspace traversal with progress
+  reporting, JSON/human rendering, and shared alias/discover heuristics over the
+  current repository slice.
 - **Done (M2 shared inputset + diff path baseline)**: the CLI now ships
   `sqlrs diff --from-path/--to-path` for `prepare:psql` and `prepare:lb`, while
   `prepare`, `plan`, `run`, `diff`, and `alias check` now share one
@@ -133,10 +138,9 @@ gantt
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: finish the remaining M2 local DX layers with
-  `sqlrs alias create`, `sqlrs discover --aliases`, follow-up discover
-  analyzers, and the later Git-aware CLI follow-up for `sqlrs diff`/prepare
-  provenance (`--ref`, provenance, cache explain).
+- **Next public local focus**: build on the landed alias/discover baseline with
+  follow-up discover analyzers and the later Git-aware CLI follow-up for
+  `sqlrs diff`/prepare provenance (`--ref`, provenance, cache explain).
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -271,10 +275,11 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 - A developer can run common workflows using explicit repo-tracked recipes with
   low local setup friction and clear cache provenance diagnostics.
 
-**Status**: In progress. Alias execution and inspection baselines are landed,
-`sqlrs diff` path mode is available, and shared `internal/inputset` semantics
-now back `prepare`/`plan`/`run`/`diff`/`alias check`; discovery, bounded
-`--ref`, and provenance/cache explain are still ahead.
+**Status**: In progress. Alias execution, inspection, authoring, and advisory
+discovery baselines are landed, `sqlrs diff` path mode is available, and shared
+`internal/inputset` semantics now back `prepare`/`plan`/`run`/`diff`/`alias check`;
+follow-up discover analyzers, bounded `--ref`, and provenance/cache explain are
+still ahead.
 
 ---
 

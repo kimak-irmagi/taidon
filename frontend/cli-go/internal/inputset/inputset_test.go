@@ -3,6 +3,7 @@ package inputset
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -82,15 +83,34 @@ func TestBoundaryAndUtilityHelpers(t *testing.T) {
 	if got := rebasePathToRoot(filepath.Join(root, "dir", "file.sql"), root); got != filepath.Join(root, "dir", "file.sql") {
 		t.Fatalf("unexpected rebased path: %q", got)
 	}
+	if got := rebasePathToRoot("relative/path.sql", ""); got != "relative/path.sql" {
+		t.Fatalf("expected empty root to keep path, got %q", got)
+	}
+	if runtime.GOOS == "windows" {
+		if got := rebasePathToRoot(`Z:\outside.sql`, root); got != `Z:\outside.sql` {
+			t.Fatalf("expected cross-volume path to stay unchanged, got %q", got)
+		}
+	}
 	if got := CanonicalizeBoundaryPath(nested); !strings.HasSuffix(filepath.ToSlash(got), "missing/child.sql") {
 		t.Fatalf("unexpected canonicalized path: %q", got)
 	}
 	if got := CanonicalizeBoundaryPath(""); got != "." {
 		t.Fatalf("unexpected canonicalized empty path: %q", got)
 	}
+	if got := CanonicalizeBoundaryPath(root); got == "" {
+		t.Fatal("expected existing path to stay non-empty")
+	}
+	if runtime.GOOS == "windows" {
+		if got := CanonicalizeBoundaryPath(`Z:\taidon\missing\child.sql`); got != `Z:\taidon\missing\child.sql` {
+			t.Fatalf("expected non-existent drive path to stay unchanged, got %q", got)
+		}
+	}
 
 	if !IsWithin(root, filepath.Join(root, "dir")) {
 		t.Fatalf("expected nested path to be within root")
+	}
+	if !IsWithin(root, root) {
+		t.Fatalf("expected root to be within itself")
 	}
 	if IsWithin(root, filepath.Join(filepath.Dir(root), "outside")) {
 		t.Fatalf("expected outside path to fail boundary check")
@@ -105,6 +125,12 @@ func TestBoundaryAndUtilityHelpers(t *testing.T) {
 
 	if path, weight := SplitPgbenchFileArgValue("bench.sql@10"); path != "bench.sql" || weight != "@10" {
 		t.Fatalf("unexpected weighted split: %q %q", path, weight)
+	}
+	if path, weight := SplitPgbenchFileArgValue("bench.sql"); path != "bench.sql" || weight != "" {
+		t.Fatalf("unexpected plain split: %q %q", path, weight)
+	}
+	if path, weight := SplitPgbenchFileArgValue("bench.sql@"); path != "bench.sql@" || weight != "" {
+		t.Fatalf("unexpected trailing-at split: %q %q", path, weight)
 	}
 	if path, weight := SplitPgbenchFileArgValue("bench.sql@x"); path != "bench.sql@x" || weight != "" {
 		t.Fatalf("unexpected invalid-weight split: %q %q", path, weight)
@@ -137,5 +163,17 @@ func TestOSFileSystemAndHashContent(t *testing.T) {
 
 	if got := HashContent([]byte("abc")); got != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" {
 		t.Fatalf("unexpected hash: %q", got)
+	}
+}
+
+func TestResolvePath_AbsolutePathWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "dir", "file.sql")
+	resolved, err := ResolvePath(target, root, filepath.Join(root, "cwd"), nil)
+	if err != nil {
+		t.Fatalf("ResolvePath absolute: %v", err)
+	}
+	if resolved != target {
+		t.Fatalf("expected absolute path unchanged, got %q", resolved)
 	}
 }

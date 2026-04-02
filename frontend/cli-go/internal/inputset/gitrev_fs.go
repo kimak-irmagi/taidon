@@ -44,7 +44,11 @@ func (g *GitRevFileSystem) absToRel(abs string) (string, error) {
 }
 
 func normalizeGitRel(rel string) string {
-	rel = filepath.ToSlash(filepath.Clean(strings.TrimSpace(rel)))
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return ""
+	}
+	rel = filepath.ToSlash(filepath.Clean(rel))
 	rel = strings.TrimPrefix(rel, "./")
 	if rel == ".." || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
 		return ""
