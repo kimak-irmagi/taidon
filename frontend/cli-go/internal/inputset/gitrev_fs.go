@@ -44,7 +44,11 @@ func (g *GitRevFileSystem) absToRel(abs string) (string, error) {
 }
 
 func normalizeGitRel(rel string) string {
-	rel = filepath.ToSlash(filepath.Clean(strings.TrimSpace(rel)))
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		return ""
+	}
+	rel = filepath.ToSlash(filepath.Clean(rel))
 	rel = strings.TrimPrefix(rel, "./")
 	if rel == ".." || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
 		return ""
@@ -221,12 +225,12 @@ type gitFileInfo struct {
 	size  int64
 }
 
-func (i *gitFileInfo) Name() string               { return i.name }
-func (i *gitFileInfo) Size() int64                { return i.size }
-func (i *gitFileInfo) Mode() fs.FileMode          { return i.fileMode() }
-func (i *gitFileInfo) ModTime() time.Time         { return time.Time{} }
-func (i *gitFileInfo) IsDir() bool                { return i.isDir }
-func (i *gitFileInfo) Sys() any                   { return nil }
+func (i *gitFileInfo) Name() string       { return i.name }
+func (i *gitFileInfo) Size() int64        { return i.size }
+func (i *gitFileInfo) Mode() fs.FileMode   { return i.fileMode() }
+func (i *gitFileInfo) ModTime() time.Time { return time.Time{} }
+func (i *gitFileInfo) IsDir() bool        { return i.isDir }
+func (i *gitFileInfo) Sys() any           { return nil }
 func (i *gitFileInfo) fileMode() fs.FileMode {
 	if i.isDir {
 		return fs.ModeDir | 0o755

@@ -97,16 +97,16 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
 
 - `<refA>`, `<refB>` may be `HEAD`, `origin/main`, a commit hash, a tag, or any
   locally resolvable Git ref.
-- **Default (`--ref-mode blob`, or omit):** file contents are read straight from
-  the Git object database (`git show`, `git ls-tree`). **No worktree checkout**
-  is created; only the hashes/content needed for the closure are fetched. Paths
-  resolve relative to the **same logical cwd inside the repo** as in worktree
-  mode (see below). The repository is found from the process current working
+- **Default (`--ref-mode worktree`, or omit):** each ref is materialized as a
+  **detached worktree** at the repository root (`git worktree add --detach`;
+  removed after the command unless `--ref-keep-worktree`). Use this mode when
+  the wrapped command depends on normal filesystem semantics such as symlink
+  resolution. The repository is found from the process current working
   directory.
-- **`--ref-mode worktree`:** each ref is materialized as a **detached worktree**
-  at the repository root (`git worktree add --detach`; removed after the command
-  unless `--ref-keep-worktree`). Use this if you need full filesystem semantics
-  or are debugging; it is slower and uses more disk than `blob`.
+- **`--ref-mode blob`:** file contents are read straight from the Git object
+  database (`git show`, `git ls-tree`) with **no worktree checkout**. This is
+  lighter, but it only matches worktree semantics for commands whose file
+  discovery does not rely on features such as symlink traversal.
 - Path resolution example: if `sqlrs diff` is started from `<repo>/examples`, then
   `-f ./chinook/prepare.sql` is resolved against `<repo>/examples/chinook/prepare.sql`
   on each side (whether that side reads from Git objects or from a checkout).
@@ -182,8 +182,8 @@ Rules (target):
 For scope modes, the effective context root is:
 
 - **path mode**: `--from-path` / `--to-path` as given;
-- **ref mode**: repository root at that revision; with `blob`, files are read
-  from Git objects; with `worktree`, from a temporary checkout (see Mode 1).
+- **ref mode**: repository root at that revision; with `worktree`, files come
+  from a temporary checkout; with `blob`, from Git objects (see Mode 1).
 
 ### Revision-dependent file discovery
 
@@ -229,8 +229,8 @@ implementation requirement.
 | `--to-ref <ref>` | Right Git revision. |
 | `--from-path <path>` | Left local context. |
 | `--to-path <path>` | Right local context. |
-| `--ref-mode blob\|worktree` | Ref mode only. **`blob`** (default): read blobs/trees via Git, no checkout. **`worktree`**: detached worktrees (slower). |
-| `--ref-keep-worktree` | Ref mode only, with `worktree`. Do not remove temporary worktrees after exit (debugging). Ignored for `blob`. |
+| `--ref-mode worktree\|blob` | Ref mode only. **`worktree`** (default): detached worktrees with full filesystem semantics. **`blob`**: read blobs/trees via Git, no checkout. |
+| `--ref-keep-worktree` | Ref mode only, with `worktree`. Do not remove temporary worktrees after exit (debugging). Using it with `blob` is an error. |
 | `--include-content` | Include content snippets in human/json output. |
 | `--limit <n>` | Truncate listed entries for very large diffs. |
 
@@ -294,10 +294,11 @@ wrappers.
 
 ### Minimal demo (two commits, same `-f` path)
 
-By default, ref mode reads each revision from **Git objects** (`blob` mode), not
-from a checkout. The path you pass to `-f` / `--changelog-file` must exist **on
-both** refs, or the read will fail (for example `from-ref: ...` in ref mode or
-`from-path: ...` in path mode).
+By default, ref mode materializes each revision as a temporary **worktree**.
+The path you pass to `-f` / `--changelog-file` must exist **on both** refs, or
+the read will fail (for example `from-ref: ...` in ref mode or `from-path: ...`
+in path mode). If you explicitly switch to `--ref-mode blob`, the same file
+must still exist in both revisions and will be read from Git objects instead.
 
 To see a working ref diff without touching your real project, run from the repo root:
 
@@ -366,7 +367,7 @@ their contents. The rest is shared machinery.
 
 **Implemented layout:** `internal/app` dispatches `diff` and calls
 `diff.ParseDiffScope`; `internal/cli.RunDiff` runs `diff.ResolveScope` (path,
-ref `blob` via `inputset.GitRevFileSystem`, or ref `worktree`), then
+ref `worktree`, or explicit ref `blob` via `inputset.GitRevFileSystem`), then
 `BuildPsqlFileList` / `BuildLbFileList`, `Compare`, and renderers.
 
 This command does not start an engine or execute SQL; it compares resolved file

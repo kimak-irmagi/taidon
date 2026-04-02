@@ -511,7 +511,7 @@ func withWorkingDir(t *testing.T, dir string) {
 		t.Fatalf("chdir: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
+		restoreWorkingDirForTest(cwd)
 	})
 }
 

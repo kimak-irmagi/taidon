@@ -736,7 +736,7 @@ func TestRunUsesWorkspaceFlagForProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	t.Cleanup(func() { restoreWorkingDirForTest(cwd) })
 	if err := os.Chdir(outside); err != nil {
 		t.Fatalf("chdir outside: %v", err)
 	}
@@ -864,7 +864,7 @@ func setTestDirs(t *testing.T, root string) {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
+	t.Cleanup(func() { restoreWorkingDirForTest(prev) })
 	if err := os.Chdir(workDir); err != nil {
 		t.Fatalf("chdir test work dir: %v", err)
 	}

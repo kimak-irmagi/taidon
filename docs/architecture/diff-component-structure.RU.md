@@ -8,8 +8,8 @@ CLI-контракта, user guide и решения о shared слое `inputse
 - Первый user-visible срез реализован в `frontend/cli-go` и остается CLI-only.
 - Сейчас команда сравнивает file-list closures и хеши контента; engine API не
   используется.
-- Ref-mode по умолчанию — **blob** через `internal/inputset.GitRevFileSystem`;
-  опционально **`worktree`** (detached checkout).
+- Ref-mode по умолчанию — **`worktree`** (detached checkout); опционально
+  **`blob`** через `internal/inputset.GitRevFileSystem`.
 - Wrapped command пока остается одним токеном из `plan:psql`, `plan:lb`,
   `prepare:psql` и `prepare:lb`.
 - Утвержденная архитектура такова: `internal/diff` владеет только parsing diff
