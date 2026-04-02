@@ -49,7 +49,7 @@ type Scope struct {
 	FromPath string
 	ToPath   string
 
-	// Ref mode: "blob" (default, read objects from Git) or "worktree" (checkout).
+	// Ref mode: "worktree" (default, checkout) or "blob" (read objects from Git).
 	FromRef         string
 	ToRef           string
 	RefMode         string

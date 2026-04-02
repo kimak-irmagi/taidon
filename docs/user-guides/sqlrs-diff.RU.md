@@ -87,14 +87,15 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
 
 - `<refA>`, `<refB>` — например `HEAD`, `origin/main`, хеш коммита, тег или любой
   локально разрешаемый Git ref.
-- **По умолчанию (`--ref-mode blob` или без флага):** содержимое читается из
-  объектов Git (`git show`, `git ls-tree`), **без** checkout в worktree.
-  Резолв путей — относительно **того же логического cwd в репозитории**, что и для
-  режима worktree. Репозиторий определяется из текущего каталога процесса.
-- **`--ref-mode worktree`:** каждая ревизия — **detached worktree** в корне репо
-  (`git worktree add --detach`; удаляется после команды, если не задан
-  `--ref-keep-worktree`). Медленнее и тяжелее по диску; для отладки или если нужна
-  полная семантика ФС.
+- **По умолчанию (`--ref-mode worktree` или без флага):** каждая ревизия —
+  **detached worktree** в корне репо (`git worktree add --detach`; удаляется
+  после команды, если не задан `--ref-keep-worktree`). Этот режим нужен там,
+  где wrapped command зависит от обычной файловой семантики, например от
+  резолва symlink. Репозиторий определяется из текущего каталога процесса.
+- **`--ref-mode blob`:** содержимое читается из объектов Git (`git show`,
+  `git ls-tree`) **без** checkout в worktree. Режим легче, но совпадает с
+  worktree-семантикой только для команд, чье file discovery не зависит от
+  symlink и похожих возможностей ФС.
 - Пример: запуск из `<repo>/examples`, `-f ./chinook/prepare.sql` →
   `<repo>/examples/chinook/prepare.sql` на каждой стороне (объекты Git или checkout).
 
@@ -163,8 +164,8 @@ prepare и run.
 Корень контекста:
 
 - **path-mode**: как задано в `--from-path` / `--to-path`;
-- **ref-mode**: корень репозитория на ревизии; `blob` — из объектов Git, `worktree`
-  — временный checkout (см. режим 1).
+- **ref-mode**: корень репозитория на ревизии; `worktree` — временный checkout,
+  `blob` — чтение из объектов Git (см. режим 1).
 
 ### Зависимое от ревизии формирование списка файлов
 
@@ -209,8 +210,8 @@ prepare и run.
 | `--to-ref <ref>` | Правая Git-ревизия. |
 | `--from-path <path>` | Левый локальный контекст. |
 | `--to-path <path>` | Правый локальный контекст. |
-| `--ref-mode blob\|worktree` | Только ref. **`blob`** (по умолчанию) — без checkout. **`worktree`** — detached worktree. |
-| `--ref-keep-worktree` | Только ref и `worktree`. Не удалять worktree после выхода. Для `blob` игнорируется. |
+| `--ref-mode worktree\|blob` | Только ref. **`worktree`** (по умолчанию) — detached worktree с полной семантикой ФС. **`blob`** — чтение объектов Git без checkout. |
+| `--ref-keep-worktree` | Только ref и `worktree`. Не удалять worktree после выхода. Использование с `blob` приводит к ошибке. |
 | `--include-content` | Включать фрагменты содержимого в human/json-вывод. |
 | `--limit <n>` | Ограничить число записей в списке для очень больших diff. |
 
@@ -271,9 +272,11 @@ composite.
 
 ### Минимальное демо (два коммита, один и тот же путь `-f`)
 
-По умолчанию ref-режим читает ревизии из **объектов Git** (`blob`), без worktree.
-Путь в `-f` / `--changelog-file` должен быть **в обеих** ревизиях, иначе ошибка
-чтения (например `from-ref: ...` или `from-path: ...`).
+По умолчанию ref-режим материализует каждую ревизию как временный
+**worktree**. Путь в `-f` / `--changelog-file` должен быть **в обеих**
+ревизиях, иначе будет ошибка чтения (например `from-ref: ...` или
+`from-path: ...`). При явном `--ref-mode blob` этот же путь читается из
+объектов Git.
 
 Из корня репозитория taidon:
 
@@ -339,8 +342,9 @@ kind и run kind** по правилам из таблицы выше; diff за
 7. Human или JSON по глобальному `--output`.
 
 **Как в коде:** `internal/app` вызывает `diff.ParseDiffScope`; `internal/cli.RunDiff`
-— `ResolveScope` (path, ref `blob` через `inputset.GitRevFileSystem`, или ref
-`worktree`), затем `BuildPsqlFileList` / `BuildLbFileList`, `Compare`, рендеры.
+— `ResolveScope` (path, ref `worktree`, или явный ref `blob` через
+`inputset.GitRevFileSystem`), затем `BuildPsqlFileList` / `BuildLbFileList`,
+`Compare`, рендеры.
 
 Команда не запускает engine и не выполняет SQL. Глобальные `-v` и `--output` —
 как у остальных команд sqlrs.

@@ -101,3 +101,46 @@ func TestGitRevFileSystem_ReadDir(t *testing.T) {
 		t.Fatalf("names: %v", names)
 	}
 }
+
+func TestGitRevFileSystem_RootStatAndMissingPath(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+	emptyTemplate := t.TempDir()
+	repo := t.TempDir()
+	initCmd := exec.Command("git", "-C", repo, "init", "--template", emptyTemplate)
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Skipf("git init: %v\n%s", err, out)
+	}
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("config", "user.email", "t@e.st")
+	runGit("config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(repo, "hello.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "hello.sql")
+	runGit("commit", "-m", "first")
+
+	fs := NewGitRevFileSystem(repo, "HEAD")
+	fi, err := fs.Stat(repo)
+	if err != nil {
+		t.Fatalf("Stat repo root: %v", err)
+	}
+	if !fi.IsDir() {
+		t.Fatalf("expected repo root to be dir, got %#v", fi)
+	}
+	_, err = fs.Stat(filepath.Join(repo, "missing.sql"))
+	if err == nil {
+		t.Fatal("expected missing path error")
+	}
+	_, err = fs.ReadDir(filepath.Join(repo, "hello.sql"))
+	if err == nil {
+		t.Fatal("expected ReadDir error for file path")
+	}
+}

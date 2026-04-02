@@ -128,7 +128,7 @@ func finishParseDiffScope(
 	if fromRef != nil && toRef != nil {
 		rm := refMode
 		if rm == "" {
-			rm = "blob"
+			rm = "worktree"
 		}
 		if rm != "blob" && rm != "worktree" {
 			return ParsedDiff{}, fmt.Errorf("diff: --ref-mode %q is not supported (use blob or worktree)", rm)

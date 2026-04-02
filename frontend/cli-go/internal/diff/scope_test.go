@@ -28,8 +28,8 @@ func TestParseDiffScope_RefValid(t *testing.T) {
 	if parsed.Scope.Kind != ScopeKindRef || parsed.Scope.FromRef != "main" || parsed.Scope.ToRef != "HEAD" {
 		t.Fatalf("unexpected scope: %+v", parsed.Scope)
 	}
-	if parsed.Scope.RefMode != "blob" {
-		t.Fatalf("expected default ref-mode blob, got %q", parsed.Scope.RefMode)
+	if parsed.Scope.RefMode != "worktree" {
+		t.Fatalf("expected default ref-mode worktree, got %q", parsed.Scope.RefMode)
 	}
 }
 
@@ -53,10 +53,20 @@ func TestParseDiffScope_RefModeBlobExplicit(t *testing.T) {
 	}
 }
 
-func TestParseDiffScope_RefKeepWorktreeRequiresWorktreeMode(t *testing.T) {
-	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-keep-worktree", "plan:psql"})
+func TestParseDiffScope_RefKeepWorktreeUsesDefaultWorktreeMode(t *testing.T) {
+	parsed, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-keep-worktree", "plan:psql"})
+	if err != nil {
+		t.Fatalf("ParseDiffScope: %v", err)
+	}
+	if parsed.Scope.RefMode != "worktree" || !parsed.Scope.RefKeepWorktree {
+		t.Fatalf("expected default worktree mode with keep flag, got %+v", parsed.Scope)
+	}
+}
+
+func TestParseDiffScope_RefKeepWorktreeRejectedForBlobMode(t *testing.T) {
+	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "blob", "--ref-keep-worktree", "plan:psql"})
 	if err == nil {
-		t.Fatal("expected error when --ref-keep-worktree without worktree mode")
+		t.Fatal("expected error when --ref-keep-worktree is used with blob mode")
 	}
 }
 
@@ -64,6 +74,13 @@ func TestParseDiffScope_RefModeInvalid(t *testing.T) {
 	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode", "nosuch", "plan:psql"})
 	if err == nil {
 		t.Fatal("expected error for invalid ref-mode")
+	}
+}
+
+func TestParseDiffScope_MissingRefModeValue(t *testing.T) {
+	_, err := ParseDiffScope([]string{"--from-ref", "a", "--to-ref", "b", "--ref-mode"})
+	if err == nil || err.Error() != "missing value for --ref-mode" {
+		t.Fatalf("expected missing ref-mode value error, got %v", err)
 	}
 }
 
@@ -81,6 +98,20 @@ func TestParseDiffScope_WithLimit(t *testing.T) {
 	}
 	if parsed.Limit != 5 {
 		t.Fatalf("expected limit 5, got %d", parsed.Limit)
+	}
+}
+
+func TestParseDiffScope_InvalidLimit(t *testing.T) {
+	_, err := ParseDiffScope([]string{"--from-path", "a", "--to-path", "b", "--limit", "nope", "prepare:lb"})
+	if err == nil || err.Error() != "--limit must be a non-negative integer" {
+		t.Fatalf("expected invalid limit error, got %v", err)
+	}
+}
+
+func TestParseDiffScope_NegativeLimit(t *testing.T) {
+	_, err := ParseDiffScope([]string{"--from-path", "a", "--to-path", "b", "--limit", "-1", "prepare:lb"})
+	if err == nil || err.Error() != "--limit must be a non-negative integer" {
+		t.Fatalf("expected negative limit error, got %v", err)
 	}
 }
 
@@ -102,6 +133,13 @@ func TestParseDiffScope_MissingWrappedCommand(t *testing.T) {
 	_, err := ParseDiffScope([]string{"--from-path", "/left", "--to-path", "/right"})
 	if err == nil || err.Error() != "diff requires a wrapped command (e.g. plan:psql or prepare:lb)" {
 		t.Fatalf("expected error about wrapped command, got %v", err)
+	}
+}
+
+func TestParseDiffScope_MissingScope(t *testing.T) {
+	_, err := ParseDiffScope([]string{"plan:psql", "--", "-f", "a.sql"})
+	if err == nil || err.Error() != "diff requires a scope: --from-path/--to-path or --from-ref/--to-ref" {
+		t.Fatalf("expected missing scope error, got %v", err)
 	}
 }
 

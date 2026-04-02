@@ -120,7 +120,9 @@ gantt
 - **Done (M2 diff ref-mode hardening)**: ref-mode worktree resolution now keeps
   the caller cwd stable across symlinked paths, and `psql` include semantics
   stay aligned with `psql` (`\i` / `\include` from command cwd, `\ir` /
-  `\include_relative` from the including file directory).
+  `\include_relative` from the including file directory). The CLI also keeps
+  `worktree` as the default ref mode until explicit `blob` reads match those
+  filesystem semantics safely.
 - **Done (release alias/workspace coverage)**: release/e2e scenarios now
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under

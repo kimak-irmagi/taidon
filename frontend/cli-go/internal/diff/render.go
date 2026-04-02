@@ -177,7 +177,7 @@ func formatDiffCommandLine(scope Scope, wrapped string) string {
 	case ScopeKindRef:
 		var b strings.Builder
 		fmt.Fprintf(&b, "diff --from-ref %s --to-ref %s", scope.FromRef, scope.ToRef)
-		if scope.RefMode != "" && scope.RefMode != "blob" {
+		if scope.RefMode != "" && scope.RefMode != "worktree" {
 			fmt.Fprintf(&b, " --ref-mode %s", scope.RefMode)
 		}
 		if scope.RefKeepWorktree {

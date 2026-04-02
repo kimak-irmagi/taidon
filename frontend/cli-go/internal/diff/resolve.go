@@ -10,9 +10,9 @@ import (
 	"github.com/sqlrs/cli/internal/inputset"
 )
 
-// ResolveScope turns a Scope into two Context values. Ref mode "blob" (default)
-// reads objects via git without checkout (cleanup nil). Ref mode "worktree"
-// creates temporary worktrees (cleanup removes them unless RefKeepWorktree).
+// ResolveScope turns a Scope into two Context values. Ref mode "worktree"
+// (default) creates temporary worktrees (cleanup removes them unless
+// RefKeepWorktree). Ref mode "blob" reads objects via git without checkout.
 func ResolveScope(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() error, err error) {
 	if strings.TrimSpace(cwd) == "" {
 		cwd = "."
@@ -24,7 +24,7 @@ func ResolveScope(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() e
 	case ScopeKindRef:
 		rm := strings.TrimSpace(strings.ToLower(s.RefMode))
 		if rm == "" {
-			rm = "blob"
+			rm = "worktree"
 		}
 		if rm == "blob" {
 			return resolveRefGitObjects(s, cwd)

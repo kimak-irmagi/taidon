@@ -2,6 +2,7 @@ package diff
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -137,5 +138,52 @@ func TestBuildLbFileList_IncludeRelativeToChangelogFileFalse(t *testing.T) {
 	wantChild := filepath.ToSlash("config/liquibase/changelog/00000000000001.xml")
 	if list.Entries[1].Path != wantChild {
 		t.Fatalf("expected second path %q, got %q", wantChild, list.Entries[1].Path)
+	}
+}
+
+func TestBuildLbFileList_BlobRefMode(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+	emptyTemplate := t.TempDir()
+	repo := t.TempDir()
+	initCmd := exec.Command("git", "-C", repo, "init", "--template", emptyTemplate)
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Skipf("git init: %v\n%s", err, out)
+	}
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	runGit("config", "user.email", "t@e.st")
+	runGit("config", "user.name", "t")
+	if err := os.MkdirAll(filepath.Join(repo, "ch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "ch", "001.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	master := filepath.Join(repo, "master.xml")
+	if err := os.WriteFile(master, []byte(`<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">
+  <includeAll path="ch"/>
+</databaseChangeLog>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "master.xml", "ch/001.sql")
+	runGit("commit", "-m", "first")
+
+	ctx := Context{Root: repo, BaseDir: repo, GitRef: "HEAD"}
+	list, err := BuildLbFileList(ctx, []string{"--changelog-file", "master.xml"})
+	if err != nil {
+		t.Fatalf("BuildLbFileList: %v", err)
+	}
+	if len(list.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(list.Entries))
+	}
+	if list.Entries[0].Path != "master.xml" || list.Entries[1].Path != "ch/001.sql" {
+		t.Fatalf("unexpected entries: %+v", list.Entries)
 	}
 }

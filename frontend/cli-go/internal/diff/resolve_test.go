@@ -51,7 +51,6 @@ func TestResolveScope_RefWorktrees(t *testing.T) {
 		Kind:    ScopeKindRef,
 		FromRef: parent,
 		ToRef:   head,
-		RefMode: "worktree",
 	}
 	fromCtx, toCtx, cleanup, err := ResolveScope(scope, repo)
 	if err != nil {
@@ -61,6 +60,9 @@ func TestResolveScope_RefWorktrees(t *testing.T) {
 		t.Fatal("expected cleanup for ref mode")
 	}
 	defer func() { _ = cleanup() }()
+	if fromCtx.GitRef != "" || toCtx.GitRef != "" {
+		t.Fatalf("default ref mode should use worktrees, got from=%+v to=%+v", fromCtx, toCtx)
+	}
 	fromList, err := BuildPsqlFileList(fromCtx, []string{"-f", "a.sql"})
 	if err != nil {
 		t.Fatalf("from: %v", err)
@@ -276,5 +278,43 @@ func TestResolveScope_RefBlobNoWorktree(t *testing.T) {
 	result := Compare(fromList, toList, Options{})
 	if len(result.Modified) != 1 || result.Modified[0].Path != "a.sql" {
 		t.Fatalf("expected modified a.sql, got %+v", result)
+	}
+}
+
+func TestResolveScope_PathRelativeToCwd(t *testing.T) {
+	cwd := t.TempDir()
+	fromCtx, toCtx, cleanup, err := ResolveScope(
+		Scope{
+			Kind:     ScopeKindPath,
+			FromPath: "left",
+			ToPath:   "right",
+		},
+		cwd,
+	)
+	if err != nil {
+		t.Fatalf("ResolveScope: %v", err)
+	}
+	if cleanup != nil {
+		t.Fatal("path mode should not return cleanup")
+	}
+	if fromCtx.Root != filepath.Join(cwd, "left") || toCtx.Root != filepath.Join(cwd, "right") {
+		t.Fatalf("expected relative paths resolved from cwd, got from=%+v to=%+v", fromCtx, toCtx)
+	}
+}
+
+func TestResolveScope_RefRequiresGitRepo(t *testing.T) {
+	_, _, _, err := ResolveScope(
+		Scope{
+			Kind:    ScopeKindRef,
+			FromRef: "HEAD~1",
+			ToRef:   "HEAD",
+		},
+		t.TempDir(),
+	)
+	if err == nil {
+		t.Fatal("expected error outside git repository")
+	}
+	if !strings.Contains(err.Error(), "not a git repository") {
+		t.Fatalf("expected git repository error, got %v", err)
 	}
 }
