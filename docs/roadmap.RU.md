@@ -115,6 +115,11 @@ gantt
   дефолтом `cwd + recursive`, явными `--from` / `--depth`, статической
   валидацией как для scan mode, так и для single-alias mode, и reporting-ом
   invalid entries для битых alias-файлов.
+- **Сделано (M2 alias authoring + advisory discovery baseline)**: CLI теперь
+  также включает `sqlrs alias create` и `sqlrs discover --aliases`, включая
+  copy-paste команды создания alias, ограниченный обход workspace с progress
+  reporting, human/JSON rendering и общие alias/discover heuristics для
+  текущего среза репозитория.
 - **Сделано (M2 shared inputset + diff path baseline)**: CLI теперь включает
   `sqlrs diff --from-path/--to-path` для `prepare:psql` и `prepare:lb`, а
   `prepare`, `plan`, `run`, `diff` и `alias check` теперь разделяют единый
@@ -123,7 +128,9 @@ gantt
 - **Сделано (M2 diff ref-mode hardening)**: разрешение worktree в ref-mode
   теперь сохраняет caller cwd через symlinked paths, а `psql` include semantics
   остаются как в `psql` (`\i` / `\include` от cwd команды, `\ir` /
-  `\include_relative` от директории включающего файла).
+  `\include_relative` от директории включающего файла). CLI также сохраняет
+  `worktree` как режим ref по умолчанию, пока явные чтения `blob` не сравняются
+  безопасно с этой файловой семантикой.
 - **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
   гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
   Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.
@@ -133,10 +140,10 @@ gantt
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
-- **Следующий публичный local-фокус**: закрыть оставшиеся M2 local DX слои через
-  `sqlrs alias create`, `sqlrs discover --aliases`, последующие discover
-  analyzers и более поздний Git-aware CLI follow-up для `sqlrs diff`/prepare
-  provenance (`--ref`, provenance, cache explain).
+- **Следующий публичный local-фокус**: развивать уже влитый alias/discover
+  baseline через последующие discover analyzers и более поздний Git-aware CLI
+  follow-up для `sqlrs diff`/prepare provenance (`--ref`, provenance, cache
+  explain).
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -274,9 +281,10 @@ gantt
   с низким локальным setup friction и понятной диагностикой происхождения/
   содержимого кэша.
 
-**Статус**: в работе. Базовые alias execution и inspection уже влиты,
-`sqlrs diff` в path mode уже доступен, а shared `internal/inputset` semantics
-теперь обслуживает `prepare`/`plan`/`run`/`diff`/`alias check`; discovery,
+**Статус**: в работе. Базовые alias execution, inspection, authoring и
+advisory discovery уже влиты, `sqlrs diff` в path mode уже доступен, а shared
+`internal/inputset` semantics теперь обслуживает
+`prepare`/`plan`/`run`/`diff`/`alias check`; последующие discover analyzers,
 bounded `--ref` и provenance/cache explain ещё впереди.
 
 ---

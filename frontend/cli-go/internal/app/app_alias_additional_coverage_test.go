@@ -148,7 +148,7 @@ func TestRunPrepareLiquibaseAliasCommand(t *testing.T) {
 	if err := os.Chdir(workspace); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	t.Cleanup(func() { restoreWorkingDirForTest(cwd) })
 
 	out, err := captureRunStdout(t, func() error {
 		return Run([]string{"--workspace", workspace, "prepare", "liquibase"})

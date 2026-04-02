@@ -97,15 +97,19 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
 
 - `<refA>`, `<refB>` may be `HEAD`, `origin/main`, a commit hash, a tag, or any
   locally resolvable Git ref.
-- Each ref is checked out as a **detached worktree** at the repository root
-  (`git worktree add --detach`; cleaned up after the command unless
-  `--ref-keep-worktree`). Paths from the wrapped command (e.g. `-f`, changelog)
-  resolve relative to the **same logical cwd inside that worktree**. For example,
-  if `sqlrs diff` is started from `<repo>/examples`, then `-f ./chinook/prepare.sql`
-  is resolved against `<worktree>/examples/chinook/prepare.sql`. The Git repo is
-  found from the process current working directory.
-- **`--ref-mode blob`** is reserved; the CLI currently supports **`worktree` only**
-  (default). Passing `blob` returns a clear “not supported” error.
+- **Default (`--ref-mode worktree`, or omit):** each ref is materialized as a
+  **detached worktree** at the repository root (`git worktree add --detach`;
+  removed after the command unless `--ref-keep-worktree`). Use this mode when
+  the wrapped command depends on normal filesystem semantics such as symlink
+  resolution. The repository is found from the process current working
+  directory.
+- **`--ref-mode blob`:** file contents are read straight from the Git object
+  database (`git show`, `git ls-tree`) with **no worktree checkout**. This is
+  lighter, but it only matches worktree semantics for commands whose file
+  discovery does not rely on features such as symlink traversal.
+- Path resolution example: if `sqlrs diff` is started from `<repo>/examples`, then
+  `-f ./chinook/prepare.sql` is resolved against `<repo>/examples/chinook/prepare.sql`
+  on each side (whether that side reads from Git objects or from a checkout).
 
 ### Mode 2: Compare two local paths
 
@@ -178,9 +182,8 @@ Rules (target):
 For scope modes, the effective context root is:
 
 - **path mode**: `--from-path` / `--to-path` as given;
-- **ref mode**: repository root at that revision inside each temporary worktree
-  (not a subdirectory of your current cwd unless you adjust `-f` paths
-  accordingly).
+- **ref mode**: repository root at that revision; with `worktree`, files come
+  from a temporary checkout; with `blob`, from Git objects (see Mode 1).
 
 ### Revision-dependent file discovery
 
@@ -226,8 +229,8 @@ implementation requirement.
 | `--to-ref <ref>` | Right Git revision. |
 | `--from-path <path>` | Left local context. |
 | `--to-path <path>` | Right local context. |
-| `--ref-mode worktree` | Ref mode only. **Implemented:** `worktree` (default). **`blob` is not implemented** (passing it errors). |
-| `--ref-keep-worktree` | Ref mode only. Do not remove temporary worktrees after exit (debugging). |
+| `--ref-mode worktree\|blob` | Ref mode only. **`worktree`** (default): detached worktrees with full filesystem semantics. **`blob`**: read blobs/trees via Git, no checkout. |
+| `--ref-keep-worktree` | Ref mode only, with `worktree`. Do not remove temporary worktrees after exit (debugging). Using it with `blob` is an error. |
 | `--include-content` | Include content snippets in human/json output. |
 | `--limit <n>` | Truncate listed entries for very large diffs. |
 
@@ -278,9 +281,9 @@ wrappers.
   `prepare:psql`, `prepare:lb` (e.g. `run:psql`, alias `prepare …`, and
   `prepare … run …` composites are rejected today).
 - **Ref resolution failure** — one of the refs does not resolve locally.
-- **Missing file at one ref** — the primary file (`-f`, changelog, etc.) must be
-  present in **both** worktrees; otherwise diff fails with a filesystem error on
-  the missing side.
+- **Missing file at one ref** — the primary file (`-f`, changelog, etc.) must
+  exist in **both** revisions; otherwise diff fails when reading the missing path
+  (`git show` / worktree stat).
 - **Not a Git repository** — ref mode requires a Git repository context.
 - **No revision-dependent payload** — for future `run:*` support, inline-only
   inputs may be rejected as non-diffable.
@@ -291,9 +294,11 @@ wrappers.
 
 ### Minimal demo (two commits, same `-f` path)
 
-Ref mode materializes each revision in a temporary Git worktree. The path you pass
-to `-f` / `--changelog-file` must exist **on both** refs, or file stat will fail
-(for example `from-ref: ...` in ref mode or `from-path: ...` in path mode).
+By default, ref mode materializes each revision as a temporary **worktree**.
+The path you pass to `-f` / `--changelog-file` must exist **on both** refs, or
+the read will fail (for example `from-ref: ...` in ref mode or `from-path: ...`
+in path mode). If you explicitly switch to `--ref-mode blob`, the same file
+must still exist in both revisions and will be read from Git objects instead.
 
 To see a working ref diff without touching your real project, run from the repo root:
 
@@ -361,8 +366,9 @@ their contents. The rest is shared machinery.
 7. Render human or JSON output according to the global `--output` flag.
 
 **Implemented layout:** `internal/app` dispatches `diff` and calls
-`diff.ParseDiffScope`; `internal/cli.RunDiff` runs `diff.ResolveScope` (path or
-ref worktrees), `BuildPsqlFileList` / `BuildLbFileList`, `Compare`, and renderers.
+`diff.ParseDiffScope`; `internal/cli.RunDiff` runs `diff.ResolveScope` (path,
+ref `worktree`, or explicit ref `blob` via `inputset.GitRevFileSystem`), then
+`BuildPsqlFileList` / `BuildLbFileList`, `Compare`, and renderers.
 
 This command does not start an engine or execute SQL; it compares resolved file
 sets and their contents. Compatibility with global `-v` and `--output` matches

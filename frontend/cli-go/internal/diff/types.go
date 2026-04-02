@@ -5,11 +5,14 @@ package diff
 
 // Context is the root from which to read files for one side of the diff.
 // BaseDir is the effective working directory for resolving wrapped relative
-// paths within that side. In path mode it defaults to Root; in ref mode it may
-// mirror the original cwd inside the detached worktree.
+// paths within that side. In path mode it defaults to Root; in ref worktree mode
+// it mirrors cwd inside the detached worktree; in ref blob mode it mirrors cwd
+// under the repo root. GitRef, when non-empty, selects git-object reads at that
+// revision from Root (repo toplevel) via inputset.GitRevFileSystem.
 type Context struct {
 	Root    string
 	BaseDir string
+	GitRef  string
 }
 
 // FileEntry is one file in the ordered list: path relative to context root and content hash.
@@ -46,7 +49,7 @@ type Scope struct {
 	FromPath string
 	ToPath   string
 
-	// Ref mode (RefMode is currently only "worktree")
+	// Ref mode: "worktree" (default, checkout) or "blob" (read objects from Git).
 	FromRef         string
 	ToRef           string
 	RefMode         string

@@ -9,7 +9,7 @@ Goal: add git-aware capabilities **without changing the user's work habits**. Al
 ## Design principles
 
 - **Do not guess intent from the repo.** The user defines context: `--prepare <path>` (migration file/dir) and the `sqlrs run -- <cmd>` command.
-- **Minimum side effects.** By default we do not run `git checkout`, do not touch the working tree, and avoid extra temp files. `worktree` mode is an explicit opt-in and leaves minimal traces under `.git/worktrees` that can be cleaned up.
+- **Minimum side effects.** Prefer Git-object reads when they preserve command semantics, but keep compatibility first. Temporary `worktree` checkouts remain the default where full filesystem semantics matter and leave minimal traces under `.git/worktrees` that can be cleaned up.
 - **Fast path first.** Try to find a ready state in the Taidon cache by hashes of the involved files. If not found, build it.
 - **Everything is reproducible.** Any execution can save a manifest (provenance) to reproduce the same state 1:1.
 - **Remote mode requires repo access.** For `--ref` on a remote runner, the service must have a server-side mirror or VCS secrets; otherwise the CLI uploads sources to `source storage` and passes `source_id` (see [`sql-runner-api.md`](sql-runner-api.md)).
@@ -40,9 +40,9 @@ Important for remote runner: `--ref` works only if the service has access to the
 
 Behavior options:
 
-- `--ref-mode blob|worktree` (default `blob`)
-  - `blob`: read needed files directly from git objects (no full checkout)
+- `--ref-mode worktree|blob` (default `worktree`)
   - `worktree`: create a temporary `git worktree` and remove it after run
+  - `blob`: read needed files directly from git objects (no full checkout)
 - `--ref-keep-worktree` (debugging: do not remove the temporary worktree)
 
 ### Implementation sketch
@@ -117,8 +117,9 @@ Rules:
   `inputset` component for the selected kind;
 - **Current CLI slice** (`frontend/cli-go`): exactly **one** wrapped token among
   `plan:psql`, `plan:lb`, `prepare:psql`, `prepare:lb`; compares **file-list
-  closures** (hashes) only—no engine. **Ref mode** uses **`git worktree` only**
-  (not blob reads).
+  closures** (hashes) only—no engine. **Ref mode** defaults to **`worktree`**
+  for full filesystem semantics; explicit **`blob`** reads use `git show` /
+  `git ls-tree`.
 - **Design / later**: two-stage `prepare ... run` composites and alias-backed
   `prepare <ref>`; full derived representations (task plans, prepare payloads).
 - Future standalone `run:*` support is possible only for file-backed inputs,

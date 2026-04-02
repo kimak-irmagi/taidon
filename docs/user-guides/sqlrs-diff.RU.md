@@ -87,15 +87,17 @@ sqlrs diff --from-ref <refA> --to-ref <refB> <sqlrs-command> [command-args...]
 
 - `<refA>`, `<refB>` — например `HEAD`, `origin/main`, хеш коммита, тег или любой
   локально разрешаемый Git ref.
-- Каждая ревизия — **detached worktree** в корне репозитория (`git worktree add
-  --detach`; по окончании удаляется, если не задан `--ref-keep-worktree`). Пути
-  из команды (`-f`, changelog) резолвятся относительно **того же логического cwd
-  внутри этого worktree**. Например, если `sqlrs diff` запущен из
-  `<repo>/examples`, то `-f ./chinook/prepare.sql` будет резолвиться как
-  `<worktree>/examples/chinook/prepare.sql`. Репозиторий находится из текущего
-  каталога процесса.
-- **`--ref-mode blob`** зарезервирован; в CLI поддержан только **`worktree`**
-  (по умолчанию); значение `blob` даёт явную ошибку.
+- **По умолчанию (`--ref-mode worktree` или без флага):** каждая ревизия —
+  **detached worktree** в корне репо (`git worktree add --detach`; удаляется
+  после команды, если не задан `--ref-keep-worktree`). Этот режим нужен там,
+  где wrapped command зависит от обычной файловой семантики, например от
+  резолва symlink. Репозиторий определяется из текущего каталога процесса.
+- **`--ref-mode blob`:** содержимое читается из объектов Git (`git show`,
+  `git ls-tree`) **без** checkout в worktree. Режим легче, но совпадает с
+  worktree-семантикой только для команд, чье file discovery не зависит от
+  symlink и похожих возможностей ФС.
+- Пример: запуск из `<repo>/examples`, `-f ./chinook/prepare.sql` →
+  `<repo>/examples/chinook/prepare.sql` на каждой стороне (объекты Git или checkout).
 
 ### Режим 2: Сравнение двух локальных путей
 
@@ -162,8 +164,8 @@ prepare и run.
 Корень контекста:
 
 - **path-mode**: как задано в `--from-path` / `--to-path`;
-- **ref-mode**: корень репозитория на данной ревизии внутри временного worktree
-  (не подкаталог текущего cwd, если только пути в `-f` так не задаёте).
+- **ref-mode**: корень репозитория на ревизии; `worktree` — временный checkout,
+  `blob` — чтение из объектов Git (см. режим 1).
 
 ### Зависимое от ревизии формирование списка файлов
 
@@ -208,8 +210,8 @@ prepare и run.
 | `--to-ref <ref>` | Правая Git-ревизия. |
 | `--from-path <path>` | Левый локальный контекст. |
 | `--to-path <path>` | Правый локальный контекст. |
-| `--ref-mode worktree` | Только ref. **Реализовано:** `worktree` (по умолчанию). **`blob` не реализован** (ошибка). |
-| `--ref-keep-worktree` | Только ref. Не удалять временные worktree после выхода (отладка). |
+| `--ref-mode worktree\|blob` | Только ref. **`worktree`** (по умолчанию) — detached worktree с полной семантикой ФС. **`blob`** — чтение объектов Git без checkout. |
+| `--ref-keep-worktree` | Только ref и `worktree`. Не удалять worktree после выхода. Использование с `blob` приводит к ошибке. |
 | `--include-content` | Включать фрагменты содержимого в human/json-вывод. |
 | `--limit <n>` | Ограничить число записей в списке для очень больших diff. |
 
@@ -258,8 +260,8 @@ composite.
   `prepare:psql`, `prepare:lb` (`run:*`, alias, composite отклоняются).
 - **Ошибка разрешения ref** — один из ref'ов не разрешается локально.
 - **Нет файла в одной из ревизий** — основной файл (`-f`, changelog и т.д.)
-  должен быть **в обоих** worktree; иначе diff завершится ошибкой вида stat на
-  отсутствующей стороне.
+  должен быть **в обеих** ревизиях; иначе ошибка при чтении (`git show` или stat
+  в worktree).
 - **Не Git-репозиторий** — режим ref требует контекста Git-репо.
 - **Нет payload, зависящего от ревизии** — для будущей поддержки `run:*` вызовы
   только с инлайном могут отклоняться как не-diffable.
@@ -270,9 +272,11 @@ composite.
 
 ### Минимальное демо (два коммита, один и тот же путь `-f`)
 
-В режиме ref каждая ревизия выкладывается во временный Git worktree. Путь в
-`-f` / `--changelog-file` должен существовать **в обеих** ревизиях, иначе будет
-ошибка stat (например `from-ref: ...` в ref mode или `from-path: ...` в path mode).
+По умолчанию ref-режим материализует каждую ревизию как временный
+**worktree**. Путь в `-f` / `--changelog-file` должен быть **в обеих**
+ревизиях, иначе будет ошибка чтения (например `from-ref: ...` или
+`from-path: ...`). При явном `--ref-mode blob` этот же путь читается из
+объектов Git.
 
 Из корня репозитория taidon:
 
@@ -338,7 +342,9 @@ kind и run kind** по правилам из таблицы выше; diff за
 7. Human или JSON по глобальному `--output`.
 
 **Как в коде:** `internal/app` вызывает `diff.ParseDiffScope`; `internal/cli.RunDiff`
-— `ResolveScope`, `BuildPsqlFileList` / `BuildLbFileList`, `Compare`, рендеры.
+— `ResolveScope` (path, ref `worktree`, или явный ref `blob` через
+`inputset.GitRevFileSystem`), затем `BuildPsqlFileList` / `BuildLbFileList`,
+`Compare`, рендеры.
 
 Команда не запускает engine и не выполняет SQL. Глобальные `-v` и `--output` —
 как у остальных команд sqlrs.
