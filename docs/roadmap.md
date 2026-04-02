@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-23)
+## Status (as of 2026-03-31)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -127,13 +127,16 @@ gantt
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under
   verification.
+- **Done (CLI alias coverage hardening)**: `internal/alias` regression tests now
+  cover the remaining create, resolve, and scan edge branches, bringing the CLI
+  alias package above the minimum coverage threshold in `go test --cover ./...`.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
 - **Next public local focus**: finish the remaining M2 local DX layers with
-  `sqlrs discover --aliases`, follow-up discover analyzers, and the later
-  Git-aware CLI follow-up for `sqlrs diff`/prepare provenance (`--ref`,
-  provenance, cache explain).
+  `sqlrs alias create`, `sqlrs discover --aliases`, follow-up discover
+  analyzers, and the later Git-aware CLI follow-up for `sqlrs diff`/prepare
+  provenance (`--ref`, provenance, cache explain).
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -151,7 +154,8 @@ gantt
   - reuse the alias scan / resolve / check primitives already added for
     `sqlrs alias ls/check`, so discovery does not duplicate inventory logic;
   - surface actionable alias-oriented findings for the current repo slice before
-    adding broader discover analyzers;
+    adding broader discover analyzers, including copy-paste
+    `sqlrs alias create ...` commands;
   - keep the discover layer extensible for follow-up analyzers over
     `.gitignore`, `.vscode`, and prepare-shaping heuristics;
   - cover workspace-scope defaults, filtering, and human/JSON rendering in docs
@@ -250,8 +254,10 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
     files
   - normal `prepare ... run` composition across raw and alias modes
   - explicit alias inspection via `sqlrs alias ls/check`
+  - explicit alias creation via `sqlrs alias create`
 - Advisory discovery tooling:
-  - `sqlrs discover --aliases`
+  - `sqlrs discover --aliases` with copy-paste `sqlrs alias create ...`
+    suggestions
   - follow-up analyzers for `.gitignore`, `.vscode`, and prepare shaping
 - Git-aware CLI (passive):
   - `diff` path mode

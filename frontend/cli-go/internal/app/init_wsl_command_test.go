@@ -123,6 +123,9 @@ func TestStartSpinnerAndClearLine(t *testing.T) {
 	if !strings.Contains(buf.String(), "\r") {
 		t.Fatalf("expected clear line output, got %q", buf.String())
 	}
+	if strings.Contains(buf.String(), "\x1b[2K") {
+		t.Fatalf("expected ANSI-free clear line output, got %q", buf.String())
+	}
 }
 
 func withFakeWSL(t *testing.T) {

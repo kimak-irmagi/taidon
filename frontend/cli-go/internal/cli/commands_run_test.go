@@ -87,6 +87,27 @@ func TestRunRunRemoteStreamsOutput(t *testing.T) {
 	}
 }
 
+func TestRunRunRemoteRunCommandError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/runs" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	_, err := RunRun(context.Background(), RunOptions{
+		Mode:        "remote",
+		Endpoint:    server.URL,
+		Kind:        "psql",
+		InstanceRef: "inst",
+	}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatalf("expected run command error")
+	}
+}
+
 func TestRunRunUsesSteps(t *testing.T) {
 	var gotRequest client.RunRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

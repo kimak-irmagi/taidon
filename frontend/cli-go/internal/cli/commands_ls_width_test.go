@@ -717,6 +717,153 @@ func TestFormatRelativeTimeSupportsFutureAndSeconds(t *testing.T) {
 	}
 }
 
+func TestFormatStateCreatedBranches(t *testing.T) {
+	withLSNow(t, time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC), func() {
+		if got := formatStateCreated("", false); got != "" {
+			t.Fatalf("expected empty string for empty input, got %q", got)
+		}
+		if got := formatStateCreated("not a timestamp", false); got != "not a timestamp" {
+			t.Fatalf("expected invalid timestamp to pass through, got %q", got)
+		}
+		if got := formatStateCreated(" 2026-03-07T12:34:56+02:00 ", true); got != "2026-03-07T10:34:56Z" {
+			t.Fatalf("expected absolute UTC timestamp, got %q", got)
+		}
+		if got := formatStateCreated("2026-03-10T11:59:30Z", false); got != "30s ago" {
+			t.Fatalf("expected relative timestamp, got %q", got)
+		}
+	})
+}
+
+func TestFormatRelativeTimeAdditionalUnits(t *testing.T) {
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		ts   time.Time
+		want string
+	}{
+		{name: "days", ts: now.Add(-25 * time.Hour), want: "1d ago"},
+		{name: "hours", ts: now.Add(-2 * time.Hour), want: "2h ago"},
+		{name: "minutes", ts: now.Add(-3 * time.Minute), want: "3m ago"},
+		{name: "zero", ts: now, want: "0s ago"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatRelativeTime(now, tc.ts); got != tc.want {
+				t.Fatalf("formatRelativeTime(%v) = %q, want %q", tc.ts, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTruncateMiddleEdgeCases(t *testing.T) {
+	if got := truncateMiddle("abcdefgh", 0); got != "abcdefgh" {
+		t.Fatalf("expected width<=0 to return input, got %q", got)
+	}
+	if got := truncateMiddle("abcdefgh", 3); got != "abc" {
+		t.Fatalf("expected narrow width to keep prefix, got %q", got)
+	}
+}
+
+func TestFormatLSTaskInputBranches(t *testing.T) {
+	if got := formatLSTaskInput(nil, false); got != "unknown" {
+		t.Fatalf("expected unknown for nil input, got %q", got)
+	}
+
+	cases := []struct {
+		name    string
+		input   *client.TaskInput
+		longIDs bool
+		want    string
+	}{
+		{
+			name:    "empty kind",
+			input:   &client.TaskInput{ID: "abc123"},
+			longIDs: false,
+			want:    "abc123",
+		},
+		{
+			name:    "empty id",
+			input:   &client.TaskInput{Kind: "state"},
+			longIDs: false,
+			want:    "s",
+		},
+		{
+			name:    "image compact",
+			input:   &client.TaskInput{Kind: "image", ID: fullImageID()},
+			longIDs: false,
+			want:    "i:postgres@0123456789ab",
+		},
+		{
+			name:    "image long",
+			input:   &client.TaskInput{Kind: "image", ID: fullImageID()},
+			longIDs: true,
+			want:    "image:" + fullImageID(),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatLSTaskInput(tc.input, tc.longIDs); got != tc.want {
+				t.Fatalf("formatLSTaskInput(%+v, %v) = %q, want %q", tc.input, tc.longIDs, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestJobsAndTasksFixedColumnsWidthBranches(t *testing.T) {
+	jobRows := []jobDisplayRow{{jobID: "id", status: "ok", kind: "p", imageID: "img"}}
+	if got := jobsFixedColumnsWidth(jobRows, false, false); got != len("JOB_ID")+len("STATUS")+len("KIND")+len("IMAGE_ID")+4*compactTableColumnGap {
+		t.Fatalf("unexpected job width with headers: %d", got)
+	}
+	if got := jobsFixedColumnsWidth(jobRows, true, true); got != len("id")+len("ok")+len("p")+len("img")+4*compactTableColumnGap {
+		t.Fatalf("unexpected job width without headers: %d", got)
+	}
+
+	taskRows := []taskDisplayRow{{taskID: "id", jobID: "jid", taskType: "type", status: "ok", input: "input"}}
+	if got := tasksFixedColumnsWidth(taskRows, false); got != len("TASK_ID")+len("JOB_ID")+len("TYPE")+len("STATUS")+len("INPUT")+5*compactTableColumnGap {
+		t.Fatalf("unexpected task width with headers: %d", got)
+	}
+	if got := tasksFixedColumnsWidth(taskRows, true); got != len("id")+len("jid")+len("type")+len("ok")+len("input")+5*compactTableColumnGap {
+		t.Fatalf("unexpected task width without headers: %d", got)
+	}
+}
+
+func TestFormatImageIDAndIsHexStringBranches(t *testing.T) {
+	digest := strings.TrimPrefix(fullImageID(), "postgres@")
+	if got := formatImageID("", false); got != "" {
+		t.Fatalf("expected empty image id to stay empty, got %q", got)
+	}
+	if got := formatImageID(digest, false); got != "0123456789ab" {
+		t.Fatalf("expected raw digest to compact, got %q", got)
+	}
+	if got := formatImageID("postgres@"+digest, false); got != "postgres@0123456789ab" {
+		t.Fatalf("expected digest reference to compact, got %q", got)
+	}
+	if got := formatImageID("sha256:123", false); got != "sha256:123" {
+		t.Fatalf("expected short digest to stay intact, got %q", got)
+	}
+	if got := formatImageID("postgres@sha256:123", false); got != "postgres@sha256:123" {
+		t.Fatalf("expected short named digest to stay intact, got %q", got)
+	}
+	if got := formatImageID(digest, true); got != digest {
+		t.Fatalf("expected long IDs to preserve digest, got %q", got)
+	}
+
+	hexCases := []struct {
+		value string
+		want  bool
+	}{
+		{value: "", want: false},
+		{value: "abcDEF012345", want: true},
+		{value: "abcg", want: false},
+	}
+	for _, tc := range hexCases {
+		if got := isHexString(tc.value); got != tc.want {
+			t.Fatalf("isHexString(%q) = %v, want %v", tc.value, got, tc.want)
+		}
+	}
+}
+
 func renderStatesToFakeTTY(t *testing.T, result LsResult, opts LsPrintOptions, width int) string {
 	t.Helper()
 	file, err := os.CreateTemp(t.TempDir(), "ls-tty-*.txt")

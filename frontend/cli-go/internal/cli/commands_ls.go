@@ -694,9 +694,6 @@ func truncateMiddle(value string, width int) string {
 	}
 	ellipsisRunes := []rune(statePrepareArgsEllipsis)
 	if width <= len(ellipsisRunes)+2 {
-		if width > len(runes) {
-			return value
-		}
 		return string(runes[:width])
 	}
 	available := width - len(ellipsisRunes)

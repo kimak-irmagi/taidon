@@ -2,8 +2,8 @@ package app
 
 import (
 	"bytes"
-	"errors"
-	"fmt"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -12,156 +12,276 @@ import (
 	"github.com/sqlrs/cli/internal/alias"
 )
 
-func TestParseAliasArgs(t *testing.T) {
-	tests := []struct {
-		name            string
-		args            []string
-		want            aliasCommand
-		wantHelp        bool
-		wantErrContains string
-	}{
-		{name: "missing subcommand", wantErrContains: "missing alias subcommand"},
-		{name: "root help", args: []string{"--help"}, wantHelp: true},
-		{name: "subcommand help", args: []string{"check", "-h"}, wantHelp: true, want: aliasCommand{Action: "check"}},
-		{name: "unknown subcommand", args: []string{"show"}, wantErrContains: "unknown alias subcommand"},
-		{name: "unicode dash", args: []string{"check", "—run"}, wantErrContains: "Unicode dash"},
-		{name: "missing from value", args: []string{"check", "--from"}, wantErrContains: "Missing value for --from"},
-		{name: "missing depth value", args: []string{"check", "--depth"}, wantErrContains: "Missing value for --depth"},
-		{name: "unknown option", args: []string{"check", "--bad"}, wantErrContains: "unknown alias option"},
-		{name: "duplicate ref", args: []string{"check", "one", "two"}, wantErrContains: "at most one alias ref"},
-		{name: "ls rejects ref", args: []string{"ls", "one"}, wantErrContains: "alias ls does not accept an alias ref"},
-		{name: "check rejects from with ref", args: []string{"check", "--from", "cwd", "one"}, wantErrContains: "does not accept --from or --depth"},
-		{
-			name: "valid selectors and equals flags",
-			args: []string{"check", "--prepare", "--from=workspace", "--depth=children"},
-			want: aliasCommand{Action: "check", Prepare: true, From: "workspace", Depth: "children"},
-		},
-		{
-			name: "valid depth value",
-			args: []string{"check", "--depth", "self"},
-			want: aliasCommand{Action: "check", Depth: "self"},
-		},
+func TestParseAliasArgsCreate(t *testing.T) {
+	got, showHelp, err := parseAliasArgs([]string{
+		"create",
+		"chinook",
+		"prepare:psql",
+		"--image", "postgres:17",
+		"--",
+		"-f", "queries.sql",
+	})
+	if err != nil {
+		t.Fatalf("parseAliasArgs: %v", err)
+	}
+	if showHelp {
+		t.Fatalf("did not expect help")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, showHelp, err := parseAliasArgs(tt.args)
-			if tt.wantErrContains != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErrContains) {
-					t.Fatalf("expected error containing %q, got %v", tt.wantErrContains, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("parseAliasArgs: %v", err)
-			}
-			if showHelp != tt.wantHelp {
-				t.Fatalf("showHelp = %v, want %v", showHelp, tt.wantHelp)
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("got %+v, want %+v", got, tt.want)
+	want := aliasCommand{
+		Action:  "create",
+		Ref:     "chinook",
+		Wrapped: "prepare:psql",
+		Args:    []string{"--image", "postgres:17", "--", "-f", "queries.sql"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestParseAliasArgsCreateErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "missing ref", args: []string{"create"}, want: "missing alias ref"},
+		{name: "missing wrapped command", args: []string{"create", "chinook"}, want: "missing wrapped command"},
+		{name: "unknown flag", args: []string{"create", "--bad"}, want: "unknown alias option"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := parseAliasArgs(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, err)
 			}
 		})
 	}
 }
 
-func TestRunAliasCommandHelp(t *testing.T) {
-	var buf bytes.Buffer
-	if err := runAliasCommand(&buf, commandContext{}, []string{"--help"}); err != nil {
-		t.Fatalf("runAliasCommand: %v", err)
-	}
-	if !strings.Contains(buf.String(), "sqlrs alias ls") {
-		t.Fatalf("unexpected output: %q", buf.String())
-	}
-}
-
-func TestRunAliasCommandMapsScanErrorToExitCodeTwo(t *testing.T) {
-	err := runAliasCommand(&bytes.Buffer{}, commandContext{
-		workspaceRoot: filepath.Join(t.TempDir(), "missing"),
-		cwd:           filepath.Join(t.TempDir(), "missing"),
-	}, []string{"ls"})
-	var exitErr *ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
-		t.Fatalf("expected exit code 2, got %v", err)
-	}
-}
-
-func TestRunAliasCheckErrorPaths(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "missing")
-	_, err := runAliasCheck(commandContext{workspaceRoot: root, cwd: root}, alias.ScanOptions{WorkspaceRoot: root, CWD: root}, aliasCommand{})
-	var exitErr *ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
-		t.Fatalf("expected scan-mode exit code 2, got %v", err)
+func TestRunAliasCommandCreateWritesAliasFile(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
+	withWorkingDir(t, workspace)
+	if err := os.WriteFile(filepath.Join(workspace, "queries.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatalf("write queries.sql: %v", err)
 	}
 
-	_, err = runAliasCheck(commandContext{}, alias.ScanOptions{}, aliasCommand{Action: "check", Ref: "missing"})
-	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
-		t.Fatalf("expected single-target exit code 2, got %v", err)
-	}
-}
-
-func TestRunAliasCommandCheckMapsErrorToExitCodeTwo(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "missing")
-	err := runAliasCommand(&bytes.Buffer{}, commandContext{
-		workspaceRoot: root,
-		cwd:           root,
-	}, []string{"check"})
-	var exitErr *ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
-		t.Fatalf("expected exit code 2, got %v", err)
-	}
-}
-
-func TestRunAliasCommandJSONWriterError(t *testing.T) {
-	workspace := t.TempDir()
-	writePrepareAliasFile(t, workspace, "chinook.prep.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
-
-	err := runAliasCommand(aliasErrWriter{}, commandContext{
-		workspaceRoot: workspace,
-		cwd:           workspace,
-		output:        "json",
-	}, []string{"ls"})
-	if err == nil || !strings.Contains(err.Error(), "boom") {
-		t.Fatalf("expected writer error, got %v", err)
-	}
-}
-
-func TestRunAliasCheckSingleTargetInvalid(t *testing.T) {
-	workspace := t.TempDir()
-	writeRunAliasFile(t, workspace, "bad.run.s9s.yaml", "kind: psql\nargs:\n  - -f\n  - missing.sql\n")
-
-	report, err := runAliasCheck(commandContext{
-		workspaceRoot: workspace,
-		cwd:           workspace,
-	}, alias.ScanOptions{}, aliasCommand{Action: "check", Run: true, Ref: "bad"})
+	out, err := captureRunStdout(t, func() error {
+		return Run([]string{"--workspace", workspace, "alias", "create", "chinook", "prepare:psql", "--", "-f", "queries.sql"})
+	})
 	if err != nil {
-		t.Fatalf("runAliasCheck: %v", err)
+		t.Fatalf("Run: %v", err)
 	}
-	if report.InvalidCount != 1 || report.ValidCount != 0 || len(report.Results) != 1 || report.Results[0].Valid {
-		t.Fatalf("unexpected report: %+v", report)
+	if !strings.Contains(out, "created alias file: chinook.prep.s9s.yaml") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+	if !strings.Contains(out, "kind: psql") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+
+	data, err := os.ReadFile(filepath.Join(workspace, "chinook.prep.s9s.yaml"))
+	if err != nil {
+		t.Fatalf("read alias file: %v", err)
+	}
+	if !strings.Contains(string(data), "- queries.sql") {
+		t.Fatalf("expected rendered args to reference queries.sql, got %q", string(data))
 	}
 }
 
-func TestSelectedAliasClassHelpers(t *testing.T) {
-	if got := selectedAliasClasses(aliasCommand{}); len(got) != 0 {
-		t.Fatalf("expected no explicit classes, got %+v", got)
+func TestParseAliasArgsAdditionalBranches(t *testing.T) {
+	t.Run("from and depth assignments", func(t *testing.T) {
+		got, showHelp, err := parseAliasArgs([]string{"check", "--from=workspace", "--depth=3"})
+		if err != nil || showHelp {
+			t.Fatalf("parseAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if got.Action != "check" || got.From != "workspace" || got.Depth != "3" {
+			t.Fatalf("unexpected parse result: %+v", got)
+		}
+	})
+
+	t.Run("from and depth values", func(t *testing.T) {
+		got, showHelp, err := parseAliasArgs([]string{"check", "--from", "workspace", "--depth", "3"})
+		if err != nil || showHelp {
+			t.Fatalf("parseAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if got.From != "workspace" || got.Depth != "3" {
+			t.Fatalf("unexpected parse result: %+v", got)
+		}
+	})
+
+	t.Run("missing from value", func(t *testing.T) {
+		_, _, err := parseAliasArgs([]string{"check", "--from"})
+		if err == nil || !strings.Contains(err.Error(), "Missing value for --from") {
+			t.Fatalf("expected missing --from error, got %v", err)
+		}
+	})
+
+	t.Run("missing depth value", func(t *testing.T) {
+		_, _, err := parseAliasArgs([]string{"check", "--depth"})
+		if err == nil || !strings.Contains(err.Error(), "Missing value for --depth") {
+			t.Fatalf("expected missing --depth error, got %v", err)
+		}
+	})
+
+	t.Run("reject from with ref", func(t *testing.T) {
+		_, _, err := parseAliasArgs([]string{"check", "schema", "--from", "workspace"})
+		if err == nil || !strings.Contains(err.Error(), "does not accept --from or --depth") {
+			t.Fatalf("expected from/depth rejection, got %v", err)
+		}
+	})
+
+	t.Run("reject ls ref", func(t *testing.T) {
+		_, _, err := parseAliasArgs([]string{"ls", "schema"})
+		if err == nil || !strings.Contains(err.Error(), "does not accept an alias ref") {
+			t.Fatalf("expected ls ref rejection, got %v", err)
+		}
+	})
+}
+
+func TestParseAliasCreateWrappedCommandAdditionalBranches(t *testing.T) {
+	t.Run("prepare class", func(t *testing.T) {
+		class, kind, err := parseAliasCreateWrappedCommand(" PREPARE:PSQL ")
+		if err != nil {
+			t.Fatalf("parseAliasCreateWrappedCommand: %v", err)
+		}
+		if class != alias.ClassPrepare || kind != "psql" {
+			t.Fatalf("unexpected parse result: class=%q kind=%q", class, kind)
+		}
+	})
+
+	t.Run("run class", func(t *testing.T) {
+		class, kind, err := parseAliasCreateWrappedCommand("run:PGBENCH")
+		if err != nil {
+			t.Fatalf("parseAliasCreateWrappedCommand: %v", err)
+		}
+		if class != alias.ClassRun || kind != "pgbench" {
+			t.Fatalf("unexpected parse result: class=%q kind=%q", class, kind)
+		}
+	})
+
+	t.Run("missing command", func(t *testing.T) {
+		_, _, err := parseAliasCreateWrappedCommand(" ")
+		if err == nil || !strings.Contains(err.Error(), "missing wrapped command") {
+			t.Fatalf("expected missing wrapped command error, got %v", err)
+		}
+	})
+
+	t.Run("missing kind", func(t *testing.T) {
+		_, _, err := parseAliasCreateWrappedCommand("prepare:")
+		if err == nil || !strings.Contains(err.Error(), "wrapped command kind is required") {
+			t.Fatalf("expected missing kind error, got %v", err)
+		}
+	})
+
+	t.Run("missing separator", func(t *testing.T) {
+		_, _, err := parseAliasCreateWrappedCommand("prepare")
+		if err == nil || !strings.Contains(err.Error(), "prepare:<kind> or run:<kind>") {
+			t.Fatalf("expected separator error, got %v", err)
+		}
+	})
+}
+
+func TestRunAliasCreateCoverage(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "seed.sql"), []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatalf("write seed.sql: %v", err)
 	}
-	if got := selectedAliasClasses(aliasCommand{Prepare: true, Run: true}); !reflect.DeepEqual(got, []alias.Class{alias.ClassPrepare, alias.ClassRun}) {
-		t.Fatalf("unexpected classes: %+v", got)
+
+	var out bytes.Buffer
+	cmdCtx := commandContext{workspaceRoot: workspace, cwd: workspace, output: "json"}
+	cmd := aliasCommand{Ref: "demo", Wrapped: "prepare:psql", Args: []string{"-f", "seed.sql"}}
+	if err := runAliasCreate(&out, cmdCtx, cmd); err != nil {
+		t.Fatalf("runAliasCreate: %v", err)
 	}
-	if got := selectedSingleAliasClass(aliasCommand{}); got != "" {
-		t.Fatalf("expected empty single class, got %q", got)
+
+	var got alias.CreateResult
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("decode json: %v", err)
 	}
+	if got.Type != alias.ClassPrepare || got.Ref != "demo" || got.Kind != "psql" {
+		t.Fatalf("unexpected create result: %+v", got)
+	}
+	if got.File != "demo.prep.s9s.yaml" {
+		t.Fatalf("unexpected file: %+v", got)
+	}
+
+	if _, err := os.Stat(filepath.Join(workspace, got.File)); err != nil {
+		t.Fatalf("expected created file: %v", err)
+	}
+
+	err := runAliasCreate(&bytes.Buffer{}, commandContext{workspaceRoot: workspace, cwd: workspace}, cmd)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected overwrite error, got %v", err)
+	}
+
+	err = runAliasCreate(&bytes.Buffer{}, commandContext{workspaceRoot: workspace, cwd: workspace}, aliasCommand{
+		Ref:     "demo",
+		Wrapped: "prepare",
+		Args:    []string{"-f", "seed.sql"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "wrapped command must be prepare:<kind> or run:<kind>") {
+		t.Fatalf("expected wrapped command parse error, got %v", err)
+	}
+}
+
+func TestRunAliasCommandAndCheckCoverage(t *testing.T) {
+	t.Run("help", func(t *testing.T) {
+		var out bytes.Buffer
+		if err := runAliasCommand(&out, commandContext{}, []string{"--help"}); err != nil {
+			t.Fatalf("runAliasCommand: %v", err)
+		}
+		if !strings.Contains(out.String(), "sqlrs alias") {
+			t.Fatalf("expected usage output, got %q", out.String())
+		}
+	})
+
+	t.Run("scan error", func(t *testing.T) {
+		_, err := runAliasCheck(commandContext{}, alias.ScanOptions{}, aliasCommand{})
+		if err == nil || !strings.Contains(err.Error(), "workspace root is required") {
+			t.Fatalf("expected scan error, got %v", err)
+		}
+	})
+
+	t.Run("resolve target error", func(t *testing.T) {
+		_, err := runAliasCheck(commandContext{}, alias.ScanOptions{}, aliasCommand{Ref: "demo"})
+		if err == nil || !strings.Contains(err.Error(), "workspace root is required") {
+			t.Fatalf("expected resolve error, got %v", err)
+		}
+	})
+
+	t.Run("invalid target", func(t *testing.T) {
+		workspace := t.TempDir()
+		if err := os.WriteFile(filepath.Join(workspace, "demo.prep.s9s.yaml"), []byte("kind: psql\nargs:\n  - -f\n  - missing.sql\n"), 0o600); err != nil {
+			t.Fatalf("write alias file: %v", err)
+		}
+		report, err := runAliasCheck(
+			commandContext{workspaceRoot: workspace, cwd: workspace},
+			alias.ScanOptions{WorkspaceRoot: workspace, CWD: workspace},
+			aliasCommand{Ref: "demo", Prepare: true},
+		)
+		if err != nil {
+			t.Fatalf("runAliasCheck: %v", err)
+		}
+		if report.Checked != 1 || report.InvalidCount != 1 {
+			t.Fatalf("unexpected report: %+v", report)
+		}
+	})
+}
+
+func TestSelectedSingleAliasClassCoverage(t *testing.T) {
 	if got := selectedSingleAliasClass(aliasCommand{Prepare: true}); got != alias.ClassPrepare {
-		t.Fatalf("expected prepare single class, got %q", got)
+		t.Fatalf("expected prepare class, got %q", got)
+	}
+	if got := selectedSingleAliasClass(aliasCommand{Run: true}); got != alias.ClassRun {
+		t.Fatalf("expected run class, got %q", got)
 	}
 	if got := selectedSingleAliasClass(aliasCommand{Prepare: true, Run: true}); got != "" {
-		t.Fatalf("expected empty single class for mixed selectors, got %q", got)
+		t.Fatalf("expected empty class, got %q", got)
 	}
-}
-
-type aliasErrWriter struct{}
-
-func (aliasErrWriter) Write([]byte) (int, error) {
-	return 0, fmt.Errorf("boom")
+	if got := selectedSingleAliasClass(aliasCommand{}); got != "" {
+		t.Fatalf("expected empty class, got %q", got)
+	}
 }

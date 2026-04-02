@@ -29,10 +29,30 @@ func TestParseRunAliasArgsAdditionalBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("trimmed instance value", func(t *testing.T) {
+		invocation, showHelp, err := parseRunAliasArgs([]string{"smoke", "--instance", " dev "}, true)
+		if err != nil || showHelp {
+			t.Fatalf("parseRunAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if invocation.InstanceRef != "dev" {
+			t.Fatalf("unexpected instance: %q", invocation.InstanceRef)
+		}
+	})
+
 	t.Run("missing instance equals value", func(t *testing.T) {
 		_, _, err := parseRunAliasArgs([]string{"smoke", "--instance="}, true)
 		if err == nil || !strings.Contains(err.Error(), "Missing value for --instance") {
 			t.Fatalf("expected missing instance error, got %v", err)
+		}
+	})
+
+	t.Run("instance equals value", func(t *testing.T) {
+		invocation, showHelp, err := parseRunAliasArgs([]string{"smoke", "--instance=dev"}, true)
+		if err != nil || showHelp {
+			t.Fatalf("parseRunAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if invocation.InstanceRef != "dev" {
+			t.Fatalf("unexpected instance: %q", invocation.InstanceRef)
 		}
 	})
 
@@ -57,6 +77,32 @@ func TestResolveRunAliasPathAdditionalValidation(t *testing.T) {
 		_, err := resolveRunAliasPath(workspace, workspace, ".")
 		if err == nil || !strings.Contains(err.Error(), "run alias ref is empty") {
 			t.Fatalf("expected empty exact-ref error, got %v", err)
+		}
+	})
+
+	t.Run("uses workspace root when cwd is empty", func(t *testing.T) {
+		workspace := t.TempDir()
+		writeRunAliasFile(t, workspace, "smoke.run.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
+		got, err := resolveRunAliasPath(workspace, "", "smoke")
+		if err != nil {
+			t.Fatalf("resolveRunAliasPath: %v", err)
+		}
+		want := filepath.Join(workspace, "smoke.run.s9s.yaml")
+		if got != want {
+			t.Fatalf("unexpected path: got %q want %q", got, want)
+		}
+	})
+
+	t.Run("uses cwd when workspace root is empty", func(t *testing.T) {
+		workspace := t.TempDir()
+		writeRunAliasFile(t, workspace, "smoke.run.s9s.yaml", "kind: psql\nargs:\n  - -c\n  - select 1\n")
+		got, err := resolveRunAliasPath("", workspace, "smoke")
+		if err != nil {
+			t.Fatalf("resolveRunAliasPath: %v", err)
+		}
+		want := filepath.Join(workspace, "smoke.run.s9s.yaml")
+		if got != want {
+			t.Fatalf("unexpected path: got %q want %q", got, want)
 		}
 	})
 }
