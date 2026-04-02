@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-03-23)
+## Статус (на 2026-03-31)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -127,13 +127,16 @@ gantt
 - **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
   гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
   Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.
+- **Сделано (CLI alias coverage hardening)**: регрессионные тесты `internal/alias`
+  закрыли оставшиеся ветки create, resolve и scan, доведя coverage CLI alias
+  package выше минимального порога в `go test --cover ./...`.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
 - **Следующий публичный local-фокус**: закрыть оставшиеся M2 local DX слои через
-  `sqlrs discover --aliases`, последующие discover analyzers и более поздний
-  Git-aware CLI follow-up для `sqlrs diff`/prepare provenance (`--ref`,
-  provenance, cache explain).
+  `sqlrs alias create`, `sqlrs discover --aliases`, последующие discover
+  analyzers и более поздний Git-aware CLI follow-up для `sqlrs diff`/prepare
+  provenance (`--ref`, provenance, cache explain).
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -151,7 +154,8 @@ gantt
   - переиспользовать alias scan / resolve / check primitives, уже добавленные
     для `sqlrs alias ls/check`, чтобы discovery не дублировал inventory logic;
   - показывать actionable alias-oriented findings для текущего repo slice перед
-    добавлением более широких discover analyzers;
+    добавлением более широких discover analyzers, включая copy-paste
+    `sqlrs alias create ...` commands;
   - сохранить discover layer расширяемым для последующих analyzers над
     `.gitignore`, `.vscode` и prepare-shaping heuristics;
   - покрыть workspace-scope defaults, filtering и human/JSON rendering в docs
@@ -252,8 +256,10 @@ gantt
     alias files
   - обычная композиция `prepare ... run` через raw и alias modes
   - явный alias inspection через `sqlrs alias ls/check`
+  - явный alias creation через `sqlrs alias create`
 - Advisory discovery tooling:
-  - `sqlrs discover --aliases`
+  - `sqlrs discover --aliases` с copy-paste `sqlrs alias create ...`
+    suggestions
   - последующие analyzers для `.gitignore`, `.vscode` и prepare shaping
 - Git-aware CLI (passive):
   - `diff` в path mode

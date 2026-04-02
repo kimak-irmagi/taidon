@@ -18,6 +18,8 @@ type aliasCommand struct {
 	From    string
 	Depth   string
 	Ref     string
+	Wrapped string
+	Args    []string
 }
 
 func parseAliasArgs(args []string) (aliasCommand, bool, error) {
@@ -33,8 +35,44 @@ func parseAliasArgs(args []string) (aliasCommand, bool, error) {
 		return cmd, true, nil
 	case "ls", "check":
 		cmd.Action = args[0]
+	case "create":
+		cmd.Action = args[0]
 	default:
 		return cmd, false, ExitErrorf(2, "unknown alias subcommand: %s", args[0])
+	}
+
+	if cmd.Action == "create" {
+		for i := 1; i < len(args); i++ {
+			arg := args[i]
+			switch {
+			case arg == "--help" || arg == "-h":
+				return cmd, true, nil
+			case cmd.Ref == "":
+				if strings.HasPrefix(arg, "-") {
+					return cmd, false, ExitErrorf(2, "unknown alias option: %s", arg)
+				}
+				cmd.Ref = strings.TrimSpace(arg)
+			case cmd.Wrapped == "":
+				if strings.HasPrefix(arg, "-") {
+					return cmd, false, ExitErrorf(2, "missing wrapped command")
+				}
+				cmd.Wrapped = strings.TrimSpace(arg)
+				if i+1 < len(args) {
+					cmd.Args = append([]string{}, args[i+1:]...)
+					if len(cmd.Args) > 0 && cmd.Args[0] == "--" {
+						cmd.Args = cmd.Args[1:]
+					}
+				}
+				i = len(args)
+			}
+		}
+		if cmd.Ref == "" {
+			return cmd, false, ExitErrorf(2, "missing alias ref")
+		}
+		if cmd.Wrapped == "" {
+			return cmd, false, ExitErrorf(2, "missing wrapped command")
+		}
+		return cmd, false, nil
 	}
 
 	for i := 1; i < len(args); i++ {
@@ -127,6 +165,8 @@ func runAliasCommand(stdout io.Writer, cmdCtx commandContext, args []string) err
 			return ExitErrorf(1, "alias check reported invalid aliases")
 		}
 		return nil
+	case "create":
+		return runAliasCreate(stdout, cmdCtx, cmd)
 	default:
 		return fmt.Errorf("unknown alias subcommand: %s", cmd.Action)
 	}

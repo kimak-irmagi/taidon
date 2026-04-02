@@ -115,3 +115,75 @@ func TestSplitCommandsMissingCommand(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 }
+
+func TestIsPrepareArgValueBranches(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		idx  int
+		want bool
+	}{
+		{name: "idx too small", args: []string{"prepare", "--image"}, idx: 1, want: false},
+		{name: "prepare psql image", args: []string{"prepare:psql", "--image", "img"}, idx: 2, want: true},
+		{name: "prepare psql file", args: []string{"prepare:psql", "-f", "file"}, idx: 2, want: true},
+		{name: "prepare psql file flag", args: []string{"prepare:psql", "--file", "file"}, idx: 2, want: true},
+		{name: "prepare lb changelog", args: []string{"prepare:lb", "--changelog-file", "file"}, idx: 2, want: true},
+		{name: "prepare lb defaults", args: []string{"prepare:lb", "--defaults-file", "file"}, idx: 2, want: true},
+		{name: "prepare lb search path camel", args: []string{"prepare:lb", "--searchPath", "dir"}, idx: 2, want: true},
+		{name: "prepare lb search path kebab", args: []string{"prepare:lb", "--search-path", "dir"}, idx: 2, want: true},
+		{name: "prepare default image", args: []string{"prepare", "--image", "img"}, idx: 2, want: true},
+		{name: "prepare default other flag", args: []string{"prepare", "--file", "file"}, idx: 2, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isPrepareArgValue(tc.args, tc.idx); got != tc.want {
+				t.Fatalf("isPrepareArgValue(%v, %d) = %v, want %v", tc.args, tc.idx, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFindPrepareAliasRunIndexBranches(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{name: "plain composite", args: []string{"prepare", "chinook", "run", "smoke"}, want: 2},
+		{name: "skips watch flags", args: []string{"prepare", "chinook", "--watch", "--no-watch", "--help", "-h", "run", "smoke"}, want: 6},
+		{name: "stops on separator", args: []string{"prepare", "chinook", "--", "run", "smoke"}, want: -1},
+		{name: "stops on flag", args: []string{"prepare", "chinook", "-x", "run", "smoke"}, want: -1},
+		{name: "no run token", args: []string{"prepare", "chinook"}, want: -1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := findPrepareAliasRunIndex(tc.args); got != tc.want {
+				t.Fatalf("findPrepareAliasRunIndex(%v) = %d, want %d", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsCompositeRunBoundaryBranches(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		idx  int
+		want bool
+	}{
+		{name: "raw run token", args: []string{"prepare:psql", "run:psql"}, idx: 1, want: true},
+		{name: "help after run", args: []string{"prepare:psql", "run", "--help"}, idx: 1, want: true},
+		{name: "short help after run", args: []string{"prepare:psql", "run", "-h"}, idx: 1, want: true},
+		{name: "separator after run", args: []string{"prepare:psql", "run", "--"}, idx: 1, want: false},
+		{name: "flag after run", args: []string{"prepare:psql", "run", "-c"}, idx: 1, want: false},
+		{name: "missing next token", args: []string{"prepare:psql", "run"}, idx: 1, want: false},
+		{name: "non-run token", args: []string{"prepare:psql", "alias", "smoke"}, idx: 1, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCompositeRunBoundary(tc.args, tc.idx); got != tc.want {
+				t.Fatalf("isCompositeRunBoundary(%v, %d) = %v, want %v", tc.args, tc.idx, got, tc.want)
+			}
+		})
+	}
+}

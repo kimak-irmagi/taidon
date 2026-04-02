@@ -102,6 +102,7 @@ local workspace config.
 - `sqlrs alias ls [--prepare] [--run] [--from <workspace|cwd|path>] [--depth <self|children|recursive>]`
 - `sqlrs alias check [--prepare] [--run] [--from <workspace|cwd|path>]`
   `[--depth <self|children|recursive>] [<ref>]`
+- `sqlrs alias create <ref> <wrapped-command> [-- <command>...]`
 
 **Expected work**:
 
@@ -111,6 +112,7 @@ local workspace config.
 - forbid `--instance` when the target instance is already selected by a
   preceding `prepare`
 - implement alias listing/check commands with bounded scan-scope controls
+- implement alias creation from wrapped execution commands
 - keep raw `run:<kind>` mode intact alongside alias mode
 
 **Tests expected**:
@@ -118,6 +120,7 @@ local workspace config.
 - run alias resolution tests
 - composite grammar tests for mixed raw/alias stages
 - alias inspection command tests
+- alias create validation and write-path tests
 - scan-root and scan-depth tests for `alias ls` / `alias check`
 - single-alias `check <ref>` tests, including ambiguity and exact-file escape
 - validation tests for kind-specific constraints
@@ -138,14 +141,14 @@ execution depend on heuristics.
 **Primary outcome**:
 
 - `sqlrs discover --aliases` analyzes the workspace and reports candidate alias
-  files
+  files as ready-to-copy `sqlrs alias create ...` commands
 - the command is advisory and read-only by default
 
 **Expected work**:
 
 - add the `discover` command family
 - implement the `--aliases` analyzer
-- define stable human and JSON output for findings
+- define stable human and JSON output for findings and create-command strings
 - keep discovery separate from execution semantics
 
 **Tests expected**:

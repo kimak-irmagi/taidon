@@ -52,6 +52,38 @@ func TestRunStatusRemoteIncludesCacheSummary(t *testing.T) {
 	}
 }
 
+func TestRunStatusRemoteIncludesCacheDetails(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"version":"v1","instanceId":"inst","pid":1}`))
+		case "/v1/cache/status":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"usage_bytes":2048,"configured_max_bytes":4096,"effective_max_bytes":3072,"reserve_bytes":512,"high_watermark":0.9,"low_watermark":0.8,"min_state_age":"10m","store_total_bytes":8192,"store_free_bytes":6144,"state_count":3,"reclaimable_bytes":1024,"blocked_count":1,"pressure_reasons":["usage_above_high_watermark"],"last_eviction":{"completed_at":"2026-03-09T12:00:00Z","trigger":"post_snapshot","evicted_count":2,"freed_bytes":256,"blocked_count":1,"reclaimable_bytes":1024,"usage_bytes_before":2304,"usage_bytes_after":2048,"free_bytes_before":5888,"free_bytes_after":6144}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	result, err := RunStatus(context.Background(), StatusOptions{
+		Mode:         "remote",
+		Endpoint:     server.URL,
+		Timeout:      time.Second,
+		CacheDetails: true,
+	})
+	if err != nil {
+		t.Fatalf("RunStatus: %v", err)
+	}
+	if result.CacheDetails == nil || result.CacheSummary == nil {
+		t.Fatalf("expected cache summary and details, got %+v", result)
+	}
+	if result.CacheDetails.ReserveBytes != 512 || result.CacheDetails.LastEviction == nil {
+		t.Fatalf("unexpected cache details: %+v", result.CacheDetails)
+	}
+}
+
 func TestRunStatusRemoteCacheSummaryFailureFallsBackToWarning(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -42,6 +42,15 @@
   взаимодействия для `sqlrs alias ls` и `sqlrs alias check`.
 - [`alias-inspection-component-structure.RU.md`](alias-inspection-component-structure.RU.md) -
   внутренняя компонентная структура CLI-среза alias inspection.
+- [`alias-create-flow.RU.md`](alias-create-flow.RU.md) - поток
+  взаимодействия для `sqlrs alias create` и discover-подсказок в виде
+  copy-paste команд.
+- [`alias-create-component-structure.RU.md`](alias-create-component-structure.RU.md) -
+  внутренняя компонентная структура CLI-среза alias creation.
+- [`discover-flow.RU.md`](discover-flow.RU.md) - поток взаимодействия для
+  `sqlrs discover` с aliases-анализатором и copy-paste alias-create output.
+- [`discover-component-structure.RU.md`](discover-component-structure.RU.md) -
+  внутренняя компонентная структура pipeline discover.
 - [`prepare-manager-refactor.RU.md`](prepare-manager-refactor.RU.md) - разбиение
   prepare manager на coordinator/executor/snapshot роли.
 - [`local-engine-cli-maintainability-refactor.RU.md`][lecmr] -
