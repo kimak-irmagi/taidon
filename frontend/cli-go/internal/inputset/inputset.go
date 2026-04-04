@@ -226,6 +226,13 @@ type FileSystem interface {
 	ReadDir(path string) ([]fs.DirEntry, error)
 }
 
+// BlobOIDer is implemented by GitRevFileSystem. Diff-facing Collect uses Git's
+// blob object id (40 lowercase hex chars, SHA-1 of the stored blob) as the
+// entry Hash instead of HashContent's SHA-256 over raw file bytes.
+type BlobOIDer interface {
+	BlobOID(absPath string) (string, error)
+}
+
 // OSFileSystem binds the shared layer to the real host filesystem.
 type OSFileSystem struct{}
 

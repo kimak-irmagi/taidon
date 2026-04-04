@@ -65,8 +65,20 @@ func TestGitRevFileSystem_ReadFileAndStat(t *testing.T) {
 	if string(b) != "select 1;\n" {
 		t.Fatalf("content: %q", b)
 	}
-	if got := HashContent(b); len(got) != 64 {
-		t.Fatalf("hash length: %d", len(got))
+	oid, err := fs.BlobOID(abs)
+	if err != nil {
+		t.Fatalf("BlobOID: %v", err)
+	}
+	if len(oid) != 40 {
+		t.Fatalf("blob oid length: %d %q", len(oid), oid)
+	}
+	cmd := exec.Command("git", "-C", repo, "rev-parse", "HEAD:hello.sql")
+	want, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("rev-parse: %v", err)
+	}
+	if strings.TrimSpace(string(want)) != oid {
+		t.Fatalf("BlobOID %q != rev-parse %q", oid, strings.TrimSpace(string(want)))
 	}
 }
 

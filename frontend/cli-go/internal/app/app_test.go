@@ -856,15 +856,18 @@ func setTestDirs(t *testing.T, root string) {
 
 	// Project config is discovered by walking up from cwd; without this, tests run
 	// inside the module tree and merge the real checkout's .sqlrs over synthetic HOME.
-	workDir := filepath.Join(root, "work")
-	if err := os.MkdirAll(workDir, 0o700); err != nil {
-		t.Fatalf("mkdir test work dir: %v", err)
+	workDir, err := newIsolatedTestWorkingDir()
+	if err != nil {
+		t.Fatalf("mkdir isolated test work dir: %v", err)
 	}
 	prev, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	t.Cleanup(func() { restoreWorkingDirForTest(prev) })
+	t.Cleanup(func() {
+		restoreWorkingDirForTest(prev)
+		cleanupIsolatedTestWorkingDir(workDir)
+	})
 	if err := os.Chdir(workDir); err != nil {
 		t.Fatalf("chdir test work dir: %v", err)
 	}

@@ -56,6 +56,34 @@ func normalizeGitRel(rel string) string {
 	return rel
 }
 
+// BlobOID returns the Git blob object id (40 hex chars) for a file at this ref.
+// It implements BlobOIDer and avoids hashing file bytes in-process.
+func (g *GitRevFileSystem) BlobOID(abs string) (string, error) {
+	rel, err := g.absToRel(abs)
+	if err != nil {
+		return "", err
+	}
+	rel = normalizeGitRel(rel)
+	if rel == "" {
+		return "", fmt.Errorf("git blob oid: not a file path")
+	}
+	spec := g.Ref + ":" + rel
+	cmd := exec.Command("git", "-C", g.RepoRoot, "cat-file", "-t", spec)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git blob oid: %w", err)
+	}
+	if strings.TrimSpace(string(out)) != "blob" {
+		return "", fmt.Errorf("git blob oid: not a blob at %s", spec)
+	}
+	cmd = exec.Command("git", "-C", g.RepoRoot, "rev-parse", spec)
+	out, err = cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse %s: %w", spec, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // ReadFile reads a blob at ref:path (path relative to repo root, slash-separated).
 func (g *GitRevFileSystem) ReadFile(abs string) ([]byte, error) {
 	rel, err := g.absToRel(abs)
