@@ -116,6 +116,65 @@ func TestDiscoverProgressWriterFormatsMilestones(t *testing.T) {
 	}
 }
 
+func TestDiscoverProgressWriterCoversSilentAndErrorBranches(t *testing.T) {
+	writer := newDiscoverProgressWriter(nil)
+	writer.Update(discover.ProgressEvent{Stage: discover.ProgressStageScanStart})
+	var nilWriter *discoverProgressWriter
+	nilWriter.Update(discover.ProgressEvent{Stage: discover.ProgressStageScanStart})
+	var buf bytes.Buffer
+	newDiscoverProgressWriter(&buf).Update(discover.ProgressEvent{Stage: discover.ProgressStageAnalyzerDone})
+	if buf.Len() != 0 {
+		t.Fatalf("expected empty formatted event to stay silent, got %q", buf.String())
+	}
+
+	for _, tc := range []struct {
+		name  string
+		event discover.ProgressEvent
+		want  string
+	}{
+		{
+			name:  "analyzer start without analyzer is silent",
+			event: discover.ProgressEvent{Stage: discover.ProgressStageAnalyzerStart},
+			want:  "",
+		},
+		{
+			name:  "scan progress without count is silent",
+			event: discover.ProgressEvent{Stage: discover.ProgressStageScanProgress},
+			want:  "",
+		},
+		{
+			name:  "invalid candidate with detail",
+			event: discover.ProgressEvent{Stage: discover.ProgressStageValidated, Analyzer: discover.AnalyzerAliases, Valid: false, Error: "boom"},
+			want:  "discover: invalid candidate analyzer=aliases: boom",
+		},
+		{
+			name:  "invalid candidate without detail",
+			event: discover.ProgressEvent{Stage: discover.ProgressStageValidated, Valid: false},
+			want:  "discover: invalid candidate unknown",
+		},
+		{
+			name:  "suppressed without reason",
+			event: discover.ProgressEvent{Stage: discover.ProgressStageSuppressed, Analyzer: discover.AnalyzerGitignore},
+			want:  "discover: suppressed candidate analyzer=gitignore",
+		},
+		{
+			name:  "unknown stage is silent",
+			event: discover.ProgressEvent{Stage: "unknown-stage"},
+			want:  "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatDiscoverProgressLine(tc.event); got != tc.want {
+				t.Fatalf("formatDiscoverProgressLine() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	if got := formatDiscoverProgressSubject(discover.ProgressEvent{}); got != "unknown" {
+		t.Fatalf("unexpected default progress subject: %q", got)
+	}
+}
+
 func TestRunDiscoverVerboseProgressToStderr(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
