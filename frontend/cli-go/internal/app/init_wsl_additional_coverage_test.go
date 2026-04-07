@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -650,6 +651,455 @@ func TestInitWSLPartitionUUIDFailureSimulatedWindows(t *testing.T) {
 	}
 	if res.UseWSL || !strings.Contains(res.Warning, "device UUID failed") {
 		t.Fatalf("expected device UUID warning, got %+v", res)
+	}
+}
+
+func TestListWSLDistrosParseError(t *testing.T) {
+	withFakeWSL(t)
+	t.Setenv("WSL_STDOUT", "not-a-distro-list")
+
+	if _, err := listWSLDistros(); err == nil {
+		t.Fatal("expected parse error from invalid wsl.exe output")
+	}
+}
+
+func TestEnsureNsenterInstallSuccess(t *testing.T) {
+	withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		switch desc {
+		case "check nsenter":
+			return "", errInitTest("missing")
+		case "apt-get update (root)", "apt-get install (root)":
+			return "", nil
+		default:
+			return "", nil
+		}
+	})
+	if err := ensureNsenter("Ubuntu", false); err != nil {
+		t.Fatalf("ensureNsenter: %v", err)
+	}
+}
+
+func TestCheckDockerDesktopRunningPipeFallbackForStoppedService(t *testing.T) {
+	withRunHostCommandStub(t, func(ctx context.Context, verbose bool, desc string, command string, args ...string) (string, error) {
+		switch desc {
+		case "check docker desktop":
+			return "Stopped\n", nil
+		case "check docker pipe":
+			return "True\n", nil
+		default:
+			return "", errInitTest("unexpected")
+		}
+	})
+	ok, warn, err := checkDockerDesktopRunning(false)
+	if err != nil || !ok || warn != "" {
+		t.Fatalf("expected pipe fallback success, got ok=%v warn=%q err=%v", ok, warn, err)
+	}
+}
+
+func TestResolveWSLStateStoreHomeFallbackSuccess(t *testing.T) {
+	withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		switch desc {
+		case "resolve XDG_STATE_HOME":
+			return "\n", nil
+		case "resolve HOME":
+			return "/home/tester\n", nil
+		default:
+			return "", nil
+		}
+	})
+	stateDir, err := resolveWSLStateStore("Ubuntu", false)
+	if err != nil {
+		t.Fatalf("resolveWSLStateStore: %v", err)
+	}
+	if stateDir != "/home/tester/.local/state/sqlrs/store" {
+		t.Fatalf("unexpected state dir: %q", stateDir)
+	}
+}
+
+func TestResolveWSLStateStoreHomeCommandError(t *testing.T) {
+	withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		switch desc {
+		case "resolve XDG_STATE_HOME":
+			return "\n", nil
+		case "resolve HOME":
+			return "", errInitTest("missing")
+		default:
+			return "", nil
+		}
+	})
+	if _, err := resolveWSLStateStore("Ubuntu", false); err == nil || !strings.Contains(err.Error(), "HOME is empty") {
+		t.Fatalf("expected HOME command error, got %v", err)
+	}
+}
+
+func TestResolveSystemdMountUnitNilContextSuccess(t *testing.T) {
+	withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		if ctx == nil {
+			t.Fatal("expected nil context to be normalized")
+		}
+		return "sqlrs.mount\n", nil
+	})
+	unit, err := resolveSystemdMountUnit(nil, "Ubuntu", "/state", false)
+	if err != nil || unit != "sqlrs.mount" {
+		t.Fatalf("unexpected mount unit: %q err=%v", unit, err)
+	}
+}
+
+func TestResolveWSLPartitionUUIDNilContextSuccess(t *testing.T) {
+	withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		if ctx == nil {
+			t.Fatal("expected nil context to be normalized")
+		}
+		return "uuid-2\n", nil
+	})
+	uuid, err := resolveWSLPartitionUUID(nil, "Ubuntu", "/dev/sda1", false)
+	if err != nil || uuid != "uuid-2" {
+		t.Fatalf("unexpected uuid: %q err=%v", uuid, err)
+	}
+}
+
+func TestFindWSLDiskParseAndSelectionErrors(t *testing.T) {
+	t.Run("parse error", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			return "broken not-a-number disk", nil
+		})
+		if _, _, err := findWSLDisk(context.Background(), "Ubuntu", 1024, false); err == nil {
+			t.Fatal("expected parseLsblk error")
+		}
+	})
+
+	t.Run("multiple matching disks", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			return "NAME SIZE TYPE PKNAME\nsda 1024 disk\nsdb 1024 disk\n", nil
+		})
+		if _, _, err := findWSLDisk(context.Background(), "Ubuntu", 1024, false); err == nil {
+			t.Fatal("expected multiple matching disks error")
+		}
+	})
+}
+
+func TestEnsureBtrfsOnPartitionAdditionalBranches(t *testing.T) {
+	t.Run("findmnt error", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			if desc == "findmnt (root)" {
+				return "", errInitTest("permission denied")
+			}
+			return "", nil
+		})
+		if err := ensureBtrfsOnPartition(context.Background(), "Ubuntu", "/dev/sda1", false, false); err == nil {
+			t.Fatal("expected findmnt error")
+		}
+	})
+
+	t.Run("detected btrfs without format", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			switch desc {
+			case "findmnt (root)":
+				return "", errInitTest("exit status 1")
+			case "detect filesystem":
+				return "btrfs\n", nil
+			default:
+				return "", nil
+			}
+		})
+		if err := ensureBtrfsOnPartition(context.Background(), "Ubuntu", "/dev/sda1", false, false); err != nil {
+			t.Fatalf("expected detected btrfs success, got %v", err)
+		}
+	})
+
+	t.Run("detect error without format permission", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			switch desc {
+			case "findmnt (root)":
+				return "", errInitTest("exit status 1")
+			case "detect filesystem":
+				return "", errInitTest("blkid failed")
+			default:
+				return "", nil
+			}
+		})
+		err := ensureBtrfsOnPartition(context.Background(), "Ubuntu", "/dev/sda1", false, false)
+		if err == nil || !strings.Contains(err.Error(), "filesystem is not btrfs") {
+			t.Fatalf("expected fallback non-btrfs error, got %v", err)
+		}
+	})
+
+	t.Run("format error", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			switch desc {
+			case "findmnt (root)":
+				return "", errInitTest("exit status 1")
+			case "detect filesystem":
+				return "\n", nil
+			case "wipefs (root)":
+				return "", errInitTest("command not found")
+			case "format btrfs (root)":
+				return "", errInitTest("mkfs failed")
+			default:
+				return "", nil
+			}
+		})
+		if err := ensureBtrfsOnPartition(context.Background(), "Ubuntu", "/dev/sda1", false, false); err == nil || !strings.Contains(err.Error(), "mkfs failed") {
+			t.Fatalf("expected format error, got %v", err)
+		}
+	})
+
+	t.Run("wait verification error", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			switch desc {
+			case "findmnt (root)":
+				return "", errInitTest("exit status 1")
+			case "detect filesystem":
+				return "\n", nil
+			case "wipefs (root)":
+				return "", errInitTest("command not found")
+			case "format btrfs (root)":
+				return "", nil
+			case "verify filesystem (root)":
+				return "", errInitTest("verify failed")
+			case "probe mount dir (root)":
+				return "/tmp/sqlrs-mount-1\n", nil
+			case "probe mount (root)":
+				return "", errInitTest("probe failed")
+			case "cleanup probe dir (root)":
+				return "", nil
+			default:
+				return "", nil
+			}
+		})
+		if err := ensureBtrfsOnPartition(nil, "Ubuntu", "/dev/sda1", false, false); err == nil || !strings.Contains(err.Error(), "verify failed") {
+			t.Fatalf("expected wait verification error, got %v", err)
+		}
+	})
+}
+
+func TestEnsureSystemdMountUnitActiveDefaultFSTypeAndInactiveAfterStart(t *testing.T) {
+	t.Run("empty fstype defaults to btrfs", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			switch desc {
+			case "check mount unit (root)":
+				return "active\n", nil
+			case "findmnt (root)":
+				return "btrfs\n", nil
+			default:
+				return "", nil
+			}
+		})
+		if err := ensureSystemdMountUnitActive(nil, "Ubuntu", "sqlrs.mount", "/state", "", false); err != nil {
+			t.Fatalf("expected default fstype success, got %v", err)
+		}
+	})
+
+	t.Run("still inactive after start", func(t *testing.T) {
+		checkCalls := 0
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			switch desc {
+			case "check mount unit (root)":
+				checkCalls++
+				if checkCalls == 1 {
+					return "inactive\n", nil
+				}
+				return "failed\n", nil
+			case "start mount unit (root)":
+				return "", nil
+			default:
+				return "", nil
+			}
+		})
+		if err := ensureSystemdMountUnitActive(context.Background(), "Ubuntu", "sqlrs.mount", "/state", "btrfs", false); err == nil || !strings.Contains(err.Error(), "not active") {
+			t.Fatalf("expected inactive-after-start error, got %v", err)
+		}
+	})
+}
+
+func TestWaitForPartitionFSTypeEmptyType(t *testing.T) {
+	withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		switch desc {
+		case "verify filesystem (root)":
+			return "\n", nil
+		case "probe mount dir (root)":
+			return "/tmp/sqlrs-mount-1\n", nil
+		case "probe mount (root)":
+			return "", errInitTest("probe failed")
+		case "cleanup probe dir (root)":
+			return "", nil
+		default:
+			return "", nil
+		}
+	})
+	err := waitForPartitionFSType(nil, "Ubuntu", "/dev/sda1", "btrfs", false)
+	if err == nil || !strings.Contains(err.Error(), "probe failed") {
+		t.Fatalf("expected probe fallback error, got %v", err)
+	}
+}
+
+func TestWaitForPartitionFSTypeMismatchAndProbeMountBranches(t *testing.T) {
+	t.Run("mismatched final filesystem", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			if desc == "verify filesystem (root)" {
+				return "ext4\n", nil
+			}
+			return "", nil
+		})
+		err := waitForPartitionFSType(nil, "Ubuntu", "/dev/sda1", "btrfs", false)
+		if err == nil || !strings.Contains(err.Error(), "ext4") {
+			t.Fatalf("expected mismatch error, got %v", err)
+		}
+	})
+
+	t.Run("probe mount nil context command error", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			if ctx == nil {
+				t.Fatal("expected nil context to be normalized")
+			}
+			if desc == "probe mount dir (root)" {
+				return "", errInitTest("mktemp failed")
+			}
+			return "", nil
+		})
+		if err := probeBtrfsMount(nil, "Ubuntu", "/dev/sda1", false); err == nil || !strings.Contains(err.Error(), "mktemp failed") {
+			t.Fatalf("expected probe dir error, got %v", err)
+		}
+	})
+}
+
+func TestWaitForMountFSTypeAdditionalBranches(t *testing.T) {
+	t.Run("nil context success", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			if ctx == nil {
+				t.Fatal("expected nil context to be normalized")
+			}
+			if desc == "findmnt (root)" {
+				return "btrfs\n", nil
+			}
+			return "", nil
+		})
+		if err := waitForMountFSType(nil, "Ubuntu", "/state", "btrfs", false); err != nil {
+			t.Fatalf("expected mount verification success, got %v", err)
+		}
+	})
+
+	t.Run("last error wins", func(t *testing.T) {
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			if desc == "findmnt (root)" {
+				return "", errInitTest("findmnt failed")
+			}
+			return "", nil
+		})
+		if err := waitForMountFSType(context.Background(), "Ubuntu", "/state", "btrfs", false); err == nil || !strings.Contains(err.Error(), "findmnt failed") {
+			t.Fatalf("expected last error, got %v", err)
+		}
+	})
+}
+
+func TestEnsureBtrfsSubvolumesCreateError(t *testing.T) {
+	withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+		switch desc {
+		case "check path":
+			return "", errInitTest("No such file")
+		case "create subvolume (root)":
+			return "", errInitTest("create failed")
+		default:
+			return "", nil
+		}
+	})
+	if err := ensureBtrfsSubvolumes(context.Background(), "Ubuntu", "/state", false); err == nil || !strings.Contains(err.Error(), "create failed") {
+		t.Fatalf("expected create subvolume error, got %v", err)
+	}
+}
+
+func TestReinitWSLStoreAdditionalErrorBranches(t *testing.T) {
+	t.Run("unmount error is returned", func(t *testing.T) {
+		temp := t.TempDir()
+		vhdxPath := filepath.Join(temp, "btrfs.vhdx")
+		if err := os.WriteFile(vhdxPath, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write vhdx: %v", err)
+		}
+
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			switch desc {
+			case "findmnt (root)":
+				return "btrfs\n", nil
+			case "unmount btrfs (root)":
+				return "", errInitTest("boom")
+			default:
+				return "", nil
+			}
+		})
+		withRunHostCommandStub(t, func(ctx context.Context, verbose bool, desc string, command string, args ...string) (string, error) {
+			return "", nil
+		})
+
+		if err := reinitWSLStore(context.Background(), "Ubuntu", "/state", vhdxPath, "unit.mount", false); err == nil || !strings.Contains(err.Error(), "boom") {
+			t.Fatalf("expected unmount error, got %v", err)
+		}
+	})
+
+	t.Run("remove error is returned", func(t *testing.T) {
+		temp := t.TempDir()
+		vhdxPath := filepath.Join(temp, "btrfs.vhdx")
+		if err := os.Mkdir(vhdxPath, 0o700); err != nil {
+			t.Fatalf("mkdir vhdx path: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(vhdxPath, "nested"), []byte("x"), 0o600); err != nil {
+			t.Fatalf("write nested file: %v", err)
+		}
+
+		withRunWSLCommandStub(t, func(ctx context.Context, distro string, verbose bool, desc string, command string, args ...string) (string, error) {
+			if desc == "findmnt (root)" {
+				return "", errInitTest("exit status 1")
+			}
+			return "", nil
+		})
+		withRunHostCommandStub(t, func(ctx context.Context, verbose bool, desc string, command string, args ...string) (string, error) {
+			return "", nil
+		})
+
+		if err := reinitWSLStore(context.Background(), "Ubuntu", "/state", vhdxPath, "unit.mount", false); err == nil {
+			t.Fatal("expected os.Remove error for directory path")
+		}
+	})
+}
+
+func TestRunWSLCommandAllowFailureSuccessAndRootMode(t *testing.T) {
+	withFakeWSL(t)
+	t.Setenv("WSL_STDOUT", "ok")
+	out, err := runWSLCommandAllowFailure(nil, "Ubuntu", false, "check (root)", "true")
+	if err != nil || strings.TrimSpace(out) != "ok" {
+		t.Fatalf("unexpected allow-failure success output: %q err=%v", out, err)
+	}
+}
+
+func TestRunWSLCommandFormattingWithStderr(t *testing.T) {
+	withFakeWSL(t)
+	t.Setenv("WSL_STDERR", "boom")
+	t.Setenv("WSL_EXIT", "2")
+	if _, err := runWSLCommand(nil, "Ubuntu", false, "check", "true"); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected stderr-aware error, got %v", err)
+	}
+}
+
+func TestRunWSLCommandWithInputRootModeAndStderr(t *testing.T) {
+	withFakeWSL(t)
+	t.Setenv("WSL_STDERR", "boom")
+	t.Setenv("WSL_EXIT", "2")
+	if _, err := runWSLCommandWithInput(nil, "Ubuntu", false, "check (root)", "payload", "true"); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected stderr-aware root-mode input error, got %v", err)
+	}
+}
+
+func TestRunHostCommandFormattingWithStderr(t *testing.T) {
+	var cmd string
+	var args []string
+	if runtime.GOOS == "windows" {
+		cmd = "cmd"
+		args = []string{"/c", "echo boom 1>&2 && exit /b 2"}
+	} else {
+		cmd = "sh"
+		args = []string{"-c", "echo boom 1>&2; exit 2"}
+	}
+	if _, err := runHostCommand(nil, false, "host", cmd, args...); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected stderr-aware host error, got %v", err)
 	}
 }
 

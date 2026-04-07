@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +74,56 @@ func TestRunDiff_InvalidScope(t *testing.T) {
 	err := runDiff(&out, nil, t.TempDir(), []string{"--from-path", "/left", "plan:psql"}, "human", false)
 	if err == nil {
 		t.Fatal("expected error for missing --to-path")
+	}
+}
+
+func TestRunDiff_VerbosePathScopeAndInvalidFormat(t *testing.T) {
+	left := t.TempDir()
+	right := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := runDiff(&stdout, &stderr, t.TempDir(), []string{
+		"--from-path", left,
+		"--to-path", right,
+		"plan:psql", "--", "-f", "a.sql",
+	}, "yaml", true)
+	if err == nil {
+		t.Fatal("expected invalid output format error")
+	}
+	if got := err.Error(); !strings.Contains(got, "invalid output format for diff") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"diff scope: --from-path " + left + " --to-path " + right,
+		"wrapped command: plan:psql -- -f a.sql",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("expected %q in stderr %q", want, stderr.String())
+		}
+	}
+}
+
+func TestRunDiff_VerboseRefScopeAndEmptyFormat(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := runDiff(&stdout, &stderr, t.TempDir(), []string{
+		"--from-ref", "main",
+		"--to-ref", "HEAD",
+		"plan:psql", "--", "-f", "a.sql",
+	}, "", true)
+	if err == nil {
+		t.Fatal("expected diff execution error for missing repo context")
+	}
+	for _, want := range []string{
+		"diff scope: --from-ref main --to-ref HEAD",
+		"ref-mode=worktree",
+		"wrapped command: plan:psql -- -f a.sql",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("expected %q in stderr %q", want, stderr.String())
+		}
 	}
 }
 
