@@ -34,6 +34,16 @@ func (p *discoverProgressWriter) Update(event discover.ProgressEvent) {
 
 func formatDiscoverProgressLine(event discover.ProgressEvent) string {
 	switch event.Stage {
+	case discover.ProgressStageAnalyzerStart:
+		if analyzer := strings.TrimSpace(event.Analyzer); analyzer != "" {
+			return fmt.Sprintf("discover: analyzer %s start", analyzer)
+		}
+		return ""
+	case discover.ProgressStageAnalyzerDone:
+		if analyzer := strings.TrimSpace(event.Analyzer); analyzer != "" {
+			return fmt.Sprintf("discover: analyzer %s done findings=%d", analyzer, event.Findings)
+		}
+		return ""
 	case discover.ProgressStageScanStart:
 		return "discover: scanning workspace"
 	case discover.ProgressStageScanProgress:
@@ -70,6 +80,9 @@ func formatDiscoverProgressLine(event discover.ProgressEvent) string {
 
 func formatDiscoverProgressSubject(event discover.ProgressEvent) string {
 	parts := make([]string, 0, 4)
+	if analyzer := strings.TrimSpace(event.Analyzer); analyzer != "" {
+		parts = append(parts, "analyzer="+analyzer)
+	}
 	if class := strings.TrimSpace(string(event.Class)); class != "" {
 		parts = append(parts, "class="+class)
 	}

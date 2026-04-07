@@ -277,3 +277,16 @@ func TestParseArgsDiscoverCommand(t *testing.T) {
 		t.Fatalf("unexpected discover args: %q", got)
 	}
 }
+
+func TestParseArgsDiscoverCommandMultipleAnalyzers(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"discover", "--gitignore", "--vscode"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "discover" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "--gitignore|--vscode" {
+		t.Fatalf("unexpected discover args: %q", got)
+	}
+}

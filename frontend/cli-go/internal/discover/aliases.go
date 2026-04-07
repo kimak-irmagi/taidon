@@ -18,36 +18,49 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Options carries the workspace-bounded inputs for the advisory discover slice.
+// Options carries the workspace-bounded inputs for the advisory discover
+// analyzers described in docs/architecture/discover-component-structure.md.
 type Options struct {
-	WorkspaceRoot string
-	CWD           string
-	Progress      Progress
+	WorkspaceRoot     string
+	CWD               string
+	SelectedAnalyzers []string
+	ShellFamily       string
+	Progress          Progress
 }
 
 const discoverScanHeartbeat = 64
 
-// Finding is one ranked advisory suggestion or validation note.
+// Finding is one advisory suggestion or validation note emitted by a discover
+// analyzer.
 type Finding struct {
-	Type          alias.Class `json:"type"`
-	Kind          string      `json:"kind"`
-	Ref           string      `json:"ref"`
-	File          string      `json:"file"`
-	AliasPath     string      `json:"alias_path"`
-	Reason        string      `json:"reason"`
-	CreateCommand string      `json:"create_command"`
-	Score         int         `json:"score"`
-	Valid         bool        `json:"valid"`
-	Error         string      `json:"error,omitempty"`
+	Analyzer         string           `json:"analyzer,omitempty"`
+	Target           string           `json:"target,omitempty"`
+	Action           string           `json:"action,omitempty"`
+	FollowUpCommand  *FollowUpCommand `json:"follow_up_command,omitempty"`
+	SuggestedEntries []string         `json:"suggested_entries,omitempty"`
+	JSONPayload      string           `json:"json_payload,omitempty"`
+	Type             alias.Class      `json:"type"`
+	Kind             string           `json:"kind"`
+	Ref              string           `json:"ref"`
+	File             string           `json:"file"`
+	AliasPath        string           `json:"alias_path"`
+	Reason           string           `json:"reason"`
+	CreateCommand    string           `json:"create_command"`
+	Score            int              `json:"score"`
+	Valid            bool             `json:"valid"`
+	Error            string           `json:"error,omitempty"`
 }
 
-// Report aggregates the ranked findings produced by the aliases analyzer.
+// Report aggregates the advisory findings emitted by the selected discover
+// analyzers.
 type Report struct {
-	Scanned     int       `json:"scanned"`
-	Prefiltered int       `json:"prefiltered"`
-	Validated   int       `json:"validated"`
-	Suppressed  int       `json:"suppressed"`
-	Findings    []Finding `json:"findings"`
+	SelectedAnalyzers []string          `json:"selected_analyzers,omitempty"`
+	Summaries         []AnalyzerSummary `json:"summaries,omitempty"`
+	Scanned           int               `json:"scanned"`
+	Prefiltered       int               `json:"prefiltered"`
+	Validated         int               `json:"validated"`
+	Suppressed        int               `json:"suppressed"`
+	Findings          []Finding         `json:"findings"`
 }
 
 type fileRecord struct {
@@ -115,7 +128,10 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		return Report{}, err
 	}
 
-	report := Report{Scanned: scanned}
+	report := Report{
+		SelectedAnalyzers: []string{AnalyzerAliases},
+		Scanned:           scanned,
+	}
 	proposals := make([]candidateProposal, 0, len(files))
 	for _, file := range files {
 		proposal, ok := proposeCandidate(file)
@@ -230,6 +246,9 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		}
 
 		findings = append(findings, Finding{
+			Analyzer:      AnalyzerAliases,
+			Target:        candidate.WorkspaceRel,
+			Action:        "materialize a repo-tracked alias file",
 			Type:          candidate.Class,
 			Kind:          candidate.Kind,
 			Ref:           candidate.Ref,
@@ -237,9 +256,13 @@ func AnalyzeAliases(opts Options) (Report, error) {
 			AliasPath:     target.File,
 			Reason:        candidate.Reason,
 			CreateCommand: candidate.Command,
-			Score:         candidate.Score,
-			Valid:         candidate.Valid,
-			Error:         candidate.Error,
+			FollowUpCommand: &FollowUpCommand{
+				ShellFamily: normalizedShellFamily(opts.ShellFamily),
+				Command:     candidate.Command,
+			},
+			Score: candidate.Score,
+			Valid: candidate.Valid,
+			Error: candidate.Error,
 		})
 	}
 
@@ -256,6 +279,7 @@ func AnalyzeAliases(opts Options) (Report, error) {
 		return findings[i].Kind < findings[j].Kind
 	})
 	report.Findings = findings
+	report.Summaries = []AnalyzerSummary{summarizeAnalyzerReport(AnalyzerAliases, report)}
 	emitProgress(opts.Progress, ProgressEvent{
 		Stage:       ProgressStageSummary,
 		Scanned:     report.Scanned,

@@ -58,32 +58,36 @@ func captureRunOutput(t *testing.T, fn func() error) (string, string, error) {
 func TestDiscoverProgressWriterFormatsMilestones(t *testing.T) {
 	var buf bytes.Buffer
 	writer := newDiscoverProgressWriter(&buf)
+	writer.Update(discover.ProgressEvent{Stage: discover.ProgressStageAnalyzerStart, Analyzer: discover.AnalyzerAliases})
 	writer.Update(discover.ProgressEvent{Stage: discover.ProgressStageScanStart})
 	writer.Update(discover.ProgressEvent{Stage: discover.ProgressStageScanProgress, Scanned: 64})
 	writer.Update(discover.ProgressEvent{
-		Stage: discover.ProgressStageCandidate,
-		Class: alias.ClassPrepare,
-		Ref:   "schema",
-		Kind:  "psql",
-		File:  "schema.sql",
-		Score: 80,
+		Stage:    discover.ProgressStageCandidate,
+		Analyzer: discover.AnalyzerAliases,
+		Class:    alias.ClassPrepare,
+		Ref:      "schema",
+		Kind:     "psql",
+		File:     "schema.sql",
+		Score:    80,
 	})
 	writer.Update(discover.ProgressEvent{
-		Stage: discover.ProgressStageValidated,
-		Class: alias.ClassPrepare,
-		Ref:   "schema",
-		Kind:  "psql",
-		File:  "schema.sql",
-		Score: 80,
-		Valid: true,
+		Stage:    discover.ProgressStageValidated,
+		Analyzer: discover.AnalyzerAliases,
+		Class:    alias.ClassPrepare,
+		Ref:      "schema",
+		Kind:     "psql",
+		File:     "schema.sql",
+		Score:    80,
+		Valid:    true,
 	})
 	writer.Update(discover.ProgressEvent{
-		Stage:  discover.ProgressStageSuppressed,
-		Class:  alias.ClassPrepare,
-		Ref:    "child",
-		Kind:   "psql",
-		File:   "child.sql",
-		Reason: "covered by existing alias",
+		Stage:    discover.ProgressStageSuppressed,
+		Analyzer: discover.AnalyzerAliases,
+		Class:    alias.ClassPrepare,
+		Ref:      "child",
+		Kind:     "psql",
+		File:     "child.sql",
+		Reason:   "covered by existing alias",
 	})
 	writer.Update(discover.ProgressEvent{
 		Stage:       discover.ProgressStageSummary,
@@ -93,15 +97,18 @@ func TestDiscoverProgressWriterFormatsMilestones(t *testing.T) {
 		Suppressed:  1,
 		Findings:    1,
 	})
+	writer.Update(discover.ProgressEvent{Stage: discover.ProgressStageAnalyzerDone, Analyzer: discover.AnalyzerAliases, Findings: 1})
 
 	out := buf.String()
 	for _, want := range []string{
+		"discover: analyzer aliases start",
 		"discover: scanning workspace",
 		"discover: scanned 64 files",
-		"discover: candidate class=prepare ref=schema kind=psql file=schema.sql score=80",
-		"discover: validated candidate class=prepare ref=schema kind=psql file=schema.sql score=80",
-		"discover: suppressed candidate class=prepare ref=child kind=psql file=child.sql (covered by existing alias)",
+		"discover: candidate analyzer=aliases class=prepare ref=schema kind=psql file=schema.sql score=80",
+		"discover: validated candidate analyzer=aliases class=prepare ref=schema kind=psql file=schema.sql score=80",
+		"discover: suppressed candidate analyzer=aliases class=prepare ref=child kind=psql file=child.sql (covered by existing alias)",
 		"discover: summary scanned=65 prefiltered=1 validated=1 suppressed=1 findings=1",
+		"discover: analyzer aliases done findings=1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in %q", want, out)
@@ -115,40 +122,53 @@ func TestRunDiscoverVerboseProgressToStderr(t *testing.T) {
 	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
 	withWorkingDir(t, workspace)
 
-	prevAnalyze := analyzeAliasesFn
-	analyzeAliasesFn = func(opts discover.Options) (discover.Report, error) {
+	prevAnalyze := analyzeDiscoverFn
+	analyzeDiscoverFn = func(opts discover.Options) (discover.Report, error) {
+		if got := strings.Join(opts.SelectedAnalyzers, ","); got != "aliases,gitignore,vscode,prepare-shaping" {
+			t.Fatalf("unexpected selected analyzers: %q", got)
+		}
 		if opts.Progress == nil {
 			t.Fatalf("expected progress sink")
 		}
+		opts.Progress.Update(discover.ProgressEvent{Stage: discover.ProgressStageAnalyzerStart, Analyzer: discover.AnalyzerAliases})
 		opts.Progress.Update(discover.ProgressEvent{Stage: discover.ProgressStageScanStart})
 		opts.Progress.Update(discover.ProgressEvent{Stage: discover.ProgressStagePrefilterDone, Scanned: 3, Prefiltered: 1})
 		opts.Progress.Update(discover.ProgressEvent{
-			Stage: discover.ProgressStageCandidate,
-			Class: alias.ClassPrepare,
-			Ref:   "schema",
-			Kind:  "psql",
-			File:  "schema.sql",
-			Score: 80,
+			Stage:    discover.ProgressStageCandidate,
+			Analyzer: discover.AnalyzerAliases,
+			Class:    alias.ClassPrepare,
+			Ref:      "schema",
+			Kind:     "psql",
+			File:     "schema.sql",
+			Score:    80,
 		})
 		opts.Progress.Update(discover.ProgressEvent{
-			Stage: discover.ProgressStageValidated,
-			Class: alias.ClassPrepare,
-			Ref:   "schema",
-			Kind:  "psql",
-			File:  "schema.sql",
-			Score: 80,
-			Valid: true,
+			Stage:    discover.ProgressStageValidated,
+			Analyzer: discover.AnalyzerAliases,
+			Class:    alias.ClassPrepare,
+			Ref:      "schema",
+			Kind:     "psql",
+			File:     "schema.sql",
+			Score:    80,
+			Valid:    true,
 		})
 		opts.Progress.Update(discover.ProgressEvent{
-			Stage:   discover.ProgressStageSummary,
-			Scanned: 3, Prefiltered: 1, Validated: 1, Suppressed: 0, Findings: 1,
-		})
-		return discover.Report{
+			Stage:       discover.ProgressStageSummary,
 			Scanned:     3,
 			Prefiltered: 1,
 			Validated:   1,
 			Suppressed:  0,
+			Findings:    1,
+		})
+		opts.Progress.Update(discover.ProgressEvent{Stage: discover.ProgressStageAnalyzerDone, Analyzer: discover.AnalyzerAliases, Findings: 1})
+		return discover.Report{
+			SelectedAnalyzers: []string{discover.AnalyzerAliases},
+			Scanned:           3,
+			Prefiltered:       1,
+			Validated:         1,
+			Suppressed:        0,
 			Findings: []discover.Finding{{
+				Analyzer:      discover.AnalyzerAliases,
 				Type:          alias.ClassPrepare,
 				Kind:          "psql",
 				Ref:           "schema",
@@ -161,7 +181,7 @@ func TestRunDiscoverVerboseProgressToStderr(t *testing.T) {
 			}},
 		}, nil
 	}
-	t.Cleanup(func() { analyzeAliasesFn = prevAnalyze })
+	t.Cleanup(func() { analyzeDiscoverFn = prevAnalyze })
 
 	stdout, stderr, err := captureRunOutput(t, func() error {
 		return Run([]string{"--workspace", workspace, "--verbose", "discover"})
@@ -169,15 +189,17 @@ func TestRunDiscoverVerboseProgressToStderr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(stdout, "1. VALID prepare") {
+	if !strings.Contains(stdout, "[aliases]") || !strings.Contains(stdout, "1. VALID prepare") {
 		t.Fatalf("unexpected stdout: %q", stdout)
 	}
 	for _, want := range []string{
+		"discover: analyzer aliases start",
 		"discover: scanning workspace",
 		"discover: prefiltered 1 candidates from 3 scanned files",
-		"discover: candidate class=prepare ref=schema kind=psql file=schema.sql score=80",
-		"discover: validated candidate class=prepare ref=schema kind=psql file=schema.sql score=80",
+		"discover: candidate analyzer=aliases class=prepare ref=schema kind=psql file=schema.sql score=80",
+		"discover: validated candidate analyzer=aliases class=prepare ref=schema kind=psql file=schema.sql score=80",
 		"discover: summary scanned=3 prefiltered=1 validated=1 suppressed=0 findings=1",
+		"discover: analyzer aliases done findings=1",
 	} {
 		if !strings.Contains(stderr, want) {
 			t.Fatalf("expected %q in %q", want, stderr)
@@ -192,15 +214,17 @@ func TestRunDiscoverSpinnerProgressToStderr(t *testing.T) {
 	withWorkingDir(t, workspace)
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
 
-	prevAnalyze := analyzeAliasesFn
-	analyzeAliasesFn = func(opts discover.Options) (discover.Report, error) {
+	prevAnalyze := analyzeDiscoverFn
+	analyzeDiscoverFn = func(opts discover.Options) (discover.Report, error) {
 		time.Sleep(750 * time.Millisecond)
 		return discover.Report{
-			Scanned:     1,
-			Prefiltered: 1,
-			Validated:   1,
-			Suppressed:  0,
+			SelectedAnalyzers: []string{discover.AnalyzerAliases},
+			Scanned:           1,
+			Prefiltered:       1,
+			Validated:         1,
+			Suppressed:        0,
 			Findings: []discover.Finding{{
+				Analyzer:      discover.AnalyzerAliases,
 				Type:          alias.ClassPrepare,
 				Kind:          "psql",
 				Ref:           "schema",
@@ -213,7 +237,7 @@ func TestRunDiscoverSpinnerProgressToStderr(t *testing.T) {
 			}},
 		}, nil
 	}
-	t.Cleanup(func() { analyzeAliasesFn = prevAnalyze })
+	t.Cleanup(func() { analyzeDiscoverFn = prevAnalyze })
 
 	_, stderr, err := captureRunOutput(t, func() error {
 		return Run([]string{"--workspace", workspace, "discover"})
@@ -236,18 +260,20 @@ func TestRunDiscoverSpinnerDoesNotInterleaveWithReportOutput(t *testing.T) {
 	withWorkingDir(t, workspace)
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
 
-	prevAnalyze := analyzeAliasesFn
-	analyzeAliasesFn = func(opts discover.Options) (discover.Report, error) {
+	prevAnalyze := analyzeDiscoverFn
+	analyzeDiscoverFn = func(opts discover.Options) (discover.Report, error) {
 		if opts.Progress != nil {
 			t.Fatalf("expected no progress sink in non-verbose human mode")
 		}
 		time.Sleep(750 * time.Millisecond)
 		return discover.Report{
-			Scanned:     1,
-			Prefiltered: 1,
-			Validated:   1,
-			Suppressed:  0,
+			SelectedAnalyzers: []string{discover.AnalyzerAliases},
+			Scanned:           1,
+			Prefiltered:       1,
+			Validated:         1,
+			Suppressed:        0,
 			Findings: []discover.Finding{{
+				Analyzer:      discover.AnalyzerAliases,
 				Type:          alias.ClassPrepare,
 				Kind:          "psql",
 				Ref:           "schema",
@@ -260,7 +286,7 @@ func TestRunDiscoverSpinnerDoesNotInterleaveWithReportOutput(t *testing.T) {
 			}},
 		}, nil
 	}
-	t.Cleanup(func() { analyzeAliasesFn = prevAnalyze })
+	t.Cleanup(func() { analyzeDiscoverFn = prevAnalyze })
 
 	oldStdout := os.Stdout
 	oldStderr := os.Stderr
@@ -307,18 +333,20 @@ func TestRunDiscoverJSONOutputShowsProgressOnStderr(t *testing.T) {
 	withWorkingDir(t, workspace)
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
 
-	prevAnalyze := analyzeAliasesFn
-	analyzeAliasesFn = func(opts discover.Options) (discover.Report, error) {
+	prevAnalyze := analyzeDiscoverFn
+	analyzeDiscoverFn = func(opts discover.Options) (discover.Report, error) {
 		if opts.Progress != nil {
 			t.Fatalf("expected no progress sink in non-verbose JSON mode")
 		}
 		time.Sleep(750 * time.Millisecond)
 		return discover.Report{
-			Scanned:     1,
-			Prefiltered: 1,
-			Validated:   1,
-			Suppressed:  0,
+			SelectedAnalyzers: []string{discover.AnalyzerAliases},
+			Scanned:           1,
+			Prefiltered:       1,
+			Validated:         1,
+			Suppressed:        0,
 			Findings: []discover.Finding{{
+				Analyzer:      discover.AnalyzerAliases,
 				Type:          alias.ClassPrepare,
 				Kind:          "psql",
 				Ref:           "schema",
@@ -331,7 +359,7 @@ func TestRunDiscoverJSONOutputShowsProgressOnStderr(t *testing.T) {
 			}},
 		}, nil
 	}
-	t.Cleanup(func() { analyzeAliasesFn = prevAnalyze })
+	t.Cleanup(func() { analyzeDiscoverFn = prevAnalyze })
 
 	stdout, stderr, err := captureRunOutput(t, func() error {
 		return Run([]string{"--workspace", workspace, "--output=json", "discover", "--aliases"})
