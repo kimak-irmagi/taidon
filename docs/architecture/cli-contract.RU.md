@@ -310,30 +310,40 @@ sqlrs discover [--aliases] [--gitignore] [--vscode] [--prepare-shaping]
 - `discover` read-only по умолчанию;
 - `discover` не предоставляет флаг `--apply` в этом срезе;
 - execution commands никогда не зависят от предыдущего discovery output;
-- `discover` сейчас по умолчанию запускает aliases-анализатор, если analyzer
-  flags не указаны;
-- `--aliases` - первый реализованный analyzer; он использует cheap prefilter,
+- analyzer flags являются additive;
+- если analyzer flags не указаны, `discover` запускает все stable analyzers в
+  canonical order;
+- первый stable analyzer set: `--aliases`, `--gitignore`, `--vscode` и
+  `--prepare-shaping`;
+- `--aliases` использует cheap prefilter,
   более глубокую специфичную для kind валидацию, ранжирование по топологии и
   отбрасывание уже покрытого существующими псевдонимами;
 - `discover --aliases` предлагает вероятные кандидаты `*.prep.s9s.yaml` /
   `*.run.s9s.yaml` для поддерживаемых SQL и Liquibase workflows и печатает готовую
   к копированию и запуску команду `sqlrs alias create ...` для каждого сильного
   кандидата;
-- human output рендерится как numbered multi-line blocks с ref, kind, file,
-  alias path, score и create command на отдельных строках;
+- `discover --gitignore` сообщает об отсутствии ignore coverage для local-only
+  workspace artifacts и может печатать shell-native follow-up command для
+  добавления недостающих ignore entries;
+- `discover --vscode` сообщает об отсутствующих или неполных `.vscode/*.json`
+  guidance files и может печатать shell-native follow-up command для создания
+  или merge недостающих entries без перезаписи unrelated settings;
+- `discover --prepare-shaping` сообщает advisory workflow-shaping opportunities
+  для лучшего prepare reuse и cache friendliness;
+- human output рендерится как numbered multi-line blocks с target, rationale и
+  при наличии follow-up command на отдельных строках;
 - `discover` пишет progress в `stderr`: delayed spinner в обычном режиме и
   line-based milestones в verbose mode;
-- verbose progress использует stage/candidate granularity и не трассирует
-  каждый просмотренный файл;
-- `--gitignore`, `--vscode` и `--prepare-shaping` зарезервированы для более
-  поздних slices и пока не реализованы;
-- последующие analyzers могут предлагать улучшения для repository hygiene или
-  cache shaping.
-- JSON output должен сохранять те же результаты и общую статистику в стабильной
-  форме, включая предлагаемые команды для создания псевдонимов.
+- verbose progress использует analyzer/stage/candidate granularity и не
+  трассирует каждый просмотренный файл;
+- если важен shell syntax, follow-up commands рендерятся для текущей shell
+  family;
+- JSON output должен сохранять selected analyzers, стабильные per-analyzer
+  summary counts и любые follow-up command strings в стабильной форме.
 
 См.:
 
+- [`docs/user-guides/sqlrs-discover.md`](../user-guides/sqlrs-discover.md)
 - [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
 - [`alias-create-flow.RU.md`](alias-create-flow.RU.md)
 - [`alias-create-component-structure.RU.md`](alias-create-component-structure.RU.md)

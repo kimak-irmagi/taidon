@@ -448,6 +448,10 @@ sqlrs alias check --run scripts/smoke.run.s9s.yaml.
 It is broader than alias generation and should remain a **verb**, not a
 subcommand under `alias`.
 
+The generic analyzer CLI design is tracked in
+[`sqlrs-discover.md`](sqlrs-discover.md). This document only captures the alias
+workflow interaction and the currently shipped `--aliases` slice.
+
 Current slice:
 
 ```text

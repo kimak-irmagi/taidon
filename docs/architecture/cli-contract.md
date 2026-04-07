@@ -321,29 +321,39 @@ Design rules:
 - `discover` is read-only by default;
 - `discover` does not expose an `--apply` flag in this slice;
 - execution commands never depend on prior discovery output;
-- `discover` currently defaults to the aliases analyzer when no analyzer flags
-  are supplied;
-- `--aliases` is the first implemented analyzer and is scored with a cheap
+- analyzer flags are additive;
+- if no analyzer flags are supplied, `discover` runs all stable analyzers in
+  canonical order;
+- the first stable analyzer set is `--aliases`, `--gitignore`, `--vscode`, and
+  `--prepare-shaping`;
+- `--aliases` uses a cheap
   prefilter, deeper kind-specific validation, topology ranking, and existing
   alias-coverage suppression;
 - `discover --aliases` suggests likely `*.prep.s9s.yaml` / `*.run.s9s.yaml`
   candidates for supported SQL and Liquibase workflows and prints a
   copy-paste `sqlrs alias create ...` command for each strong suggestion;
+- `discover --gitignore` reports missing ignore coverage for local-only
+  workspace artifacts and may print a shell-native follow-up command for
+  appending missing ignore entries;
+- `discover --vscode` reports missing or incomplete `.vscode/*.json` guidance
+  and may print a shell-native follow-up command for creating or merging the
+  missing entries while preserving unrelated settings;
+- `discover --prepare-shaping` reports advisory workflow-shaping opportunities
+  for better prepare reuse and cache friendliness;
 - human output is rendered as numbered multi-line blocks with the ref, kind,
-  file, alias path, score, and create command on separate lines;
+  target, rationale, and any follow-up command on separate lines;
 - `discover` writes progress to `stderr`: a delayed spinner in normal mode and
   line-based milestones in verbose mode;
-- verbose progress uses stage/candidate granularity and does not trace every
-  scanned file;
-- `--gitignore`, `--vscode`, and `--prepare-shaping` are reserved for later
-  slices and are not implemented yet;
-- follow-up analyzers may suggest repository hygiene or cache-shaping
-  improvements.
-- JSON output should preserve the same findings and summary counts in a stable
-  shape, including the suggested create command string.
+- verbose progress uses analyzer/stage/candidate granularity and does not trace
+  every scanned file;
+- when shell syntax matters, follow-up commands are rendered for the current
+  shell family;
+- JSON output should preserve selected analyzers, stable per-analyzer summary
+  counts, and any follow-up command strings in a stable shape.
 
 See:
 
+- [`docs/user-guides/sqlrs-discover.md`](../user-guides/sqlrs-discover.md)
 - [`docs/user-guides/sqlrs-aliases.md`](../user-guides/sqlrs-aliases.md)
 - [`alias-create-flow.md`](alias-create-flow.md)
 - [`alias-create-component-structure.md`](alias-create-component-structure.md)
