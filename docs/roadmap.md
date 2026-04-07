@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-03-31)
+## Status (as of 2026-04-07)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -139,8 +139,9 @@ gantt
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
 - **Next public local focus**: build on the landed alias/discover baseline with
-  follow-up discover analyzers and the later Git-aware CLI follow-up for
-  `sqlrs diff`/prepare provenance (`--ref`, provenance, cache explain).
+  generic discover analyzers first, then widen the Git-aware CLI follow-up
+  beyond the current `sqlrs diff` ref surface toward bounded `--ref`,
+  provenance, and cache explain for repository-aware prepare flows.
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -150,25 +151,23 @@ gantt
 
 - **Direction**: finish the remaining repository-guided M2 local DX surface now
   that alias execution, inspection, and workspace conventions have landed.
-- **Selected next PR**: advisory alias discovery
-  (`sqlrs discover --aliases`).
+- **Selected next PR**: generic discover analyzers.
 - **Next PR slice**:
-  - add `sqlrs discover --aliases` as the first advisory discover surface over
-    the current workspace slice;
-  - reuse the alias scan / resolve / check primitives already added for
-    `sqlrs alias ls/check`, so discovery does not duplicate inventory logic;
-  - surface actionable alias-oriented findings for the current repo slice before
-    adding broader discover analyzers, including copy-paste
-    `sqlrs alias create ...` commands;
-  - keep the discover layer extensible for follow-up analyzers over
-    `.gitignore`, `.vscode`, and prepare-shaping heuristics;
-  - cover workspace-scope defaults, filtering, and human/JSON rendering in docs
+  - extend `sqlrs discover` beyond the landed `--aliases` analyzer with the
+    first non-alias advisory analyzers, starting with the documented
+    `.gitignore`, `.vscode`, and prepare-shaping checks;
+  - preserve the existing read-only/advisory contract so analyzer output stays
+    separate from execution semantics;
+  - reuse the shared discover reporting surface instead of introducing
+    analyzer-specific command families or bespoke output formats;
+  - cover multi-analyzer selection, filtering, and human/JSON rendering in docs
     and tests.
-- **Immediately after**: generic discover analyzers, bounded local `--ref` for
-  `sqlrs diff`/prepare flows, then provenance and cache explain.
-- **Rationale**: alias execution and inspection are now usable and covered by
-  tests; the highest remaining local DX gap is advisory repository discovery
-  before moving into broader analyzers and later Git-aware flows.
+- **Immediately after**: bounded local `--ref` beyond the current `diff`
+  surface, then provenance and cache explain.
+- **Rationale**: `discover --aliases` is already shipped, while generic
+  discover analyzers are still entirely missing from the public CLI surface.
+  They complete the planned advisory local-repository hygiene slice before the
+  remaining Git-aware execution work widens `--ref` beyond `diff`.
 
 ---
 

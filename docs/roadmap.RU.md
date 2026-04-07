@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-03-31)
+## Статус (на 2026-04-07)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -141,9 +141,10 @@ gantt
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
 - **Следующий публичный local-фокус**: развивать уже влитый alias/discover
-  baseline через последующие discover analyzers и более поздний Git-aware CLI
-  follow-up для `sqlrs diff`/prepare provenance (`--ref`, provenance, cache
-  explain).
+  baseline сначала через generic discover analyzers, а затем расширять
+  Git-aware CLI follow-up за пределы текущего ref-surface у `sqlrs diff` в
+  сторону bounded `--ref`, provenance и cache explain для
+  repository-aware prepare flow.
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -153,26 +154,25 @@ gantt
 
 - **Направление**: закрыть оставшуюся repository-guided M2 local DX surface
   теперь, когда alias execution, inspection и workspace conventions уже влиты.
-- **Выбранный следующий PR**: advisory alias discovery
-  (`sqlrs discover --aliases`).
+- **Выбранный следующий PR**: generic discover analyzers.
 - **Следующий PR-срез**:
-  - добавить `sqlrs discover --aliases` как первую advisory discover-surface
-    поверх текущего workspace slice;
-  - переиспользовать alias scan / resolve / check primitives, уже добавленные
-    для `sqlrs alias ls/check`, чтобы discovery не дублировал inventory logic;
-  - показывать actionable alias-oriented findings для текущего repo slice перед
-    добавлением более широких discover analyzers, включая copy-paste
-    `sqlrs alias create ...` commands;
-  - сохранить discover layer расширяемым для последующих analyzers над
-    `.gitignore`, `.vscode` и prepare-shaping heuristics;
-  - покрыть workspace-scope defaults, filtering и human/JSON rendering в docs
+  - расширить `sqlrs discover` за пределы уже влитого анализатора
+    `--aliases`, добавив первые non-alias advisory analyzers, начиная с
+    задокументированных проверок для `.gitignore`, `.vscode` и
+    prepare-shaping;
+  - сохранить текущий read-only/advisory контракт, чтобы вывод analyzers
+    оставался отделён от execution semantics;
+  - переиспользовать общий discover reporting surface вместо отдельных
+    analyzer-specific command families или специальных output format-ов;
+  - покрыть multi-analyzer selection, filtering и human/JSON rendering в docs
     и тестах.
-- **Сразу после этого**: generic discover analyzers, bounded local `--ref` для
-  `sqlrs diff`/prepare flow, затем provenance и cache explain.
-- **Почему сейчас**: alias execution и inspection уже пригодны к использованию
-  и покрыты тестами; главный оставшийся local DX gap теперь в advisory
-  repository discovery перед переходом к более широким analyzers и поздним
-  Git-aware flow.
+- **Сразу после этого**: bounded local `--ref` за пределами текущего `diff`
+  surface, затем provenance и cache explain.
+- **Почему сейчас**: `discover --aliases` уже поставлен, а generic discover
+  analyzers всё ещё полностью отсутствуют в публичной CLI-поверхности. Они
+  закрывают запланированный advisory local-repository hygiene slice до того,
+  как оставшаяся Git-aware execution-работа расширит `--ref` за пределы
+  `diff`.
 
 ---
 
