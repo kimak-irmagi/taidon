@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-04-07)
+## Статус (на 2026-04-08)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -80,8 +80,6 @@ gantt
   state cache и ретеншн, локальная CLI-поверхность (`sqlrs init`, `sqlrs config`,
   `sqlrs ls`, `sqlrs status`, `sqlrs plan:psql`, `sqlrs plan:lb`, `sqlrs prepare:psql`,
   `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`), WSL
-  init flow (включая установку nsenter), логирование instance-delete.
-  `sqlrs prepare:lb`, `sqlrs run:psql`, `sqlrs run:pgbench`, `sqlrs rm`),
   WSL init flow (включая установку nsenter), логирование instance-delete.
 - **Отложено (names follow-up)**: более глубокие workflows вокруг runtime names
   и любая alias-to-name связка намеренно вынесены за пределы M2 local DX; текущие
@@ -120,6 +118,12 @@ gantt
   copy-paste команды создания alias, ограниченный обход workspace с progress
   reporting, human/JSON rendering и общие alias/discover heuristics для
   текущего среза репозитория.
+- **Сделано (M2 generic discover analyzers)**: `sqlrs discover` теперь работает
+  как registry-driven multi-analyzer advisory surface с additive-выбором
+  `--aliases` / `--gitignore` / `--vscode` / `--prepare-shaping`, стабильным
+  default-запуском по всем shipped analyzers, analyzer-grouped human/JSON
+  output, failure isolation и shell-aware follow-up командами для исправлений в
+  `.gitignore` и `.vscode`.
 - **Сделано (M2 shared inputset + diff path baseline)**: CLI теперь включает
   `sqlrs diff --from-path/--to-path` для `prepare:psql` и `prepare:lb`, а
   `prepare`, `plan`, `run`, `diff` и `alias check` теперь разделяют единый
@@ -140,11 +144,9 @@ gantt
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
-- **Следующий публичный local-фокус**: развивать уже влитый alias/discover
-  baseline сначала через generic discover analyzers, а затем расширять
-  Git-aware CLI follow-up за пределы текущего ref-surface у `sqlrs diff` в
-  сторону bounded `--ref`, provenance и cache explain для
-  repository-aware prepare flow.
+- **Следующий публичный local-фокус**: расширять Git-aware CLI follow-up за
+  пределы текущего ref-surface у `sqlrs diff` в сторону bounded local `--ref`,
+  а затем provenance и cache explain для repository-aware prepare flow.
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
@@ -154,25 +156,23 @@ gantt
 
 - **Направление**: закрыть оставшуюся repository-guided M2 local DX surface
   теперь, когда alias execution, inspection и workspace conventions уже влиты.
-- **Выбранный следующий PR**: generic discover analyzers.
+- **Выбранный следующий PR**: bounded local `--ref` за пределами текущего
+  `diff` surface.
 - **Следующий PR-срез**:
-  - расширить `sqlrs discover` за пределы уже влитого анализатора
-    `--aliases`, добавив первые non-alias advisory analyzers, начиная с
-    задокументированных проверок для `.gitignore`, `.vscode` и
-    prepare-shaping;
-  - сохранить текущий read-only/advisory контракт, чтобы вывод analyzers
-    оставался отделён от execution semantics;
-  - переиспользовать общий discover reporting surface вместо отдельных
-    analyzer-specific command families или специальных output format-ов;
-  - покрыть multi-analyzer selection, filtering и human/JSON rendering в docs
-    и тестах.
-- **Сразу после этого**: bounded local `--ref` за пределами текущего `diff`
-  surface, затем provenance и cache explain.
-- **Почему сейчас**: `discover --aliases` уже поставлен, а generic discover
-  analyzers всё ещё полностью отсутствуют в публичной CLI-поверхности. Они
-  закрывают запланированный advisory local-repository hygiene slice до того,
-  как оставшаяся Git-aware execution-работа расширит `--ref` за пределы
-  `diff`.
+  - расширить repository-aware local execution за пределы `sqlrs diff --ref`,
+    начав с первого bounded `--ref` support для prepare-oriented flows;
+  - сохранить текущую worktree-first safety posture и существующую
+    `internal/inputset` closure semantics, оставляя ref-scoped чтения явно
+    ограниченными;
+  - удержать срез пассивным и локальным: без Git mutations, без hosted
+    workflow expansion и без отдельного provenance UI на этом шаге;
+  - покрыть ref/path parity, cwd stability и обновления output/usage contract в
+    docs и тестах.
+- **Сразу после этого**: provenance и cache explain.
+- **Почему сейчас**: generic discover analyzers уже поставлены, поэтому
+  следующий отсутствующий шаг в M2 local DX — дать repository-aware
+  prepare-flow ограниченную поверхность `--ref` за пределами `diff`, а уже
+  потом наращивать explanation features.
 
 ---
 
@@ -265,9 +265,10 @@ gantt
   - явный alias inspection через `sqlrs alias ls/check`
   - явный alias creation через `sqlrs alias create`
 - Advisory discovery tooling:
-  - `sqlrs discover --aliases` с copy-paste `sqlrs alias create ...`
-    suggestions
-  - последующие analyzers для `.gitignore`, `.vscode` и prepare shaping
+  - `sqlrs discover` с `--aliases`, `--gitignore`, `--vscode` и
+    `--prepare-shaping`
+  - copy-paste follow-up команды для создания alias, а также suggestions по
+    исправлению `.gitignore` и `.vscode`
 - Git-aware CLI (passive):
   - `diff` в path mode
   - `diff`/prepare `--ref` (blob/worktree), provenance, cache explain
@@ -281,11 +282,11 @@ gantt
   с низким локальным setup friction и понятной диагностикой происхождения/
   содержимого кэша.
 
-**Статус**: в работе. Базовые alias execution, inspection, authoring и
+**Статус**: в работе. Базовые alias execution, inspection, authoring и generic
 advisory discovery уже влиты, `sqlrs diff` в path mode уже доступен, а shared
 `internal/inputset` semantics теперь обслуживает
-`prepare`/`plan`/`run`/`diff`/`alias check`; последующие discover analyzers,
-bounded `--ref` и provenance/cache explain ещё впереди.
+`prepare`/`plan`/`run`/`diff`/`alias check`; bounded `--ref` и
+provenance/cache explain ещё впереди.
 
 ---
 
