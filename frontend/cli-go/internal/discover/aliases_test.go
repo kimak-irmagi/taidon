@@ -41,6 +41,36 @@ func TestAnalyzeAliasesRanksRootAndBuildsCopyPasteCommand(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAliasesReportsGenericMetadata(t *testing.T) {
+	workspace := t.TempDir()
+	mustWriteFile(t, filepath.Join(workspace, "schema.sql"), []byte("create table users(id int);\n"))
+
+	report, err := AnalyzeAliases(Options{
+		WorkspaceRoot: workspace,
+		CWD:           workspace,
+		ShellFamily:   ShellFamilyPowerShell,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeAliases: %v", err)
+	}
+	if got := strings.Join(report.SelectedAnalyzers, ","); got != AnalyzerAliases {
+		t.Fatalf("unexpected selected analyzers: %q", got)
+	}
+	if len(report.Summaries) != 1 || report.Summaries[0].Analyzer != AnalyzerAliases || report.Summaries[0].Findings != 1 {
+		t.Fatalf("unexpected summaries: %+v", report.Summaries)
+	}
+	if len(report.Findings) != 1 {
+		t.Fatalf("expected one finding, got %+v", report)
+	}
+	finding := report.Findings[0]
+	if finding.Analyzer != AnalyzerAliases || finding.Target != "schema.sql" || finding.Action == "" {
+		t.Fatalf("unexpected generic finding metadata: %+v", finding)
+	}
+	if finding.FollowUpCommand == nil || finding.FollowUpCommand.ShellFamily != ShellFamilyPowerShell {
+		t.Fatalf("expected shell-aware follow-up command: %+v", finding)
+	}
+}
+
 func TestAnalyzeAliasesUsesStableRelativePathsThroughSymlinkedWorkspace(t *testing.T) {
 	root := t.TempDir()
 	realRoot := filepath.Join(root, "real")

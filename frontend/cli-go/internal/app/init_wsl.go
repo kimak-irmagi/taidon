@@ -311,10 +311,6 @@ func ensureSystemdAvailable(distro string, verbose bool) error {
 	switch state {
 	case "running", "degraded":
 		return nil
-	default:
-		if err != nil && state == "degraded" {
-			return nil
-		}
 	}
 	if err != nil {
 		return fmt.Errorf("systemd is not running in WSL distro %s (enable systemd and restart WSL)", distro)
@@ -649,10 +645,7 @@ func ensureBtrfsOnPartition(ctx context.Context, distro, part string, allowForma
 		if mountedFS == "btrfs" {
 			return nil
 		}
-		if mountedFS != "" {
-			return fmt.Errorf("filesystem is %s, expected btrfs (rerun with --reinit)", mountedFS)
-		}
-		return fmt.Errorf("filesystem is not btrfs (rerun with --reinit)")
+		return fmt.Errorf("filesystem is %s, expected btrfs (rerun with --reinit)", mountedFS)
 	}
 
 	out, err := runWSLCommandFn(ctx, distro, verbose, "detect filesystem", "blkid", "-o", "value", "-s", "TYPE", part)
@@ -806,9 +799,6 @@ func waitForPartitionFSType(ctx context.Context, distro, part, fstype string, ve
 	}
 	if lastErr != nil {
 		return fmt.Errorf("filesystem verification failed: %w", lastErr)
-	}
-	if lastFS == "" {
-		return fmt.Errorf("filesystem verification failed: empty type")
 	}
 	return fmt.Errorf("filesystem verification failed: %s", lastFS)
 }

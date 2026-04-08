@@ -3,6 +3,10 @@ package discover
 import "github.com/sqlrs/cli/internal/alias"
 
 const (
+	// ProgressStageAnalyzerStart marks the start of one analyzer within discover.
+	ProgressStageAnalyzerStart = "analyzer-start"
+	// ProgressStageAnalyzerDone marks the end of one analyzer within discover.
+	ProgressStageAnalyzerDone = "analyzer-done"
 	// ProgressStageScanStart marks the start of workspace scanning.
 	ProgressStageScanStart = "scan-start"
 	// ProgressStageScanProgress marks a periodic workspace scanning heartbeat.
@@ -27,6 +31,7 @@ type Progress interface {
 
 // ProgressEvent carries one discovery milestone to the CLI progress renderer.
 type ProgressEvent struct {
+	Analyzer    string      `json:"analyzer,omitempty"`
 	Stage       string      `json:"stage,omitempty"`
 	Scanned     int         `json:"scanned,omitempty"`
 	Prefiltered int         `json:"prefiltered,omitempty"`
