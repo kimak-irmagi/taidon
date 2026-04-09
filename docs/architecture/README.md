@@ -37,6 +37,10 @@ Entry points for Taidon architecture and service design.
   component structure for prepare events streaming and watch controls.
 - [`diff-component-structure.md`](diff-component-structure.md) - component
   structure and call flow for `sqlrs diff` (after CLI contract).
+- [`ref-flow.md`](ref-flow.md) - interaction flow for bounded local
+  `plan` / `prepare --ref`.
+- [`ref-component-structure.md`](ref-component-structure.md) - internal
+  component structure for bounded local ref-backed `plan` / `prepare`.
 - [`alias-inspection-flow.md`](alias-inspection-flow.md) - interaction flow for
   `sqlrs alias ls` and `sqlrs alias check`.
 - [`alias-inspection-component-structure.md`][aics] -

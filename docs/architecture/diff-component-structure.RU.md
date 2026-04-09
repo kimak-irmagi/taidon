@@ -13,8 +13,10 @@ CLI-контракта, user guide и решения о shared слое `inputse
 - Wrapped command пока остается одним токеном из `plan:psql`, `plan:lb`,
   `prepare:psql` и `prepare:lb`.
 - Утвержденная архитектура такова: `internal/diff` владеет только parsing diff
-  scope, resolution контекстов сторон, сравнением и рендерингом. Kind-specific
-  file semantics принадлежат общим компонентам `internal/inputset`.
+  scope, dual-side orchestration, сравнением и рендерингом. Generic
+  ref-backed filesystem context принадлежит общему `internal/refctx`, а
+  kind-specific file semantics принадлежат общим компонентам
+  `internal/inputset`.
 - Существующие `BuildPsqlFileList` / `BuildLbFileList` в `internal/diff` -
   переходные реализации, а не долгосрочный источник истины.
 
@@ -23,7 +25,7 @@ CLI-контракта, user guide и решения о shared слое `inputse
 | Компонент | Ответственность | Кто вызывает |
 |-----------|-----------------|--------------|
 | **Обработчик команды diff** | Разобрать diff scope и wrapped command; оркестрировать resolution сторон, сбор input set для каждой стороны, сравнение и рендеринг. Сопоставлять ошибки с exit code. | `internal/app` -> `internal/cli.RunDiff` |
-| **Разрешитель области** | По `--from-ref`/`--to-ref` или `--from-path`/`--to-path` построить два side context. Каждый context дает корень файловой системы для одной стороны сравнения. | `internal/diff.ResolveScope` |
+| **Разрешитель области** | По `--from-ref`/`--to-ref` или `--from-path`/`--to-path` построить два side context. Каждый context дает корень файловой системы для одной стороны сравнения. Setup ref-backed sides переиспользует shared `internal/refctx`. | `internal/diff.ResolveScope` |
 | **Shared inputset kind component** | Для одной стороны и одного kind wrapped-команды разобрать file-bearing args, привязать их к корню этой стороны и собрать детерминированный input set. | `RunDiff` через `internal/inputset/*` |
 | **Компаратор diff** | По двум собранным input set вычислить Added / Modified / Removed и применить опции вроде `--limit` и `--include-content`. | Обработчик diff |
 | **Рендер diff** | Преобразовать результат сравнения в human-readable текст или JSON согласно глобальному `--output`. | Обработчик diff |
@@ -74,7 +76,8 @@ file semantics одним и тем же компонентам `internal/inputs
 |-------|------------|
 | `internal/app` | Dispatch `diff`, parsing diff scope, сбор side-root context. |
 | `internal/cli` | Оркестрация `RunDiff` и top-level dispatch рендера. |
-| `internal/diff` | `ParseDiffScope`, `ResolveScope`, `Compare`, `RenderHuman`, `RenderJSON` и общие типы результата diff. |
+| `internal/diff` | `ParseDiffScope`, dual-side orchestration scope, `Compare`, `RenderHuman`, `RenderJSON` и общие типы результата diff. |
+| `internal/refctx` | Общий ref-backed filesystem context для одного выбранного ref: поиск repo root, разрешение ref, projected cwd, setup worktree/blob и cleanup. |
 | `internal/inputset` | Общие parse/bind/collect/project абстракции и per-kind пакеты, которые использует `diff`. |
 
 ## 6. Владение данными и жизненный цикл

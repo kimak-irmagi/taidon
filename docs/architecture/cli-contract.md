@@ -198,10 +198,19 @@ Current behavior plus approved next-slice extension:
 
 - `prepare <prepare-ref>` resolves a repo-tracked `*.prep.s9s.yaml` file from
   the current working directory.
+- bounded local `prepare --ref <git-ref>` is the accepted next Git-aware slice
+  for single-stage prepare only; it keeps cwd-relative alias and raw path
+  semantics by projecting the caller cwd into the selected ref context.
+- `prepare --ref-mode worktree|blob` and `--ref-keep-worktree` follow the same
+  vocabulary and defaults already accepted for `sqlrs diff`:
+  `worktree` by default, `blob` as an explicit opt-in, and
+  `--ref-keep-worktree` only with `worktree`.
 - `prepare` supports `--watch` (default) and `--no-watch`.
 - `prepare --no-watch` returns `job_id` and stream/status references.
 - `prepare ... run ...` accepts the normal two-stage composite shape with raw
   or alias mode on each stage.
+- the bounded `--ref` slice does **not** yet extend to `prepare ... run ...`;
+  a prepare stage carrying `--ref` remains single-stage only for now.
 - file-bearing paths read from a prepare alias resolve relative to that alias
   file, while raw-stage file paths keep their normal current-working-directory
   base.
@@ -229,6 +238,9 @@ Current alias mode:
 
 - `sqlrs plan <prepare-ref>` resolves a repo-tracked prepare alias file from
   the current working directory.
+- bounded local `plan --ref <git-ref>` is the accepted next Git-aware slice for
+  single-stage plan only; it reuses the same projected-cwd, `worktree`, and
+  explicit `blob` rules as bounded `prepare --ref`.
 
 ---
 

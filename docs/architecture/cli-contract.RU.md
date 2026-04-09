@@ -188,10 +188,20 @@ sqlrs
 
 - `prepare <prepare-ref>` резолвит repo-tracked `*.prep.s9s.yaml` file от
   текущего рабочего каталога.
+- bounded local `prepare --ref <git-ref>` - это утвержденный следующий
+  Git-aware slice только для single-stage prepare; он сохраняет cwd-relative
+  semantics для alias и raw paths, проецируя caller cwd в context выбранного
+  ref.
+- `prepare --ref-mode worktree|blob` и `--ref-keep-worktree` используют ту же
+  vocabulary и те же defaults, что уже приняты для `sqlrs diff`:
+  `worktree` по умолчанию, `blob` как явный opt-in, а
+  `--ref-keep-worktree` допустим только с `worktree`.
 - `prepare` поддерживает `--watch` (по умолчанию) и `--no-watch`.
 - `prepare --no-watch` возвращает `job_id` и ссылки на status/events.
 - `prepare ... run ...` принимает обычную двухстадийную composite-форму, где
   каждая стадия может быть raw- или alias-mode.
+- bounded `--ref` slice пока **не** расширяется на `prepare ... run ...`;
+  prepare-stage с `--ref` пока остается только single-stage.
 - file-bearing paths, прочитанные из prepare alias, резолвятся относительно
   самого alias file, а raw-stage пути сохраняют обычную базу текущего рабочего
   каталога.
@@ -220,6 +230,9 @@ CLI должен предоставлять `plan:<kind>` для каждого 
 
 - `sqlrs plan <prepare-ref>` резолвит repo-tracked prepare alias file от
   текущего рабочего каталога.
+- bounded local `plan --ref <git-ref>` - это утвержденный следующий Git-aware
+  slice только для single-stage plan; он переиспользует те же правила
+  projected-cwd, `worktree` и явного `blob`, что и bounded `prepare --ref`.
 
 ---
 
