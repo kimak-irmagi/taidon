@@ -26,37 +26,42 @@
 
 ---
 
-## Сценарий P1. Запуск по git ref без checkout: `--ref`
+## Сценарий P1. Repository-backed plan/prepare по git ref: `--ref`
+
+Примечание по текущему публичному срезу: следующий принятый local CLI slice
+уже по scope, чем эта общая future-design картина. Он добавляет bounded `--ref` только в
+single-stage `plan` и `prepare`; `run --ref`, provenance и `cache explain`
+остаются следующими шагами.
 
 ### Мотивация
 
-Пользователь хочет "поднять состояние **как в коммите/ветке/теге**" не портя текущий
-рабочий каталог (грязное состояние, открытые IDE, параллельные задачи).
+Пользователь хочет вычислить prepare-oriented workflow **как в
+коммите/ветке/теге**, не портя текущий рабочий каталог (грязное состояние,
+открытые IDE, параллельные задачи).
 
 ### UX / CLI
 
-Базовый паттерн не меняется — добавляется один флаг.
+Для следующего публичного local slice существующие command shapes `plan` /
+`prepare` получают одно явное семейство stage-local флагов.
 
 ```bash
-sqlrs run --dbms postgres:17 \
-  --workspace ./sqlrs-work \
-  --ref <git-ref> \
-  --prepare <path> \
-  -- psql -c "select 1"
+sqlrs plan --ref <git-ref> <prepare-alias>
+sqlrs plan:psql --ref <git-ref> -- -f ./prepare.sql
+sqlrs prepare --ref <git-ref> <prepare-alias>
+sqlrs prepare:lb --ref <git-ref> -- update --changelog-file db/changelog.xml
 ```
 
 Где `<git-ref>`: `HEAD`, `origin/main`, `abc1234`, `v1.2.3`, `refs/pull/123/head`
 (если доступно локально).
 
-Важно для удалённого раннера: `--ref` работает только если у сервиса есть доступ
-к репозиторию (server-side mirror или настроенные VCS-секреты для клона/чтения).
-Иначе CLI должен заранее загрузить исходники в `source storage` и передать
-`source_id` (см. [`sql-runner-api.md`](sql-runner-api.RU.md)).
+Важная граница следующего публичного slice: он остаётся только локальным.
+Семантика remote runner остаётся частью будущего дизайна.
 
 Опции поведения:
 
 - `--ref-mode worktree|blob` (по умолчанию `worktree`)
-  - `worktree`: создать временный `git worktree` и удалить после выполнения
+  - `worktree`: создать временный `git worktree` и удалить после завершения
+    команды
   - `blob`: читать нужные файлы прямо из git-объектов (без извлечения всего репо)
 - `--ref-keep-worktree` (для отладки: не удалять временный worktree)
 
@@ -64,17 +69,12 @@ sqlrs run --dbms postgres:17 \
 
 1. Определить корень репозитория (если нет — ошибка `not a git repo`).
 2. Разрешить `<git-ref>` в `commit/tree`.
-3. Получить список файлов под `--prepare` и blob-хеши:
-   - blob-mode: `git ls-tree -r <ref> -- <path>` (без checkout)
-   - worktree-mode: `git worktree add --detach <tmpdir> <ref>`
-4. Посчитать хеши входных файлов по `blob OID` (и, опционально, ключевых
-   зависимостей: конфиги, include-файлы).
-5. Сформировать цепочку изменений и запросить кэш Taidon.
-6. Если попадание в кэш — вернуть/использовать готовое состояние.
-7. Иначе: прочитать содержимое нужных файлов (blob или worktree), выполнить
-   `prepare` (миграции/скрипты) в Taidon и создать снапшоты.
-8. Продолжить `sqlrs run -- <cmd>` в полученном окружении.
-9. Сгенерировать provenance (см. P4), если включено.
+3. Разрешить projected cwd вызывающего процесса внутри выбранной ревизии.
+4. Привязать alias-backed или raw `plan` / `prepare` inputs в этом ref-backed
+   context.
+5. Собрать file-bearing inputs через shared kind-specific inputset layer.
+6. Продолжить обычный flow `plan` или `prepare`.
+7. Удалить временный worktree, если не задан `--ref-keep-worktree`.
 
 ---
 
@@ -280,8 +280,9 @@ sqlrs cache explain --ref <ref> --prepare <path>
 
 ## Минимальный MVP пассивных функций
 
-1. `--ref` (blob-mode) + zero-copy cache hit
-2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` для одной команды `plan:*`
-   или `prepare:*`
+1. bounded local `plan` / `prepare --ref` с `worktree` по умолчанию и явным
+   `blob`
+2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` для одной команды
+   `plan:*` или `prepare:*`
 3. provenance (write)
 4. `cache explain` (простая версия)

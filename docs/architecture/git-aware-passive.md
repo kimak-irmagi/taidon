@@ -16,32 +16,41 @@ Goal: add git-aware capabilities **without changing the user's work habits**. Al
 
 ---
 
-## Scenario P1. Run by git ref without checkout: `--ref`
+## Scenario P1. Repository-backed plan/prepare by git ref: `--ref`
+
+Current public-slice note: the next accepted local CLI slice is narrower than
+the broader future design in this document. It adds bounded `--ref` support to
+single-stage `plan` and `prepare` only; `run --ref`, provenance, and
+`cache explain` remain later follow-ups.
 
 ### Motivation
 
-User wants to bring up a state **as in commit/branch/tag** without touching the current working directory (dirty state, open IDEs, parallel tasks).
+User wants to evaluate a prepare-oriented workflow **as in
+commit/branch/tag** without touching the current working directory (dirty
+state, open IDEs, parallel tasks).
 
 ### UX / CLI
 
-Base pattern stays the same, we add a single flag.
+For the next public local slice, the existing `plan` / `prepare` command shapes
+gain one explicit stage-local flag family.
 
 ```bash
-sqlrs run --dbms postgres:17 \
-  --workspace ./sqlrs-work \
-  --ref <git-ref> \
-  --prepare <path> \
-  -- psql -c "select 1"
+sqlrs plan --ref <git-ref> <prepare-alias>
+sqlrs plan:psql --ref <git-ref> -- -f ./prepare.sql
+sqlrs prepare --ref <git-ref> <prepare-alias>
+sqlrs prepare:lb --ref <git-ref> -- update --changelog-file db/changelog.xml
 ```
 
 Where `<git-ref>` can be: `HEAD`, `origin/main`, `abc1234`, `v1.2.3`, `refs/pull/123/head` (if available locally).
 
-Important for remote runner: `--ref` works only if the service has access to the repo (server-side mirror or VCS secrets for clone/read). Otherwise the CLI must upload sources to `source storage` and pass `source_id` (see [`sql-runner-api.md`](sql-runner-api.md)).
+Important boundary for the next public slice: this is local-only. Remote-runner
+semantics remain future design.
 
 Behavior options:
 
 - `--ref-mode worktree|blob` (default `worktree`)
-  - `worktree`: create a temporary `git worktree` and remove it after run
+  - `worktree`: create a temporary `git worktree` and remove it after the
+    command
   - `blob`: read needed files directly from git objects (no full checkout)
 - `--ref-keep-worktree` (debugging: do not remove the temporary worktree)
 
@@ -49,15 +58,12 @@ Behavior options:
 
 1. Detect repo root (if missing, error `not a git repo`).
 2. Resolve `<git-ref>` to `commit/tree`.
-3. Get file list under `--prepare` and their blob hashes:
-   - blob mode: `git ls-tree -r <ref> -- <path>` (no checkout)
-   - worktree mode: `git worktree add --detach <tmpdir> <ref>`
-4. Compute file hashes from `blob OID` (optionally include key deps: configs, include files).
-5. Build the change chain and query Taidon cache.
-6. On cache hit, return/use the ready state.
-7. On miss, read file contents (blob or worktree), run `prepare` (migrations/scripts) in Taidon, create snapshots.
-8. Continue with `sqlrs run -- <cmd>` in the resulting environment.
-9. Generate provenance (see P4) if enabled.
+3. Resolve the caller's projected cwd inside that selected revision.
+4. Bind alias-backed or raw `plan` / `prepare` inputs in that ref-backed
+   context.
+5. Collect file-bearing inputs through the shared kind-specific inputset layer.
+6. Continue through the normal `plan` or `prepare` flow.
+7. Remove the temporary worktree unless `--ref-keep-worktree` was requested.
 
 ---
 
@@ -254,7 +260,9 @@ Output:
 
 ## Minimal MVP for passive features
 
-1. `--ref` (blob mode) + zero-copy cache hit
-2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` for one `plan:*` or `prepare:*` command
+1. bounded local `plan` / `prepare --ref` with `worktree` default and explicit
+   `blob`
+2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` for one `plan:*` or
+   `prepare:*` command
 3. provenance (write)
 4. `cache explain` (simple version)

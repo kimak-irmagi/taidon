@@ -268,23 +268,34 @@ without touching the working tree.
 
 **Primary outcome**:
 
-- bounded local `--ref` support
-- `blob` mode with zero-copy cache lookup before extraction
-- explicit `worktree` fallback mode
+- bounded local `--ref` support for single-stage `plan` and `prepare`
+- raw and alias-backed prepare flows running against a selected ref
+- `worktree` default mode plus explicit `blob` mode using the same vocabulary
+  as `sqlrs diff`
 
 **Expected work**:
 
 - Git ref resolution
+- projected-cwd resolution inside the selected ref
+- alias and raw-stage binding against a ref-backed filesystem context
 - blob-mode input access
 - worktree lifecycle handling
-- clear user-facing errors for non-Git and missing-object cases
+- clear user-facing errors for non-Git, missing-ref, and missing-path cases
+
+**Explicitly out of scope**:
+
+- standalone `run --ref`
+- `prepare ... run ...` with a ref-backed prepare stage
+- provenance and `cache explain`
+- remote runner semantics
 
 **Tests expected**:
 
 - ref parsing and resolution tests
-- blob-mode cache-hit tests
+- projected-cwd and alias-resolution tests under `--ref`
+- raw file-bearing path tests under `--ref`
 - worktree lifecycle tests
-- failure tests for bad refs and missing objects
+- failure tests for bad refs, missing projected cwd, and missing files at ref
 
 ### 4.8 PR8: Provenance and Cache Explain
 
