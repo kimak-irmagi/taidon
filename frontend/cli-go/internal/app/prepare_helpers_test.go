@@ -59,6 +59,41 @@ func TestParsePrepareArgsImageEquals(t *testing.T) {
 	}
 }
 
+func TestParsePrepareArgsRefOptions(t *testing.T) {
+	opts, showHelp, err := parsePrepareArgs([]string{"--ref", "HEAD~1", "--ref-mode", "blob", "--", "-f", "init.sql"})
+	if err != nil || showHelp {
+		t.Fatalf("parsePrepareArgs: err=%v help=%v", err, showHelp)
+	}
+	if opts.Ref != "HEAD~1" {
+		t.Fatalf("expected ref, got %q", opts.Ref)
+	}
+	if opts.RefMode != "blob" {
+		t.Fatalf("expected ref mode blob, got %q", opts.RefMode)
+	}
+	if opts.RefKeepWorktree {
+		t.Fatalf("expected ref keep worktree false")
+	}
+	if len(opts.PsqlArgs) != 2 || opts.PsqlArgs[0] != "-f" || opts.PsqlArgs[1] != "init.sql" {
+		t.Fatalf("unexpected psql args: %+v", opts.PsqlArgs)
+	}
+}
+
+func TestParsePrepareArgsRefKeepWorktreeDefaultsMode(t *testing.T) {
+	opts, showHelp, err := parsePrepareArgs([]string{"--ref", "origin/main", "--ref-keep-worktree", "--", "-c", "select 1"})
+	if err != nil || showHelp {
+		t.Fatalf("parsePrepareArgs: err=%v help=%v", err, showHelp)
+	}
+	if opts.Ref != "origin/main" {
+		t.Fatalf("expected ref, got %q", opts.Ref)
+	}
+	if opts.RefMode != "worktree" {
+		t.Fatalf("expected default ref mode worktree, got %q", opts.RefMode)
+	}
+	if !opts.RefKeepWorktree {
+		t.Fatalf("expected ref keep worktree true")
+	}
+}
+
 func TestParsePrepareArgsMissingImageValue(t *testing.T) {
 	_, _, err := parsePrepareArgs([]string{"--image"})
 	if err == nil {
@@ -78,6 +113,58 @@ func TestParsePrepareArgsImageEqualsMissing(t *testing.T) {
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+}
+
+func TestParsePrepareArgsRejectsInvalidRefCombinations(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing ref value",
+			args: []string{"--ref"},
+			want: "Missing value for --ref",
+		},
+		{
+			name: "empty ref value",
+			args: []string{"--ref", "   "},
+			want: "Missing value for --ref",
+		},
+		{
+			name: "ref mode without ref",
+			args: []string{"--ref-mode", "blob"},
+			want: "--ref-mode requires --ref",
+		},
+		{
+			name: "missing ref mode value",
+			args: []string{"--ref", "HEAD", "--ref-mode"},
+			want: "Missing value for --ref-mode",
+		},
+		{
+			name: "bad ref mode",
+			args: []string{"--ref", "HEAD", "--ref-mode", "bad"},
+			want: "--ref-mode \"bad\" is not supported",
+		},
+		{
+			name: "keep worktree without ref",
+			args: []string{"--ref-keep-worktree"},
+			want: "--ref-keep-worktree requires --ref",
+		},
+		{
+			name: "keep worktree with blob",
+			args: []string{"--ref", "HEAD", "--ref-mode", "blob", "--ref-keep-worktree"},
+			want: "--ref-keep-worktree is only valid with --ref-mode worktree",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := parsePrepareArgs(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+		})
 	}
 }
 

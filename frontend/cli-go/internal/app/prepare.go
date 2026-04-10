@@ -22,10 +22,13 @@ var runPrepareFn = cli.RunPrepare
 var submitPrepareFn = cli.SubmitPrepare
 
 type prepareArgs struct {
-	Image          string
-	PsqlArgs       []string
-	Watch          bool
-	WatchSpecified bool
+	Image           string
+	PsqlArgs        []string
+	Watch           bool
+	WatchSpecified  bool
+	Ref             string
+	RefMode         string
+	RefKeepWorktree bool
 }
 
 type stdoutAndErr struct {
@@ -44,6 +47,11 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 			if i+1 < len(args) {
 				opts.PsqlArgs = append(opts.PsqlArgs, args[i+1:]...)
 			}
+			mode, err := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+			if err != nil {
+				return opts, false, err
+			}
+			opts.RefMode = mode
 			return opts, false, nil
 		}
 		switch {
@@ -55,6 +63,24 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 		case arg == "--no-watch":
 			opts.Watch = false
 			opts.WatchSpecified = true
+		case arg == "--ref":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.Ref = value
+			i++
+		case arg == "--ref-mode":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = strings.TrimSpace(args[i+1])
+			i++
+		case arg == "--ref-keep-worktree":
+			opts.RefKeepWorktree = true
 		case arg == "--image":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --image")
@@ -73,10 +99,44 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 			opts.Image = value
 		default:
 			opts.PsqlArgs = append(opts.PsqlArgs, args[i:]...)
+			mode, err := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+			if err != nil {
+				return opts, false, err
+			}
+			opts.RefMode = mode
 			return opts, false, nil
 		}
 	}
+	mode, err := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+	if err != nil {
+		return opts, false, err
+	}
+	opts.RefMode = mode
 	return opts, false, nil
+}
+
+func normalizeRefMode(ref string, refMode string, refKeepWorktree bool) (string, error) {
+	ref = strings.TrimSpace(ref)
+	refMode = strings.TrimSpace(refMode)
+	if ref == "" {
+		if refMode != "" {
+			return "", ExitErrorf(2, "--ref-mode requires --ref")
+		}
+		if refKeepWorktree {
+			return "", ExitErrorf(2, "--ref-keep-worktree requires --ref")
+		}
+		return "", nil
+	}
+	if refMode == "" {
+		refMode = "worktree"
+	}
+	if refMode != "worktree" && refMode != "blob" {
+		return "", ExitErrorf(2, "--ref-mode %q is not supported (use blob or worktree)", refMode)
+	}
+	if refKeepWorktree && refMode != "worktree" {
+		return "", ExitErrorf(2, "--ref-keep-worktree is only valid with --ref-mode worktree")
+	}
+	return refMode, nil
 }
 
 func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) error {

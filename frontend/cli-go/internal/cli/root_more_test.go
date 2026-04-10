@@ -151,6 +151,7 @@ func TestFindPrepareAliasRunIndexBranches(t *testing.T) {
 	}{
 		{name: "plain composite", args: []string{"prepare", "chinook", "run", "smoke"}, want: 2},
 		{name: "skips watch flags", args: []string{"prepare", "chinook", "--watch", "--no-watch", "--help", "-h", "run", "smoke"}, want: 6},
+		{name: "skips ref flags", args: []string{"prepare", "--ref", "HEAD", "--ref-mode", "blob", "--ref-keep-worktree", "chinook", "run", "smoke"}, want: 7},
 		{name: "stops on separator", args: []string{"prepare", "chinook", "--", "run", "smoke"}, want: -1},
 		{name: "stops on flag", args: []string{"prepare", "chinook", "-x", "run", "smoke"}, want: -1},
 		{name: "no run token", args: []string{"prepare", "chinook"}, want: -1},

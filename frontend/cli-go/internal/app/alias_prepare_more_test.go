@@ -25,6 +25,16 @@ func TestParsePrepareAliasArgsAdditionalBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("ref options", func(t *testing.T) {
+		invocation, showHelp, err := parsePrepareAliasArgs([]string{"--ref", "HEAD~1", "--ref-mode", "blob", "chinook"})
+		if err != nil || showHelp {
+			t.Fatalf("parsePrepareAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if invocation.Ref != "chinook" || invocation.GitRef != "HEAD~1" || invocation.RefMode != "blob" {
+			t.Fatalf("unexpected invocation: %+v", invocation)
+		}
+	})
+
 	t.Run("reject unknown option", func(t *testing.T) {
 		_, _, err := parsePrepareAliasArgs([]string{"chinook", "--bad"})
 		if err == nil || !strings.Contains(err.Error(), "unknown prepare alias option") {
@@ -36,6 +46,13 @@ func TestParsePrepareAliasArgsAdditionalBranches(t *testing.T) {
 		_, _, err := parsePrepareAliasArgs([]string{"chinook", "other"})
 		if err == nil || !strings.Contains(err.Error(), "exactly one alias ref") {
 			t.Fatalf("expected second ref error, got %v", err)
+		}
+	})
+
+	t.Run("reject keep worktree without ref", func(t *testing.T) {
+		_, _, err := parsePrepareAliasArgs([]string{"--ref-keep-worktree", "chinook"})
+		if err == nil || !strings.Contains(err.Error(), "--ref-keep-worktree requires --ref") {
+			t.Fatalf("expected keep-worktree error, got %v", err)
 		}
 	})
 }
@@ -59,6 +76,19 @@ func TestParsePlanAliasArgsAdditionalBranches(t *testing.T) {
 		_, _, err := parsePlanAliasArgs([]string{"chinook", "other"})
 		if err == nil || !strings.Contains(err.Error(), "exactly one alias ref") {
 			t.Fatalf("expected second ref error, got %v", err)
+		}
+	})
+
+	t.Run("ref options", func(t *testing.T) {
+		invocation, showHelp, err := parsePlanAliasArgs([]string{"--ref", "origin/main", "--ref-keep-worktree", "chinook"})
+		if err != nil || showHelp {
+			t.Fatalf("parsePlanAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if invocation.Ref != "chinook" {
+			t.Fatalf("ref = %q", invocation.Ref)
+		}
+		if invocation.GitRef != "origin/main" || invocation.RefMode != "worktree" || !invocation.RefKeepWorktree {
+			t.Fatalf("unexpected invocation: %+v", invocation)
 		}
 	})
 }

@@ -67,7 +67,10 @@ func Run(args []string) error {
 	}
 
 	var prepared *client.PrepareJobResult
-	for _, cmd := range commands {
+	for idx, cmd := range commands {
+		if idx == 0 && len(commands) > 1 && prepareStageUsesRef(cmd) {
+			return fmt.Errorf("prepare --ref does not support composite run yet")
+		}
 		switch cmd.Name {
 		case "alias":
 			if len(commands) > 1 {
@@ -211,7 +214,7 @@ func Run(args []string) error {
 			if len(commands) > 1 {
 				return fmt.Errorf("plan cannot be combined with other commands")
 			}
-			ref, showHelp, err := parsePlanAliasArgs(cmd.Args)
+			invocation, showHelp, err := parsePlanAliasArgs(cmd.Args)
 			if err != nil {
 				return err
 			}
@@ -219,7 +222,7 @@ func Run(args []string) error {
 				cli.PrintPlanUsage(os.Stdout)
 				return nil
 			}
-			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, ref)
+			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
 			if err != nil {
 				return err
 			}
@@ -229,7 +232,7 @@ func Run(args []string) error {
 			}
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
 			aliasCwd := filepath.Dir(aliasPath)
-			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, buildPlanAliasCommandArgs(alias), cmdCtx.output, alias.Kind, alias.Kind != "lb")
+			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, buildPlanAliasCommandArgs(alias, invocation), cmdCtx.output, alias.Kind, alias.Kind != "lb")
 		case "run":
 			runOpts := cmdCtx.runOptions()
 			if prepared != nil {
@@ -282,6 +285,19 @@ func Run(args []string) error {
 		}
 	}
 	return nil
+}
+
+func prepareStageUsesRef(cmd cli.Command) bool {
+	if cmd.Name != "prepare" && !strings.HasPrefix(cmd.Name, "prepare:") {
+		return false
+	}
+	for _, arg := range cmd.Args {
+		switch strings.TrimSpace(arg) {
+		case "--ref", "--ref-mode", "--ref-keep-worktree":
+			return true
+		}
+	}
+	return false
 }
 
 func writeJSON(w io.Writer, v any) error {
