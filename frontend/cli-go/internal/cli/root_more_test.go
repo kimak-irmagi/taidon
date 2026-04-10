@@ -152,8 +152,11 @@ func TestFindPrepareAliasRunIndexBranches(t *testing.T) {
 		{name: "plain composite", args: []string{"prepare", "chinook", "run", "smoke"}, want: 2},
 		{name: "skips watch flags", args: []string{"prepare", "chinook", "--watch", "--no-watch", "--help", "-h", "run", "smoke"}, want: 6},
 		{name: "skips ref flags", args: []string{"prepare", "--ref", "HEAD", "--ref-mode", "blob", "--ref-keep-worktree", "chinook", "run", "smoke"}, want: 7},
+		{name: "missing ref value", args: []string{"prepare", "--ref"}, want: -1},
+		{name: "missing ref mode value", args: []string{"prepare", "--ref", "HEAD", "--ref-mode"}, want: -1},
 		{name: "stops on separator", args: []string{"prepare", "chinook", "--", "run", "smoke"}, want: -1},
 		{name: "stops on flag", args: []string{"prepare", "chinook", "-x", "run", "smoke"}, want: -1},
+		{name: "second alias without run boundary", args: []string{"prepare", "chinook", "other"}, want: -1},
 		{name: "no run token", args: []string{"prepare", "chinook"}, want: -1},
 	}
 	for _, tc := range cases {
@@ -172,7 +175,10 @@ func TestIsCompositeRunBoundaryBranches(t *testing.T) {
 		idx  int
 		want bool
 	}{
+		{name: "idx too small", args: []string{"prepare:psql", "run", "smoke"}, idx: 0, want: false},
+		{name: "idx too large", args: []string{"prepare:psql", "run", "smoke"}, idx: 3, want: false},
 		{name: "raw run token", args: []string{"prepare:psql", "run:psql"}, idx: 1, want: true},
+		{name: "empty raw run suffix", args: []string{"prepare:psql", "run:"}, idx: 1, want: false},
 		{name: "help after run", args: []string{"prepare:psql", "run", "--help"}, idx: 1, want: true},
 		{name: "short help after run", args: []string{"prepare:psql", "run", "-h"}, idx: 1, want: true},
 		{name: "separator after run", args: []string{"prepare:psql", "run", "--"}, idx: 1, want: false},

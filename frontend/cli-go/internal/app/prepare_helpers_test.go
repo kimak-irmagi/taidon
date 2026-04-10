@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/config"
 	"github.com/sqlrs/cli/internal/paths"
 )
@@ -309,6 +310,85 @@ func TestNormalizeFilePathRejectsOutsideWorkspace(t *testing.T) {
 	outside := filepath.Join(outer, "outside.sql")
 	if _, _, err := normalizeFilePath(outside, workspace, workspace, nil); err == nil {
 		t.Fatalf("expected workspace boundary error")
+	}
+}
+
+func TestRebasePathToWorkspaceRootCoverage(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "nested", "query.sql")
+	outside := filepath.Join(filepath.Dir(root), "outside.sql")
+
+	if got := rebasePathToWorkspaceRoot("", root); got != "" {
+		t.Fatalf("expected empty path to remain empty, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(child, ""); got != child {
+		t.Fatalf("expected empty root to keep path, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(root, root); got != filepath.Clean(root) {
+		t.Fatalf("expected root path to stay rooted, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(child, root); got != filepath.Clean(child) {
+		t.Fatalf("expected child path to stay within root, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(outside, root); got != filepath.Clean(outside) {
+		t.Fatalf("expected outside path unchanged, got %q", got)
+	}
+}
+
+func TestCanonicalizeBoundaryPathCoverage(t *testing.T) {
+	if got := canonicalizeBoundaryPath(" "); got != "" {
+		t.Fatalf("expected empty canonical path, got %q", got)
+	}
+
+	root := t.TempDir()
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q): %v", root, err)
+	}
+	if got := canonicalizeBoundaryPath(root); got != want {
+		t.Fatalf("canonicalizeBoundaryPath(existing) = %q, want %q", got, want)
+	}
+
+	missing := filepath.Join(root, "nested", "missing.sql")
+	if got := canonicalizeBoundaryPath(missing); got != filepath.Clean(missing) {
+		t.Fatalf("canonicalizeBoundaryPath(missing) = %q, want %q", got, filepath.Clean(missing))
+	}
+}
+
+func TestBuildPathConverterNoWSLDistro(t *testing.T) {
+	if conv := buildPathConverter(cli.PrepareOptions{}); conv != nil {
+		t.Fatalf("expected nil converter without WSL distro")
+	}
+}
+
+func TestDeriveLiquibaseWorkDirFromArgsCoverage(t *testing.T) {
+	fallback := filepath.Join("fallback", "dir")
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update"}, fallback); got != fallback {
+		t.Fatalf("expected fallback without search path, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--searchPath"}, fallback); got != fallback {
+		t.Fatalf("expected fallback for missing searchPath value, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--searchPath", "classpath:db"}, fallback); got != fallback {
+		t.Fatalf("expected fallback for remote-only searchPath, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--search-path", "dir1,classpath:db"}, fallback); got != filepath.Clean("dir1") {
+		t.Fatalf("expected dir1 workdir, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--searchPath=dir2,classpath:db"}, fallback); got != filepath.Clean("dir2") {
+		t.Fatalf("expected dir2 workdir, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--search-path=classpath:db,dir3"}, fallback); got != filepath.Clean("dir3") {
+		t.Fatalf("expected dir3 workdir, got %q", got)
+	}
+}
+
+func TestFirstLiquibaseSearchPathDirCoverage(t *testing.T) {
+	if got := firstLiquibaseSearchPathDir("classpath:db, https://example.com/db"); got != "" {
+		t.Fatalf("expected empty dir for remote-only searchPath, got %q", got)
+	}
+	if got := firstLiquibaseSearchPathDir(" , classpath:db , dir/sub "); got != filepath.Clean("dir/sub") {
+		t.Fatalf("expected first local dir, got %q", got)
 	}
 }
 
