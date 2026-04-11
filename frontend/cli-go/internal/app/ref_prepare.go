@@ -21,11 +21,17 @@ type prepareStageBinding struct {
 	cleanup       func() error
 }
 
-func bindPreparePsqlInputs(runOpts cli.PrepareOptions, workspaceRoot string, cwd string, parsed prepareArgs, existing *refctx.Context, stdin io.Reader) (prepareStageBinding, error) {
+func bindPreparePsqlInputs(runOpts cli.PrepareOptions, workspaceRoot string, cwd string, parsed prepareArgs, existing *refctx.Context, stdin io.Reader) (binding prepareStageBinding, err error) {
 	ctx, cleanup, err := resolvePrepareBindingContext(workspaceRoot, cwd, parsed, existing)
 	if err != nil {
 		return prepareStageBinding{}, err
 	}
+	cleanupCurrent := cleanup
+	defer func() {
+		if err != nil && cleanupCurrent != nil {
+			err = combineBindingCleanupError(err, cleanupCurrent())
+		}
+	}()
 
 	converter := buildPathConverter(runOpts)
 	if ctx == nil || ctx.RefMode != "blob" {
@@ -42,7 +48,7 @@ func bindPreparePsqlInputs(runOpts cli.PrepareOptions, workspaceRoot string, cwd
 		return prepareStageBinding{
 			PsqlArgs: args,
 			Stdin:    stdinValue,
-			cleanup:  cleanup,
+			cleanup:  cleanupCurrent,
 		}, nil
 	}
 
@@ -71,25 +77,31 @@ func bindPreparePsqlInputs(runOpts cli.PrepareOptions, workspaceRoot string, cwd
 	if err != nil {
 		return prepareStageBinding{}, err
 	}
+	cleanupCurrent = joinCleanup(func() error { return os.RemoveAll(stageRoot) }, cleanup)
 	args = rewritePsqlFileArgsToRoot(args, resolver.Root, stageRoot)
 	args, err = convertPsqlFileArgs(args, converter)
 	if err != nil {
-		_ = os.RemoveAll(stageRoot)
 		return prepareStageBinding{}, err
 	}
 
 	return prepareStageBinding{
 		PsqlArgs: args,
 		Stdin:    stdinValue,
-		cleanup:  joinCleanup(func() error { return os.RemoveAll(stageRoot) }, cleanup),
+		cleanup:  cleanupCurrent,
 	}, nil
 }
 
-func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string, cwd string, parsed prepareArgs, existing *refctx.Context, liquibaseExec string, liquibaseExecMode string, relativizePaths bool) (prepareStageBinding, error) {
+func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string, cwd string, parsed prepareArgs, existing *refctx.Context, liquibaseExec string, liquibaseExecMode string, relativizePaths bool) (binding prepareStageBinding, err error) {
 	ctx, cleanup, err := resolvePrepareBindingContext(workspaceRoot, cwd, parsed, existing)
 	if err != nil {
 		return prepareStageBinding{}, err
 	}
+	cleanupCurrent := cleanup
+	defer func() {
+		if err != nil && cleanupCurrent != nil {
+			err = combineBindingCleanupError(err, cleanupCurrent())
+		}
+	}()
 
 	converter := buildPathConverter(runOpts)
 	if ctx == nil || ctx.RefMode != "blob" {
@@ -120,7 +132,7 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 		return prepareStageBinding{
 			LiquibaseArgs: args,
 			WorkDir:       workDir,
-			cleanup:       cleanup,
+			cleanup:       cleanupCurrent,
 		}, nil
 	}
 
@@ -132,7 +144,6 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 
 	stageRoot := ""
 	stageBase := resolver.BaseDir
-	stageCleanup := cleanup
 	if files, dirs, hasLocalPaths, err := liquibaseLocalArtifacts(args, resolver, ctx.FileSystem); err != nil {
 		return prepareStageBinding{}, err
 	} else if hasLocalPaths {
@@ -142,7 +153,7 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 		}
 		stageBase = mapPathToStageRoot(resolver.Root, stageRoot, resolver.BaseDir)
 		args = rewriteLiquibaseArgsToRoot(args, resolver.Root, stageRoot)
-		stageCleanup = joinCleanup(func() error { return os.RemoveAll(stageRoot) }, cleanup)
+		cleanupCurrent = joinCleanup(func() error { return os.RemoveAll(stageRoot) }, cleanup)
 	}
 
 	if relativizePaths {
@@ -154,18 +165,12 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 	} else {
 		args, err = convertLiquibaseHostPaths(args, converter)
 		if err != nil {
-			if stageRoot != "" {
-				_ = os.RemoveAll(stageRoot)
-			}
 			return prepareStageBinding{}, err
 		}
 	}
 
 	workDir, err := normalizeWorkDir(stageBase, converter)
 	if err != nil {
-		if stageRoot != "" {
-			_ = os.RemoveAll(stageRoot)
-		}
 		return prepareStageBinding{}, err
 	}
 	if !relativizePaths {
@@ -175,7 +180,7 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 	return prepareStageBinding{
 		LiquibaseArgs: args,
 		WorkDir:       workDir,
-		cleanup:       stageCleanup,
+		cleanup:       cleanupCurrent,
 	}, nil
 }
 
@@ -209,6 +214,16 @@ func joinCleanup(funcs ...func() error) func() error {
 		}
 		return nil
 	}
+}
+
+func combineBindingCleanupError(runErr error, cleanupErr error) error {
+	if cleanupErr == nil {
+		return runErr
+	}
+	if runErr == nil {
+		return cleanupErr
+	}
+	return ExitErrorf(1, "%s; cleanup: %s", runErr.Error(), cleanupErr.Error())
 }
 
 func entryAbsPaths(set inputset.InputSet) []string {

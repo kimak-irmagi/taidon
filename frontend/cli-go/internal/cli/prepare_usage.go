@@ -21,4 +21,5 @@ func PrintPrepareUsage(w io.Writer) {
 	io.WriteString(w, "  Use -- to pass flags that would otherwise conflict with sqlrs options.\n")
 	io.WriteString(w, "  In composite form, prepare ... run may mix raw and alias stages.\n")
 	io.WriteString(w, "  Bounded --ref support is single-stage only; prepare --ref ... run ... is not supported yet.\n")
+	io.WriteString(w, "  Ref-backed prepare currently requires watch mode; --no-watch is rejected with --ref.\n")
 }

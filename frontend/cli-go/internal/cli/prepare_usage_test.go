@@ -26,4 +26,7 @@ func TestPrintPrepareUsageShowsMixedCompositeNote(t *testing.T) {
 	if !strings.Contains(out, "single-stage only") {
 		t.Fatalf("expected bounded ref note, got %q", out)
 	}
+	if !strings.Contains(out, "--no-watch is rejected with --ref") {
+		t.Fatalf("expected ref watch-mode note, got %q", out)
+	}
 }

@@ -111,6 +111,13 @@ func TestParsePrepareAliasArgsAdditionalBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("reject no-watch with ref", func(t *testing.T) {
+		_, _, err := parsePrepareAliasArgs([]string{"--ref", "HEAD", "--no-watch", "chinook"})
+		if err == nil || !strings.Contains(err.Error(), "--no-watch is not supported with --ref") {
+			t.Fatalf("expected no-watch/ref error, got %v", err)
+		}
+	})
+
 	t.Run("reject bad ref mode", func(t *testing.T) {
 		_, _, err := parsePrepareAliasArgs([]string{"--ref", "HEAD", "--ref-mode", "bad", "chinook"})
 		if err == nil || !strings.Contains(err.Error(), "--ref-mode \"bad\" is not supported") {

@@ -28,25 +28,32 @@ func TestPrepareResultRefPsqlUsesSelectedRevision(t *testing.T) {
 
 			var capturedContent string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost || r.URL.Path != "/v1/prepare-jobs" {
-					w.WriteHeader(http.StatusNotFound)
-					return
-				}
-				var request map[string]any
-				body, _ := io.ReadAll(r.Body)
-				_ = json.Unmarshal(body, &request)
-				if args, ok := request["psql_args"].([]any); ok && len(args) >= 2 {
-					if path, ok := args[1].(string); ok {
-						data, err := os.ReadFile(path)
-						if err != nil {
-							t.Fatalf("read submitted script %q: %v", path, err)
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
+					var request map[string]any
+					body, _ := io.ReadAll(r.Body)
+					_ = json.Unmarshal(body, &request)
+					if args, ok := request["psql_args"].([]any); ok && len(args) >= 2 {
+						if path, ok := args[1].(string); ok {
+							data, err := os.ReadFile(path)
+							if err != nil {
+								t.Fatalf("read submitted script %q: %v", path, err)
+							}
+							capturedContent = string(data)
 						}
-						capturedContent = string(data)
 					}
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusAccepted)
+					io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+					w.Header().Set("Content-Type", "application/x-ndjson")
+					io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"succeeded"}`+"\n")
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+					w.Header().Set("Content-Type", "application/json")
+					io.WriteString(w, `{"job_id":"job-1","status":"succeeded","prepare_kind":"psql","image_id":"image","result":{"dsn":"postgres://sqlrs@127.0.0.1:5432/postgres","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-f prepare.sql"}}`)
+				default:
+					w.WriteHeader(http.StatusNotFound)
 				}
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusAccepted)
-				io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
 			}))
 			defer server.Close()
 
@@ -56,13 +63,13 @@ func TestPrepareResultRefPsqlUsesSelectedRevision(t *testing.T) {
 				config.LoadedConfig{},
 				repo,
 				examplesDir,
-				[]string{"--ref", parentRef, "--ref-mode", mode, "--no-watch", "--image", "image", "--", "-f", filepath.Join("chinook", "prepare.sql")},
+				[]string{"--ref", parentRef, "--ref-mode", mode, "--image", "image", "--", "-f", filepath.Join("chinook", "prepare.sql")},
 			)
 			if err != nil {
 				t.Fatalf("prepareResult: %v", err)
 			}
-			if !handled {
-				t.Fatal("expected no-watch prepare to be handled")
+			if handled {
+				t.Fatal("expected watched prepare result")
 			}
 			if strings.ReplaceAll(capturedContent, "\r\n", "\n") != "select 1;\n" {
 				t.Fatalf("submitted script content = %q, want %q", capturedContent, "select 1;\n")

@@ -158,6 +158,11 @@ func TestParsePrepareArgsRejectsInvalidRefCombinations(t *testing.T) {
 			args: []string{"--ref", "HEAD", "--ref-mode", "blob", "--ref-keep-worktree"},
 			want: "--ref-keep-worktree is only valid with --ref-mode worktree",
 		},
+		{
+			name: "no-watch with ref",
+			args: []string{"--ref", "HEAD", "--no-watch", "--", "-c", "select 1"},
+			want: "--no-watch is not supported with --ref",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

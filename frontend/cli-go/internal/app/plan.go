@@ -51,17 +51,14 @@ func runPlanKindParsedWithPathMode(stdout, stderr io.Writer, runOpts cli.Prepare
 		fmt.Fprint(stderr, formatImageSource(imageID, source))
 	}
 
+	var cleanup func() error
 	switch kind {
 	case "psql":
-		bound, err := bindPreparePsqlInputs(runOpts, workspaceRoot, cwd, parsed, ref, os.Stdin)
+		bound, err := bindPreparePsqlInputsFn(runOpts, workspaceRoot, cwd, parsed, ref, os.Stdin)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if bound.cleanup != nil {
-				_ = bound.cleanup()
-			}
-		}()
+		cleanup = bound.cleanup
 		runOpts.ImageID = imageID
 		runOpts.PsqlArgs = bound.PsqlArgs
 		runOpts.Stdin = bound.Stdin
@@ -76,15 +73,11 @@ func runPlanKindParsedWithPathMode(stdout, stderr io.Writer, runOpts cli.Prepare
 		if err != nil {
 			return err
 		}
-		bound, err := bindPrepareLiquibaseInputs(runOpts, workspaceRoot, cwd, parsed, ref, liquibaseExec, liquibaseExecMode, relativizeLiquibasePaths)
+		bound, err := bindPrepareLiquibaseInputsFn(runOpts, workspaceRoot, cwd, parsed, ref, liquibaseExec, liquibaseExecMode, relativizeLiquibasePaths)
 		if err != nil {
 			return err
 		}
-		defer func() {
-			if bound.cleanup != nil {
-				_ = bound.cleanup()
-			}
-		}()
+		cleanup = bound.cleanup
 		runOpts.ImageID = imageID
 		runOpts.LiquibaseArgs = bound.LiquibaseArgs
 		runOpts.LiquibaseExec = liquibaseExec
@@ -97,12 +90,12 @@ func runPlanKindParsedWithPathMode(stdout, stderr io.Writer, runOpts cli.Prepare
 		return ExitErrorf(2, "unsupported plan kind: %s", kind)
 	}
 
-	result, err := cli.RunPlan(context.Background(), runOpts)
+	result, err := runPlanFn(context.Background(), runOpts)
 	if err != nil {
-		return err
+		return finishPrepareCleanup(err, cleanup)
 	}
 	if output == "json" {
-		return writeJSON(stdout, result)
+		return finishPrepareCleanup(writeJSON(stdout, result), cleanup)
 	}
-	return cli.PrintPlan(stdout, result)
+	return finishPrepareCleanup(cli.PrintPlan(stdout, result), cleanup)
 }

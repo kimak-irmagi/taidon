@@ -84,6 +84,9 @@ func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) 
 		return opts, false, err
 	}
 	opts.RefMode = mode
+	if err := validatePrepareRefWatch(opts.GitRef, opts.WatchSpecified, opts.Watch); err != nil {
+		return opts, false, err
+	}
 	return opts, false, nil
 }
 
