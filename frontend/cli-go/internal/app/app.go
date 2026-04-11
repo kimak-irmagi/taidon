@@ -170,23 +170,24 @@ func Run(args []string) error {
 				cli.PrintPrepareUsage(os.Stdout)
 				return nil
 			}
-			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
-			if err != nil {
-				return err
-			}
-			alias, err := loadPrepareAlias(aliasPath)
+			alias, aliasPath, ref, err := resolvePrepareAliasWithOptionalRef(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref, invocation.GitRef, invocation.RefMode, invocation.RefKeepWorktree)
 			if err != nil {
 				return err
 			}
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
-			aliasArgs := buildPrepareAliasCommandArgs(alias, invocation)
 			prepareOpts := cmdCtx.prepareOptions(len(commands) > 1)
+			parsed := prepareArgs{
+				Image:          alias.Image,
+				PsqlArgs:       alias.Args,
+				Watch:          invocation.Watch,
+				WatchSpecified: invocation.WatchSpecified,
+			}
 			switch alias.Kind {
 			case "psql":
 				if len(commands) == 1 {
-					return runPrepare(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs)
+					return runPrepareParsed(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, parsed, ref)
 				}
-				result, handled, err := prepareResult(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs)
+				result, handled, err := prepareResultParsed(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, parsed, ref)
 				if err != nil {
 					return err
 				}
@@ -195,11 +196,10 @@ func Run(args []string) error {
 				}
 				prepared = &result
 			case "lb":
-				aliasCwd := filepath.Dir(aliasPath)
 				if len(commands) == 1 {
-					return runPrepareLiquibaseWithPathMode(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, aliasArgs, false)
+					return runPrepareLiquibaseParsedWithPathMode(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, filepath.Dir(aliasPath), parsed, ref, false)
 				}
-				result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, aliasArgs, false)
+				result, handled, err := prepareResultLiquibaseParsedWithPathMode(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, filepath.Dir(aliasPath), parsed, ref, false)
 				if err != nil {
 					return err
 				}
@@ -222,17 +222,24 @@ func Run(args []string) error {
 				cli.PrintPlanUsage(os.Stdout)
 				return nil
 			}
-			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
-			if err != nil {
-				return err
-			}
-			alias, err := loadPrepareAlias(aliasPath)
+			alias, aliasPath, ref, err := resolvePrepareAliasWithOptionalRef(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref, invocation.GitRef, invocation.RefMode, invocation.RefKeepWorktree)
 			if err != nil {
 				return err
 			}
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
-			aliasCwd := filepath.Dir(aliasPath)
-			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, buildPlanAliasCommandArgs(alias, invocation), cmdCtx.output, alias.Kind, alias.Kind != "lb")
+			return runPlanKindParsedWithPathMode(
+				os.Stdout,
+				os.Stderr,
+				cmdCtx.prepareOptions(false),
+				cmdCtx.cfgResult,
+				cmdCtx.workspaceRoot,
+				filepath.Dir(aliasPath),
+				prepareArgs{Image: alias.Image, PsqlArgs: alias.Args},
+				ref,
+				cmdCtx.output,
+				alias.Kind,
+				alias.Kind != "lb",
+			)
 		case "run":
 			runOpts := cmdCtx.runOptions()
 			if prepared != nil {

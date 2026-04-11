@@ -2,10 +2,10 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/sqlrs/cli/internal/inputset"
 	"gopkg.in/yaml.v3"
 )
 
@@ -138,6 +138,10 @@ func parsePlanAliasArgs(args []string) (planAliasInvocation, bool, error) {
 }
 
 func resolvePrepareAliasPath(workspaceRoot string, cwd string, ref string) (string, error) {
+	return resolvePrepareAliasPathWithFS(workspaceRoot, cwd, ref, inputset.OSFileSystem{})
+}
+
+func resolvePrepareAliasPathWithFS(workspaceRoot string, cwd string, ref string, fs inputset.FileSystem) (string, error) {
 	base := strings.TrimSpace(cwd)
 	if base == "" {
 		base = strings.TrimSpace(workspaceRoot)
@@ -174,14 +178,18 @@ func resolvePrepareAliasPath(workspaceRoot string, cwd string, ref string) (stri
 	if err != nil {
 		return "", err
 	}
-	if !prepareAliasFileExists(resolved) {
+	if !prepareAliasFileExists(resolved, fs) {
 		return "", ExitErrorf(2, "prepare alias file not found: %s", resolved)
 	}
 	return resolved, nil
 }
 
 func loadPrepareAlias(path string) (prepareAlias, error) {
-	data, err := os.ReadFile(path)
+	return loadPrepareAliasWithFS(path, inputset.OSFileSystem{})
+}
+
+func loadPrepareAliasWithFS(path string, fs inputset.FileSystem) (prepareAlias, error) {
+	data, err := fs.ReadFile(path)
 	if err != nil {
 		return prepareAlias{}, err
 	}
@@ -247,7 +255,7 @@ func appendRefArgs(dst []string, gitRef string, refMode string, refKeepWorktree 
 	return dst
 }
 
-func prepareAliasFileExists(path string) bool {
-	info, err := os.Stat(path)
+func prepareAliasFileExists(path string, fs inputset.FileSystem) bool {
+	info, err := fs.Stat(path)
 	return err == nil && !info.IsDir()
 }

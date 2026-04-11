@@ -8,6 +8,7 @@ import (
 
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/refctx"
 )
 
 func runPlan(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, output string) error {
@@ -27,6 +28,10 @@ func runPlanKindWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOption
 		cli.PrintPlanUsage(stdout)
 		return nil
 	}
+	return runPlanKindParsedWithPathMode(stdout, stderr, runOpts, cfg, workspaceRoot, cwd, parsed, nil, output, kind, relativizeLiquibasePaths)
+}
+
+func runPlanKindParsedWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, output string, kind string, relativizeLiquibasePaths bool) error {
 	if parsed.WatchSpecified {
 		return ExitErrorf(2, "plan does not support --watch/--no-watch")
 	}
@@ -48,13 +53,18 @@ func runPlanKindWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOption
 
 	switch kind {
 	case "psql":
-		psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin, buildPathConverter(runOpts))
+		bound, err := bindPreparePsqlInputs(runOpts, workspaceRoot, cwd, parsed, ref, os.Stdin)
 		if err != nil {
 			return err
 		}
+		defer func() {
+			if bound.cleanup != nil {
+				_ = bound.cleanup()
+			}
+		}()
 		runOpts.ImageID = imageID
-		runOpts.PsqlArgs = psqlArgs
-		runOpts.Stdin = stdin
+		runOpts.PsqlArgs = bound.PsqlArgs
+		runOpts.Stdin = bound.Stdin
 		runOpts.PrepareKind = "psql"
 		runOpts.PlanOnly = true
 	case "lb":
@@ -66,31 +76,21 @@ func runPlanKindWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOption
 		if err != nil {
 			return err
 		}
-		converter := buildPathConverter(runOpts)
-		if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
-			converter = nil
-		}
-		liquibaseArgs, err := normalizeLiquibaseArgs(parsed.PsqlArgs, workspaceRoot, cwd, converter)
+		bound, err := bindPrepareLiquibaseInputs(runOpts, workspaceRoot, cwd, parsed, ref, liquibaseExec, liquibaseExecMode, relativizeLiquibasePaths)
 		if err != nil {
 			return err
 		}
-		if relativizeLiquibasePaths {
-			liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
-		}
-		liquibaseEnv := resolveLiquibaseEnv()
-		workDir, err := normalizeWorkDir(cwd, converter)
-		if err != nil {
-			return err
-		}
-		if !relativizeLiquibasePaths {
-			workDir = deriveLiquibaseWorkDirFromArgs(liquibaseArgs, workDir)
-		}
+		defer func() {
+			if bound.cleanup != nil {
+				_ = bound.cleanup()
+			}
+		}()
 		runOpts.ImageID = imageID
-		runOpts.LiquibaseArgs = liquibaseArgs
+		runOpts.LiquibaseArgs = bound.LiquibaseArgs
 		runOpts.LiquibaseExec = liquibaseExec
 		runOpts.LiquibaseExecMode = liquibaseExecMode
-		runOpts.LiquibaseEnv = liquibaseEnv
-		runOpts.WorkDir = workDir
+		runOpts.LiquibaseEnv = resolveLiquibaseEnv()
+		runOpts.WorkDir = bound.WorkDir
 		runOpts.PrepareKind = "lb"
 		runOpts.PlanOnly = true
 	default:

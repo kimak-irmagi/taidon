@@ -16,6 +16,7 @@ import (
 	"github.com/sqlrs/cli/internal/inputset"
 	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
+	"github.com/sqlrs/cli/internal/refctx"
 )
 
 var runPrepareFn = cli.RunPrepare
@@ -151,12 +152,36 @@ func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config
 	return nil
 }
 
+func runPrepareParsed(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context) error {
+	result, handled, err := prepareResultParsed(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, parsed, ref)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
+	}
+	fmt.Fprintf(stdout, "DSN=%s\n", result.DSN)
+	return nil
+}
+
 func runPrepareLiquibase(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) error {
 	return runPrepareLiquibaseWithPathMode(stdout, stderr, runOpts, cfg, workspaceRoot, cwd, args, true)
 }
 
 func runPrepareLiquibaseWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string, relativizePaths bool) error {
 	result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, args, relativizePaths)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
+	}
+	fmt.Fprintf(stdout, "DSN=%s\n", result.DSN)
+	return nil
+}
+
+func runPrepareLiquibaseParsedWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, relativizePaths bool) error {
+	result, handled, err := prepareResultLiquibaseParsedWithPathMode(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, parsed, ref, relativizePaths)
 	if err != nil {
 		return err
 	}
@@ -176,7 +201,10 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		cli.PrintPrepareUsage(w.stdout)
 		return client.PrepareJobResult{}, true, nil
 	}
+	return prepareResultParsed(w, runOpts, cfg, workspaceRoot, cwd, parsed, nil)
+}
 
+func prepareResultParsed(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context) (client.PrepareJobResult, bool, error) {
 	imageID, source, err := resolvePrepareImage(parsed.Image, cfg)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
@@ -188,17 +216,24 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		fmt.Fprint(w.stderr, formatImageSource(imageID, source))
 	}
 
-	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin, buildPathConverter(runOpts))
+	bound, err := bindPreparePsqlInputs(runOpts, workspaceRoot, cwd, parsed, ref, os.Stdin)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
+	cleanupOnReturn := true
+	defer func() {
+		if cleanupOnReturn && bound.cleanup != nil {
+			_ = bound.cleanup()
+		}
+	}()
 
 	runOpts.ImageID = imageID
-	runOpts.PsqlArgs = psqlArgs
-	runOpts.Stdin = stdin
+	runOpts.PsqlArgs = bound.PsqlArgs
+	runOpts.Stdin = bound.Stdin
 	runOpts.PrepareKind = "psql"
 
 	if !parsed.Watch {
+		cleanupOnReturn = false
 		accepted, err := submitPrepareFn(context.Background(), runOpts)
 		if err != nil {
 			return client.PrepareJobResult{}, false, err
@@ -214,6 +249,7 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
+			cleanupOnReturn = false
 			accepted := client.PrepareJobAccepted{
 				JobID:     detached.JobID,
 				StatusURL: "/v1/prepare-jobs/" + detached.JobID,
@@ -246,7 +282,10 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 		cli.PrintPrepareUsage(w.stdout)
 		return client.PrepareJobResult{}, true, nil
 	}
+	return prepareResultLiquibaseParsedWithPathMode(w, runOpts, cfg, workspaceRoot, cwd, parsed, nil, relativizePaths)
+}
 
+func prepareResultLiquibaseParsedWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, relativizePaths bool) (client.PrepareJobResult, bool, error) {
 	if len(parsed.PsqlArgs) == 0 {
 		return client.PrepareJobResult{}, false, ExitErrorf(2, "liquibase command is required")
 	}
@@ -270,35 +309,28 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	converter := buildPathConverter(runOpts)
-	if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
-		converter = nil
-	}
-	liquibaseArgs, err := normalizeLiquibaseArgs(parsed.PsqlArgs, workspaceRoot, cwd, converter)
-	if err != nil {
-		return client.PrepareJobResult{}, false, err
-	}
-	if relativizePaths {
-		liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
-	}
 	liquibaseEnv := resolveLiquibaseEnv()
-	workDir, err := normalizeWorkDir(cwd, converter)
+	bound, err := bindPrepareLiquibaseInputs(runOpts, workspaceRoot, cwd, parsed, ref, liquibaseExec, liquibaseExecMode, relativizePaths)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	if !relativizePaths {
-		workDir = deriveLiquibaseWorkDirFromArgs(liquibaseArgs, workDir)
-	}
+	cleanupOnReturn := true
+	defer func() {
+		if cleanupOnReturn && bound.cleanup != nil {
+			_ = bound.cleanup()
+		}
+	}()
 
 	runOpts.ImageID = imageID
-	runOpts.LiquibaseArgs = liquibaseArgs
+	runOpts.LiquibaseArgs = bound.LiquibaseArgs
 	runOpts.LiquibaseExec = liquibaseExec
 	runOpts.LiquibaseExecMode = liquibaseExecMode
 	runOpts.LiquibaseEnv = liquibaseEnv
-	runOpts.WorkDir = workDir
+	runOpts.WorkDir = bound.WorkDir
 	runOpts.PrepareKind = "lb"
 
 	if !parsed.Watch {
+		cleanupOnReturn = false
 		accepted, err := submitPrepareFn(context.Background(), runOpts)
 		if err != nil {
 			return client.PrepareJobResult{}, false, err
@@ -314,6 +346,7 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
+			cleanupOnReturn = false
 			accepted := client.PrepareJobAccepted{
 				JobID:     detached.JobID,
 				StatusURL: "/v1/prepare-jobs/" + detached.JobID,
@@ -498,10 +531,11 @@ func rebasePathToWorkspaceRoot(path string, workspaceRoot string) string {
 }
 
 func canonicalizeBoundaryPath(path string) string {
-	cleaned := filepath.Clean(strings.TrimSpace(path))
-	if cleaned == "" {
-		return cleaned
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
 	}
+	cleaned := filepath.Clean(trimmed)
 	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
 		return resolved
 	}
