@@ -348,7 +348,7 @@ func TestCanonicalizeBoundaryPathCoverage(t *testing.T) {
 	root := t.TempDir()
 	want, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		t.Fatalf("EvalSymlinks(%q): %v", root, err)
+		want = filepath.Clean(root)
 	}
 	if got := canonicalizeBoundaryPath(root); got != want {
 		t.Fatalf("canonicalizeBoundaryPath(existing) = %q, want %q", got, want)

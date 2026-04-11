@@ -282,7 +282,7 @@ func TestBuildPrepareAliasCommandArgsRefOptions(t *testing.T) {
 			WatchSpecified: true,
 		},
 	)
-	if got := strings.Join(args, "|"); got != "--ref|HEAD~1|--ref-mode|blob|--no-watch|--image|postgres:17|--|-f|prepare.sql" {
+	if got := strings.Join(args, "|"); got != "--ref|HEAD~1|--ref-mode|blob|--image|postgres:17|--|-f|prepare.sql" {
 		t.Fatalf("args = %q", got)
 	}
 }

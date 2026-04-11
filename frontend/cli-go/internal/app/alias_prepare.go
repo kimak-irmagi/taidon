@@ -220,7 +220,7 @@ func buildPrepareAliasCommandArgs(alias prepareAlias, invocation prepareAliasInv
 	if invocation.WatchSpecified {
 		if invocation.Watch {
 			args = append(args, "--watch")
-		} else {
+		} else if strings.TrimSpace(invocation.GitRef) == "" {
 			args = append(args, "--no-watch")
 		}
 	}
