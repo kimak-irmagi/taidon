@@ -1245,7 +1245,7 @@ func startSpinner(label string, verbose bool) func() {
 	var once sync.Once
 	go func() {
 		defer close(finished)
-		timer := time.NewTimer(500 * time.Millisecond)
+		timer := time.NewTimer(spinnerInitialDelay)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
@@ -1254,7 +1254,7 @@ func startSpinner(label string, verbose bool) func() {
 		}
 		spinner := []string{"-", "\\", "|", "/"}
 		idx := 0
-		ticker := time.NewTicker(150 * time.Millisecond)
+		ticker := time.NewTicker(spinnerTickInterval)
 		defer ticker.Stop()
 		for {
 			select {

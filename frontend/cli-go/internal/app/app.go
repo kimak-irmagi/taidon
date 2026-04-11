@@ -26,6 +26,8 @@ const defaultIdleTimeout = 120 * time.Second
 
 var parseArgsFn = cli.ParseArgs
 var getwdFn = os.Getwd
+var spinnerInitialDelay = 500 * time.Millisecond
+var spinnerTickInterval = 150 * time.Millisecond
 
 func Run(args []string) error {
 	opts, commands, err := parseArgsFn(args)
@@ -347,7 +349,7 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 	var once sync.Once
 	go func() {
 		defer close(finished)
-		timer := time.NewTimer(500 * time.Millisecond)
+		timer := time.NewTimer(spinnerInitialDelay)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
@@ -356,7 +358,7 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 		}
 		spinner := []string{"-", "\\", "|", "/"}
 		idx := 0
-		ticker := time.NewTicker(150 * time.Millisecond)
+		ticker := time.NewTicker(spinnerTickInterval)
 		defer ticker.Stop()
 		for {
 			select {

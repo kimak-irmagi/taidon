@@ -8,8 +8,21 @@ import (
 	"time"
 )
 
+func withSpinnerTimings(t *testing.T, initialDelay, tickInterval time.Duration) {
+	t.Helper()
+	prevInitialDelay := spinnerInitialDelay
+	prevTickInterval := spinnerTickInterval
+	spinnerInitialDelay = initialDelay
+	spinnerTickInterval = tickInterval
+	t.Cleanup(func() {
+		spinnerInitialDelay = prevInitialDelay
+		spinnerTickInterval = prevTickInterval
+	})
+}
+
 func TestStartSpinnerForcedTerminalStopsBeforeShown(t *testing.T) {
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
+	withSpinnerTimings(t, 50*time.Millisecond, 10*time.Millisecond)
 
 	oldStderr := os.Stderr
 	r, w, err := os.Pipe()
@@ -17,19 +30,19 @@ func TestStartSpinnerForcedTerminalStopsBeforeShown(t *testing.T) {
 		t.Fatalf("pipe: %v", err)
 	}
 	os.Stderr = w
-	t.Cleanup(func() {
+	defer func() {
 		os.Stderr = oldStderr
 		_ = r.Close()
 		_ = w.Close()
-	})
+	}()
 
 	stop := startSpinner("init", false)
 	stop()
-	time.Sleep(20 * time.Millisecond)
 }
 
 func TestStartSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
+	withSpinnerTimings(t, 10*time.Millisecond, 10*time.Millisecond)
 
 	oldStderr := os.Stderr
 	r, w, err := os.Pipe()
@@ -37,14 +50,14 @@ func TestStartSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 		t.Fatalf("pipe: %v", err)
 	}
 	os.Stderr = w
-	t.Cleanup(func() {
+	defer func() {
 		os.Stderr = oldStderr
 		_ = r.Close()
 		_ = w.Close()
-	})
+	}()
 
 	stop := startSpinner("init", false)
-	time.Sleep(1100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	stop()
 	_ = w.Close()
 	data, readErr := io.ReadAll(r)
@@ -61,6 +74,7 @@ func TestStartSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 
 func TestStartCleanupSpinnerForcedTerminalStopsBeforeShown(t *testing.T) {
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
+	withSpinnerTimings(t, 50*time.Millisecond, 10*time.Millisecond)
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -68,19 +82,19 @@ func TestStartCleanupSpinnerForcedTerminalStopsBeforeShown(t *testing.T) {
 		t.Fatalf("pipe: %v", err)
 	}
 	os.Stdout = w
-	t.Cleanup(func() {
+	defer func() {
 		os.Stdout = oldStdout
 		_ = r.Close()
 		_ = w.Close()
-	})
+	}()
 
 	stop := startCleanupSpinner("inst", false)
 	stop()
-	time.Sleep(20 * time.Millisecond)
 }
 
 func TestStartCleanupSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
+	withSpinnerTimings(t, 10*time.Millisecond, 10*time.Millisecond)
 
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
@@ -88,14 +102,14 @@ func TestStartCleanupSpinnerForcedTerminalShowsSpinner(t *testing.T) {
 		t.Fatalf("pipe: %v", err)
 	}
 	os.Stdout = w
-	t.Cleanup(func() {
+	defer func() {
 		os.Stdout = oldStdout
 		_ = r.Close()
 		_ = w.Close()
-	})
+	}()
 
 	stop := startCleanupSpinner("inst", false)
-	time.Sleep(1100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	stop()
 	_ = w.Close()
 	data, readErr := io.ReadAll(r)
