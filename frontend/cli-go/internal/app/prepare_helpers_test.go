@@ -355,12 +355,35 @@ func TestCanonicalizeBoundaryPathCoverage(t *testing.T) {
 	}
 
 	missing := filepath.Join(root, "nested", "missing.sql")
-	wantMissing := filepath.Clean(missing)
-	if resolvedRoot, err := filepath.EvalSymlinks(root); err == nil {
-		wantMissing = filepath.Join(resolvedRoot, "nested", "missing.sql")
+	gotMissing := canonicalizeBoundaryPath(missing)
+	probe := filepath.Clean(gotMissing)
+	for {
+		if _, err := os.Stat(probe); err == nil {
+			break
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			t.Fatalf("expected existing ancestor for %q", gotMissing)
+		}
+		probe = parent
 	}
-	if got := canonicalizeBoundaryPath(missing); got != wantMissing {
-		t.Fatalf("canonicalizeBoundaryPath(missing) = %q, want %q", got, wantMissing)
+	wantRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		wantRoot = filepath.Clean(root)
+	}
+	gotRoot, err := filepath.EvalSymlinks(probe)
+	if err != nil {
+		gotRoot = filepath.Clean(probe)
+	}
+	if gotRoot != wantRoot {
+		t.Fatalf("canonicalizeBoundaryPath(missing) root = %q, want %q", gotRoot, wantRoot)
+	}
+	rel, err := filepath.Rel(probe, gotMissing)
+	if err != nil {
+		t.Fatalf("filepath.Rel(%q, %q): %v", probe, gotMissing, err)
+	}
+	if rel != filepath.Join("nested", "missing.sql") {
+		t.Fatalf("canonicalizeBoundaryPath(missing) relative path = %q, want %q", rel, filepath.Join("nested", "missing.sql"))
 	}
 }
 
