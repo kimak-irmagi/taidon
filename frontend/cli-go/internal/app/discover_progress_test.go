@@ -31,14 +31,14 @@ func captureRunOutput(t *testing.T, fn func() error) (string, string, error) {
 
 	os.Stdout = stdoutW
 	os.Stderr = stderrW
-	t.Cleanup(func() {
+	defer func() {
 		os.Stdout = oldStdout
 		os.Stderr = oldStderr
 		_ = stdoutR.Close()
 		_ = stdoutW.Close()
 		_ = stderrR.Close()
 		_ = stderrW.Close()
-	})
+	}()
 
 	runErr := fn()
 	_ = stdoutW.Close()
@@ -272,10 +272,11 @@ func TestRunDiscoverSpinnerProgressToStderr(t *testing.T) {
 	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
 	withWorkingDir(t, workspace)
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
+	withSpinnerTimings(t, 10*time.Millisecond, 10*time.Millisecond)
 
 	prevAnalyze := analyzeDiscoverFn
 	analyzeDiscoverFn = func(opts discover.Options) (discover.Report, error) {
-		time.Sleep(750 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		return discover.Report{
 			SelectedAnalyzers: []string{discover.AnalyzerAliases},
 			Scanned:           1,
@@ -318,13 +319,14 @@ func TestRunDiscoverSpinnerDoesNotInterleaveWithReportOutput(t *testing.T) {
 	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
 	withWorkingDir(t, workspace)
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
+	withSpinnerTimings(t, 10*time.Millisecond, 10*time.Millisecond)
 
 	prevAnalyze := analyzeDiscoverFn
 	analyzeDiscoverFn = func(opts discover.Options) (discover.Report, error) {
 		if opts.Progress != nil {
 			t.Fatalf("expected no progress sink in non-verbose human mode")
 		}
-		time.Sleep(750 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		return discover.Report{
 			SelectedAnalyzers: []string{discover.AnalyzerAliases},
 			Scanned:           1,
@@ -355,12 +357,12 @@ func TestRunDiscoverSpinnerDoesNotInterleaveWithReportOutput(t *testing.T) {
 	}
 	os.Stdout = w
 	os.Stderr = w
-	t.Cleanup(func() {
+	defer func() {
 		os.Stdout = oldStdout
 		os.Stderr = oldStderr
 		_ = r.Close()
 		_ = w.Close()
-	})
+	}()
 
 	runErr := Run([]string{"--workspace", workspace, "discover"})
 	if runErr != nil {
@@ -391,13 +393,14 @@ func TestRunDiscoverJSONOutputShowsProgressOnStderr(t *testing.T) {
 	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
 	withWorkingDir(t, workspace)
 	withIsTerminalWriterStub(t, func(*os.File) bool { return true })
+	withSpinnerTimings(t, 10*time.Millisecond, 10*time.Millisecond)
 
 	prevAnalyze := analyzeDiscoverFn
 	analyzeDiscoverFn = func(opts discover.Options) (discover.Report, error) {
 		if opts.Progress != nil {
 			t.Fatalf("expected no progress sink in non-verbose JSON mode")
 		}
-		time.Sleep(750 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		return discover.Report{
 			SelectedAnalyzers: []string{discover.AnalyzerAliases},
 			Scanned:           1,
