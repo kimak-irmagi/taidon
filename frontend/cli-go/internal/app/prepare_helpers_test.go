@@ -355,8 +355,12 @@ func TestCanonicalizeBoundaryPathCoverage(t *testing.T) {
 	}
 
 	missing := filepath.Join(root, "nested", "missing.sql")
-	if got := canonicalizeBoundaryPath(missing); got != filepath.Clean(missing) {
-		t.Fatalf("canonicalizeBoundaryPath(missing) = %q, want %q", got, filepath.Clean(missing))
+	wantMissing := filepath.Clean(missing)
+	if resolvedRoot, err := filepath.EvalSymlinks(root); err == nil {
+		wantMissing = filepath.Join(resolvedRoot, "nested", "missing.sql")
+	}
+	if got := canonicalizeBoundaryPath(missing); got != wantMissing {
+		t.Fatalf("canonicalizeBoundaryPath(missing) = %q, want %q", got, wantMissing)
 	}
 }
 
