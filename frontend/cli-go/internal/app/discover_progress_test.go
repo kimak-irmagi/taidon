@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -52,7 +53,20 @@ func captureRunOutput(t *testing.T, fn func() error) (string, string, error) {
 	if readErr != nil {
 		t.Fatalf("read stderr: %v", readErr)
 	}
-	return string(stdoutData), string(stderrData), runErr
+	capturedStdout := string(stdoutData)
+	capturedStderr := string(stderrData)
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		if capturedStdout != "" {
+			fmt.Fprintf(oldStderr, "\n[%s] captured stdout:\n%s\n", t.Name(), capturedStdout)
+		}
+		if capturedStderr != "" {
+			fmt.Fprintf(oldStderr, "\n[%s] captured stderr:\n%s\n", t.Name(), capturedStderr)
+		}
+	})
+	return capturedStdout, capturedStderr, runErr
 }
 
 func TestDiscoverProgressWriterFormatsMilestones(t *testing.T) {

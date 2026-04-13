@@ -154,6 +154,41 @@ jobs:
         shell: bash
         run: go test ./... -covermode=count -coverprofile=../../coverage-cli-${{ matrix.runner }}.out
 
+      - name: Re-run failing CLI app tests with JSON diagnostics
+        if: failure()
+        working-directory: frontend/cli-go
+        shell: bash
+        run: |
+          set -euo pipefail
+          json_log=../../cli-test-output-${{ matrix.runner }}.json
+          text_log=../../cli-test-output-${{ matrix.runner }}.log
+          go test ./internal/app -covermode=count -count=1 -json 2>&1 \
+            | tee "$json_log" "$text_log" || true
+
+      - name: Print failed CLI app tests
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          json_log=cli-test-output-${{ matrix.runner }}.json
+          if [[ ! -f "$json_log" ]]; then
+            echo "test json log not found: $json_log"
+            exit 0
+          fi
+
+          echo "Fail events from $json_log:"
+          grep '"Action":"fail"' "$json_log" || true
+
+      - name: Upload CLI test output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-test-output-${{ matrix.runner }}
+          path: |
+            cli-test-output-${{ matrix.runner }}.json
+            cli-test-output-${{ matrix.runner }}.log
+          if-no-files-found: ignore
+
       - name: Upload CLI coverage artifacts
         uses: actions/upload-artifact@v4
         with:

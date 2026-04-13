@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -125,5 +126,12 @@ func runWithCapturedStdout(t *testing.T, args []string) (string, error) {
 	if readErr != nil {
 		t.Fatalf("read stdout: %v", readErr)
 	}
-	return string(data), runErr
+	captured := string(data)
+	t.Cleanup(func() {
+		if !t.Failed() || captured == "" {
+			return
+		}
+		fmt.Fprintf(oldStdout, "\n[%s] captured stdout:\n%s\n", t.Name(), captured)
+	})
+	return captured, runErr
 }
