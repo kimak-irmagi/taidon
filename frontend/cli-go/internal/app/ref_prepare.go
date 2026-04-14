@@ -109,7 +109,7 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 		baseDir := cwd
 		if ctx != nil {
 			boundaryRoot = ctx.WorkspaceRoot
-			baseDir = ctx.BaseDir
+			baseDir = effectiveRefBindBaseDir(cwd, ctx, existing)
 		}
 		localConverter := converter
 		if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
@@ -136,18 +136,27 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 		}, nil
 	}
 
-	resolver := inputset.NewWorkspaceResolver(ctx.WorkspaceRoot, ctx.BaseDir, nil)
+	baseDir := effectiveRefBindBaseDir(cwd, ctx, existing)
+	resolver := inputset.NewWorkspaceResolver(ctx.WorkspaceRoot, baseDir, nil)
 	args, err := inputliquibase.NormalizeArgs(parsed.PsqlArgs, resolver, true)
 	if err != nil {
 		return prepareStageBinding{}, wrapInputsetError(err)
 	}
+	localConverter := converter
+	if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
+		localConverter = nil
+	}
 
 	stageRoot := ""
 	stageBase := resolver.BaseDir
-	if files, dirs, hasLocalPaths, err := liquibaseLocalArtifacts(args, resolver, ctx.FileSystem); err != nil {
+	if _, _, hasLocalPaths, err := liquibaseLocalArtifacts(args, resolver, ctx.FileSystem); err != nil {
 		return prepareStageBinding{}, err
 	} else if hasLocalPaths {
-		stageRoot, err = materializeRefFiles(resolver.Root, files, dirs, ctx.FileSystem)
+		// Liquibase may load secondary local assets during execution that are not
+		// represented in include/includeAll traversal (for example sqlFile or
+		// loadData). Stage the whole logical workspace root to preserve host-side
+		// Liquibase semantics in blob mode.
+		stageRoot, err = materializeRefTree(resolver.Root, ctx.FileSystem)
 		if err != nil {
 			return prepareStageBinding{}, err
 		}
@@ -163,13 +172,13 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 		}
 		args = relativizeLiquibaseArgs(args, relRoot, stageBase)
 	} else {
-		args, err = convertLiquibaseHostPaths(args, converter)
+		args, err = convertLiquibaseHostPaths(args, localConverter)
 		if err != nil {
 			return prepareStageBinding{}, err
 		}
 	}
 
-	workDir, err := normalizeWorkDir(stageBase, converter)
+	workDir, err := normalizeWorkDir(stageBase, localConverter)
 	if err != nil {
 		return prepareStageBinding{}, err
 	}
@@ -196,6 +205,16 @@ func resolvePrepareBindingContext(workspaceRoot string, cwd string, parsed prepa
 		return nil, nil, err
 	}
 	return &ctx, ctx.Cleanup, nil
+}
+
+func effectiveRefBindBaseDir(cwd string, ctx *refctx.Context, existing *refctx.Context) string {
+	if existing != nil && strings.TrimSpace(cwd) != "" {
+		return filepath.Clean(cwd)
+	}
+	if ctx != nil {
+		return ctx.BaseDir
+	}
+	return cwd
 }
 
 func joinCleanup(funcs ...func() error) func() error {
@@ -287,6 +306,49 @@ func materializeMappedDirs(logicalRoot string, stageRoot string, dirs []string) 
 		}
 	}
 	return nil
+}
+
+func materializeRefTree(logicalRoot string, fs inputset.FileSystem) (string, error) {
+	stageRoot, err := os.MkdirTemp("", "sqlrs-ref-stage-*")
+	if err != nil {
+		return "", err
+	}
+	if err := materializeRefTreeFromPath(logicalRoot, logicalRoot, stageRoot, fs); err != nil {
+		_ = os.RemoveAll(stageRoot)
+		return "", err
+	}
+	return stageRoot, nil
+}
+
+func materializeRefTreeFromPath(logicalRoot string, current string, stageRoot string, fs inputset.FileSystem) error {
+	info, err := fs.Stat(current)
+	if err != nil {
+		return err
+	}
+	stagePath := mapPathToStageRoot(logicalRoot, stageRoot, current)
+	if info.IsDir() {
+		if err := os.MkdirAll(stagePath, 0o700); err != nil {
+			return err
+		}
+		entries, err := fs.ReadDir(current)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if err := materializeRefTreeFromPath(logicalRoot, filepath.Join(current, entry.Name()), stageRoot, fs); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(stagePath), 0o700); err != nil {
+		return err
+	}
+	data, err := fs.ReadFile(current)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(stagePath, data, 0o600)
 }
 
 func mapPathToStageRoot(logicalRoot string, stageRoot string, value string) string {

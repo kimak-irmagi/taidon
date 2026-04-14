@@ -5,14 +5,17 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/client"
 	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/inputset"
 	"github.com/sqlrs/cli/internal/refctx"
 )
 
@@ -69,6 +72,104 @@ func TestBindPrepareLiquibaseInputsCleansWorktreeOnError(t *testing.T) {
 	after := countGitWorktrees(t, repo)
 	if after != before {
 		t.Fatalf("worktree count = %d, want %d after cleanup", after, before)
+	}
+}
+
+func TestBindPrepareLiquibaseInputsBlobKeepsWindowsPathsForWindowsBat(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-specific path conversion coverage")
+	}
+
+	root := t.TempDir()
+	writeTestFile(t, root, filepath.Join("config", "liquibase", "master.xml"), "<databaseChangeLog/>\n")
+
+	bound, err := bindPrepareLiquibaseInputs(
+		cli.PrepareOptions{WSLDistro: "Ubuntu"},
+		root,
+		root,
+		prepareArgs{PsqlArgs: []string{"update", "--changelog-file", filepath.Join("config", "liquibase", "master.xml")}},
+		&refctx.Context{
+			WorkspaceRoot: root,
+			BaseDir:       root,
+			RefMode:       "blob",
+			FileSystem:    inputset.OSFileSystem{},
+		},
+		"liquibase.cmd",
+		"windows-bat",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("bindPrepareLiquibaseInputs: %v", err)
+	}
+	if bound.cleanup != nil {
+		t.Cleanup(func() {
+			if err := bound.cleanup(); err != nil {
+				t.Fatalf("cleanup: %v", err)
+			}
+		})
+	}
+
+	if got := strings.Join(bound.LiquibaseArgs, "|"); strings.Contains(got, "/mnt/") {
+		t.Fatalf("expected windows host paths, got %q", got)
+	}
+	if strings.HasPrefix(bound.WorkDir, "/mnt/") {
+		t.Fatalf("expected windows work dir, got %q", bound.WorkDir)
+	}
+	if filepath.VolumeName(bound.WorkDir) == "" {
+		t.Fatalf("expected absolute windows work dir, got %q", bound.WorkDir)
+	}
+}
+
+func TestBindPrepareLiquibaseInputsBlobStagesAdditionalLocalAssets(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(
+		t,
+		root,
+		"master.xml",
+		`<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"><loadData file="seed.csv" tableName="seed" relativeToChangelogFile="true"/></databaseChangeLog>`+"\n",
+	)
+	writeTestFile(t, root, "seed.csv", "id,name\n1,example\n")
+
+	bound, err := bindPrepareLiquibaseInputs(
+		cli.PrepareOptions{},
+		root,
+		root,
+		prepareArgs{PsqlArgs: []string{"update", "--changelog-file", "master.xml"}},
+		&refctx.Context{
+			WorkspaceRoot: root,
+			BaseDir:       root,
+			RefMode:       "blob",
+			FileSystem:    inputset.OSFileSystem{},
+		},
+		"",
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("bindPrepareLiquibaseInputs: %v", err)
+	}
+	if bound.cleanup != nil {
+		t.Cleanup(func() {
+			if err := bound.cleanup(); err != nil {
+				t.Fatalf("cleanup: %v", err)
+			}
+		})
+	}
+
+	if len(bound.LiquibaseArgs) < 3 {
+		t.Fatalf("unexpected liquibase args: %+v", bound.LiquibaseArgs)
+	}
+	changelogPath := strings.TrimSpace(bound.LiquibaseArgs[2])
+	if changelogPath == "" {
+		t.Fatalf("expected staged changelog path, got %+v", bound.LiquibaseArgs)
+	}
+	assetPath := filepath.Join(filepath.Dir(changelogPath), "seed.csv")
+	data, err := os.ReadFile(assetPath)
+	if err != nil {
+		t.Fatalf("expected staged asset %q: %v", assetPath, err)
+	}
+	if string(data) != "id,name\n1,example\n" {
+		t.Fatalf("unexpected staged asset contents: %q", string(data))
 	}
 }
 

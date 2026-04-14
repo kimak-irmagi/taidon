@@ -133,6 +133,75 @@ func TestRunPlanAliasRefUsesSelectedRevisionAlias(t *testing.T) {
 	}
 }
 
+func TestRunPlanAliasRefLiquibaseUsesAliasDirWorkDir(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	for _, mode := range []string{"worktree", "blob"} {
+		t.Run(mode, func(t *testing.T) {
+			repo, parentRef := initPrepareRefTestRepo(t)
+			temp := t.TempDir()
+			setTestDirs(t, temp)
+
+			prevGetwd := getwdFn
+			getwdFn = func() (string, error) {
+				return repo, nil
+			}
+			t.Cleanup(func() { getwdFn = prevGetwd })
+
+			var gotRequest map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
+					body, _ := io.ReadAll(r.Body)
+					_ = json.Unmarshal(body, &gotRequest)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusAccepted)
+					io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+					w.Header().Set("Content-Type", "application/x-ndjson")
+					io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"succeeded"}`+"\n")
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+					w.Header().Set("Content-Type", "application/json")
+					io.WriteString(w, `{"job_id":"job-1","status":"succeeded","plan_only":true,"prepare_kind":"lb","image_id":"image","prepare_args_normalized":"update --changelog-file config/liquibase/master.xml","tasks":[{"task_id":"plan","type":"plan","planner_kind":"lb"}]}`)
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+
+			err := Run([]string{
+				"--mode", "remote",
+				"--endpoint", server.URL,
+				"--output", "json",
+				"--workspace", repo,
+				"plan",
+				"--ref", parentRef,
+				"--ref-mode", mode,
+				"examples/liquibase",
+			})
+			if err != nil {
+				t.Fatalf("Run(plan alias --ref liquibase): %v", err)
+			}
+
+			workDir, ok := gotRequest["work_dir"].(string)
+			if !ok || strings.TrimSpace(workDir) == "" {
+				t.Fatalf("work_dir = %+v, want non-empty string", gotRequest["work_dir"])
+			}
+			if filepath.Base(workDir) != "examples" {
+				t.Fatalf("work_dir = %q, want alias directory ending in %q", workDir, "examples")
+			}
+
+			args := mustStringSliceField(t, gotRequest, "liquibase_args")
+			want := "update|--changelog-file|" + filepath.Join(workDir, "config", "liquibase", "master.xml")
+			if got := strings.Join(args, "|"); got != want {
+				t.Fatalf("liquibase_args = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func initPrepareRefTestRepo(t *testing.T) (string, string) {
 	t.Helper()
 
@@ -156,7 +225,12 @@ func initPrepareRefTestRepo(t *testing.T) (string, string) {
 	firstScript := filepath.Join(repo, "examples", "first.sql")
 	preparePath := filepath.Join(repo, "examples", "chinook", "prepare.sql")
 	aliasPath := filepath.Join(repo, "examples", "chinook.prep.s9s.yaml")
+	liquibaseAliasPath := filepath.Join(repo, "examples", "liquibase.prep.s9s.yaml")
+	liquibaseChangelogPath := filepath.Join(repo, "examples", "config", "liquibase", "master.xml")
 	if err := os.MkdirAll(filepath.Dir(preparePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(liquibaseChangelogPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(firstScript, []byte("select 1;\n"), 0o600); err != nil {
@@ -166,6 +240,12 @@ func initPrepareRefTestRepo(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(aliasPath, []byte("kind: psql\nimage: image\nargs:\n  - -f\n  - ./first.sql\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(liquibaseAliasPath, []byte("kind: lb\nimage: image\nargs:\n  - update\n  - --changelog-file\n  - config/liquibase/master.xml\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(liquibaseChangelogPath, []byte("<databaseChangeLog/>\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runGit("add", "examples")
@@ -179,6 +259,9 @@ func initPrepareRefTestRepo(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(aliasPath, []byte("kind: psql\nimage: image\nargs:\n  - -f\n  - ./second.sql\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(liquibaseChangelogPath, []byte("<databaseChangeLog logicalFilePath=\"master\"/>\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	runGit("add", "examples")
