@@ -157,7 +157,16 @@ func TestResolveDefaultsAndKeepWorktree(t *testing.T) {
 	}
 
 	repo, head := initRefctxTestRepo(t)
-	t.Chdir(repo)
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(prevWD)
+	})
 
 	ctx, err := Resolve("", "", head, "", true)
 	if err != nil {
