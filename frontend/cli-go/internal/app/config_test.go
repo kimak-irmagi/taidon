@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -405,5 +406,12 @@ func captureStdout(t *testing.T, fn func() error) string {
 	if err != nil {
 		t.Fatalf("read stdout: %v", err)
 	}
-	return string(data)
+	captured := string(data)
+	t.Cleanup(func() {
+		if !t.Failed() || captured == "" {
+			return
+		}
+		fmt.Fprintf(oldStdout, "\n[%s] captured stdout:\n%s\n", t.Name(), captured)
+	})
+	return captured
 }

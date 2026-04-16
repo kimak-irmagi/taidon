@@ -14,8 +14,10 @@ the CLI contract, user guide, and the shared `inputset` decision.
 - The wrapped command currently remains one token among `plan:psql`, `plan:lb`,
   `prepare:psql`, and `prepare:lb`.
 - The approved architecture is that `internal/diff` owns scope parsing,
-  context resolution, comparison, and rendering only. Kind-specific file
-  semantics belong to shared `internal/inputset` components.
+  dual-side diff orchestration, comparison, and rendering only. Generic
+  ref-backed filesystem context belongs to shared `internal/refctx`, while
+  kind-specific file semantics belong to shared `internal/inputset`
+  components.
 - Existing `BuildPsqlFileList` / `BuildLbFileList` helpers in `internal/diff`
   are transitional implementation artifacts, not the long-term source of truth.
 
@@ -24,7 +26,7 @@ the CLI contract, user guide, and the shared `inputset` decision.
 | Component | Responsibility | Caller |
 |-----------|----------------|--------|
 | **Diff command handler** | Parse the diff scope and wrapped command; orchestrate side resolution, per-side input-set collection, comparison, and rendering. Map errors to exit codes. | `internal/app` -> `internal/cli.RunDiff` |
-| **Scope resolver** | Given `--from-ref`/`--to-ref` or `--from-path`/`--to-path`, produce two side contexts. Each context exposes a filesystem root for one side of the comparison. | `internal/diff.ResolveScope` |
+| **Scope resolver** | Given `--from-ref`/`--to-ref` or `--from-path`/`--to-path`, produce two side contexts. Each context exposes a filesystem root for one side of the comparison. Ref-backed side setup reuses shared `internal/refctx`. | `internal/diff.ResolveScope` |
 | **Shared inputset kind component** | For one side and one wrapped command kind, parse file-bearing args, bind them against that side's root, and collect a deterministic input set. | `RunDiff` via `internal/inputset/*` |
 | **Diff comparator** | Given two collected input sets, compute Added / Modified / Removed and apply options such as `--limit` and `--include-content`. | Diff command handler |
 | **Diff renderer** | Turn the comparison result into human-readable text or JSON according to global `--output`. | Diff command handler |
@@ -75,7 +77,8 @@ All of the following live in the CLI codebase (for example `frontend/cli-go`).
 |---------|----------|
 | `internal/app` | Dispatches `diff`; parses diff scope; builds side root context. |
 | `internal/cli` | `RunDiff` orchestration and top-level render dispatch. |
-| `internal/diff` | `ParseDiffScope`, `ResolveScope`, `Compare`, `RenderHuman`, `RenderJSON`, and shared diff result types. |
+| `internal/diff` | `ParseDiffScope`, dual-side scope orchestration, `Compare`, `RenderHuman`, `RenderJSON`, and shared diff result types. |
+| `internal/refctx` | Shared ref-backed filesystem context for one selected ref: repo-root discovery, ref resolution, projected cwd, worktree/blob setup, and cleanup. |
 | `internal/inputset` | Shared parse/bind/collect/project abstractions and the per-kind packages used by `diff`. |
 
 ## 6. Data ownership and lifecycle

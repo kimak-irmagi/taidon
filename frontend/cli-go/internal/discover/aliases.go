@@ -15,6 +15,7 @@ import (
 	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
 	inputpgbench "github.com/sqlrs/cli/internal/inputset/pgbench"
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
+	"github.com/sqlrs/cli/internal/pathutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -474,8 +475,8 @@ func stableDiscoverRelativePath(base string, target string, fallbackAbsolute boo
 		return "", false
 	}
 
-	canonicalBase := inputset.CanonicalizeBoundaryPath(base)
-	canonicalTarget := inputset.CanonicalizeBoundaryPath(target)
+	canonicalBase := pathutil.CanonicalizeBoundaryPath(base)
+	canonicalTarget := pathutil.CanonicalizeBoundaryPath(target)
 	if canonicalBase != "" && canonicalTarget != "" {
 		if canonicalRel, canonicalErr := filepath.Rel(canonicalBase, canonicalTarget); canonicalErr == nil {
 			return filepath.ToSlash(canonicalRel), true
@@ -593,7 +594,7 @@ func stableDiscoverAbsPath(path string) string {
 	if !filepath.IsAbs(cleaned) {
 		return cleaned
 	}
-	return filepath.Clean(inputset.CanonicalizeBoundaryPath(cleaned))
+	return filepath.Clean(pathutil.CanonicalizeBoundaryPath(cleaned))
 }
 
 func discoverPathKeys(workspaceRoot string, relPath string, absPath string) []string {

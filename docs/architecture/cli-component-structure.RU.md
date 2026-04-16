@@ -29,6 +29,11 @@
     copy-paste `alias create` command synthesis и aggregation report.
   - Переиспользует `internal/alias` и `internal/inputset` для aliases
     анализатора.
+- `internal/refctx`
+  - Общий ref-backed filesystem context для `plan` / `prepare --ref` и
+    ref-mode у `diff`.
+  - Владеет поиском repo root, локальным разрешением ref, mapping projected
+    cwd, lifecycle detached worktree и setup blob-backed filesystem.
 - `internal/inputset`
   - Общий CLI-side источник истины для file-bearing семантики команд.
   - Владеет staged абстракциями parse/bind/collect/project и общими типами.
@@ -125,6 +130,7 @@ flowchart LR
   INPUTSET["internal/inputset"]
   ALIAS["internal/alias"]
   DISCOVER["internal/discover"]
+  REFCTX["internal/refctx"]
   DIFF["internal/diff"]
   RUNKIND["internal/cli/runkind"]
   CLIENT["internal/client"]
@@ -138,6 +144,7 @@ flowchart LR
   CMD --> APP
   APP --> CLI
   APP --> INPUTSET
+  APP --> REFCTX
   APP --> CONFIG
   APP --> PATHS
   APP --> WSL
@@ -148,6 +155,7 @@ flowchart LR
   CLI --> ALIAS
   CLI --> DISCOVER
   CLI --> DIFF
+  DIFF --> REFCTX
   ALIAS --> INPUTSET
   DISCOVER --> ALIAS
   DISCOVER --> INPUTSET

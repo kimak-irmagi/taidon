@@ -28,6 +28,11 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - Owns candidate scoring, topology ranking, alias-coverage suppression,
     copy-paste `alias create` command synthesis, and report aggregation.
   - Reuses `internal/alias` and `internal/inputset` for the aliases analyzer.
+- `internal/refctx`
+  - Shared ref-backed filesystem context for `plan` / `prepare --ref` and
+    `diff` ref-mode.
+  - Owns repo-root discovery, local ref resolution, projected-cwd mapping,
+    detached-worktree lifecycle, and blob-backed filesystem setup.
 - `internal/inputset`
   - Shared CLI-side source of truth for file-bearing command semantics.
   - Owns staged parse/bind/collect/project abstractions and common helper types.
@@ -125,6 +130,7 @@ flowchart LR
   INPUTSET["internal/inputset"]
   ALIAS["internal/alias"]
   DISCOVER["internal/discover"]
+  REFCTX["internal/refctx"]
   DIFF["internal/diff"]
   RUNKIND["internal/cli/runkind"]
   CLIENT["internal/client"]
@@ -138,6 +144,7 @@ flowchart LR
   CMD --> APP
   APP --> CLI
   APP --> INPUTSET
+  APP --> REFCTX
   APP --> CONFIG
   APP --> PATHS
   APP --> WSL
@@ -148,6 +155,7 @@ flowchart LR
   CLI --> ALIAS
   CLI --> DISCOVER
   CLI --> DIFF
+  DIFF --> REFCTX
   ALIAS --> INPUTSET
   DISCOVER --> ALIAS
   DISCOVER --> INPUTSET

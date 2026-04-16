@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/config"
 	"github.com/sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestParsePrepareArgsImageFlag(t *testing.T) {
@@ -59,6 +61,41 @@ func TestParsePrepareArgsImageEquals(t *testing.T) {
 	}
 }
 
+func TestParsePrepareArgsRefOptions(t *testing.T) {
+	opts, showHelp, err := parsePrepareArgs([]string{"--ref", "HEAD~1", "--ref-mode", "blob", "--", "-f", "init.sql"})
+	if err != nil || showHelp {
+		t.Fatalf("parsePrepareArgs: err=%v help=%v", err, showHelp)
+	}
+	if opts.Ref != "HEAD~1" {
+		t.Fatalf("expected ref, got %q", opts.Ref)
+	}
+	if opts.RefMode != "blob" {
+		t.Fatalf("expected ref mode blob, got %q", opts.RefMode)
+	}
+	if opts.RefKeepWorktree {
+		t.Fatalf("expected ref keep worktree false")
+	}
+	if len(opts.PsqlArgs) != 2 || opts.PsqlArgs[0] != "-f" || opts.PsqlArgs[1] != "init.sql" {
+		t.Fatalf("unexpected psql args: %+v", opts.PsqlArgs)
+	}
+}
+
+func TestParsePrepareArgsRefKeepWorktreeDefaultsMode(t *testing.T) {
+	opts, showHelp, err := parsePrepareArgs([]string{"--ref", "origin/main", "--ref-keep-worktree", "--", "-c", "select 1"})
+	if err != nil || showHelp {
+		t.Fatalf("parsePrepareArgs: err=%v help=%v", err, showHelp)
+	}
+	if opts.Ref != "origin/main" {
+		t.Fatalf("expected ref, got %q", opts.Ref)
+	}
+	if opts.RefMode != "worktree" {
+		t.Fatalf("expected default ref mode worktree, got %q", opts.RefMode)
+	}
+	if !opts.RefKeepWorktree {
+		t.Fatalf("expected ref keep worktree true")
+	}
+}
+
 func TestParsePrepareArgsMissingImageValue(t *testing.T) {
 	_, _, err := parsePrepareArgs([]string{"--image"})
 	if err == nil {
@@ -78,6 +115,63 @@ func TestParsePrepareArgsImageEqualsMissing(t *testing.T) {
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
 		t.Fatalf("expected ExitError code 2, got %v", err)
+	}
+}
+
+func TestParsePrepareArgsRejectsInvalidRefCombinations(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing ref value",
+			args: []string{"--ref"},
+			want: "Missing value for --ref",
+		},
+		{
+			name: "empty ref value",
+			args: []string{"--ref", "   "},
+			want: "Missing value for --ref",
+		},
+		{
+			name: "ref mode without ref",
+			args: []string{"--ref-mode", "blob"},
+			want: "--ref-mode requires --ref",
+		},
+		{
+			name: "missing ref mode value",
+			args: []string{"--ref", "HEAD", "--ref-mode"},
+			want: "Missing value for --ref-mode",
+		},
+		{
+			name: "bad ref mode",
+			args: []string{"--ref", "HEAD", "--ref-mode", "bad"},
+			want: "--ref-mode \"bad\" is not supported",
+		},
+		{
+			name: "keep worktree without ref",
+			args: []string{"--ref-keep-worktree"},
+			want: "--ref-keep-worktree requires --ref",
+		},
+		{
+			name: "keep worktree with blob",
+			args: []string{"--ref", "HEAD", "--ref-mode", "blob", "--ref-keep-worktree"},
+			want: "--ref-keep-worktree is only valid with --ref-mode worktree",
+		},
+		{
+			name: "no-watch with ref",
+			args: []string{"--ref", "HEAD", "--no-watch", "--", "-c", "select 1"},
+			want: "--no-watch is not supported with --ref",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := parsePrepareArgs(tc.args)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q, got %v", tc.want, err)
+			}
+		})
 	}
 }
 
@@ -222,6 +316,112 @@ func TestNormalizeFilePathRejectsOutsideWorkspace(t *testing.T) {
 	outside := filepath.Join(outer, "outside.sql")
 	if _, _, err := normalizeFilePath(outside, workspace, workspace, nil); err == nil {
 		t.Fatalf("expected workspace boundary error")
+	}
+}
+
+func TestRebasePathToWorkspaceRootCoverage(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "nested", "query.sql")
+	outside := filepath.Join(filepath.Dir(root), "outside.sql")
+
+	if got := rebasePathToWorkspaceRoot("", root); got != "" {
+		t.Fatalf("expected empty path to remain empty, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(child, ""); got != child {
+		t.Fatalf("expected empty root to keep path, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(root, root); !pathutil.SameLocalPath(got, root) {
+		t.Fatalf("expected root path to stay rooted, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(child, root); !pathutil.SameLocalPath(got, child) {
+		t.Fatalf("expected child path to stay within root, got %q", got)
+	}
+	if got := rebasePathToWorkspaceRoot(outside, root); !pathutil.SameLocalPath(got, outside) {
+		t.Fatalf("expected outside path unchanged, got %q", got)
+	}
+}
+
+func TestCanonicalizeBoundaryPathCoverage(t *testing.T) {
+	if got := canonicalizeBoundaryPath(" "); got != "" {
+		t.Fatalf("expected empty canonical path, got %q", got)
+	}
+
+	root := t.TempDir()
+	want, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		want = filepath.Clean(root)
+	}
+	if got := canonicalizeBoundaryPath(root); !pathutil.SameLocalPath(got, want) {
+		t.Fatalf("canonicalizeBoundaryPath(existing) = %q, want %q", got, want)
+	}
+
+	missing := filepath.Join(root, "nested", "missing.sql")
+	gotMissing := canonicalizeBoundaryPath(missing)
+	probe := filepath.Clean(gotMissing)
+	for {
+		if _, err := os.Stat(probe); err == nil {
+			break
+		}
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			t.Fatalf("expected existing ancestor for %q", gotMissing)
+		}
+		probe = parent
+	}
+	wantRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		wantRoot = filepath.Clean(root)
+	}
+	gotRoot, err := filepath.EvalSymlinks(probe)
+	if err != nil {
+		gotRoot = filepath.Clean(probe)
+	}
+	if !pathutil.SameLocalPath(gotRoot, wantRoot) {
+		t.Fatalf("canonicalizeBoundaryPath(missing) root = %q, want %q", gotRoot, wantRoot)
+	}
+	rel, err := filepath.Rel(probe, gotMissing)
+	if err != nil {
+		t.Fatalf("filepath.Rel(%q, %q): %v", probe, gotMissing, err)
+	}
+	if rel != filepath.Join("nested", "missing.sql") {
+		t.Fatalf("canonicalizeBoundaryPath(missing) relative path = %q, want %q", rel, filepath.Join("nested", "missing.sql"))
+	}
+}
+
+func TestBuildPathConverterNoWSLDistro(t *testing.T) {
+	if conv := buildPathConverter(cli.PrepareOptions{}); conv != nil {
+		t.Fatalf("expected nil converter without WSL distro")
+	}
+}
+
+func TestDeriveLiquibaseWorkDirFromArgsCoverage(t *testing.T) {
+	fallback := filepath.Join("fallback", "dir")
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update"}, fallback); got != fallback {
+		t.Fatalf("expected fallback without search path, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--searchPath"}, fallback); got != fallback {
+		t.Fatalf("expected fallback for missing searchPath value, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--searchPath", "classpath:db"}, fallback); got != fallback {
+		t.Fatalf("expected fallback for remote-only searchPath, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--search-path", "dir1,classpath:db"}, fallback); got != filepath.Clean("dir1") {
+		t.Fatalf("expected dir1 workdir, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--searchPath=dir2,classpath:db"}, fallback); got != filepath.Clean("dir2") {
+		t.Fatalf("expected dir2 workdir, got %q", got)
+	}
+	if got := deriveLiquibaseWorkDirFromArgs([]string{"update", "--search-path=classpath:db,dir3"}, fallback); got != filepath.Clean("dir3") {
+		t.Fatalf("expected dir3 workdir, got %q", got)
+	}
+}
+
+func TestFirstLiquibaseSearchPathDirCoverage(t *testing.T) {
+	if got := firstLiquibaseSearchPathDir("classpath:db, https://example.com/db"); got != "" {
+		t.Fatalf("expected empty dir for remote-only searchPath, got %q", got)
+	}
+	if got := firstLiquibaseSearchPathDir(" , classpath:db , dir/sub "); got != filepath.Clean("dir/sub") {
+		t.Fatalf("expected first local dir, got %q", got)
 	}
 }
 

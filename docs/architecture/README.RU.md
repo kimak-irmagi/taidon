@@ -38,6 +38,10 @@
   компонентная структура стриминга prepare events и watch-контролов.
 - [`diff-component-structure.RU.md`](diff-component-structure.RU.md) - структура
   компонентов и поток вызовов для `sqlrs diff` (после контракта CLI).
+- [`ref-flow.RU.md`](ref-flow.RU.md) - поток взаимодействия для bounded local
+  `plan` / `prepare --ref`.
+- [`ref-component-structure.RU.md`](ref-component-structure.RU.md) - внутренняя
+  компонентная структура bounded local ref-backed `plan` / `prepare`.
 - [`alias-inspection-flow.RU.md`](alias-inspection-flow.RU.md) - поток
   взаимодействия для `sqlrs alias ls` и `sqlrs alias check`.
 - [`alias-inspection-component-structure.RU.md`](alias-inspection-component-structure.RU.md) -

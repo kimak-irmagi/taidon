@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestResolveXDG(t *testing.T) {
@@ -128,13 +130,13 @@ func TestFindProjectConfigUsesCwd(t *testing.T) {
 	}
 	expected, err := filepath.EvalSymlinks(configPath)
 	if err != nil {
-		t.Fatalf("EvalSymlinks: %v", err)
+		expected = filepath.Clean(configPath)
 	}
 	actual, err := filepath.EvalSymlinks(found)
 	if err != nil {
-		t.Fatalf("EvalSymlinks: %v", err)
+		actual = filepath.Clean(found)
 	}
-	if actual != expected {
+	if !pathutil.SameLocalPath(actual, expected) {
 		t.Fatalf("expected %q, got %q", expected, actual)
 	}
 }

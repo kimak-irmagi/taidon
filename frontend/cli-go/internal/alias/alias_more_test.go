@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/cli/runkind"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestNormalizeHelpers(t *testing.T) {
@@ -178,11 +179,11 @@ func TestResolvePathWithinWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolvePathWithinWorkspace: %v", err)
 	}
-	if rel != filepath.Join(workspace, "demo.prep.s9s.yaml") {
+	if !pathutil.SameLocalPath(rel, filepath.Join(workspace, "demo.prep.s9s.yaml")) {
 		t.Fatalf("unexpected resolved path: %q", rel)
 	}
 	rel, err = resolvePathWithinWorkspace("demo.prep.s9s.yaml", workspace, "")
-	if err != nil || rel != filepath.Join(workspace, "demo.prep.s9s.yaml") {
+	if err != nil || !pathutil.SameLocalPath(rel, filepath.Join(workspace, "demo.prep.s9s.yaml")) {
 		t.Fatalf("expected empty base to default to workspace, got rel=%q err=%v", rel, err)
 	}
 	if _, err := resolvePathWithinWorkspace("demo.prep.s9s.yaml", "", ""); err == nil || !strings.Contains(err.Error(), "workspace root is required") {

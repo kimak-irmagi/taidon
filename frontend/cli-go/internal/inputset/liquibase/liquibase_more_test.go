@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/inputset"
+	"github.com/sqlrs/cli/internal/pathutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -251,7 +252,7 @@ func TestLiquibaseHelperBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveSearchPathParts: %v", err)
 	}
-	if len(searchParts) != 1 || searchParts[0] != filepath.Join(aliasDir, "shared") {
+	if len(searchParts) != 1 || !pathutil.SameLocalPath(searchParts[0], filepath.Join(aliasDir, "shared")) {
 		t.Fatalf("unexpected search parts: %+v", searchParts)
 	}
 
@@ -268,13 +269,13 @@ func TestLiquibaseHelperBranches(t *testing.T) {
 		t.Fatalf("expected remote include to be ignored, got %q", got)
 	}
 	abs := filepath.Join(root, "abs.xml")
-	if got := tracker.resolveIncludePath(filepath.Join(root, "db"), abs, true); got != abs {
+	if got := tracker.resolveIncludePath(filepath.Join(root, "db"), abs, true); !pathutil.SameLocalPath(got, abs) {
 		t.Fatalf("expected abs include to stay absolute, got %q", got)
 	}
-	if got := tracker.resolveIncludePath(filepath.Join(root, "db"), "child.xml", false); got != filepath.Join(aliasDir, "shared", "child.xml") {
+	if got := tracker.resolveIncludePath(filepath.Join(root, "db"), "child.xml", false); !pathutil.SameLocalPath(got, filepath.Join(aliasDir, "shared", "child.xml")) {
 		t.Fatalf("expected search-path resolution, got %q", got)
 	}
-	if got := tracker.resolveIncludePath(filepath.Join(root, "db"), "missing.xml", false); got != filepath.Join(root, "missing.xml") {
+	if got := tracker.resolveIncludePath(filepath.Join(root, "db"), "missing.xml", false); !pathutil.SameLocalPath(got, filepath.Join(root, "missing.xml")) {
 		t.Fatalf("expected root fallback, got %q", got)
 	}
 }
@@ -352,7 +353,7 @@ func TestRewriteHelpersAndCollectDeclaredBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("collectDeclared: %v", err)
 	}
-	if len(declared) != 1 || declared[0].flag != "--changelog-file" || len(searchPaths) != 1 || changelogPath != filepath.Join(root, "dir", "child.xml") {
+	if len(declared) != 1 || declared[0].flag != "--changelog-file" || len(searchPaths) != 1 || !pathutil.SameLocalPath(changelogPath, filepath.Join(root, "dir", "child.xml")) {
 		t.Fatalf("unexpected collectDeclared result: declared=%+v searchPaths=%+v changelog=%q", declared, searchPaths, changelogPath)
 	}
 

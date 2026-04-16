@@ -1,19 +1,9 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func isWithin(base, target string) bool {
-	rel, err := filepath.Rel(base, target)
-	if err != nil {
-		return false
-	}
-	if rel == "." {
-		return true
-	}
-	prefix := ".." + string(os.PathSeparator)
-	return !strings.HasPrefix(rel, prefix) && rel != ".."
+	return pathutil.IsWithin(base, target)
 }

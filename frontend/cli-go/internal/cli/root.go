@@ -174,6 +174,14 @@ func findPrepareAliasRunIndex(args []string) int {
 		switch arg {
 		case "--watch", "--no-watch", "--help", "-h":
 			continue
+		case "--ref", "--ref-mode":
+			if i+1 >= len(args) {
+				return -1
+			}
+			i++
+			continue
+		case "--ref-keep-worktree":
+			continue
 		case "--":
 			return -1
 		default:

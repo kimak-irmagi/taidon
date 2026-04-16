@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,9 @@ func captureRunStdout(t *testing.T, fn func() error) (string, error) {
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
+	defer func() {
+		_ = r.Close()
+	}()
 	os.Stdout = w
 	defer func() {
 		_ = w.Close()
@@ -29,7 +33,14 @@ func captureRunStdout(t *testing.T, fn func() error) (string, error) {
 	if readErr != nil {
 		t.Fatalf("read stdout: %v", readErr)
 	}
-	return string(data), runErr
+	captured := string(data)
+	t.Cleanup(func() {
+		if !t.Failed() || captured == "" {
+			return
+		}
+		fmt.Fprintf(oldStdout, "\n[%s] captured stdout:\n%s\n", t.Name(), captured)
+	})
+	return captured, runErr
 }
 
 func TestRunAliasModeHelpOutputsUsage(t *testing.T) {

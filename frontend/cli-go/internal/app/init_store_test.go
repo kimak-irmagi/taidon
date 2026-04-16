@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/cli"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestResolveStoreTypeExplicit(t *testing.T) {
@@ -40,7 +41,7 @@ func TestResolveStorePathUsesEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveStorePath(dir): %v", err)
 	}
-	if out != root {
+	if !pathutil.SameLocalPath(out, root) {
 		t.Fatalf("expected root %q, got %q", root, out)
 	}
 
@@ -49,10 +50,10 @@ func TestResolveStorePathUsesEnv(t *testing.T) {
 		t.Fatalf("resolveStorePath(image): %v", err)
 	}
 	if runtime.GOOS == "windows" {
-		if out != filepath.Join(root, "btrfs.vhdx") {
+		if !pathutil.SameLocalPath(out, filepath.Join(root, "btrfs.vhdx")) {
 			t.Fatalf("expected windows vhdx path, got %q", out)
 		}
-	} else if out != filepath.Join(root, "btrfs.img") {
+	} else if !pathutil.SameLocalPath(out, filepath.Join(root, "btrfs.img")) {
 		t.Fatalf("expected img path, got %q", out)
 	}
 }

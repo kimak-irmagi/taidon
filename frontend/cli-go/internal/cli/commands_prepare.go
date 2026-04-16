@@ -87,6 +87,9 @@ type PrepareOptions struct {
 	PrepareKind       string
 	PlanOnly          bool
 	CompositeRun      bool
+	// DisableControlPrompt prevents interactive detach/stop controls when the
+	// caller cannot safely release temporary prepare inputs before job completion.
+	DisableControlPrompt bool
 }
 
 func RunPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobResult, error) {
@@ -113,7 +116,7 @@ func RunPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobResu
 	}
 
 	status, err := waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose, waitPrepareOptions{
-		allowControls: true,
+		allowControls: !opts.DisableControlPrompt,
 	})
 	if err != nil {
 		return client.PrepareJobResult{}, err
@@ -216,7 +219,7 @@ func RunWatch(ctx context.Context, opts PrepareOptions, jobID string) (client.Pr
 	}
 	eventsURL := "/v1/prepare-jobs/" + jobID + "/events"
 	return waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, os.Stderr, opts.Verbose, waitPrepareOptions{
-		allowControls: true,
+		allowControls: !opts.DisableControlPrompt,
 	})
 }
 

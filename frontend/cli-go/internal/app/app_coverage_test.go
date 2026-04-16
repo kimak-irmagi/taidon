@@ -245,13 +245,14 @@ func TestStartCleanupSpinnerTerminal(t *testing.T) {
 		t.Skipf("no console output: %v", err)
 	}
 	defer out.Close()
+	withSpinnerTimings(t, 10*time.Millisecond, 10*time.Millisecond)
 
 	oldStdout := os.Stdout
 	os.Stdout = out
-	t.Cleanup(func() { os.Stdout = oldStdout })
+	defer func() { os.Stdout = oldStdout }()
 
 	stop := startCleanupSpinner("inst", false)
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	stop()
 }
 

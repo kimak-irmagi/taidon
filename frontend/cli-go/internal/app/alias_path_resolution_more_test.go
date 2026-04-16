@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestRebasePrepareAliasArgs(t *testing.T) {
@@ -138,7 +140,7 @@ func TestRebaseAliasFilePath(t *testing.T) {
 	if got := rebaseAliasFilePath("-", baseDir); got != "-" {
 		t.Fatalf("rebaseAliasFilePath(stdin) = %q", got)
 	}
-	if got := rebaseAliasFilePath(absPath, baseDir); got != filepath.Clean(absPath) {
+	if got := rebaseAliasFilePath(absPath, baseDir); !pathutil.SameLocalPath(got, absPath) {
 		t.Fatalf("rebaseAliasFilePath(abs) = %q, want %q", got, filepath.Clean(absPath))
 	}
 	if got := rebaseAliasFilePath("queries/setup.sql", baseDir); got != filepath.Join("workspace", "aliases", "queries", "setup.sql") {

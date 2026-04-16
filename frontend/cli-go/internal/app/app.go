@@ -26,6 +26,8 @@ const defaultIdleTimeout = 120 * time.Second
 
 var parseArgsFn = cli.ParseArgs
 var getwdFn = os.Getwd
+var spinnerInitialDelay = 500 * time.Millisecond
+var spinnerTickInterval = 150 * time.Millisecond
 
 func Run(args []string) error {
 	opts, commands, err := parseArgsFn(args)
@@ -67,7 +69,10 @@ func Run(args []string) error {
 	}
 
 	var prepared *client.PrepareJobResult
-	for _, cmd := range commands {
+	for idx, cmd := range commands {
+		if idx == 0 && len(commands) > 1 && prepareStageUsesRef(cmd) {
+			return fmt.Errorf("prepare --ref does not support composite run yet")
+		}
 		switch cmd.Name {
 		case "alias":
 			if len(commands) > 1 {
@@ -167,23 +172,24 @@ func Run(args []string) error {
 				cli.PrintPrepareUsage(os.Stdout)
 				return nil
 			}
-			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
-			if err != nil {
-				return err
-			}
-			alias, err := loadPrepareAlias(aliasPath)
+			alias, aliasPath, ref, err := resolvePrepareAliasWithOptionalRef(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref, invocation.GitRef, invocation.RefMode, invocation.RefKeepWorktree)
 			if err != nil {
 				return err
 			}
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
-			aliasArgs := buildPrepareAliasCommandArgs(alias, invocation)
 			prepareOpts := cmdCtx.prepareOptions(len(commands) > 1)
+			parsed := prepareArgs{
+				Image:          alias.Image,
+				PsqlArgs:       alias.Args,
+				Watch:          invocation.Watch,
+				WatchSpecified: invocation.WatchSpecified,
+			}
 			switch alias.Kind {
 			case "psql":
 				if len(commands) == 1 {
-					return runPrepare(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs)
+					return runPrepareParsed(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, parsed, ref)
 				}
-				result, handled, err := prepareResult(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, aliasArgs)
+				result, handled, err := prepareResultParsed(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, parsed, ref)
 				if err != nil {
 					return err
 				}
@@ -192,11 +198,10 @@ func Run(args []string) error {
 				}
 				prepared = &result
 			case "lb":
-				aliasCwd := filepath.Dir(aliasPath)
 				if len(commands) == 1 {
-					return runPrepareLiquibaseWithPathMode(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, aliasArgs, false)
+					return runPrepareLiquibaseParsedWithPathMode(os.Stdout, os.Stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, filepath.Dir(aliasPath), parsed, ref, false)
 				}
-				result, handled, err := prepareResultLiquibaseWithPathMode(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, aliasArgs, false)
+				result, handled, err := prepareResultLiquibaseParsedWithPathMode(stdoutAndErr{stdout: os.Stdout, stderr: os.Stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, filepath.Dir(aliasPath), parsed, ref, false)
 				if err != nil {
 					return err
 				}
@@ -211,7 +216,7 @@ func Run(args []string) error {
 			if len(commands) > 1 {
 				return fmt.Errorf("plan cannot be combined with other commands")
 			}
-			ref, showHelp, err := parsePlanAliasArgs(cmd.Args)
+			invocation, showHelp, err := parsePlanAliasArgs(cmd.Args)
 			if err != nil {
 				return err
 			}
@@ -219,17 +224,24 @@ func Run(args []string) error {
 				cli.PrintPlanUsage(os.Stdout)
 				return nil
 			}
-			aliasPath, err := resolvePrepareAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, ref)
-			if err != nil {
-				return err
-			}
-			alias, err := loadPrepareAlias(aliasPath)
+			alias, aliasPath, ref, err := resolvePrepareAliasWithOptionalRef(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref, invocation.GitRef, invocation.RefMode, invocation.RefKeepWorktree)
 			if err != nil {
 				return err
 			}
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
-			aliasCwd := filepath.Dir(aliasPath)
-			return runPlanKindWithPathMode(os.Stdout, os.Stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, aliasCwd, buildPlanAliasCommandArgs(alias), cmdCtx.output, alias.Kind, alias.Kind != "lb")
+			return runPlanKindParsedWithPathMode(
+				os.Stdout,
+				os.Stderr,
+				cmdCtx.prepareOptions(false),
+				cmdCtx.cfgResult,
+				cmdCtx.workspaceRoot,
+				filepath.Dir(aliasPath),
+				prepareArgs{Image: alias.Image, PsqlArgs: alias.Args},
+				ref,
+				cmdCtx.output,
+				alias.Kind,
+				alias.Kind != "lb",
+			)
 		case "run":
 			runOpts := cmdCtx.runOptions()
 			if prepared != nil {
@@ -284,6 +296,19 @@ func Run(args []string) error {
 	return nil
 }
 
+func prepareStageUsesRef(cmd cli.Command) bool {
+	if cmd.Name != "prepare" && !strings.HasPrefix(cmd.Name, "prepare:") {
+		return false
+	}
+	for _, arg := range cmd.Args {
+		switch strings.TrimSpace(arg) {
+		case "--ref", "--ref-mode", "--ref-keep-worktree":
+			return true
+		}
+	}
+	return false
+}
+
 func writeJSON(w io.Writer, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -324,7 +349,7 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 	var once sync.Once
 	go func() {
 		defer close(finished)
-		timer := time.NewTimer(500 * time.Millisecond)
+		timer := time.NewTimer(spinnerInitialDelay)
 		defer timer.Stop()
 		select {
 		case <-timer.C:
@@ -333,7 +358,7 @@ func startCleanupSpinner(instanceID string, verbose bool) func() {
 		}
 		spinner := []string{"-", "\\", "|", "/"}
 		idx := 0
-		ticker := time.NewTicker(150 * time.Millisecond)
+		ticker := time.NewTicker(spinnerTickInterval)
 		defer ticker.Stop()
 		for {
 			select {

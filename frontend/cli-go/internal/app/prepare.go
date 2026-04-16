@@ -16,16 +16,24 @@ import (
 	"github.com/sqlrs/cli/internal/inputset"
 	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
+	"github.com/sqlrs/cli/internal/pathutil"
+	"github.com/sqlrs/cli/internal/refctx"
 )
 
 var runPrepareFn = cli.RunPrepare
+var runPlanFn = cli.RunPlan
 var submitPrepareFn = cli.SubmitPrepare
+var bindPreparePsqlInputsFn = bindPreparePsqlInputs
+var bindPrepareLiquibaseInputsFn = bindPrepareLiquibaseInputs
 
 type prepareArgs struct {
-	Image          string
-	PsqlArgs       []string
-	Watch          bool
-	WatchSpecified bool
+	Image           string
+	PsqlArgs        []string
+	Watch           bool
+	WatchSpecified  bool
+	Ref             string
+	RefMode         string
+	RefKeepWorktree bool
 }
 
 type stdoutAndErr struct {
@@ -44,6 +52,14 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 			if i+1 < len(args) {
 				opts.PsqlArgs = append(opts.PsqlArgs, args[i+1:]...)
 			}
+			mode, err := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+			if err != nil {
+				return opts, false, err
+			}
+			opts.RefMode = mode
+			if err := validatePrepareRefWatch(opts.Ref, opts.WatchSpecified, opts.Watch); err != nil {
+				return opts, false, err
+			}
 			return opts, false, nil
 		}
 		switch {
@@ -55,6 +71,24 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 		case arg == "--no-watch":
 			opts.Watch = false
 			opts.WatchSpecified = true
+		case arg == "--ref":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.Ref = value
+			i++
+		case arg == "--ref-mode":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = strings.TrimSpace(args[i+1])
+			i++
+		case arg == "--ref-keep-worktree":
+			opts.RefKeepWorktree = true
 		case arg == "--image":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --image")
@@ -73,14 +107,73 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 			opts.Image = value
 		default:
 			opts.PsqlArgs = append(opts.PsqlArgs, args[i:]...)
+			mode, err := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+			if err != nil {
+				return opts, false, err
+			}
+			opts.RefMode = mode
+			if err := validatePrepareRefWatch(opts.Ref, opts.WatchSpecified, opts.Watch); err != nil {
+				return opts, false, err
+			}
 			return opts, false, nil
 		}
+	}
+	mode, err := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+	if err != nil {
+		return opts, false, err
+	}
+	opts.RefMode = mode
+	if err := validatePrepareRefWatch(opts.Ref, opts.WatchSpecified, opts.Watch); err != nil {
+		return opts, false, err
 	}
 	return opts, false, nil
 }
 
+func normalizeRefMode(ref string, refMode string, refKeepWorktree bool) (string, error) {
+	ref = strings.TrimSpace(ref)
+	refMode = strings.TrimSpace(refMode)
+	if ref == "" {
+		if refMode != "" {
+			return "", ExitErrorf(2, "--ref-mode requires --ref")
+		}
+		if refKeepWorktree {
+			return "", ExitErrorf(2, "--ref-keep-worktree requires --ref")
+		}
+		return "", nil
+	}
+	if refMode == "" {
+		refMode = "worktree"
+	}
+	if refMode != "worktree" && refMode != "blob" {
+		return "", ExitErrorf(2, "--ref-mode %q is not supported (use blob or worktree)", refMode)
+	}
+	if refKeepWorktree && refMode != "worktree" {
+		return "", ExitErrorf(2, "--ref-keep-worktree is only valid with --ref-mode worktree")
+	}
+	return refMode, nil
+}
+
+func validatePrepareRefWatch(ref string, watchSpecified bool, watch bool) error {
+	if strings.TrimSpace(ref) == "" || !watchSpecified || watch {
+		return nil
+	}
+	return ExitErrorf(2, "--no-watch is not supported with --ref")
+}
+
 func runPrepare(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) error {
 	result, handled, err := prepareResult(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, args)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
+	}
+	fmt.Fprintf(stdout, "DSN=%s\n", result.DSN)
+	return nil
+}
+
+func runPrepareParsed(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context) error {
+	result, handled, err := prepareResultParsed(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, parsed, ref)
 	if err != nil {
 		return err
 	}
@@ -107,6 +200,18 @@ func runPrepareLiquibaseWithPathMode(stdout, stderr io.Writer, runOpts cli.Prepa
 	return nil
 }
 
+func runPrepareLiquibaseParsedWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, relativizePaths bool) error {
+	result, handled, err := prepareResultLiquibaseParsedWithPathMode(stdoutAndErr{stdout: stdout, stderr: stderr}, runOpts, cfg, workspaceRoot, cwd, parsed, ref, relativizePaths)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
+	}
+	fmt.Fprintf(stdout, "DSN=%s\n", result.DSN)
+	return nil
+}
+
 func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) (client.PrepareJobResult, bool, error) {
 	parsed, showHelp, err := parsePrepareArgs(args)
 	if err != nil {
@@ -116,7 +221,10 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		cli.PrintPrepareUsage(w.stdout)
 		return client.PrepareJobResult{}, true, nil
 	}
+	return prepareResultParsed(w, runOpts, cfg, workspaceRoot, cwd, parsed, nil)
+}
 
+func prepareResultParsed(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context) (result client.PrepareJobResult, handled bool, err error) {
 	imageID, source, err := resolvePrepareImage(parsed.Image, cfg)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
@@ -128,15 +236,22 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		fmt.Fprint(w.stderr, formatImageSource(imageID, source))
 	}
 
-	psqlArgs, stdin, err := normalizePsqlArgs(parsed.PsqlArgs, workspaceRoot, cwd, os.Stdin, buildPathConverter(runOpts))
+	bound, err := bindPreparePsqlInputsFn(runOpts, workspaceRoot, cwd, parsed, ref, os.Stdin)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
+	cleanupOnReturn := true
+	defer func() {
+		if cleanupOnReturn {
+			err = finishPrepareCleanup(err, bound.cleanup)
+		}
+	}()
 
 	runOpts.ImageID = imageID
-	runOpts.PsqlArgs = psqlArgs
-	runOpts.Stdin = stdin
+	runOpts.PsqlArgs = bound.PsqlArgs
+	runOpts.Stdin = bound.Stdin
 	runOpts.PrepareKind = "psql"
+	runOpts.DisableControlPrompt = usesPrepareRef(parsed, ref)
 
 	if !parsed.Watch {
 		accepted, err := submitPrepareFn(context.Background(), runOpts)
@@ -150,7 +265,7 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 		return client.PrepareJobResult{}, true, nil
 	}
 
-	result, err := runPrepareFn(context.Background(), runOpts)
+	result, err = runPrepareFn(context.Background(), runOpts)
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
@@ -186,7 +301,10 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 		cli.PrintPrepareUsage(w.stdout)
 		return client.PrepareJobResult{}, true, nil
 	}
+	return prepareResultLiquibaseParsedWithPathMode(w, runOpts, cfg, workspaceRoot, cwd, parsed, nil, relativizePaths)
+}
 
+func prepareResultLiquibaseParsedWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, relativizePaths bool) (result client.PrepareJobResult, handled bool, err error) {
 	if len(parsed.PsqlArgs) == 0 {
 		return client.PrepareJobResult{}, false, ExitErrorf(2, "liquibase command is required")
 	}
@@ -210,33 +328,26 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	converter := buildPathConverter(runOpts)
-	if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
-		converter = nil
-	}
-	liquibaseArgs, err := normalizeLiquibaseArgs(parsed.PsqlArgs, workspaceRoot, cwd, converter)
-	if err != nil {
-		return client.PrepareJobResult{}, false, err
-	}
-	if relativizePaths {
-		liquibaseArgs = relativizeLiquibaseArgs(liquibaseArgs, workspaceRoot, cwd)
-	}
 	liquibaseEnv := resolveLiquibaseEnv()
-	workDir, err := normalizeWorkDir(cwd, converter)
+	bound, err := bindPrepareLiquibaseInputsFn(runOpts, workspaceRoot, cwd, parsed, ref, liquibaseExec, liquibaseExecMode, relativizePaths)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	if !relativizePaths {
-		workDir = deriveLiquibaseWorkDirFromArgs(liquibaseArgs, workDir)
-	}
+	cleanupOnReturn := true
+	defer func() {
+		if cleanupOnReturn {
+			err = finishPrepareCleanup(err, bound.cleanup)
+		}
+	}()
 
 	runOpts.ImageID = imageID
-	runOpts.LiquibaseArgs = liquibaseArgs
+	runOpts.LiquibaseArgs = bound.LiquibaseArgs
 	runOpts.LiquibaseExec = liquibaseExec
 	runOpts.LiquibaseExecMode = liquibaseExecMode
 	runOpts.LiquibaseEnv = liquibaseEnv
-	runOpts.WorkDir = workDir
+	runOpts.WorkDir = bound.WorkDir
 	runOpts.PrepareKind = "lb"
+	runOpts.DisableControlPrompt = usesPrepareRef(parsed, ref)
 
 	if !parsed.Watch {
 		accepted, err := submitPrepareFn(context.Background(), runOpts)
@@ -250,7 +361,7 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 		return client.PrepareJobResult{}, true, nil
 	}
 
-	result, err := runPrepareFn(context.Background(), runOpts)
+	result, err = runPrepareFn(context.Background(), runOpts)
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
@@ -268,6 +379,21 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 		return client.PrepareJobResult{}, false, err
 	}
 	return result, false, nil
+}
+
+func usesPrepareRef(parsed prepareArgs, ref *refctx.Context) bool {
+	return ref != nil || strings.TrimSpace(parsed.Ref) != ""
+}
+
+func finishPrepareCleanup(currentErr error, cleanup func() error) error {
+	if cleanup == nil {
+		return currentErr
+	}
+	cleanupErr := cleanup()
+	if cleanupErr == nil || currentErr != nil {
+		return currentErr
+	}
+	return cleanupErr
 }
 
 func printPrepareJobRefs(w io.Writer, accepted client.PrepareJobAccepted) {
@@ -438,28 +564,11 @@ func rebasePathToWorkspaceRoot(path string, workspaceRoot string) string {
 }
 
 func canonicalizeBoundaryPath(path string) string {
-	cleaned := filepath.Clean(strings.TrimSpace(path))
-	if cleaned == "" {
-		return cleaned
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
 	}
-	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
-		return resolved
-	}
-
-	probe := cleaned
-	suffix := make([]string, 0, 4)
-	for {
-		parent := filepath.Dir(probe)
-		if parent == probe {
-			return cleaned
-		}
-		suffix = append([]string{filepath.Base(probe)}, suffix...)
-		probe = parent
-		if resolved, err := filepath.EvalSymlinks(probe); err == nil {
-			parts := append([]string{resolved}, suffix...)
-			return filepath.Join(parts...)
-		}
-	}
+	return pathutil.CanonicalizeBoundaryPath(trimmed)
 }
 
 func buildPathConverter(opts cli.PrepareOptions) func(string) (string, error) {
