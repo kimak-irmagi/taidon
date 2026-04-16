@@ -86,12 +86,7 @@ func TestRunPlanAliasRefUsesSelectedRevisionAlias(t *testing.T) {
 	repo, parentRef := initPrepareRefTestRepo(t)
 	temp := t.TempDir()
 	setTestDirs(t, temp)
-
-	prevGetwd := getwdFn
-	getwdFn = func() (string, error) {
-		return filepath.Join(repo, "examples"), nil
-	}
-	t.Cleanup(func() { getwdFn = prevGetwd })
+	withWorkingDir(t, filepath.Join(repo, "examples"))
 
 	var capturedContent string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -143,12 +138,7 @@ func TestRunPlanAliasRefLiquibaseUsesAliasDirWorkDir(t *testing.T) {
 			repo, parentRef := initPrepareRefTestRepo(t)
 			temp := t.TempDir()
 			setTestDirs(t, temp)
-
-			prevGetwd := getwdFn
-			getwdFn = func() (string, error) {
-				return repo, nil
-			}
-			t.Cleanup(func() { getwdFn = prevGetwd })
+			withWorkingDir(t, repo)
 
 			var gotRequest map[string]any
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

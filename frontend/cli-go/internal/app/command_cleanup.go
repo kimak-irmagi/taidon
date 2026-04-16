@@ -14,7 +14,7 @@ var deleteInstanceDetailedFn = cli.DeleteInstanceDetailed
 var startCleanupSpinnerFn = startCleanupSpinner
 
 // cleanupPreparedInstance keeps composite prepare+run cleanup reporting in one place,
-// matching the workflow described in docs/architecture/local-engine-cli-maintainability-refactor.md.
+// matching the workflow described in docs/architecture/cli-maintainability-refactor.md.
 func cleanupPreparedInstance(ctx context.Context, stderr io.Writer, runOpts cli.RunOptions, instanceID string, verbose bool) {
 	if strings.TrimSpace(instanceID) == "" {
 		return

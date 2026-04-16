@@ -59,6 +59,8 @@
   prepare manager на coordinator/executor/snapshot роли.
 - [`local-engine-cli-maintainability-refactor.RU.md`][lecmr] -
   предложенный следующий проход cleanup внутренних границ prepare/httpapi/CLI.
+- [`cli-maintainability-refactor.RU.md`](cli-maintainability-refactor.RU.md) -
+  staged cleanup plan для текущего CLI-only maintainability долга.
 - [`statefs-component-structure.RU.md`](statefs-component-structure.RU.md) - контракт
   StateFS и изоляция ФС-логики в engine.
 - [`local-engine-storage-schema.RU.md`](local-engine-storage-schema.RU.md) - схема

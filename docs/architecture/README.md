@@ -58,6 +58,8 @@ Entry points for Taidon architecture and service design.
   split into coordinator/executor/snapshot roles.
 - [`local-engine-cli-maintainability-refactor.md`][lecmr] -
   proposed next pass for prepare/httpapi/CLI maintainability boundary cleanup.
+- [`cli-maintainability-refactor.md`](cli-maintainability-refactor.md) -
+  staged cleanup plan for current CLI-only maintainability debt.
 - [`statefs-component-structure.md`](statefs-component-structure.md) - StateFS
   contract and filesystem isolation in the engine.
 - [`local-engine-storage-schema.md`](local-engine-storage-schema.md) - SQLite
