@@ -20,25 +20,22 @@ import (
 )
 
 func TestRunGetwdError(t *testing.T) {
-	prev := getwdFn
-	getwdFn = func() (string, error) {
-		return "", errors.New("boom")
-	}
-	t.Cleanup(func() { getwdFn = prev })
-
-	if err := Run([]string{"status"}); err == nil || !strings.Contains(err.Error(), "boom") {
+	err := newTestRunner(t, func(deps *runnerDeps) {
+		deps.parseArgs = func([]string) (cli.GlobalOptions, []cli.Command, error) {
+			return cli.GlobalOptions{}, []cli.Command{{Name: "status"}}, nil
+		}
+		deps.getwd = func() (string, error) {
+			return "", errors.New("boom")
+		}
+	}).run([]string{"status"})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected getwd error, got %v", err)
 	}
 }
 
 func TestRunMissingCommand(t *testing.T) {
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, nil, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run([]string{"status"}); err == nil || !strings.Contains(err.Error(), "missing command") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "missing command") {
 		t.Fatalf("expected missing command error, got %v", err)
 	}
 }
@@ -148,61 +145,36 @@ func TestRunPrepareLiquibaseError(t *testing.T) {
 }
 
 func TestRunLsCannotCombine(t *testing.T) {
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, []cli.Command{{Name: "ls"}, {Name: "status"}}, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run([]string{"ls"}); err == nil || !strings.Contains(err.Error(), "ls cannot be combined") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "ls"}, {Name: "status"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "ls cannot be combined") {
 		t.Fatalf("expected ls combine error, got %v", err)
 	}
 }
 
 func TestRunRmCannotCombine(t *testing.T) {
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, []cli.Command{{Name: "rm"}, {Name: "status"}}, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run([]string{"rm"}); err == nil || !strings.Contains(err.Error(), "rm cannot be combined") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "rm"}, {Name: "status"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "rm cannot be combined") {
 		t.Fatalf("expected rm combine error, got %v", err)
 	}
 }
 
 func TestRunPlanCannotCombine(t *testing.T) {
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, []cli.Command{{Name: "plan:psql"}, {Name: "status"}}, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run([]string{"plan:psql"}); err == nil || !strings.Contains(err.Error(), "plan cannot be combined") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "plan:psql"}, {Name: "status"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "plan cannot be combined") {
 		t.Fatalf("expected plan combine error, got %v", err)
 	}
 }
 
 func TestRunStatusCannotCombine(t *testing.T) {
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, []cli.Command{{Name: "status"}, {Name: "ls"}}, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run([]string{"status"}); err == nil || !strings.Contains(err.Error(), "status cannot be combined") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "status"}, {Name: "ls"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "status cannot be combined") {
 		t.Fatalf("expected status combine error, got %v", err)
 	}
 }
 
 func TestRunConfigCannotCombine(t *testing.T) {
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, []cli.Command{{Name: "config"}, {Name: "status"}}, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run([]string{"config"}); err == nil || !strings.Contains(err.Error(), "config cannot be combined") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "config"}, {Name: "status"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "config cannot be combined") {
 		t.Fatalf("expected config combine error, got %v", err)
 	}
 }

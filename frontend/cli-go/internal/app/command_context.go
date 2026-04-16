@@ -13,7 +13,7 @@ import (
 )
 
 // commandContext centralizes shared CLI command wiring defined in
-// docs/architecture/local-engine-cli-maintainability-refactor.md.
+// docs/architecture/cli-maintainability-refactor.md.
 type commandContext struct {
 	cwd                  string
 	workspaceRoot        string

@@ -14,13 +14,8 @@ import (
 )
 
 func TestRunInitCannotCombineCoverage(t *testing.T) {
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, []cli.Command{{Name: "init"}, {Name: "status"}}, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run(nil); err == nil || !strings.Contains(err.Error(), "init cannot be combined") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "init"}, {Name: "status"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "init cannot be combined") {
 		t.Fatalf("expected init combine error, got %v", err)
 	}
 }
@@ -30,16 +25,15 @@ func TestRunCompositePrepareBranchesCoverage(t *testing.T) {
 		temp := t.TempDir()
 		setTestDirs(t, temp)
 
-		prev := parseArgsFn
-		parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-			return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
-				{Name: "prepare:psql", Args: []string{"--help"}},
-				{Name: "run:psql", Args: []string{}},
-			}, nil
-		}
-		t.Cleanup(func() { parseArgsFn = prev })
-
-		if err := Run(nil); err != nil {
+		err := newTestRunner(t, func(deps *runnerDeps) {
+			deps.parseArgs = func([]string) (cli.GlobalOptions, []cli.Command, error) {
+				return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
+					{Name: "prepare:psql", Args: []string{"--help"}},
+					{Name: "run:psql", Args: []string{}},
+				}, nil
+			}
+		}).run(nil)
+		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	})
@@ -48,16 +42,15 @@ func TestRunCompositePrepareBranchesCoverage(t *testing.T) {
 		temp := t.TempDir()
 		setTestDirs(t, temp)
 
-		prev := parseArgsFn
-		parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-			return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
-				{Name: "prepare:psql", Args: []string{}},
-				{Name: "run:psql", Args: []string{}},
-			}, nil
-		}
-		t.Cleanup(func() { parseArgsFn = prev })
-
-		if err := Run(nil); err == nil || !strings.Contains(err.Error(), "Missing base image id") {
+		err := newTestRunner(t, func(deps *runnerDeps) {
+			deps.parseArgs = func([]string) (cli.GlobalOptions, []cli.Command, error) {
+				return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
+					{Name: "prepare:psql", Args: []string{}},
+					{Name: "run:psql", Args: []string{}},
+				}, nil
+			}
+		}).run(nil)
+		if err == nil || !strings.Contains(err.Error(), "Missing base image id") {
 			t.Fatalf("expected prepare error, got %v", err)
 		}
 	})
@@ -66,16 +59,15 @@ func TestRunCompositePrepareBranchesCoverage(t *testing.T) {
 		temp := t.TempDir()
 		setTestDirs(t, temp)
 
-		prev := parseArgsFn
-		parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-			return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
-				{Name: "prepare:lb", Args: []string{"--help"}},
-				{Name: "run:psql", Args: []string{}},
-			}, nil
-		}
-		t.Cleanup(func() { parseArgsFn = prev })
-
-		if err := Run(nil); err != nil {
+		err := newTestRunner(t, func(deps *runnerDeps) {
+			deps.parseArgs = func([]string) (cli.GlobalOptions, []cli.Command, error) {
+				return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
+					{Name: "prepare:lb", Args: []string{"--help"}},
+					{Name: "run:psql", Args: []string{}},
+				}, nil
+			}
+		}).run(nil)
+		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	})
@@ -84,16 +76,15 @@ func TestRunCompositePrepareBranchesCoverage(t *testing.T) {
 		temp := t.TempDir()
 		setTestDirs(t, temp)
 
-		prev := parseArgsFn
-		parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-			return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
-				{Name: "prepare:lb", Args: []string{"--image", "img"}},
-				{Name: "run:psql", Args: []string{}},
-			}, nil
-		}
-		t.Cleanup(func() { parseArgsFn = prev })
-
-		if err := Run(nil); err == nil || !strings.Contains(err.Error(), "liquibase command is required") {
+		err := newTestRunner(t, func(deps *runnerDeps) {
+			deps.parseArgs = func([]string) (cli.GlobalOptions, []cli.Command, error) {
+				return cli.GlobalOptions{Mode: "remote", Endpoint: "http://127.0.0.1:1"}, []cli.Command{
+					{Name: "prepare:lb", Args: []string{"--image", "img"}},
+					{Name: "run:psql", Args: []string{}},
+				}, nil
+			}
+		}).run(nil)
+		if err == nil || !strings.Contains(err.Error(), "liquibase command is required") {
 			t.Fatalf("expected prepare lb error, got %v", err)
 		}
 	})
@@ -141,13 +132,8 @@ func TestRunPlanLBCannotCombineCoverage(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)
 
-	prev := parseArgsFn
-	parseArgsFn = func([]string) (cli.GlobalOptions, []cli.Command, error) {
-		return cli.GlobalOptions{}, []cli.Command{{Name: "plan:lb"}, {Name: "status"}}, nil
-	}
-	t.Cleanup(func() { parseArgsFn = prev })
-
-	if err := Run(nil); err == nil || !strings.Contains(err.Error(), "plan cannot be combined") {
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "plan:lb"}, {Name: "status"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "plan cannot be combined") {
 		t.Fatalf("expected plan combine error, got %v", err)
 	}
 }
