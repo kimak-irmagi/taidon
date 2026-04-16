@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	aliaspkg "github.com/sqlrs/cli/internal/alias"
 )
 
 func TestParseRunAliasArgsAdditionalBranches(t *testing.T) {
@@ -109,7 +111,7 @@ func TestResolveRunAliasPathAdditionalValidation(t *testing.T) {
 
 func TestLoadRunAliasReadAndYAMLErrors(t *testing.T) {
 	t.Run("read error", func(t *testing.T) {
-		_, err := loadRunAlias(filepath.Join(t.TempDir(), "missing.run.s9s.yaml"))
+		_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: filepath.Join(t.TempDir(), "missing.run.s9s.yaml")})
 		if err == nil {
 			t.Fatalf("expected read error")
 		}
@@ -120,7 +122,7 @@ func TestLoadRunAliasReadAndYAMLErrors(t *testing.T) {
 
 	t.Run("yaml error", func(t *testing.T) {
 		path := writeRunAliasFile(t, t.TempDir(), "broken.run.s9s.yaml", "kind: [\n")
-		_, err := loadRunAlias(path)
+		_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: path})
 		if err == nil || !strings.Contains(err.Error(), "read run alias") {
 			t.Fatalf("expected yaml error, got %v", err)
 		}

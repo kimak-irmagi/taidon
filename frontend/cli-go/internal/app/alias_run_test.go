@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	aliaspkg "github.com/sqlrs/cli/internal/alias"
 	"github.com/sqlrs/cli/internal/client"
 )
 
@@ -94,7 +95,7 @@ func TestResolveRunAliasPathRejectsOutsideWorkspace(t *testing.T) {
 func TestLoadRunAliasRequiresKind(t *testing.T) {
 	path := writeRunAliasFile(t, t.TempDir(), "broken.run.s9s.yaml", "args:\n  - -c\n  - select 1\n")
 
-	_, err := loadRunAlias(path)
+	_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "run alias kind is required") {
 		t.Fatalf("expected missing kind error, got %v", err)
 	}
@@ -103,7 +104,7 @@ func TestLoadRunAliasRequiresKind(t *testing.T) {
 func TestLoadRunAliasRequiresArgs(t *testing.T) {
 	path := writeRunAliasFile(t, t.TempDir(), "broken.run.s9s.yaml", "kind: psql\n")
 
-	_, err := loadRunAlias(path)
+	_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "run alias args are required") {
 		t.Fatalf("expected missing args error, got %v", err)
 	}
@@ -112,7 +113,7 @@ func TestLoadRunAliasRequiresArgs(t *testing.T) {
 func TestLoadRunAliasRejectsUnknownKind(t *testing.T) {
 	path := writeRunAliasFile(t, t.TempDir(), "broken.run.s9s.yaml", "kind: unknown\nargs:\n  - -c\n  - select 1\n")
 
-	_, err := loadRunAlias(path)
+	_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "unknown run alias kind") {
 		t.Fatalf("expected unknown kind error, got %v", err)
 	}
@@ -121,7 +122,7 @@ func TestLoadRunAliasRejectsUnknownKind(t *testing.T) {
 func TestLoadRunAliasRejectsImageField(t *testing.T) {
 	path := writeRunAliasFile(t, t.TempDir(), "broken.run.s9s.yaml", "kind: psql\nimage: postgres:17\nargs:\n  - -c\n  - select 1\n")
 
-	_, err := loadRunAlias(path)
+	_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "run alias does not support image") {
 		t.Fatalf("expected image-field rejection, got %v", err)
 	}
@@ -130,9 +131,9 @@ func TestLoadRunAliasRejectsImageField(t *testing.T) {
 func TestLoadRunAliasPreservesArgOrder(t *testing.T) {
 	path := writeRunAliasFile(t, t.TempDir(), "ordered.run.s9s.yaml", "kind: pgbench\nargs:\n  - -c\n  - 10\n  - -T\n  - 30\n")
 
-	alias, err := loadRunAlias(path)
+	alias, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: path})
 	if err != nil {
-		t.Fatalf("loadRunAlias: %v", err)
+		t.Fatalf("LoadTarget: %v", err)
 	}
 	if got := strings.Join(alias.Args, "|"); got != "-c|10|-T|30" {
 		t.Fatalf("args = %q, want %q", got, "-c|10|-T|30")

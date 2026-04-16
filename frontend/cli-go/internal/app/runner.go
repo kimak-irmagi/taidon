@@ -353,11 +353,7 @@ func (r runner) run(args []string) error {
 				cli.PrintRunUsage(r.deps.stdout)
 				return nil
 			}
-			aliasPath, err := resolveRunAliasPath(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
-			if err != nil {
-				return err
-			}
-			alias, err := loadRunAlias(aliasPath)
+			alias, aliasPath, err := resolveRunAliasDefinition(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
 			if err != nil {
 				return err
 			}

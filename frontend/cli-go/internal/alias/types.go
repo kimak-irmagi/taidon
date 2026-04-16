@@ -61,6 +61,15 @@ type Target struct {
 	Path  string `json:"-"`
 }
 
+// Definition is the canonical loaded alias model reused by execution and
+// inspection after the CLI maintainability refactor.
+type Definition struct {
+	Class Class    `json:"type"`
+	Kind  string   `json:"kind"`
+	Image string   `json:"image,omitempty"`
+	Args  []string `json:"args"`
+}
+
 // Issue is one static validation finding.
 type Issue struct {
 	Code    string `json:"code"`

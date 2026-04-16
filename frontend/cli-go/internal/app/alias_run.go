@@ -1,22 +1,14 @@
 package app
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/sqlrs/cli/internal/cli/runkind"
-	"gopkg.in/yaml.v3"
+	aliaspkg "github.com/sqlrs/cli/internal/alias"
 )
 
 const runAliasSuffix = ".run.s9s.yaml"
-
-type runAlias struct {
-	Kind  string   `yaml:"kind"`
-	Image string   `yaml:"image"`
-	Args  []string `yaml:"args"`
-}
 
 type runAliasInvocation struct {
 	Ref         string
@@ -113,34 +105,19 @@ func resolveRunAliasPath(workspaceRoot string, cwd string, ref string) (string, 
 	return resolved, nil
 }
 
-func loadRunAlias(path string) (runAlias, error) {
-	data, err := os.ReadFile(path)
+func resolveRunAliasDefinition(workspaceRoot string, cwd string, ref string) (aliaspkg.Definition, string, error) {
+	aliasPath, err := resolveRunAliasPath(workspaceRoot, cwd, ref)
 	if err != nil {
-		return runAlias{}, err
+		return aliaspkg.Definition{}, "", err
 	}
-	var alias runAlias
-	if err := yaml.Unmarshal(data, &alias); err != nil {
-		return runAlias{}, fmt.Errorf("read run alias: %w", err)
+	def, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: aliasPath})
+	if err != nil {
+		return aliaspkg.Definition{}, "", err
 	}
-	alias.Kind = strings.ToLower(strings.TrimSpace(alias.Kind))
-	switch alias.Kind {
-	case "":
-		return runAlias{}, ExitErrorf(2, "run alias kind is required")
-	default:
-		if !runkind.IsKnown(alias.Kind) {
-			return runAlias{}, ExitErrorf(2, "unknown run alias kind: %s", alias.Kind)
-		}
-	}
-	if strings.TrimSpace(alias.Image) != "" {
-		return runAlias{}, ExitErrorf(2, "run alias does not support image")
-	}
-	if len(alias.Args) == 0 {
-		return runAlias{}, ExitErrorf(2, "run alias args are required")
-	}
-	return alias, nil
+	return def, aliasPath, nil
 }
 
-func buildRunAliasCommandArgs(alias runAlias, invocation runAliasInvocation) []string {
+func buildRunAliasCommandArgs(alias aliaspkg.Definition, invocation runAliasInvocation) []string {
 	args := make([]string, 0, len(alias.Args)+2)
 	if strings.TrimSpace(invocation.InstanceRef) != "" {
 		args = append(args, "--instance", strings.TrimSpace(invocation.InstanceRef))

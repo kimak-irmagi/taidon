@@ -1,33 +1,36 @@
 package app
 
-import "github.com/sqlrs/cli/internal/refctx"
+import (
+	aliaspkg "github.com/sqlrs/cli/internal/alias"
+	"github.com/sqlrs/cli/internal/refctx"
+)
 
-func resolvePrepareAliasWithOptionalRef(workspaceRoot string, cwd string, aliasRef string, gitRef string, refMode string, keepWorktree bool) (prepareAlias, string, *refctx.Context, error) {
+func resolvePrepareAliasWithOptionalRef(workspaceRoot string, cwd string, aliasRef string, gitRef string, refMode string, keepWorktree bool) (aliaspkg.Definition, string, *refctx.Context, error) {
 	if gitRef == "" {
 		aliasPath, err := resolvePrepareAliasPath(workspaceRoot, cwd, aliasRef)
 		if err != nil {
-			return prepareAlias{}, "", nil, err
+			return aliaspkg.Definition{}, "", nil, err
 		}
-		alias, err := loadPrepareAlias(aliasPath)
+		alias, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: aliasPath})
 		if err != nil {
-			return prepareAlias{}, "", nil, err
+			return aliaspkg.Definition{}, "", nil, err
 		}
 		return alias, aliasPath, nil, nil
 	}
 
 	ctx, err := refctx.Resolve(workspaceRoot, cwd, gitRef, refMode, keepWorktree)
 	if err != nil {
-		return prepareAlias{}, "", nil, err
+		return aliaspkg.Definition{}, "", nil, err
 	}
 	aliasPath, err := resolvePrepareAliasPathWithFS(ctx.WorkspaceRoot, ctx.BaseDir, aliasRef, ctx.FileSystem)
 	if err != nil {
 		_ = ctx.Cleanup()
-		return prepareAlias{}, "", nil, err
+		return aliaspkg.Definition{}, "", nil, err
 	}
-	alias, err := loadPrepareAliasWithFS(aliasPath, ctx.FileSystem)
+	alias, err := aliaspkg.LoadTargetWithFS(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: aliasPath}, ctx.FileSystem)
 	if err != nil {
 		_ = ctx.Cleanup()
-		return prepareAlias{}, "", nil, err
+		return aliaspkg.Definition{}, "", nil, err
 	}
 	return alias, aliasPath, &ctx, nil
 }

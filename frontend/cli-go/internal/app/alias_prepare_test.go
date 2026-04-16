@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	aliaspkg "github.com/sqlrs/cli/internal/alias"
 )
 
 func TestResolvePrepareAliasPathFromStem(t *testing.T) {
@@ -93,7 +95,7 @@ func TestResolvePrepareAliasPathRejectsOutsideWorkspace(t *testing.T) {
 func TestLoadPrepareAliasRequiresKind(t *testing.T) {
 	path := writePrepareAliasFile(t, t.TempDir(), "broken.prep.s9s.yaml", "args:\n  - -c\n  - select 1\n")
 
-	_, err := loadPrepareAlias(path)
+	_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "prepare alias kind is required") {
 		t.Fatalf("expected missing kind error, got %v", err)
 	}
@@ -102,7 +104,7 @@ func TestLoadPrepareAliasRequiresKind(t *testing.T) {
 func TestLoadPrepareAliasRequiresArgs(t *testing.T) {
 	path := writePrepareAliasFile(t, t.TempDir(), "broken.prep.s9s.yaml", "kind: psql\n")
 
-	_, err := loadPrepareAlias(path)
+	_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "prepare alias args are required") {
 		t.Fatalf("expected missing args error, got %v", err)
 	}
@@ -111,7 +113,7 @@ func TestLoadPrepareAliasRequiresArgs(t *testing.T) {
 func TestLoadPrepareAliasRejectsUnknownKind(t *testing.T) {
 	path := writePrepareAliasFile(t, t.TempDir(), "broken.prep.s9s.yaml", "kind: flyway\nargs:\n  - migrate\n")
 
-	_, err := loadPrepareAlias(path)
+	_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "unknown prepare alias kind") {
 		t.Fatalf("expected unknown kind error, got %v", err)
 	}
@@ -120,9 +122,9 @@ func TestLoadPrepareAliasRejectsUnknownKind(t *testing.T) {
 func TestLoadPrepareAliasPreservesArgOrder(t *testing.T) {
 	path := writePrepareAliasFile(t, t.TempDir(), "ordered.prep.s9s.yaml", "kind: psql\nargs:\n  - -f\n  - prepare.sql\n  - -v\n  - ON_ERROR_STOP=1\n")
 
-	alias, err := loadPrepareAlias(path)
+	alias, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: path})
 	if err != nil {
-		t.Fatalf("loadPrepareAlias: %v", err)
+		t.Fatalf("LoadTarget: %v", err)
 	}
 	got := strings.Join(alias.Args, "|")
 	if want := "-f|prepare.sql|-v|ON_ERROR_STOP=1"; got != want {
