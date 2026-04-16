@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestResolveXDG(t *testing.T) {
@@ -134,7 +136,7 @@ func TestFindProjectConfigUsesCwd(t *testing.T) {
 	if err != nil {
 		actual = filepath.Clean(found)
 	}
-	if actual != expected {
+	if !pathutil.SameLocalPath(actual, expected) {
 		t.Fatalf("expected %q, got %q", expected, actual)
 	}
 }

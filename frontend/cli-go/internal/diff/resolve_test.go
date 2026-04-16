@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestResolveScope_RefWorktrees(t *testing.T) {
@@ -297,7 +299,7 @@ func TestResolveScope_PathRelativeToCwd(t *testing.T) {
 	if cleanup != nil {
 		t.Fatal("path mode should not return cleanup")
 	}
-	if fromCtx.Root != filepath.Join(cwd, "left") || toCtx.Root != filepath.Join(cwd, "right") {
+	if !pathutil.SameLocalPath(fromCtx.Root, filepath.Join(cwd, "left")) || !pathutil.SameLocalPath(toCtx.Root, filepath.Join(cwd, "right")) {
 		t.Fatalf("expected relative paths resolved from cwd, got from=%+v to=%+v", fromCtx, toCtx)
 	}
 }

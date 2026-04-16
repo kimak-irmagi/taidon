@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/inputset"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestResolveBlobContext(t *testing.T) {
@@ -30,14 +31,14 @@ func TestResolveBlobContext(t *testing.T) {
 	if ctx.RefMode != "blob" {
 		t.Fatalf("RefMode = %q, want blob", ctx.RefMode)
 	}
-	if ctx.RepoRoot != inputset.CanonicalizeBoundaryPath(repo) {
-		t.Fatalf("RepoRoot = %q, want %q", ctx.RepoRoot, inputset.CanonicalizeBoundaryPath(repo))
+	if !pathutil.SameLocalPath(ctx.RepoRoot, repo) {
+		t.Fatalf("RepoRoot = %q, want path equivalent to %q", ctx.RepoRoot, repo)
 	}
-	if ctx.WorkspaceRoot != inputset.CanonicalizeBoundaryPath(workspaceRoot) {
-		t.Fatalf("WorkspaceRoot = %q, want %q", ctx.WorkspaceRoot, inputset.CanonicalizeBoundaryPath(workspaceRoot))
+	if !pathutil.SameLocalPath(ctx.WorkspaceRoot, workspaceRoot) {
+		t.Fatalf("WorkspaceRoot = %q, want path equivalent to %q", ctx.WorkspaceRoot, workspaceRoot)
 	}
-	if ctx.BaseDir != inputset.CanonicalizeBoundaryPath(cwd) {
-		t.Fatalf("BaseDir = %q, want %q", ctx.BaseDir, inputset.CanonicalizeBoundaryPath(cwd))
+	if !pathutil.SameLocalPath(ctx.BaseDir, cwd) {
+		t.Fatalf("BaseDir = %q, want path equivalent to %q", ctx.BaseDir, cwd)
 	}
 	if _, ok := ctx.FileSystem.(*inputset.GitRevFileSystem); !ok {
 		t.Fatalf("FileSystem = %T, want *inputset.GitRevFileSystem", ctx.FileSystem)
@@ -66,7 +67,7 @@ func TestResolveWorktreeContextAndCleanup(t *testing.T) {
 	if _, ok := ctx.FileSystem.(inputset.OSFileSystem); !ok {
 		t.Fatalf("FileSystem = %T, want inputset.OSFileSystem", ctx.FileSystem)
 	}
-	if !strings.HasPrefix(ctx.BaseDir, ctx.RepoRoot) {
+	if !pathutil.IsWithin(ctx.RepoRoot, ctx.BaseDir) {
 		t.Fatalf("BaseDir = %q, want path under RepoRoot %q", ctx.BaseDir, ctx.RepoRoot)
 	}
 	if _, err := os.Stat(ctx.BaseDir); err != nil {
@@ -178,8 +179,8 @@ func TestResolveDefaultsAndKeepWorktree(t *testing.T) {
 	if ctx.WorkspaceRoot != "" {
 		t.Fatalf("WorkspaceRoot = %q, want empty", ctx.WorkspaceRoot)
 	}
-	if ctx.BaseDir != ctx.RepoRoot {
-		t.Fatalf("BaseDir = %q, want RepoRoot %q", ctx.BaseDir, ctx.RepoRoot)
+	if !pathutil.SameLocalPath(ctx.BaseDir, ctx.RepoRoot) {
+		t.Fatalf("BaseDir = %q, want path equivalent to RepoRoot %q", ctx.BaseDir, ctx.RepoRoot)
 	}
 	if err := ctx.Cleanup(); err != nil {
 		t.Fatalf("Cleanup(keep worktree): %v", err)
@@ -298,8 +299,8 @@ func TestRefctxHelpers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("gitTopLevel: %v", err)
 		}
-		if filepath.Clean(top) != filepath.Clean(repo) {
-			t.Fatalf("gitTopLevel = %q, want %q", top, repo)
+		if !pathutil.SameLocalPath(top, repo) {
+			t.Fatalf("gitTopLevel = %q, want path equivalent to %q", top, repo)
 		}
 		if _, err := gitTopLevel(t.TempDir()); err == nil {
 			t.Fatalf("expected gitTopLevel failure outside repo")

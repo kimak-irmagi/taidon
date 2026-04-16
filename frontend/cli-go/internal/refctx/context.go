@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sqlrs/cli/internal/inputset"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 // Context describes one projected filesystem view for a selected git ref.
@@ -64,8 +65,8 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 
 	switch mode {
 	case "blob":
-		rootCanon := inputset.CanonicalizeBoundaryPath(filepath.Clean(repoRoot))
-		baseDir := inputset.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relCwd))
+		rootCanon := pathutil.CanonicalizeBoundaryPath(filepath.Clean(repoRoot))
+		baseDir := pathutil.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relCwd))
 		if err := ensureProjectedDir(inputset.NewGitRevFileSystem(rootCanon, gitRef), baseDir, "projected cwd missing at ref"); err != nil {
 			return Context{}, err
 		}
@@ -79,7 +80,7 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 			FileSystem:    inputset.NewGitRevFileSystem(rootCanon, gitRef),
 		}
 		if hasWorkspaceRoot {
-			ctx.WorkspaceRoot = inputset.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relWorkspace))
+			ctx.WorkspaceRoot = pathutil.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relWorkspace))
 		}
 		return ctx, nil
 	default:
@@ -107,7 +108,7 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 			_ = cleanup()
 			return Context{}, err
 		}
-		baseDir := inputset.CanonicalizeBoundaryPath(filepath.Join(worktreeDir, relCwd))
+		baseDir := pathutil.CanonicalizeBoundaryPath(filepath.Join(worktreeDir, relCwd))
 		if stat, err := os.Stat(baseDir); err != nil || !stat.IsDir() {
 			_ = cleanup()
 			if err != nil {
@@ -116,7 +117,7 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 			return Context{}, fmt.Errorf("projected cwd missing at ref: %s", baseDir)
 		}
 		ctx := Context{
-			RepoRoot:        inputset.CanonicalizeBoundaryPath(worktreeDir),
+			RepoRoot:        pathutil.CanonicalizeBoundaryPath(worktreeDir),
 			WorkspaceRoot:   "",
 			BaseDir:         baseDir,
 			GitRef:          gitRef,
@@ -126,7 +127,7 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 			cleanupWorktree: cleanup,
 		}
 		if hasWorkspaceRoot {
-			ctx.WorkspaceRoot = inputset.CanonicalizeBoundaryPath(filepath.Join(worktreeDir, relWorkspace))
+			ctx.WorkspaceRoot = pathutil.CanonicalizeBoundaryPath(filepath.Join(worktreeDir, relWorkspace))
 		}
 		return ctx, nil
 	}
@@ -165,13 +166,13 @@ func pathWithinRepo(repoRoot, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	absRepo = inputset.CanonicalizeBoundaryPath(absRepo)
+	absRepo = pathutil.CanonicalizeBoundaryPath(absRepo)
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
 	}
-	absPath = inputset.CanonicalizeBoundaryPath(absPath)
+	absPath = pathutil.CanonicalizeBoundaryPath(absPath)
 
 	rel, err := filepath.Rel(absRepo, absPath)
 	if err != nil {

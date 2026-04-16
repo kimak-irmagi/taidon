@@ -10,6 +10,7 @@ import (
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/config"
 	"github.com/sqlrs/cli/internal/paths"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestParsePrepareArgsImageFlag(t *testing.T) {
@@ -329,13 +330,13 @@ func TestRebasePathToWorkspaceRootCoverage(t *testing.T) {
 	if got := rebasePathToWorkspaceRoot(child, ""); got != child {
 		t.Fatalf("expected empty root to keep path, got %q", got)
 	}
-	if got := rebasePathToWorkspaceRoot(root, root); got != filepath.Clean(root) {
+	if got := rebasePathToWorkspaceRoot(root, root); !pathutil.SameLocalPath(got, root) {
 		t.Fatalf("expected root path to stay rooted, got %q", got)
 	}
-	if got := rebasePathToWorkspaceRoot(child, root); got != filepath.Clean(child) {
+	if got := rebasePathToWorkspaceRoot(child, root); !pathutil.SameLocalPath(got, child) {
 		t.Fatalf("expected child path to stay within root, got %q", got)
 	}
-	if got := rebasePathToWorkspaceRoot(outside, root); got != filepath.Clean(outside) {
+	if got := rebasePathToWorkspaceRoot(outside, root); !pathutil.SameLocalPath(got, outside) {
 		t.Fatalf("expected outside path unchanged, got %q", got)
 	}
 }
@@ -350,7 +351,7 @@ func TestCanonicalizeBoundaryPathCoverage(t *testing.T) {
 	if err != nil {
 		want = filepath.Clean(root)
 	}
-	if got := canonicalizeBoundaryPath(root); got != want {
+	if got := canonicalizeBoundaryPath(root); !pathutil.SameLocalPath(got, want) {
 		t.Fatalf("canonicalizeBoundaryPath(existing) = %q, want %q", got, want)
 	}
 
@@ -375,7 +376,7 @@ func TestCanonicalizeBoundaryPathCoverage(t *testing.T) {
 	if err != nil {
 		gotRoot = filepath.Clean(probe)
 	}
-	if gotRoot != wantRoot {
+	if !pathutil.SameLocalPath(gotRoot, wantRoot) {
 		t.Fatalf("canonicalizeBoundaryPath(missing) root = %q, want %q", gotRoot, wantRoot)
 	}
 	rel, err := filepath.Rel(probe, gotMissing)

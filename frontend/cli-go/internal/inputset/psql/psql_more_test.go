@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/inputset"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 type hookFS struct {
@@ -219,14 +220,14 @@ func TestPsqlHelperBranches(t *testing.T) {
 		fs:      inputset.OSFileSystem{},
 	}
 	got := tracker.resolveInclude(`\include_relative`, filepath.ToSlash(filepath.Join("inner", "nested.sql")), filepath.Join(root, "base", "a.sql"))
-	if got != filepath.Join(root, "base", "inner", "nested.sql") {
+	if !pathutil.SameLocalPath(got, filepath.Join(root, "base", "inner", "nested.sql")) {
 		t.Fatalf("unexpected relative include path: %q", got)
 	}
-	if got := tracker.resolveInclude(`\i`, "plain.sql", filepath.Join(root, "base", "a.sql")); got != filepath.Join(root, "base", "plain.sql") {
+	if got := tracker.resolveInclude(`\i`, "plain.sql", filepath.Join(root, "base", "a.sql")); !pathutil.SameLocalPath(got, filepath.Join(root, "base", "plain.sql")) {
 		t.Fatalf("unexpected plain include path: %q", got)
 	}
 	abs := filepath.Join(root, "dir", "child.sql")
-	if got := tracker.resolveInclude(`\i`, abs, filepath.Join(root, "base", "a.sql")); got != abs {
+	if got := tracker.resolveInclude(`\i`, abs, filepath.Join(root, "base", "a.sql")); !pathutil.SameLocalPath(got, abs) {
 		t.Fatalf("unexpected absolute include path: %q", got)
 	}
 

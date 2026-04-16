@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/client"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestRunPrepareAliasPsqlResolvesFileArgsRelativeToAliasFile(t *testing.T) {
@@ -126,7 +127,7 @@ func TestRunPrepareAliasLiquibaseResolvesChangelogRelativeToAliasFile(t *testing
 	if got := strings.Join(args, "|"); got != want {
 		t.Fatalf("liquibase_args = %q, want %q", got, want)
 	}
-	if got := gotRequest["work_dir"]; got != filepath.Join(workspace, "examples") {
+	if got, ok := gotRequest["work_dir"].(string); !ok || !pathutil.SameLocalPath(got, filepath.Join(workspace, "examples")) {
 		t.Fatalf("work_dir = %v, want %q", got, filepath.Join(workspace, "examples"))
 	}
 }
@@ -239,7 +240,7 @@ func TestRunPrepareAliasLiquibaseUsesSearchPathAsWorkDirForNestedAlias(t *testin
 	if got := strings.Join(args, "|"); got != "update|--searchPath|"+wantSearch+"|--changelog-file|"+wantChangelog {
 		t.Fatalf("liquibase_args = %q, want %q", got, "update|--searchPath|"+wantSearch+"|--changelog-file|"+wantChangelog)
 	}
-	if got := gotRequest["work_dir"]; got != wantSearch {
+	if got, ok := gotRequest["work_dir"].(string); !ok || !pathutil.SameLocalPath(got, wantSearch) {
 		t.Fatalf("work_dir = %v, want %q", got, wantSearch)
 	}
 }
@@ -281,7 +282,7 @@ func TestRunPlanAliasLiquibaseUsesAliasDirWorkDir(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if got := gotRequest["work_dir"]; got != filepath.Join(workspace, "examples") {
+	if got, ok := gotRequest["work_dir"].(string); !ok || !pathutil.SameLocalPath(got, filepath.Join(workspace, "examples")) {
 		t.Fatalf("work_dir = %v, want %q", got, filepath.Join(workspace, "examples"))
 	}
 }

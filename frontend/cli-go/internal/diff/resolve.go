@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sqlrs/cli/internal/inputset"
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 // ResolveScope turns a Scope into two Context values. Ref mode "worktree"
@@ -112,10 +112,10 @@ func resolveRefWorktrees(s Scope, cwd string) (fromCtx, toCtx Context, cleanup f
 		_ = cleanupBoth()
 		return Context{}, Context{}, nil, fmt.Errorf("to-ref %q: %w", s.ToRef, err)
 	}
-	fromRoot := inputset.CanonicalizeBoundaryPath(fromDir)
-	toRoot := inputset.CanonicalizeBoundaryPath(toDir)
-	fromBase := inputset.CanonicalizeBoundaryPath(filepath.Join(fromDir, relCwd))
-	toBase := inputset.CanonicalizeBoundaryPath(filepath.Join(toDir, relCwd))
+	fromRoot := pathutil.CanonicalizeBoundaryPath(fromDir)
+	toRoot := pathutil.CanonicalizeBoundaryPath(toDir)
+	fromBase := pathutil.CanonicalizeBoundaryPath(filepath.Join(fromDir, relCwd))
+	toBase := pathutil.CanonicalizeBoundaryPath(filepath.Join(toDir, relCwd))
 	return Context{
 			Root:    fromRoot,
 			BaseDir: fromBase,
@@ -137,8 +137,8 @@ func resolveRefGitObjects(s Scope, cwd string) (fromCtx, toCtx Context, cleanup 
 	if err != nil {
 		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: resolve cwd: %w", err)
 	}
-	rootCanon := inputset.CanonicalizeBoundaryPath(filepath.Clean(repoRoot))
-	baseDir := inputset.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relCwd))
+	rootCanon := pathutil.CanonicalizeBoundaryPath(filepath.Clean(repoRoot))
+	baseDir := pathutil.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relCwd))
 	return Context{
 			Root:    rootCanon,
 			BaseDir: baseDir,
@@ -155,13 +155,13 @@ func cwdWithinRepo(repoRoot, cwd string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	absRepo = inputset.CanonicalizeBoundaryPath(absRepo)
+	absRepo = pathutil.CanonicalizeBoundaryPath(absRepo)
 
 	absCwd, err := filepath.Abs(cwd)
 	if err != nil {
 		return "", err
 	}
-	absCwd = inputset.CanonicalizeBoundaryPath(absCwd)
+	absCwd = pathutil.CanonicalizeBoundaryPath(absCwd)
 
 	rel, err := filepath.Rel(absRepo, absCwd)
 	if err != nil {

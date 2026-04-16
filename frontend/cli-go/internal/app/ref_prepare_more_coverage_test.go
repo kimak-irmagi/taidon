@@ -13,6 +13,7 @@ import (
 
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/inputset"
+	"github.com/sqlrs/cli/internal/pathutil"
 	"github.com/sqlrs/cli/internal/refctx"
 )
 
@@ -20,7 +21,7 @@ func TestEffectiveRefBindBaseDir(t *testing.T) {
 	cwd := filepath.Join("a", "b", "..", "c")
 	ctx := &refctx.Context{BaseDir: filepath.Join("x", "y")}
 
-	if got := effectiveRefBindBaseDir(cwd, ctx, &refctx.Context{}); got != filepath.Clean(cwd) {
+	if got := effectiveRefBindBaseDir(cwd, ctx, &refctx.Context{}); !pathutil.SameLocalPath(got, filepath.Clean(cwd)) {
 		t.Fatalf("effectiveRefBindBaseDir(existing) = %q, want %q", got, filepath.Clean(cwd))
 	}
 	if got := effectiveRefBindBaseDir(cwd, ctx, nil); got != ctx.BaseDir {
@@ -127,13 +128,13 @@ func TestPsqlPathRewriteHelpers(t *testing.T) {
 	query := writeTestFile(t, root, filepath.Join("sql", "query.sql"), "select 1;\n")
 	outside := filepath.Join(t.TempDir(), "outside.sql")
 
-	if got := mapPathToStageRoot(root, stageRoot, root); got != stageRoot {
+	if got := mapPathToStageRoot(root, stageRoot, root); !pathutil.SameLocalPath(got, stageRoot) {
 		t.Fatalf("mapPathToStageRoot(root) = %q, want %q", got, stageRoot)
 	}
-	if got := mapPathToStageRoot(root, stageRoot, query); got != filepath.Join(stageRoot, "sql", "query.sql") {
+	if got := mapPathToStageRoot(root, stageRoot, query); !pathutil.SameLocalPath(got, filepath.Join(stageRoot, "sql", "query.sql")) {
 		t.Fatalf("mapPathToStageRoot(query) = %q", got)
 	}
-	if got := mapPathToStageRoot(root, stageRoot, outside); got != outside {
+	if got := mapPathToStageRoot(root, stageRoot, outside); !pathutil.SameLocalPath(got, outside) {
 		t.Fatalf("mapPathToStageRoot(outside) = %q, want %q", got, outside)
 	}
 	if got := mapPathToStageRoot(root, stageRoot, "query.sql"); got != "query.sql" {
@@ -540,7 +541,7 @@ func TestLiquibaseHelperVariantBranches(t *testing.T) {
 				t.Fatalf("liquibaseLocalArtifacts(%v): %v", args, err)
 			}
 			if strings.Contains(strings.Join(args, "|"), "--searchPath=") {
-				if !hasLocal || len(files) != 0 || len(dirs) != 1 || filepath.Clean(dirs[0]) != filepath.Clean(localDir) {
+				if !hasLocal || len(files) != 0 || len(dirs) != 1 || !pathutil.SameLocalPath(dirs[0], localDir) {
 					t.Fatalf("unexpected search-path artifacts for %v: files=%v dirs=%v hasLocal=%v", args, files, dirs, hasLocal)
 				}
 				continue
@@ -600,7 +601,7 @@ func TestLiquibaseHelperVariantBranches(t *testing.T) {
 
 func containsPath(paths []string, want string) bool {
 	for _, path := range paths {
-		if filepath.Clean(path) == filepath.Clean(want) {
+		if pathutil.SameLocalPath(path, want) {
 			return true
 		}
 	}

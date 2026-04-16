@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestResolverHelpersAndErrors(t *testing.T) {
@@ -21,34 +23,34 @@ func TestResolverHelpersAndErrors(t *testing.T) {
 	}
 
 	resolver := NewWorkspaceResolver("", cwd, nil)
-	if resolver.Root != cwd || resolver.BaseDir != cwd {
+	if !pathutil.SameLocalPath(resolver.Root, cwd) || !pathutil.SameLocalPath(resolver.BaseDir, cwd) {
 		t.Fatalf("unexpected workspace resolver: %+v", resolver)
 	}
 	rootResolver := NewWorkspaceResolver(root, "", nil)
-	if rootResolver.Root != root || rootResolver.BaseDir != root {
+	if !pathutil.SameLocalPath(rootResolver.Root, root) || !pathutil.SameLocalPath(rootResolver.BaseDir, root) {
 		t.Fatalf("unexpected root fallback resolver: %+v", rootResolver)
 	}
 
 	aliasResolver := NewAliasResolver(root, filepath.Join(root, "aliases", "demo.prep.s9s.yaml"))
-	if aliasResolver.BaseDir != filepath.Join(root, "aliases") {
+	if !pathutil.SameLocalPath(aliasResolver.BaseDir, filepath.Join(root, "aliases")) {
 		t.Fatalf("unexpected alias resolver: %+v", aliasResolver)
 	}
 
 	diffResolver := NewDiffResolver(root)
-	if diffResolver.Root != root || diffResolver.BaseDir != root {
+	if !pathutil.SameLocalPath(diffResolver.Root, root) || !pathutil.SameLocalPath(diffResolver.BaseDir, root) {
 		t.Fatalf("unexpected diff resolver: %+v", diffResolver)
 	}
 
 	path, err := ResolvePath("file.sql", root, cwd, nil)
-	if err != nil || path != filepath.Join(cwd, "file.sql") {
+	if err != nil || !pathutil.SameLocalPath(path, filepath.Join(cwd, "file.sql")) {
 		t.Fatalf("unexpected resolved path: %q err=%v", path, err)
 	}
 	path, err = ResolvePath("file.sql", "", cwd, nil)
-	if err != nil || path != filepath.Join(cwd, "file.sql") {
+	if err != nil || !pathutil.SameLocalPath(path, filepath.Join(cwd, "file.sql")) {
 		t.Fatalf("unexpected root-fallback path: %q err=%v", path, err)
 	}
 	path, err = ResolvePath("file.sql", root, "", nil)
-	if err != nil || path != filepath.Join(root, "file.sql") {
+	if err != nil || !pathutil.SameLocalPath(path, filepath.Join(root, "file.sql")) {
 		t.Fatalf("unexpected base-fallback path: %q err=%v", path, err)
 	}
 
@@ -77,10 +79,10 @@ func TestBoundaryAndUtilityHelpers(t *testing.T) {
 	if got := rebasePathToRoot("", root); got != "" {
 		t.Fatalf("expected empty path to stay empty, got %q", got)
 	}
-	if got := rebasePathToRoot(root, root); got != root {
+	if got := rebasePathToRoot(root, root); !pathutil.SameLocalPath(got, root) {
 		t.Fatalf("expected root path to stay rooted, got %q", got)
 	}
-	if got := rebasePathToRoot(filepath.Join(root, "dir", "file.sql"), root); got != filepath.Join(root, "dir", "file.sql") {
+	if got := rebasePathToRoot(filepath.Join(root, "dir", "file.sql"), root); !pathutil.SameLocalPath(got, filepath.Join(root, "dir", "file.sql")) {
 		t.Fatalf("unexpected rebased path: %q", got)
 	}
 	if got := rebasePathToRoot("relative/path.sql", ""); got != "relative/path.sql" {

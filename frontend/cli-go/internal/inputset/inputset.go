@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 // UserError marks user-facing input/validation failures so CLI command wrappers
@@ -140,37 +142,12 @@ func rebasePathToRoot(path string, root string) string {
 // CanonicalizeBoundaryPath resolves the existing parent path when possible so
 // workspace-bound checks stay stable across symlinks and missing trailing paths.
 func CanonicalizeBoundaryPath(path string) string {
-	cleaned := filepath.Clean(strings.TrimSpace(path))
-	if cleaned == "" {
-		return cleaned
-	}
-	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
-		return resolved
-	}
-
-	probe := cleaned
-	suffix := make([]string, 0, 4)
-	for {
-		parent := filepath.Dir(probe)
-		if parent == probe {
-			return cleaned
-		}
-		suffix = append([]string{filepath.Base(probe)}, suffix...)
-		probe = parent
-		if resolved, err := filepath.EvalSymlinks(probe); err == nil {
-			parts := append([]string{resolved}, suffix...)
-			return filepath.Join(parts...)
-		}
-	}
+	return pathutil.CanonicalizeBoundaryPath(path)
 }
 
 // IsWithin reports whether target stays within base according to filepath.Rel.
 func IsWithin(base string, target string) bool {
-	rel, err := filepath.Rel(base, target)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (!strings.HasPrefix(rel, "..") && rel != "")
+	return pathutil.IsWithin(base, target)
 }
 
 // LooksLikeLiquibaseRemoteRef reports whether Liquibase should treat the value

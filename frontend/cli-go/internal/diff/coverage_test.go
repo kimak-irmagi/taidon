@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/sqlrs/cli/internal/pathutil"
 )
 
 func TestDiffCoverageHelpers(t *testing.T) {
@@ -70,10 +72,10 @@ func TestDiffCoverageHelpers(t *testing.T) {
 		if cleanup != nil {
 			t.Fatalf("expected no cleanup for path scope")
 		}
-		if want := filepath.Join(workspace, "from"); fromCtx.Root != filepath.Clean(want) || fromCtx.BaseDir != filepath.Clean(want) {
+		if want := filepath.Join(workspace, "from"); !pathutil.SameLocalPath(fromCtx.Root, want) || !pathutil.SameLocalPath(fromCtx.BaseDir, want) {
 			t.Fatalf("unexpected from context: %+v", fromCtx)
 		}
-		if want := filepath.Join(workspace, "to"); toCtx.Root != filepath.Clean(want) || toCtx.BaseDir != filepath.Clean(want) {
+		if want := filepath.Join(workspace, "to"); !pathutil.SameLocalPath(toCtx.Root, want) || !pathutil.SameLocalPath(toCtx.BaseDir, want) {
 			t.Fatalf("unexpected to context: %+v", toCtx)
 		}
 
@@ -88,12 +90,12 @@ func TestDiffCoverageHelpers(t *testing.T) {
 		}
 		if got, err := absPathInCwd("rel.sql", ""); err != nil {
 			t.Fatalf("absPathInCwd relative: %v", err)
-		} else if want, _ := filepath.Abs("rel.sql"); filepath.Clean(got) != filepath.Clean(want) {
+		} else if want, _ := filepath.Abs("rel.sql"); !pathutil.SameLocalPath(got, want) {
 			t.Fatalf("absPathInCwd relative = %q, want %q", got, want)
 		}
 		if got, err := absPathInCwd(filepath.Join(workspace, "abs.sql"), workspace); err != nil {
 			t.Fatalf("absPathInCwd absolute: %v", err)
-		} else if got != filepath.Clean(filepath.Join(workspace, "abs.sql")) {
+		} else if !pathutil.SameLocalPath(got, filepath.Join(workspace, "abs.sql")) {
 			t.Fatalf("absPathInCwd absolute = %q", got)
 		}
 
