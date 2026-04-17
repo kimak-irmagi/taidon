@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	aliaspkg "github.com/sqlrs/cli/internal/alias"
 )
 
 func TestParsePrepareAliasArgsAdditionalBranches(t *testing.T) {
@@ -235,7 +237,7 @@ func TestResolvePrepareAliasPathAdditionalValidation(t *testing.T) {
 
 func TestLoadPrepareAliasReadAndYAMLErrors(t *testing.T) {
 	t.Run("read error", func(t *testing.T) {
-		_, err := loadPrepareAlias(filepath.Join(t.TempDir(), "missing.prep.s9s.yaml"))
+		_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: filepath.Join(t.TempDir(), "missing.prep.s9s.yaml")})
 		if err == nil {
 			t.Fatalf("expected read error")
 		}
@@ -246,7 +248,7 @@ func TestLoadPrepareAliasReadAndYAMLErrors(t *testing.T) {
 
 	t.Run("yaml error", func(t *testing.T) {
 		path := writePrepareAliasFile(t, t.TempDir(), "broken.prep.s9s.yaml", "kind: [\n")
-		_, err := loadPrepareAlias(path)
+		_, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: path})
 		if err == nil || !strings.Contains(err.Error(), "read prepare alias") {
 			t.Fatalf("expected yaml error, got %v", err)
 		}
@@ -255,7 +257,7 @@ func TestLoadPrepareAliasReadAndYAMLErrors(t *testing.T) {
 
 func TestBuildPrepareAliasCommandArgsWatchAndImage(t *testing.T) {
 	args := buildPrepareAliasCommandArgs(
-		prepareAlias{
+		aliaspkg.Definition{
 			Image: " postgres:17 ",
 			Args:  []string{"-f", "prepare.sql"},
 		},
@@ -271,7 +273,7 @@ func TestBuildPrepareAliasCommandArgsWatchAndImage(t *testing.T) {
 
 func TestBuildPrepareAliasCommandArgsRefOptions(t *testing.T) {
 	args := buildPrepareAliasCommandArgs(
-		prepareAlias{
+		aliaspkg.Definition{
 			Image: " postgres:17 ",
 			Args:  []string{"-f", "prepare.sql"},
 		},
@@ -289,7 +291,7 @@ func TestBuildPrepareAliasCommandArgsRefOptions(t *testing.T) {
 
 func TestBuildPlanAliasCommandArgsRefKeepWorktree(t *testing.T) {
 	args := buildPlanAliasCommandArgs(
-		prepareAlias{
+		aliaspkg.Definition{
 			Image: " postgres:17 ",
 			Args:  []string{"update"},
 		},

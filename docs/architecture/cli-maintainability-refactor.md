@@ -113,6 +113,8 @@ Move alias definition loading, normalization, and schema validation behind one
 canonical owner in `internal/alias`, and make `internal/app` consume that
 domain model rather than reading YAML directly.
 
+Status: Implemented in the current branch.
+
 ### 5.3 PR3: generic discover model cleanup
 
 Separate generic discovery report types from the aliases analyzer and then split
@@ -227,3 +229,108 @@ top-level dispatch is testable without mutating package-level function state.
 PR1 should not opportunistically absorb PR2-PR4 work. If a change is only
 needed to centralize alias ownership, redesign discover payloads, or merge
 plan/prepare pipelines, it belongs to a later slice.
+
+## 9. PR2 Design
+
+### 9.1 Scope
+
+PR2 is still intentionally narrow.
+
+Included:
+
+- one canonical execution-facing alias definition model in `internal/alias`;
+- shared YAML loading and schema validation for prepare and run aliases;
+- filesystem-aware loading so ref-backed prepare alias execution can reuse the
+  same loader against a supplied filesystem;
+- `internal/app` integration through the alias package instead of local
+  duplicate YAML structs and loaders.
+
+Explicitly out of scope for PR2:
+
+- changing alias command syntax or invocation grammar;
+- replacing `internal/app` alias argument parsers;
+- merging alias path resolution into one shared execution/inspection API when
+  that would change current command-specific errors;
+- alias create payload redesign;
+- discover model cleanup;
+- plan/prepare pipeline unification.
+
+The point of PR2 is to establish one canonical alias-definition owner first,
+without broadening the patch into every alias-related concern.
+
+### 9.2 Target shape
+
+`internal/alias` becomes the owner of execution-facing alias definitions.
+
+Expected additions:
+
+- `alias.Definition`
+  - shared loaded alias metadata:
+    - `Class`
+    - `Kind`
+    - `Image`
+    - `Args`
+- one shared loader API, exposed from `internal/alias`, for example:
+  - `LoadTarget(target Target) (Definition, error)`
+  - `LoadTargetWithFS(target Target, fs inputset.FileSystem) (Definition, error)`
+
+Ownership rules:
+
+- `internal/alias` owns YAML loading, kind normalization, and schema checks for
+  execution-facing alias files;
+- `internal/app` continues to own command-shape parsing such as `prepare`,
+  `plan`, and `run` alias invocation flags;
+- `internal/app` may keep command-specific path-resolution wrappers in this PR
+  if they are still needed to preserve current user-facing errors;
+- `CheckTarget` in `internal/alias` must reuse the same shared loader instead of
+  maintaining its own duplicate prepare/run definition structs.
+
+After PR2:
+
+- `internal/app` should no longer define duplicate execution-only alias types
+  such as separate `prepareAlias` / `runAlias` YAML payload structs;
+- `internal/app` should no longer own duplicate `loadPrepareAlias*` /
+  `loadRunAlias` functions.
+
+### 9.3 Why path resolution stays split for now
+
+`internal/alias` already owns generic target resolution for inspection and
+creation, but `internal/app` still has command-specific wrappers for execution
+because current public behavior includes command-specific error wording and a
+ref-backed filesystem path for prepare aliases.
+
+Pulling path resolution and domain loading together in one step would enlarge
+the refactor and increase the risk of accidental CLI-facing regressions. PR2
+therefore centralizes alias definitions first and leaves full execution-path
+resolution unification for a later cleanup if it is still needed.
+
+### 9.4 Success criteria
+
+PR2 is successful if:
+
+- one canonical alias-definition loader exists in `internal/alias`;
+- alias inspection and alias execution read the same prepare/run schema rules;
+- ref-backed prepare alias execution can still load aliases through a supplied
+  filesystem;
+- `internal/app` no longer duplicates YAML execution models for alias files;
+- public CLI syntax, output, and exit-code behavior remain unchanged.
+
+## 10. PR2 Test Plan
+
+The second implementation slice should add or update tests around the shared
+alias-definition owner.
+
+Expected tests:
+
+1. `TestLoadTargetPrepareDefinition`
+2. `TestLoadTargetRunDefinition`
+3. `TestLoadTargetWithFSSupportsPrepareAliasesInRefContexts`
+4. `TestLoadTargetRejectsInvalidPrepareSchema`
+5. `TestLoadTargetRejectsInvalidRunSchema`
+6. `TestCheckTargetReusesSharedAliasDefinitionLoader`
+7. `TestResolvePrepareAliasWithOptionalRefLoadsDefinitionsViaAliasPackage`
+8. `TestRunAliasExecutionLoadsDefinitionsViaAliasPackage`
+
+The exact test file split is not important, but the PR should prove that
+prepare/run execution and alias inspection no longer maintain independent YAML
+schema loaders.

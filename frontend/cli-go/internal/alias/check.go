@@ -11,7 +11,6 @@ import (
 	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
 	inputpgbench "github.com/sqlrs/cli/internal/inputset/pgbench"
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
-	"gopkg.in/yaml.v3"
 )
 
 // CheckScan validates every selected alias discovered by scan mode.
@@ -84,20 +83,8 @@ func CheckTarget(target Target, workspaceRoot string) (CheckResult, error) {
 	return result, nil
 }
 
-type prepareDefinition struct {
-	Kind  string   `yaml:"kind"`
-	Image string   `yaml:"image"`
-	Args  []string `yaml:"args"`
-}
-
-type runDefinition struct {
-	Kind  string   `yaml:"kind"`
-	Image string   `yaml:"image"`
-	Args  []string `yaml:"args"`
-}
-
 func checkPrepareAlias(path string, workspaceRoot string) (string, []Issue) {
-	def, err := loadPrepareAlias(path)
+	def, err := LoadTarget(Target{Class: ClassPrepare, Path: path})
 	if err != nil {
 		return "", []Issue{{Code: "invalid_prepare_alias", Message: err.Error()}}
 	}
@@ -105,61 +92,11 @@ func checkPrepareAlias(path string, workspaceRoot string) (string, []Issue) {
 }
 
 func checkRunAlias(path string, workspaceRoot string) (string, []Issue) {
-	def, err := loadRunAlias(path)
+	def, err := LoadTarget(Target{Class: ClassRun, Path: path})
 	if err != nil {
 		return "", []Issue{{Code: "invalid_run_alias", Message: err.Error()}}
 	}
 	return def.Kind, append([]Issue{}, validateRunAliasPaths(def.Kind, def.Args, path, workspaceRoot)...)
-}
-
-func loadPrepareAlias(path string) (prepareDefinition, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return prepareDefinition{}, err
-	}
-	var def prepareDefinition
-	if err := yaml.Unmarshal(data, &def); err != nil {
-		return prepareDefinition{}, fmt.Errorf("read prepare alias: %w", err)
-	}
-	def.Kind = strings.ToLower(strings.TrimSpace(def.Kind))
-	switch def.Kind {
-	case "":
-		return prepareDefinition{}, fmt.Errorf("prepare alias kind is required")
-	case "psql", "lb":
-	default:
-		return prepareDefinition{}, fmt.Errorf("unknown prepare alias kind: %s", def.Kind)
-	}
-	if len(def.Args) == 0 {
-		return prepareDefinition{}, fmt.Errorf("prepare alias args are required")
-	}
-	return def, nil
-}
-
-func loadRunAlias(path string) (runDefinition, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return runDefinition{}, err
-	}
-	var def runDefinition
-	if err := yaml.Unmarshal(data, &def); err != nil {
-		return runDefinition{}, fmt.Errorf("read run alias: %w", err)
-	}
-	def.Kind = strings.ToLower(strings.TrimSpace(def.Kind))
-	switch def.Kind {
-	case "":
-		return runDefinition{}, fmt.Errorf("run alias kind is required")
-	default:
-		if !runkind.IsKnown(def.Kind) {
-			return runDefinition{}, fmt.Errorf("unknown run alias kind: %s", def.Kind)
-		}
-	}
-	if strings.TrimSpace(def.Image) != "" {
-		return runDefinition{}, fmt.Errorf("run alias does not support image")
-	}
-	if len(def.Args) == 0 {
-		return runDefinition{}, fmt.Errorf("run alias args are required")
-	}
-	return def, nil
 }
 
 func validatePrepareAliasPaths(kind string, args []string, aliasPath string, workspaceRoot string) []Issue {

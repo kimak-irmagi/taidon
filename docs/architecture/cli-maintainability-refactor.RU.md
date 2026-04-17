@@ -113,6 +113,8 @@ feature-by-feature срезов:
 канонического владельца в `internal/alias`, а `internal/app` заставить работать
 с этой доменной моделью вместо прямого чтения YAML.
 
+Статус: реализовано в текущей ветке.
+
 ### 5.3 PR3: cleanup generic discover model
 
 Отделить generic discovery report types от aliases analyzer-а, а затем
@@ -226,3 +228,109 @@ top-level dispatch тестируется без мутации package-level fu
 PR1 не должен opportunistically втягивать работу из PR2-PR4. Если изменение
 нужно только для centralize alias ownership, redesign discover payload-ов или
 слияния plan/prepare pipelines, оно относится к следующему срезу.
+
+## 9. Дизайн PR2
+
+### 9.1 Scope
+
+PR2 по-прежнему намеренно узкий.
+
+Входит:
+
+- один канонический execution-facing owner для alias definition в
+  `internal/alias`;
+- общая YAML loading и schema validation для prepare и run alias-ов;
+- filesystem-aware loading, чтобы ref-backed prepare alias execution использовал
+  тот же loader с переданной файловой системой;
+- интеграция `internal/app` через alias package вместо локальных duplicate YAML
+  struct-ов и loader-ов.
+
+Явно вне scope PR2:
+
+- изменение alias command syntax или invocation grammar;
+- замена alias argument parser-ов в `internal/app`;
+- слияние alias path resolution в один shared execution/inspection API там, где
+  это может поменять текущие command-specific error-ы;
+- redesign payload-а для alias create;
+- cleanup discover model;
+- объединение plan/prepare pipeline.
+
+Смысл PR2 — сначала сделать `internal/alias` единственным владельцем alias
+definition, не расползаясь на все остальные alias-related вопросы.
+
+### 9.2 Целевая форма
+
+`internal/alias` становится владельцем execution-facing alias definition.
+
+Ожидаемые additions:
+
+- `alias.Definition`
+  - общие загруженные alias metadata:
+    - `Class`
+    - `Kind`
+    - `Image`
+    - `Args`
+- один общий loader API, экспортируемый из `internal/alias`, например:
+  - `LoadTarget(target Target) (Definition, error)`
+  - `LoadTargetWithFS(target Target, fs inputset.FileSystem) (Definition, error)`
+
+Правила владения:
+
+- `internal/alias` владеет YAML loading, kind normalization и schema check-ами
+  для execution-facing alias файлов;
+- `internal/app` продолжает владеть command-shape parsing для alias invocation,
+  например для `prepare`, `plan` и `run`;
+- `internal/app` может оставить command-specific path-resolution wrapper-ы в
+  этом PR, если они всё ещё нужны для сохранения текущих user-facing error-ов;
+- `CheckTarget` в `internal/alias` должен переиспользовать тот же shared loader,
+  а не держать отдельные duplicate prepare/run definition struct-ы.
+
+После PR2:
+
+- `internal/app` больше не должен определять duplicate execution-only alias
+  types вроде отдельных YAML struct-ов `prepareAlias` / `runAlias`;
+- `internal/app` больше не должен владеть duplicate функциями
+  `loadPrepareAlias*` / `loadRunAlias`.
+
+### 9.3 Почему path resolution пока остаётся split
+
+`internal/alias` уже владеет generic target resolution для inspection и create,
+но в `internal/app` всё ещё остаются command-specific wrapper-ы для execution,
+потому что текущее public behavior включает command-specific wording ошибок и
+ref-backed filesystem path для prepare alias-ов.
+
+Слияние path resolution и definition loading одним шагом слишком расширит
+рефакторинг и повысит риск случайных CLI-facing regressions. Поэтому PR2
+централизует alias definition сначала, а полное выравнивание execution-path
+resolution остаётся на потом, если оно вообще понадобится.
+
+### 9.4 Критерии успеха
+
+PR2 считается успешным, если:
+
+- в `internal/alias` существует один канонический alias-definition loader;
+- alias inspection и alias execution читают одни и те же prepare/run schema
+  rules;
+- ref-backed prepare alias execution всё ещё умеет загружать alias через
+  supplied filesystem;
+- `internal/app` больше не дублирует YAML execution model для alias файлов;
+- public CLI syntax, output и exit-code behavior не меняются.
+
+## 10. Тест-план для PR2
+
+Второй implementation slice должен добавить или обновить тесты вокруг shared
+alias-definition owner.
+
+Ожидаемые тесты:
+
+1. `TestLoadTargetPrepareDefinition`
+2. `TestLoadTargetRunDefinition`
+3. `TestLoadTargetWithFSSupportsPrepareAliasesInRefContexts`
+4. `TestLoadTargetRejectsInvalidPrepareSchema`
+5. `TestLoadTargetRejectsInvalidRunSchema`
+6. `TestCheckTargetReusesSharedAliasDefinitionLoader`
+7. `TestResolvePrepareAliasWithOptionalRefLoadsDefinitionsViaAliasPackage`
+8. `TestRunAliasExecutionLoadsDefinitionsViaAliasPackage`
+
+Точный split по test files не важен, но PR должен доказать, что prepare/run
+execution и alias inspection больше не держат независимые YAML schema loader-ы.

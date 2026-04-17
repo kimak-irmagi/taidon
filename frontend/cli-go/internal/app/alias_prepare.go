@@ -1,21 +1,14 @@
 package app
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
+	aliaspkg "github.com/sqlrs/cli/internal/alias"
 	"github.com/sqlrs/cli/internal/inputset"
-	"gopkg.in/yaml.v3"
 )
 
 const prepareAliasSuffix = ".prep.s9s.yaml"
-
-type prepareAlias struct {
-	Kind  string   `yaml:"kind"`
-	Image string   `yaml:"image"`
-	Args  []string `yaml:"args"`
-}
 
 type prepareAliasInvocation struct {
 	Ref             string
@@ -187,34 +180,7 @@ func resolvePrepareAliasPathWithFS(workspaceRoot string, cwd string, ref string,
 	return resolved, nil
 }
 
-func loadPrepareAlias(path string) (prepareAlias, error) {
-	return loadPrepareAliasWithFS(path, inputset.OSFileSystem{})
-}
-
-func loadPrepareAliasWithFS(path string, fs inputset.FileSystem) (prepareAlias, error) {
-	data, err := fs.ReadFile(path)
-	if err != nil {
-		return prepareAlias{}, err
-	}
-	var alias prepareAlias
-	if err := yaml.Unmarshal(data, &alias); err != nil {
-		return prepareAlias{}, fmt.Errorf("read prepare alias: %w", err)
-	}
-	alias.Kind = strings.ToLower(strings.TrimSpace(alias.Kind))
-	switch alias.Kind {
-	case "":
-		return prepareAlias{}, ExitErrorf(2, "prepare alias kind is required")
-	case "psql", "lb":
-	default:
-		return prepareAlias{}, ExitErrorf(2, "unknown prepare alias kind: %s", alias.Kind)
-	}
-	if len(alias.Args) == 0 {
-		return prepareAlias{}, ExitErrorf(2, "prepare alias args are required")
-	}
-	return alias, nil
-}
-
-func buildPrepareAliasCommandArgs(alias prepareAlias, invocation prepareAliasInvocation) []string {
+func buildPrepareAliasCommandArgs(alias aliaspkg.Definition, invocation prepareAliasInvocation) []string {
 	args := make([]string, 0, len(alias.Args)+3)
 	args = appendRefArgs(args, invocation.GitRef, invocation.RefMode, invocation.RefKeepWorktree)
 	if invocation.WatchSpecified {
@@ -232,7 +198,7 @@ func buildPrepareAliasCommandArgs(alias prepareAlias, invocation prepareAliasInv
 	return args
 }
 
-func buildPlanAliasCommandArgs(alias prepareAlias, invocation planAliasInvocation) []string {
+func buildPlanAliasCommandArgs(alias aliaspkg.Definition, invocation planAliasInvocation) []string {
 	args := make([]string, 0, len(alias.Args)+3)
 	args = appendRefArgs(args, invocation.GitRef, invocation.RefMode, invocation.RefKeepWorktree)
 	if strings.TrimSpace(alias.Image) != "" {
