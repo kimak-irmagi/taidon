@@ -45,13 +45,13 @@ func loadPrepareAliasWithFS(path string, fs inputset.FileSystem) (Definition, er
 	def.Class = ClassPrepare
 	switch def.Kind {
 	case "":
-		return Definition{}, fmt.Errorf("prepare alias kind is required")
+		return Definition{}, userErrorf("prepare alias kind is required")
 	case "psql", "lb":
 	default:
-		return Definition{}, fmt.Errorf("unknown prepare alias kind: %s", def.Kind)
+		return Definition{}, userErrorf("unknown prepare alias kind: %s", def.Kind)
 	}
 	if len(def.Args) == 0 {
-		return Definition{}, fmt.Errorf("prepare alias args are required")
+		return Definition{}, userErrorf("prepare alias args are required")
 	}
 	return def, nil
 }
@@ -68,17 +68,17 @@ func loadRunAliasWithFS(path string, fs inputset.FileSystem) (Definition, error)
 	def.Class = ClassRun
 	switch def.Kind {
 	case "":
-		return Definition{}, fmt.Errorf("run alias kind is required")
+		return Definition{}, userErrorf("run alias kind is required")
 	default:
 		if !runkind.IsKnown(def.Kind) {
-			return Definition{}, fmt.Errorf("unknown run alias kind: %s", def.Kind)
+			return Definition{}, userErrorf("unknown run alias kind: %s", def.Kind)
 		}
 	}
 	if strings.TrimSpace(def.Image) != "" {
-		return Definition{}, fmt.Errorf("run alias does not support image")
+		return Definition{}, userErrorf("run alias does not support image")
 	}
 	if len(def.Args) == 0 {
-		return Definition{}, fmt.Errorf("run alias args are required")
+		return Definition{}, userErrorf("run alias args are required")
 	}
 	return def, nil
 }

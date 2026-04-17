@@ -112,7 +112,7 @@ func resolveRunAliasDefinition(workspaceRoot string, cwd string, ref string) (al
 	}
 	def, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassRun, Path: aliasPath})
 	if err != nil {
-		return aliaspkg.Definition{}, "", err
+		return aliaspkg.Definition{}, "", wrapAliasLoadError(err)
 	}
 	return def, aliasPath, nil
 }

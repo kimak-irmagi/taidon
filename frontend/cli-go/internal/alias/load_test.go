@@ -1,6 +1,7 @@
 package alias
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -115,6 +116,10 @@ func TestLoadTargetRejectsInvalidPrepareSchema(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown prepare alias kind") {
 		t.Fatalf("expected invalid prepare schema error, got %v", err)
 	}
+	var userErr *UserError
+	if !errors.As(err, &userErr) {
+		t.Fatalf("expected UserError, got %T", err)
+	}
 }
 
 func TestLoadTargetRejectsInvalidRunSchema(t *testing.T) {
@@ -124,6 +129,10 @@ func TestLoadTargetRejectsInvalidRunSchema(t *testing.T) {
 	_, err := LoadTarget(Target{Class: ClassRun, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "run alias does not support image") {
 		t.Fatalf("expected invalid run schema error, got %v", err)
+	}
+	var userErr *UserError
+	if !errors.As(err, &userErr) {
+		t.Fatalf("expected UserError, got %T", err)
 	}
 }
 
