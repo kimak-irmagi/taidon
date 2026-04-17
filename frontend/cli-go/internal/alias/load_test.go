@@ -136,6 +136,44 @@ func TestLoadTargetRejectsInvalidRunSchema(t *testing.T) {
 	}
 }
 
+func TestLoadTargetTreatsMalformedYAMLAsUserError(t *testing.T) {
+	tests := []struct {
+		name  string
+		class Class
+		file  string
+		want  string
+	}{
+		{
+			name:  "prepare",
+			class: ClassPrepare,
+			file:  "broken.prep.s9s.yaml",
+			want:  "read prepare alias",
+		},
+		{
+			name:  "run",
+			class: ClassRun,
+			file:  "broken.run.s9s.yaml",
+			want:  "read run alias",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			path := writeAliasFile(t, workspace, tc.file, "kind: [\n")
+
+			_, err := LoadTarget(Target{Class: tc.class, Path: path})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected malformed YAML error containing %q, got %v", tc.want, err)
+			}
+			var userErr *UserError
+			if !errors.As(err, &userErr) {
+				t.Fatalf("expected UserError, got %T", err)
+			}
+		})
+	}
+}
+
 func TestCheckTargetReusesSharedAliasDefinitionLoader(t *testing.T) {
 	workspace := t.TempDir()
 	path := writeAliasFile(t, workspace, "broken.run.s9s.yaml", "kind: [\n")

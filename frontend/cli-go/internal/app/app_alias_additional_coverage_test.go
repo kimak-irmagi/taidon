@@ -180,6 +180,50 @@ func TestRunAliasModeReturnsExitCodeTwoForInvalidRunAliasDefinitions(t *testing.
 	}
 }
 
+func TestRunAliasModeReturnsExitCodeTwoForMalformedAliasYAML(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
+	withWorkingDir(t, workspace)
+	writePrepareAliasFile(t, workspace, "broken.prep.s9s.yaml", "kind: [\n")
+	writeRunAliasFile(t, workspace, "broken.run.s9s.yaml", "kind: [\n")
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "prepare",
+			args: []string{"--workspace", workspace, "prepare", "broken"},
+			want: "read prepare alias",
+		},
+		{
+			name: "plan",
+			args: []string{"--workspace", workspace, "plan", "broken"},
+			want: "read prepare alias",
+		},
+		{
+			name: "run",
+			args: []string{"--workspace", workspace, "run", "broken", "--instance", "dev"},
+			want: "read run alias",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Run(tc.args)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+				t.Fatalf("expected exit code 2, got %v", err)
+			}
+			if !strings.Contains(exitErr.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, exitErr)
+			}
+		})
+	}
+}
+
 func TestRunPrepareLiquibaseAliasCommand(t *testing.T) {
 	temp := t.TempDir()
 	setTestDirs(t, temp)

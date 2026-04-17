@@ -97,9 +97,9 @@ func loadDefinition(path string, fs inputset.FileSystem) (Definition, error) {
 		class := classifyPath(path)
 		switch class {
 		case ClassPrepare:
-			return Definition{}, fmt.Errorf("read prepare alias: %w", err)
+			return Definition{}, userErrorf("read prepare alias: %v", err)
 		case ClassRun:
-			return Definition{}, fmt.Errorf("read run alias: %w", err)
+			return Definition{}, userErrorf("read run alias: %v", err)
 		default:
 			return Definition{}, err
 		}
