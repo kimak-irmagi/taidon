@@ -12,7 +12,7 @@ func wrapAliasLoadError(err error) error {
 	}
 	var userErr *aliaspkg.UserError
 	if errors.As(err, &userErr) {
-		return ExitErrorf(2, userErr.Message)
+		return &ExitError{Code: 2, Err: userErr}
 	}
 	return err
 }

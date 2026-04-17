@@ -26,3 +26,19 @@ func TestWrapAliasLoadErrorBranches(t *testing.T) {
 		t.Fatalf("unexpected wrapped error: %+v", exitErr)
 	}
 }
+
+func TestWrapAliasLoadErrorPreservesPercentSigns(t *testing.T) {
+	const message = "unknown prepare alias kind: %s"
+
+	got := wrapAliasLoadError(&aliaspkg.UserError{Message: message})
+	exitErr, ok := got.(*ExitError)
+	if !ok {
+		t.Fatalf("expected ExitError, got %T", got)
+	}
+	if exitErr.Code != 2 {
+		t.Fatalf("expected exit code 2, got %+v", exitErr)
+	}
+	if got.Error() != message {
+		t.Fatalf("error = %q, want %q", got.Error(), message)
+	}
+}
