@@ -1,6 +1,7 @@
 package alias
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -115,6 +116,10 @@ func TestLoadTargetRejectsInvalidPrepareSchema(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "unknown prepare alias kind") {
 		t.Fatalf("expected invalid prepare schema error, got %v", err)
 	}
+	var userErr *UserError
+	if !errors.As(err, &userErr) {
+		t.Fatalf("expected UserError, got %T", err)
+	}
 }
 
 func TestLoadTargetRejectsInvalidRunSchema(t *testing.T) {
@@ -124,6 +129,98 @@ func TestLoadTargetRejectsInvalidRunSchema(t *testing.T) {
 	_, err := LoadTarget(Target{Class: ClassRun, Path: path})
 	if err == nil || !strings.Contains(err.Error(), "run alias does not support image") {
 		t.Fatalf("expected invalid run schema error, got %v", err)
+	}
+	var userErr *UserError
+	if !errors.As(err, &userErr) {
+		t.Fatalf("expected UserError, got %T", err)
+	}
+}
+
+func TestLoadTargetTreatsMalformedYAMLAsUserError(t *testing.T) {
+	tests := []struct {
+		name  string
+		class Class
+		file  string
+		want  string
+	}{
+		{
+			name:  "prepare",
+			class: ClassPrepare,
+			file:  "broken.prep.s9s.yaml",
+			want:  "read prepare alias",
+		},
+		{
+			name:  "run",
+			class: ClassRun,
+			file:  "broken.run.s9s.yaml",
+			want:  "read run alias",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			path := writeAliasFile(t, workspace, tc.file, "kind: [\n")
+
+			_, err := LoadTarget(Target{Class: tc.class, Path: path})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected malformed YAML error containing %q, got %v", tc.want, err)
+			}
+			var userErr *UserError
+			if !errors.As(err, &userErr) {
+				t.Fatalf("expected UserError, got %T", err)
+			}
+		})
+	}
+}
+
+func TestLoadTargetTreatsMalformedExactFileYAMLAsRequestedUserError(t *testing.T) {
+	tests := []struct {
+		name  string
+		class Class
+		file  string
+		want  string
+	}{
+		{
+			name:  "prepare exact file without alias suffix",
+			class: ClassPrepare,
+			file:  "broken.txt",
+			want:  "read prepare alias",
+		},
+		{
+			name:  "run exact file without alias suffix",
+			class: ClassRun,
+			file:  "broken.txt",
+			want:  "read run alias",
+		},
+		{
+			name:  "prepare exact file with run suffix",
+			class: ClassPrepare,
+			file:  "broken.run.s9s.yaml",
+			want:  "read prepare alias",
+		},
+		{
+			name:  "run exact file with prepare suffix",
+			class: ClassRun,
+			file:  "broken.prep.s9s.yaml",
+			want:  "read run alias",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			path := writeAliasFile(t, workspace, tc.file, "kind: [\n")
+
+			_, err := LoadTarget(Target{Class: tc.class, Path: path})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected malformed YAML error containing %q, got %v", tc.want, err)
+			}
+			var userErr *UserError
+			if !errors.As(err, &userErr) {
+				t.Fatalf("expected UserError, got %T", err)
+			}
+		})
 	}
 }
 

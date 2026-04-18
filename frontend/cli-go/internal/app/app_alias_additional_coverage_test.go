@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -121,6 +122,149 @@ func TestRunAliasModeReportsRunPathAndLoadErrors(t *testing.T) {
 	err = Run([]string{"--workspace", workspace, "run", "broken", "--instance", "dev"})
 	if err == nil || !strings.Contains(err.Error(), "read run alias") {
 		t.Fatalf("expected invalid alias error, got %v", err)
+	}
+}
+
+func TestRunAliasModeReturnsExitCodeTwoForInvalidPrepareAndPlanAliasDefinitions(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
+	withWorkingDir(t, workspace)
+	writePrepareAliasFile(t, workspace, "broken.prep.s9s.yaml", "kind: flyway\nargs:\n  - migrate\n")
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "prepare",
+			args: []string{"--workspace", workspace, "prepare", "broken"},
+			want: "unknown prepare alias kind",
+		},
+		{
+			name: "plan",
+			args: []string{"--workspace", workspace, "plan", "broken"},
+			want: "unknown prepare alias kind",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Run(tc.args)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+				t.Fatalf("expected exit code 2, got %v", err)
+			}
+			if !strings.Contains(exitErr.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, exitErr)
+			}
+		})
+	}
+}
+
+func TestRunAliasModeReturnsExitCodeTwoForInvalidRunAliasDefinitions(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
+	withWorkingDir(t, workspace)
+	writeRunAliasFile(t, workspace, "broken.run.s9s.yaml", "kind: psql\nimage: postgres:17\nargs:\n  - -c\n  - select 1\n")
+
+	err := Run([]string{"--workspace", workspace, "run", "broken", "--instance", "dev"})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("expected exit code 2, got %v", err)
+	}
+	if !strings.Contains(exitErr.Error(), "run alias does not support image") {
+		t.Fatalf("expected invalid run alias error, got %v", exitErr)
+	}
+}
+
+func TestRunAliasModeReturnsExitCodeTwoForMalformedAliasYAML(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
+	withWorkingDir(t, workspace)
+	writePrepareAliasFile(t, workspace, "broken.prep.s9s.yaml", "kind: [\n")
+	writeRunAliasFile(t, workspace, "broken.run.s9s.yaml", "kind: [\n")
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "prepare",
+			args: []string{"--workspace", workspace, "prepare", "broken"},
+			want: "read prepare alias",
+		},
+		{
+			name: "plan",
+			args: []string{"--workspace", workspace, "plan", "broken"},
+			want: "read prepare alias",
+		},
+		{
+			name: "run",
+			args: []string{"--workspace", workspace, "run", "broken", "--instance", "dev"},
+			want: "read run alias",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Run(tc.args)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+				t.Fatalf("expected exit code 2, got %v", err)
+			}
+			if !strings.Contains(exitErr.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, exitErr)
+			}
+		})
+	}
+}
+
+func TestRunAliasModeReturnsExitCodeTwoForMalformedExactAliasFiles(t *testing.T) {
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+	workspace := writeAliasWorkspace(t, temp, "http://example.invalid")
+	withWorkingDir(t, workspace)
+	writePrepareAliasFile(t, workspace, "broken.txt", "kind: [\n")
+	writeRunAliasFile(t, workspace, "broken.txt", "kind: [\n")
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "prepare exact file",
+			args: []string{"--workspace", workspace, "prepare", "broken.txt."},
+			want: "read prepare alias",
+		},
+		{
+			name: "plan exact file",
+			args: []string{"--workspace", workspace, "plan", "broken.txt."},
+			want: "read prepare alias",
+		},
+		{
+			name: "run exact file",
+			args: []string{"--workspace", workspace, "run", "broken.txt.", "--instance", "dev"},
+			want: "read run alias",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Run(tc.args)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 {
+				t.Fatalf("expected exit code 2, got %v", err)
+			}
+			if !strings.Contains(exitErr.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, exitErr)
+			}
+		})
 	}
 }
 

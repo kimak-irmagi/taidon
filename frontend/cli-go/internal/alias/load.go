@@ -38,20 +38,20 @@ func loadPrepareAlias(path string) (Definition, error) {
 }
 
 func loadPrepareAliasWithFS(path string, fs inputset.FileSystem) (Definition, error) {
-	def, err := loadDefinition(path, fs)
+	def, err := loadDefinition(path, ClassPrepare, fs)
 	if err != nil {
 		return Definition{}, err
 	}
 	def.Class = ClassPrepare
 	switch def.Kind {
 	case "":
-		return Definition{}, fmt.Errorf("prepare alias kind is required")
+		return Definition{}, userErrorf("prepare alias kind is required")
 	case "psql", "lb":
 	default:
-		return Definition{}, fmt.Errorf("unknown prepare alias kind: %s", def.Kind)
+		return Definition{}, userErrorf("unknown prepare alias kind: %s", def.Kind)
 	}
 	if len(def.Args) == 0 {
-		return Definition{}, fmt.Errorf("prepare alias args are required")
+		return Definition{}, userErrorf("prepare alias args are required")
 	}
 	return def, nil
 }
@@ -61,29 +61,29 @@ func loadRunAlias(path string) (Definition, error) {
 }
 
 func loadRunAliasWithFS(path string, fs inputset.FileSystem) (Definition, error) {
-	def, err := loadDefinition(path, fs)
+	def, err := loadDefinition(path, ClassRun, fs)
 	if err != nil {
 		return Definition{}, err
 	}
 	def.Class = ClassRun
 	switch def.Kind {
 	case "":
-		return Definition{}, fmt.Errorf("run alias kind is required")
+		return Definition{}, userErrorf("run alias kind is required")
 	default:
 		if !runkind.IsKnown(def.Kind) {
-			return Definition{}, fmt.Errorf("unknown run alias kind: %s", def.Kind)
+			return Definition{}, userErrorf("unknown run alias kind: %s", def.Kind)
 		}
 	}
 	if strings.TrimSpace(def.Image) != "" {
-		return Definition{}, fmt.Errorf("run alias does not support image")
+		return Definition{}, userErrorf("run alias does not support image")
 	}
 	if len(def.Args) == 0 {
-		return Definition{}, fmt.Errorf("run alias args are required")
+		return Definition{}, userErrorf("run alias args are required")
 	}
 	return def, nil
 }
 
-func loadDefinition(path string, fs inputset.FileSystem) (Definition, error) {
+func loadDefinition(path string, class Class, fs inputset.FileSystem) (Definition, error) {
 	data, err := fs.ReadFile(path)
 	if err != nil {
 		return Definition{}, err
@@ -94,12 +94,11 @@ func loadDefinition(path string, fs inputset.FileSystem) (Definition, error) {
 		Args  []string `yaml:"args"`
 	}
 	if err := yaml.Unmarshal(data, &payload); err != nil {
-		class := classifyPath(path)
-		switch class {
+		switch normalizeClass(class) {
 		case ClassPrepare:
-			return Definition{}, fmt.Errorf("read prepare alias: %w", err)
+			return Definition{}, userErrorf("read prepare alias: %v", err)
 		case ClassRun:
-			return Definition{}, fmt.Errorf("read run alias: %w", err)
+			return Definition{}, userErrorf("read run alias: %v", err)
 		default:
 			return Definition{}, err
 		}

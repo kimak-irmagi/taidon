@@ -13,7 +13,7 @@ func resolvePrepareAliasWithOptionalRef(workspaceRoot string, cwd string, aliasR
 		}
 		alias, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: aliasPath})
 		if err != nil {
-			return aliaspkg.Definition{}, "", nil, err
+			return aliaspkg.Definition{}, "", nil, wrapAliasLoadError(err)
 		}
 		return alias, aliasPath, nil, nil
 	}
@@ -30,7 +30,7 @@ func resolvePrepareAliasWithOptionalRef(workspaceRoot string, cwd string, aliasR
 	alias, err := aliaspkg.LoadTargetWithFS(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: aliasPath}, ctx.FileSystem)
 	if err != nil {
 		_ = ctx.Cleanup()
-		return aliaspkg.Definition{}, "", nil, err
+		return aliaspkg.Definition{}, "", nil, wrapAliasLoadError(err)
 	}
 	return alias, aliasPath, &ctx, nil
 }
