@@ -38,7 +38,7 @@ func loadPrepareAlias(path string) (Definition, error) {
 }
 
 func loadPrepareAliasWithFS(path string, fs inputset.FileSystem) (Definition, error) {
-	def, err := loadDefinition(path, fs)
+	def, err := loadDefinition(path, ClassPrepare, fs)
 	if err != nil {
 		return Definition{}, err
 	}
@@ -61,7 +61,7 @@ func loadRunAlias(path string) (Definition, error) {
 }
 
 func loadRunAliasWithFS(path string, fs inputset.FileSystem) (Definition, error) {
-	def, err := loadDefinition(path, fs)
+	def, err := loadDefinition(path, ClassRun, fs)
 	if err != nil {
 		return Definition{}, err
 	}
@@ -83,7 +83,7 @@ func loadRunAliasWithFS(path string, fs inputset.FileSystem) (Definition, error)
 	return def, nil
 }
 
-func loadDefinition(path string, fs inputset.FileSystem) (Definition, error) {
+func loadDefinition(path string, class Class, fs inputset.FileSystem) (Definition, error) {
 	data, err := fs.ReadFile(path)
 	if err != nil {
 		return Definition{}, err
@@ -94,8 +94,7 @@ func loadDefinition(path string, fs inputset.FileSystem) (Definition, error) {
 		Args  []string `yaml:"args"`
 	}
 	if err := yaml.Unmarshal(data, &payload); err != nil {
-		class := classifyPath(path)
-		switch class {
+		switch normalizeClass(class) {
 		case ClassPrepare:
 			return Definition{}, userErrorf("read prepare alias: %v", err)
 		case ClassRun:
