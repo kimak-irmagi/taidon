@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-04-08)
+## Статус (на 2026-04-20)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -124,6 +124,11 @@ gantt
   default-запуском по всем shipped analyzers, analyzer-grouped human/JSON
   output, failure isolation и shell-aware follow-up командами для исправлений в
   `.gitignore` и `.vscode`.
+- **Сделано (CLI maintainability PR4 stage pipeline)**: direct и alias-backed
+  flow для `plan` / `prepare` в `internal/app` теперь разделяют один
+  package-local stage pipeline для image resolution, kind-specific binding,
+  terminal invocation и cleanup handling, что убирает дублирование
+  orchestration без изменения публичного CLI-контракта.
 - **Сделано (M2 shared inputset + diff path baseline)**: CLI теперь включает
   `sqlrs diff --from-path/--to-path` для `prepare:psql` и `prepare:lb`, а
   `prepare`, `plan`, `run`, `diff` и `alias check` теперь разделяют единый

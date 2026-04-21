@@ -121,6 +121,8 @@ Separate generic discovery report types from the aliases analyzer and then split
 the aliases analyzer into narrower internal phases such as scan, score,
 validate, and suppress.
 
+Status: Implemented in the current branch.
+
 ### 5.4 PR4: shared plan/prepare stage pipeline
 
 Unify the current `plan` and `prepare` execution flow behind one internal stage
@@ -334,3 +336,153 @@ Expected tests:
 The exact test file split is not important, but the PR should prove that
 prepare/run execution and alias inspection no longer maintain independent YAML
 schema loaders.
+
+## 11. PR4 Design
+
+### 11.1 Scope
+
+PR4 is the first `plan` / `prepare` pipeline unification pass. It is still
+intentionally narrow.
+
+Included:
+
+- one shared package-local stage pipeline in `internal/app` for direct and
+  alias-backed `plan` / `prepare` entrypoints;
+- one shared request model for stage mode (`plan` vs `prepare`), kind
+  (`psql` vs `lb`), parsed stage args, workspace/cwd, optional ref context, and
+  Liquibase path-mode policy;
+- one shared binding phase that resolves image/config, runs the existing
+  kind-specific binders, and returns fully prepared `cli.PrepareOptions` plus
+  cleanup;
+- mode-specific terminal actions only where behavior actually differs:
+  `plan` waits for a plan-only result and renders plan output, while `prepare`
+  either submits or waits for a prepare job and renders DSN or accepted-job
+  references;
+- thin `plan.go` / `prepare.go` facades over that shared pipeline.
+
+Explicitly out of scope for PR4:
+
+- changing CLI syntax, usage text, JSON payloads, watch semantics, or exit-code
+  behavior;
+- changing the transport-facing contract in `internal/cli`
+  (`PrepareOptions`, `RunPlan`, `RunPrepare`, `SubmitPrepare`);
+- pulling `run` composite orchestration into the same pipeline;
+- moving `bindPreparePsqlInputs` / `bindPrepareLiquibaseInputs` out of
+  `internal/app`;
+- redesigning alias path resolution or `internal/refctx`.
+
+The point of PR4 is to remove duplicated CLI orchestration, not to redesign the
+prepare/plan execution domain.
+
+### 11.2 Target shape
+
+`internal/app` becomes the owner of one shared package-local stage pipeline for
+prepare-oriented commands.
+
+Expected internal pieces:
+
+- `stageRunRequest`
+  - immutable description of one invocation:
+    - mode (`plan` or `prepare`)
+    - kind (`psql` or `lb`)
+    - parsed `prepareArgs`
+    - `workspaceRoot`
+    - `cwd`
+    - optional `refctx.Context`
+    - output mode for `plan`
+    - Liquibase path-mode flags where alias-backed and direct flows differ;
+- `stageRuntime`
+  - shared bound runtime returned by the pipeline:
+    - fully populated `cli.PrepareOptions`
+    - cleanup hook
+    - rendering metadata needed after execution;
+- one shared bind/prepare function
+  - resolves the base image and verbose source message once;
+  - validates mode-specific constraints such as `plan` rejecting watch flags;
+  - dispatches to the existing `psql` / Liquibase binders;
+  - fills the shared `cli.PrepareOptions` payload;
+- one small mode-specific terminal-action layer
+  - `plan` invokes `cli.RunPlan` and renders human/JSON plan output;
+  - `prepare` invokes `cli.RunPrepare` or `cli.SubmitPrepare` and renders DSN
+    or accepted job references.
+
+Ownership rules:
+
+- `plan.go` and `prepare.go` should keep user-facing entrypoint helpers, but
+  no longer duplicate bind/config/invoke orchestration;
+- `ref_prepare.go` remains the owner of ref-aware kind binding and staging;
+- `internal/cli` remains the owner of transport, waiting, and remote/local
+  engine interaction;
+- alias-backed `plan` / `prepare` flows should reuse the same shared pipeline
+  by constructing the same request model instead of keeping a separate copy of
+  the orchestration.
+
+### 11.3 Shared interaction flow
+
+The shared flow for both direct and alias-backed `plan` / `prepare` should be:
+
+1. Parse or preconstruct `prepareArgs` exactly once.
+2. Create a `stageRunRequest` that captures mode, kind, cwd/workspace, output,
+   ref context, and path-mode policy.
+3. Resolve shared runtime inputs once:
+   - validate mode-specific flags;
+   - resolve image source and emit the verbose image message;
+   - resolve Liquibase executable settings when required;
+   - bind file-bearing inputs through the existing kind-specific binders.
+4. Produce one `stageRuntime` containing prepared `cli.PrepareOptions` and
+   cleanup.
+5. Invoke the terminal action for the selected mode:
+   - `plan`: wait for a plan-only result;
+   - `prepare --watch`: wait for a prepare result;
+   - `prepare --no-watch`: submit and print job references.
+6. Render the mode-specific output and run cleanup exactly once.
+
+This keeps the shared boundary at the CLI orchestration layer, where the
+duplication currently exists, and avoids pushing command semantics down into
+`internal/cli`, `internal/inputset`, or `internal/refctx`.
+
+### 11.4 Expected file movement
+
+PR4 should mostly touch:
+
+- `frontend/cli-go/internal/app/plan.go`
+- `frontend/cli-go/internal/app/prepare.go`
+- `frontend/cli-go/internal/app/ref_prepare.go`
+- `frontend/cli-go/internal/app/runner.go`
+- related `internal/app/*test.go` files for direct and alias-backed
+  `plan` / `prepare` paths.
+
+The likely new code should stay inside `internal/app`, for example in one or
+two new package-local files that host the shared stage request/runtime helpers.
+
+### 11.5 Success criteria
+
+PR4 is successful if:
+
+- `plan` and `prepare` no longer duplicate image resolution, kind dispatch,
+  binder invocation, and cleanup orchestration;
+- direct and alias-backed `plan` / `prepare` paths reuse the same shared stage
+  pipeline;
+- watch, no-watch, ref-backed, and Liquibase path behavior remain unchanged;
+- public CLI syntax, output, and exit-code behavior remain unchanged.
+
+## 12. PR4 Test Plan
+
+The fourth implementation slice should add or update tests around the shared
+stage pipeline.
+
+Expected tests:
+
+1. `TestStagePipelinePlanPsqlRendersHumanAndJSONOutputs`
+2. `TestStagePipelinePreparePsqlWatchRunsPrepare`
+3. `TestStagePipelinePrepareNoWatchSubmitsAndPrintsRefs`
+4. `TestStagePipelineLiquibaseResolvesExecAndWorkDirOnce`
+5. `TestStagePipelineRejectsPlanWatchFlagsBeforeInvocation`
+6. `TestStagePipelineRejectsLiquibaseWithoutCommand`
+7. `TestAliasBackedPlanAndPrepareReuseSharedStagePipeline`
+8. `TestStagePipelineRunsCleanupOnBindAndInvokeErrors`
+9. `TestStagePipelineDisablesPrepareControlPromptForRefBackedPrepare`
+
+The exact test file split is not important, but the PR should prove that the
+shared pipeline owns common plan/prepare orchestration while preserving current
+mode-specific behavior.
