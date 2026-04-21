@@ -142,6 +142,10 @@ maintainability:
   - post-mount verification
   становятся отдельными internal helper-ами с узкими контрактами.
 
+В принятом CLI-only staging этот WSL split ведётся как optional
+CLI maintainability `PR5` и остаётся package-local внутри `internal/app`,
+без введения новой public/package boundary.
+
 Цель не в том, чтобы спрятать сложность, а в том, чтобы каждый sub-flow можно
 было ревьюить и тестировать без чтения всего orchestration файла.
 

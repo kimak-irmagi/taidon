@@ -23,6 +23,9 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     `status`, `config`, `init`, `alias`, `discover`, `diff`).
   - Builds command context and chooses path resolvers and runtime projections
     from `internal/inputset`.
+  - Owns package-local WSL/init orchestration helpers for Windows local mode,
+    including bootstrap/storage splitting, path translation reuse, and terminal
+    cleanup/progress helpers.
 - `internal/discover`
   - Advisory workspace-analysis pipeline for `sqlrs discover`.
   - Owns candidate scoring, topology ranking, alias-coverage suppression,
@@ -69,8 +72,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `internal/paths`
   - OS-aware config/cache/state directory resolution.
 - `internal/wsl`
-  - WSL detection and distro resolution used by `init local` and Windows local
-    mode.
+  - WSL detection and distro resolution primitives used by `internal/app` for
+    `init local` and Windows local mode.
 - `internal/util`
   - Shared helpers (NDJSON reader, atomic I/O helpers, error helpers).
 

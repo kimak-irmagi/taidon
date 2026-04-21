@@ -489,3 +489,144 @@ shared stage pipeline.
 Точный split по test files не важен, но PR должен доказать, что shared
 pipeline владеет общей orchestration для `plan` / `prepare` и при этом
 сохраняет текущее mode-specific behavior.
+
+## 13. Дизайн PR5
+
+### 13.1 Scope
+
+PR5 остаётся намеренно узким и optional.
+
+Входит:
+
+- разбить WSL-heavy init orchestration в `internal/app` на более мелкие
+  package-local файлы по ответственности;
+- ввести один package-local dependency carrier для WSL/host command helper-ов,
+  чтобы file split не размножал прямые package-global seams;
+- вынести shared WSL path/config helper-ы из `app.go`, когда они существуют
+  только для WSL runtime wiring;
+- сохранить текущее поведение `init local`, `resolveWSLSettings`,
+  cleanup spinner и warning/error handling.
+
+Явно вне scope PR5:
+
+- изменение `sqlrs init` syntax, полей workspace config, mount semantics или
+  требований по привилегиям;
+- redesign local-btrfs init или daemon startup contract-ов;
+- создание нового exported package или вынос WSL logic из `internal/app`;
+- возврат к runner, alias, discover или stage-pipeline boundary, уже
+  вычищенным в PR1-PR4.
+
+Смысл PR5 — уменьшить maintenance cost у platform-heavy helper-ов, не
+превращая change в очередной functional redesign.
+
+### 13.2 Целевая форма
+
+`internal/app` сохраняет публичные init и command-context entrypoint-ы, но
+Windows/WSL-heavy implementation перестаёт жить в одном oversized файле.
+
+Ожидаемые internal pieces:
+
+- `initWSL`
+  - остаётся top-level package-local orchestrator-ом для WSL-backed local
+    init;
+- `wslInitDeps`
+  - package-local dependency carrier вокруг текущих overridable hook-ов:
+    - list distros;
+    - WSL command execution;
+    - host command execution;
+    - elevation checks;
+    - terminal detection;
+- `init_wsl_bootstrap.go`
+  - WSL availability, distro selection/start, validation kernel/tool/systemd и
+    сбор Docker warning-ов;
+- `init_wsl_storage.go`
+  - host VHDX provisioning, disk/partition discovery, btrfs formatting,
+    lifecycle systemd mount unit и reinit cleanup;
+- `wsl_paths.go` (или package-local файл с эквивалентным названием)
+  - `resolveWSLSettings` и `windowsToWSLPath`.
+
+Правила владения:
+
+- `init.go` сохраняет CLI-facing mode selection и config writing;
+- `initWSL` остаётся только orchestration-layer и делегирует
+  platform-specific работу более узким helper-ам;
+- low-level command/logging helper-ы остаются package-local и переиспользуются
+  через dependency carrier вместо того, чтобы каждый новый файл напрямую
+  трогал package globals;
+- в этом slice не появляется новых exported API.
+
+### 13.3 Shared interaction flow
+
+Ожидаемый interaction flow для PR5 такой:
+
+1. `runInit` парсит flags и решает, нужен ли WSL-backed local init, как и
+   сейчас.
+2. `initWSL` выполняет одну bootstrap phase:
+   - валидирует Windows/WSL availability;
+   - выбирает или резолвит distro;
+   - стартует distro, когда это разрешено;
+   - проверяет kernel/tool/systemd prerequisites;
+   - собирает Docker-related warning-и, не превращая их в hard failure.
+3. `initWSL` выполняет одну storage phase:
+   - резолвит host VHDX location;
+   - проверяет elevation;
+   - резолвит WSL state-dir и mount unit;
+   - при необходимости reinit-ит предыдущее состояние;
+   - provisioning/attach VHDX и detection disk/partition/filesystem.
+4. `initWSL` выполняет одну mount finalization phase:
+   - резолвит UUID-backed или device-backed mount source;
+   - устанавливает и активирует systemd mount unit;
+   - гарантирует subvolumes и ownership;
+   - возвращает тот же config-facing result и warning-и, что и раньше.
+5. `resolveWSLSettings` переиспользует shared WSL path helper-ы после загрузки
+   config, чтобы runtime wiring оставался выровненным с output init-а.
+
+Такой разрез сохраняет текущее behavior, но делает platform-specific ownership
+boundary внутри `internal/app` явной.
+
+### 13.4 Ожидаемое движение файлов
+
+PR5 должен в основном затронуть:
+
+- `frontend/cli-go/internal/app/init_wsl.go`
+- `frontend/cli-go/internal/app/init_wsl_bootstrap.go`
+- `frontend/cli-go/internal/app/init_wsl_storage.go`
+- `frontend/cli-go/internal/app/init_wsl_exec.go`
+- `frontend/cli-go/internal/app/app.go`
+- один новый package-local WSL path/helper file, если потребуется
+- связанные `internal/app/init_wsl*_test.go` и `app_coverage_test.go`
+
+Точные filenames не важны, но implementation должен сохранить split внутри
+`internal/app` и не вводить новую public package boundary.
+
+### 13.5 Критерии успеха
+
+PR5 считается успешным, если:
+
+- `init_wsl.go` больше не смешивает bootstrap validation, host/WSL command
+  execution, storage provisioning, mount lifecycle и terminal helper-ы в одном
+  файле;
+- новый file split всё ещё проходит через один package-local dependency
+  carrier вместо размножения прямых package-global seams;
+- поведение `resolveWSLSettings`, `windowsToWSLPath` и cleanup spinner не
+  меняется;
+- public CLI syntax, config shape, warning-и и exit-code behavior не меняются.
+
+## 14. Тест-план для PR5
+
+Пятый implementation slice должен добавить или обновить тесты вокруг split
+WSL/init helper-ов.
+
+Ожидаемые тесты:
+
+1. `TestWSLBootstrapPhaseHandlesUnavailableAndRequiredModes`
+2. `TestWSLBootstrapPhaseAccumulatesDockerWarningsWithoutFailingInit`
+3. `TestWSLStoragePhasePreservesReinitAndAttachSequence`
+4. `TestWSLMountFinalizationPreservesUUIDFallbackWarnings`
+5. `TestResolveWSLSettingsUsesSharedWSLPathHelpers`
+6. `TestCleanupSpinnerRetainsVerboseAndTerminalGatingAfterSplit`
+7. `TestInitWSLStillReturnsStableConfigFacingResult`
+
+Точный split по test files не важен, но PR должен доказать, что
+platform-heavy код декомпозирован за более узкими helper-ами без изменения
+поведения WSL init и runtime wiring.

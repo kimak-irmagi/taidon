@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-04-20)
+## Status (as of 2026-04-21)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -128,6 +128,11 @@ gantt
   pipeline for image resolution, kind-specific binding, terminal invocation,
   and cleanup handling, reducing duplicated orchestration without changing the
   public CLI contract.
+- **Done (CLI maintainability PR5 WSL init split)**: WSL-backed local init in
+  `internal/app` is now split into bootstrap, storage, and mount-finalization
+  helpers, shared WSL path conversion moved out of `app.go`, and the existing
+  `init local`/`resolveWSLSettings`/cleanup-spinner behavior remains covered by
+  targeted regression tests.
 - **Done (M2 shared inputset + diff path baseline)**: the CLI now ships
   `sqlrs diff --from-path/--to-path` for `prepare:psql` and `prepare:lb`, while
   `prepare`, `plan`, `run`, `diff`, and `alias check` now share one
