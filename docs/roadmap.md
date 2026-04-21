@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-04-08)
+## Status (as of 2026-04-20)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -123,6 +123,11 @@ gantt
   stable default execution over all shipped analyzers, analyzer-grouped
   human/JSON output, failure isolation, and shell-aware follow-up commands for
   `.gitignore` and `.vscode` remediation suggestions.
+- **Done (CLI maintainability PR4 stage pipeline)**: direct and alias-backed
+  `plan` / `prepare` flows in `internal/app` now share one package-local stage
+  pipeline for image resolution, kind-specific binding, terminal invocation,
+  and cleanup handling, reducing duplicated orchestration without changing the
+  public CLI contract.
 - **Done (M2 shared inputset + diff path baseline)**: the CLI now ships
   `sqlrs diff --from-path/--to-path` for `prepare:psql` and `prepare:lb`, while
   `prepare`, `plan`, `run`, `diff`, and `alias check` now share one

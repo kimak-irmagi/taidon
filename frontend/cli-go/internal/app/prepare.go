@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -225,64 +224,18 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 }
 
 func prepareResultParsed(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context) (result client.PrepareJobResult, handled bool, err error) {
-	imageID, source, err := resolvePrepareImage(parsed.Image, cfg)
+	runtime, err := buildStageRuntime(w.stderr, runOpts, cfg, stageRunRequest{
+		mode:          stageModePrepare,
+		kind:          "psql",
+		parsed:        parsed,
+		workspaceRoot: workspaceRoot,
+		cwd:           cwd,
+		ref:           ref,
+	})
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	if imageID == "" {
-		return client.PrepareJobResult{}, false, ExitErrorf(2, "Missing base image id (set --image or dbms.image)")
-	}
-	if runOpts.Verbose {
-		fmt.Fprint(w.stderr, formatImageSource(imageID, source))
-	}
-
-	bound, err := bindPreparePsqlInputsFn(runOpts, workspaceRoot, cwd, parsed, ref, os.Stdin)
-	if err != nil {
-		return client.PrepareJobResult{}, false, err
-	}
-	cleanupOnReturn := true
-	defer func() {
-		if cleanupOnReturn {
-			err = finishPrepareCleanup(err, bound.cleanup)
-		}
-	}()
-
-	runOpts.ImageID = imageID
-	runOpts.PsqlArgs = bound.PsqlArgs
-	runOpts.Stdin = bound.Stdin
-	runOpts.PrepareKind = "psql"
-	runOpts.DisableControlPrompt = usesPrepareRef(parsed, ref)
-
-	if !parsed.Watch {
-		accepted, err := submitPrepareFn(context.Background(), runOpts)
-		if err != nil {
-			return client.PrepareJobResult{}, false, err
-		}
-		printPrepareJobRefs(w.stdout, accepted)
-		if runOpts.CompositeRun {
-			printRunSkipped(w.stdout, "prepare_not_watched")
-		}
-		return client.PrepareJobResult{}, true, nil
-	}
-
-	result, err = runPrepareFn(context.Background(), runOpts)
-	if err != nil {
-		var detached *cli.PrepareDetachedError
-		if errors.As(err, &detached) {
-			accepted := client.PrepareJobAccepted{
-				JobID:     detached.JobID,
-				StatusURL: "/v1/prepare-jobs/" + detached.JobID,
-				EventsURL: "/v1/prepare-jobs/" + detached.JobID + "/events",
-			}
-			printPrepareJobRefs(w.stdout, accepted)
-			if runOpts.CompositeRun {
-				printRunSkipped(w.stdout, "prepare_detached")
-			}
-			return client.PrepareJobResult{}, true, nil
-		}
-		return client.PrepareJobResult{}, false, err
-	}
-	return result, false, nil
+	return executePrepareStage(w, runtime)
 }
 
 func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) (client.PrepareJobResult, bool, error) {
@@ -305,80 +258,19 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 }
 
 func prepareResultLiquibaseParsedWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, relativizePaths bool) (result client.PrepareJobResult, handled bool, err error) {
-	if len(parsed.PsqlArgs) == 0 {
-		return client.PrepareJobResult{}, false, ExitErrorf(2, "liquibase command is required")
-	}
-
-	imageID, source, err := resolvePrepareImage(parsed.Image, cfg)
+	runtime, err := buildStageRuntime(w.stderr, runOpts, cfg, stageRunRequest{
+		mode:                    stageModePrepare,
+		kind:                    "lb",
+		parsed:                  parsed,
+		workspaceRoot:           workspaceRoot,
+		cwd:                     cwd,
+		ref:                     ref,
+		relativizeLiquibasePath: relativizePaths,
+	})
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	if imageID == "" {
-		return client.PrepareJobResult{}, false, ExitErrorf(2, "Missing base image id (set --image or dbms.image)")
-	}
-	if runOpts.Verbose {
-		fmt.Fprint(w.stderr, formatImageSource(imageID, source))
-	}
-
-	liquibaseExec, err := resolveLiquibaseExec(cfg)
-	if err != nil {
-		return client.PrepareJobResult{}, false, err
-	}
-	liquibaseExecMode, err := resolveLiquibaseExecMode(cfg)
-	if err != nil {
-		return client.PrepareJobResult{}, false, err
-	}
-	liquibaseEnv := resolveLiquibaseEnv()
-	bound, err := bindPrepareLiquibaseInputsFn(runOpts, workspaceRoot, cwd, parsed, ref, liquibaseExec, liquibaseExecMode, relativizePaths)
-	if err != nil {
-		return client.PrepareJobResult{}, false, err
-	}
-	cleanupOnReturn := true
-	defer func() {
-		if cleanupOnReturn {
-			err = finishPrepareCleanup(err, bound.cleanup)
-		}
-	}()
-
-	runOpts.ImageID = imageID
-	runOpts.LiquibaseArgs = bound.LiquibaseArgs
-	runOpts.LiquibaseExec = liquibaseExec
-	runOpts.LiquibaseExecMode = liquibaseExecMode
-	runOpts.LiquibaseEnv = liquibaseEnv
-	runOpts.WorkDir = bound.WorkDir
-	runOpts.PrepareKind = "lb"
-	runOpts.DisableControlPrompt = usesPrepareRef(parsed, ref)
-
-	if !parsed.Watch {
-		accepted, err := submitPrepareFn(context.Background(), runOpts)
-		if err != nil {
-			return client.PrepareJobResult{}, false, err
-		}
-		printPrepareJobRefs(w.stdout, accepted)
-		if runOpts.CompositeRun {
-			printRunSkipped(w.stdout, "prepare_not_watched")
-		}
-		return client.PrepareJobResult{}, true, nil
-	}
-
-	result, err = runPrepareFn(context.Background(), runOpts)
-	if err != nil {
-		var detached *cli.PrepareDetachedError
-		if errors.As(err, &detached) {
-			accepted := client.PrepareJobAccepted{
-				JobID:     detached.JobID,
-				StatusURL: "/v1/prepare-jobs/" + detached.JobID,
-				EventsURL: "/v1/prepare-jobs/" + detached.JobID + "/events",
-			}
-			printPrepareJobRefs(w.stdout, accepted)
-			if runOpts.CompositeRun {
-				printRunSkipped(w.stdout, "prepare_detached")
-			}
-			return client.PrepareJobResult{}, true, nil
-		}
-		return client.PrepareJobResult{}, false, err
-	}
-	return result, false, nil
+	return executePrepareStage(w, runtime)
 }
 
 func usesPrepareRef(parsed prepareArgs, ref *refctx.Context) bool {
