@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-04-20)
+## Статус (на 2026-04-21)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -129,6 +129,11 @@ gantt
   package-local stage pipeline для image resolution, kind-specific binding,
   terminal invocation и cleanup handling, что убирает дублирование
   orchestration без изменения публичного CLI-контракта.
+- **Сделано (CLI maintainability PR5 split WSL init)**: WSL-backed local init
+  в `internal/app` теперь разрезан на helper-ы bootstrap, storage и
+  mount-finalization, shared WSL path conversion вынесен из `app.go`, а
+  прежнее поведение `init local`/`resolveWSLSettings`/cleanup spinner
+  удерживается под targeted regression tests.
 - **Сделано (M2 shared inputset + diff path baseline)**: CLI теперь включает
   `sqlrs diff --from-path/--to-path` для `prepare:psql` и `prepare:lb`, а
   `prepare`, `plan`, `run`, `diff` и `alias check` теперь разделяют единый

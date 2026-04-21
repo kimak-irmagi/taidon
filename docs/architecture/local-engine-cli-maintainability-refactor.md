@@ -143,6 +143,10 @@ Two heavy files are split by behavior boundary:
   - post-mount verification
   become separate internal helpers with narrow contracts.
 
+In the accepted CLI-only staging, this WSL split is tracked as optional
+CLI maintainability `PR5` and remains package-local inside `internal/app`
+instead of introducing a new public/package boundary.
+
 The goal is not to hide complexity, but to make each sub-flow reviewable and
 testable without reading the full end-to-end orchestration file.
 

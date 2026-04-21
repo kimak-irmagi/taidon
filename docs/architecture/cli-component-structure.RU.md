@@ -23,6 +23,9 @@
     `status`, `config`, `init`, `alias`, `discover`, `diff`).
   - Собирает command context и выбирает path resolver-ы и runtime projection-ы
     из `internal/inputset`.
+  - Владеет package-local helper-ами оркестрации WSL/init для Windows local
+    mode, включая split bootstrap/storage, переиспользование path translation
+    и terminal cleanup/progress helper-ы.
 - `internal/discover`
   - Advisory workspace-analysis pipeline для `sqlrs discover`.
   - Владеет candidate scoring, topology ranking, alias-coverage suppression,
@@ -70,7 +73,8 @@
 - `internal/paths`
   - OS-aware разрешение директорий config/cache/state.
 - `internal/wsl`
-  - Определение WSL и выбор дистрибутива для `init local` и Windows local mode.
+  - Примитивы определения WSL и выбора дистрибутива, которые `internal/app`
+    использует для `init local` и Windows local mode.
 - `internal/util`
   - Общие хелперы (NDJSON reader, atomic I/O, error helpers).
 
