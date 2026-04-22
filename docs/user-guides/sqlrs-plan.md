@@ -15,8 +15,8 @@ produces.
 ## Command Syntax
 
 ```text
-sqlrs plan <ref>
-sqlrs plan:<kind> [--image <image-id>] [--] [tool-args...]
+sqlrs plan [--ref <git-ref>] [--ref-mode worktree|blob] [--ref-keep-worktree] <ref>
+sqlrs plan:<kind> [--ref <git-ref>] [--ref-mode worktree|blob] [--ref-keep-worktree] [--image <image-id>] [--] [tool-args...]
 ```
 
 Where:
@@ -24,6 +24,10 @@ Where:
 - bare `plan <ref>` resolves a repo-tracked prepare alias file
   from the current working directory (`<cwd>/<ref>.prep.s9s.yaml`);
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
+- `--ref <git-ref>` reads plan inputs from a selected local Git revision.
+- `--ref-mode` chooses `worktree` (default) or `blob`.
+- `--ref-keep-worktree` keeps the detached worktree after exit in
+  `worktree` mode.
 - `--image <image-id>` overrides the base container image.
 - `tool-args` are forwarded to the underlying tool for the selected kind.
 
@@ -35,6 +39,15 @@ To pass tool flags that would clash with sqlrs flags (for example `-v`),
 use `--` explicitly.
 
 Alias-mode details are described in [`sqlrs-aliases.md`](sqlrs-aliases.md).
+Ref-backed details are described in [`sqlrs-ref.md`](sqlrs-ref.md).
+
+Bounded local `plan --ref` notes:
+
+- this slice is local-only and single-stage only;
+- the caller's current working directory is projected into the selected
+  revision, matching `sqlrs diff` ref-mode behavior;
+- `worktree` remains the default ref mode, with `blob` as an explicit opt-in;
+- successful plan output stays unchanged.
 
 ---
 

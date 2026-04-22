@@ -1,7 +1,8 @@
 # Git-aware semantics: пассивные функции (CLI)
 
-Статус: **дизайн на будущее**. Флаги вроде `--ref` и `--prepare` отсутствуют в
-текущем MVP CLI. Сейчас MVP использует композитный вызов
+Статус: **смешанный**. Сценарий P1 - это утвержденный следующий local CLI
+slice, а остальная часть документа остается future design. Сейчас публичный
+MVP CLI по-прежнему опирается на вызовы вида
 `sqlrs prepare:psql ... run:psql ...`.
 
 Цель: добавить git-aware возможности **без вмешательства в привычный процесс работы**.
@@ -57,6 +58,9 @@ sqlrs prepare:lb --ref <git-ref> -- update --changelog-file db/changelog.xml
 Важная граница следующего публичного slice: он остаётся только локальным.
 Семантика remote runner остаётся частью будущего дизайна.
 
+Дополнительный guardrail первого публичного slice: `prepare --ref` остается
+только в watch mode, поэтому `prepare --ref --no-watch` отклоняется.
+
 Опции поведения:
 
 - `--ref-mode worktree|blob` (по умолчанию `worktree`)
@@ -75,6 +79,11 @@ sqlrs prepare:lb --ref <git-ref> -- update --changelog-file db/changelog.xml
 5. Собрать file-bearing inputs через shared kind-specific inputset layer.
 6. Продолжить обычный flow `plan` или `prepare`.
 7. Удалить временный worktree, если не задан `--ref-keep-worktree`.
+
+Code-quality constraint для этого slice: generic repo/ref/worktree handling
+принадлежит `internal/refctx`, alias-target resolution принадлежит
+`internal/alias`, а per-kind closure semantics принадлежат `internal/inputset`.
+`internal/app` должен только оркестрировать эти общие компоненты.
 
 ---
 

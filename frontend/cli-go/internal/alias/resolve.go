@@ -2,23 +2,34 @@ package alias
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sqlrs/cli/internal/inputset"
 )
 
 // ResolveTarget resolves one alias file using the same cwd-relative ref rules
 // accepted for execution commands.
 func ResolveTarget(opts ResolveOptions) (Target, error) {
+	return ResolveTargetWithFS(opts, inputset.OSFileSystem{})
+}
+
+// ResolveTargetWithFS resolves one alias file against the supplied filesystem
+// so execution can reuse the same alias-target rules for live and ref-backed
+// filesystems.
+func ResolveTargetWithFS(opts ResolveOptions, fs inputset.FileSystem) (Target, error) {
 	workspaceRoot := strings.TrimSpace(opts.WorkspaceRoot)
+	cwd := strings.TrimSpace(opts.CWD)
+	if workspaceRoot == "" {
+		workspaceRoot = cwd
+	}
+	if cwd == "" {
+		cwd = workspaceRoot
+	}
 	if workspaceRoot == "" {
 		return Target{}, fmt.Errorf("workspace root is required to resolve aliases")
 	}
 	workspaceRoot = filepath.Clean(workspaceRoot)
-	cwd := strings.TrimSpace(opts.CWD)
-	if cwd == "" {
-		cwd = workspaceRoot
-	}
 	cwd = filepath.Clean(cwd)
 
 	ref := strings.TrimSpace(opts.Ref)
@@ -33,22 +44,22 @@ func ResolveTarget(opts ResolveOptions) (Target, error) {
 		if strings.TrimSpace(ref) == "" {
 			return Target{}, fmt.Errorf("alias ref is empty")
 		}
-		return resolveExactTarget(workspaceRoot, cwd, ref, class)
+		return resolveExactTarget(workspaceRoot, cwd, ref, class, fs)
 	}
-	return resolveStemTarget(workspaceRoot, cwd, ref, class)
+	return resolveStemTarget(workspaceRoot, cwd, ref, class, fs)
 }
 
-func resolveStemTarget(workspaceRoot string, cwd string, ref string, class Class) (Target, error) {
+func resolveStemTarget(workspaceRoot string, cwd string, ref string, class Class, fs inputset.FileSystem) (Target, error) {
 	relative := filepath.FromSlash(ref)
 	switch class {
 	case ClassPrepare:
-		return resolveSingleStemTarget(workspaceRoot, cwd, relative+prepareSuffix, ClassPrepare)
+		return resolveSingleStemTarget(workspaceRoot, cwd, relative+prepareSuffix, ClassPrepare, fs)
 	case ClassRun:
-		return resolveSingleStemTarget(workspaceRoot, cwd, relative+runSuffix, ClassRun)
+		return resolveSingleStemTarget(workspaceRoot, cwd, relative+runSuffix, ClassRun, fs)
 	}
 
-	prepareTarget, prepareErr := resolveSingleStemTarget(workspaceRoot, cwd, relative+prepareSuffix, ClassPrepare)
-	runTarget, runErr := resolveSingleStemTarget(workspaceRoot, cwd, relative+runSuffix, ClassRun)
+	prepareTarget, prepareErr := resolveSingleStemTarget(workspaceRoot, cwd, relative+prepareSuffix, ClassPrepare, fs)
+	runTarget, runErr := resolveSingleStemTarget(workspaceRoot, cwd, relative+runSuffix, ClassRun, fs)
 	switch {
 	case prepareErr == nil && runErr == nil:
 		return Target{}, fmt.Errorf("ambiguous alias ref %q; add --prepare, --run, or an exact-file escape", ref)
@@ -61,12 +72,12 @@ func resolveStemTarget(workspaceRoot string, cwd string, ref string, class Class
 	}
 }
 
-func resolveSingleStemTarget(workspaceRoot string, cwd string, relative string, class Class) (Target, error) {
+func resolveSingleStemTarget(workspaceRoot string, cwd string, relative string, class Class, fs inputset.FileSystem) (Target, error) {
 	path, err := resolvePathWithinWorkspace(relative, workspaceRoot, cwd)
 	if err != nil {
 		return Target{}, err
 	}
-	info, err := os.Stat(path)
+	info, err := fs.Stat(path)
 	if err != nil || info.IsDir() {
 		return Target{}, fmt.Errorf("alias file not found: %s", path)
 	}
@@ -78,12 +89,12 @@ func resolveSingleStemTarget(workspaceRoot string, cwd string, relative string, 
 	}, nil
 }
 
-func resolveExactTarget(workspaceRoot string, cwd string, ref string, class Class) (Target, error) {
+func resolveExactTarget(workspaceRoot string, cwd string, ref string, class Class, fs inputset.FileSystem) (Target, error) {
 	path, err := resolvePathWithinWorkspace(filepath.FromSlash(ref), workspaceRoot, cwd)
 	if err != nil {
 		return Target{}, err
 	}
-	info, err := os.Stat(path)
+	info, err := fs.Stat(path)
 	if err != nil || info.IsDir() {
 		return Target{}, fmt.Errorf("alias file not found: %s", path)
 	}

@@ -12,6 +12,8 @@ interaction flow in [`ref-flow.md`](ref-flow.md).
 - The slice is **CLI-only** and **local-only**.
 - It applies only to **single-stage** `plan` and `prepare`.
 - It supports both raw and alias-backed prepare flows.
+- Ref-backed `prepare` stays watch-only in this slice; asynchronous `--no-watch`
+  semantics remain out of scope.
 - It reuses the same `worktree` and `blob` vocabulary already accepted for
   `sqlrs diff`.
 - It does not yet add:
@@ -58,6 +60,17 @@ The approved ownership rule is:
 - `internal/refctx` owns **one ref-backed filesystem context**;
 - `plan` / `prepare` and `diff` both consume `internal/refctx`.
 
+To keep that split enforceable, this slice also adopts the following boundary
+rules:
+
+- only `internal/refctx` may resolve repo root, resolve the selected ref,
+  project cwd into that revision, and create or clean up temporary worktrees;
+- only `internal/alias` may resolve prepare-alias stems to concrete files and
+  load alias YAML from a supplied filesystem view;
+- only `internal/inputset` may define per-kind file-bearing closure rules;
+- `internal/app` may orchestrate these pieces, but it must not become a second
+  home for generic ref-resolution or alias-path logic.
+
 ## 4. Suggested package layout
 
 ### `frontend/cli-go/internal/app`
@@ -68,6 +81,11 @@ The approved ownership rule is:
   - `--ref-keep-worktree`
 - reject unsupported `prepare ... run ...` shapes when the prepare stage carries
   `--ref`
+- reject `prepare --ref --no-watch` in the same bounded slice
+- keep only orchestration and kind selection in app-level helpers
+- if psql and Liquibase ref binding share lifecycle plumbing, extract that
+  plumbing once instead of duplicating repo/ref/open/cleanup choreography in
+  per-kind helpers
 - pass ref options into the command executor
 
 ### `frontend/cli-go/internal/refctx`
@@ -91,6 +109,7 @@ prepare, or diff command grammar.
 - expose filesystem-aware prepare-alias resolution and loading primitives
 - keep suffix rules, YAML parsing, and alias schema validation as the source of
   truth
+- own alias-target resolution for ref-backed and live-filesystem flows alike
 
 The package must not assume that alias files always come from the live host
 filesystem.

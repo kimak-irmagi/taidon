@@ -1,8 +1,8 @@
 # Git-aware semantics: passive features (CLI)
 
-Status: **proposed future design**. Flags like `--ref` and `--prepare` are not
-available in the current MVP CLI. Today, the MVP uses a composite invocation
-such as `sqlrs prepare:psql ... run:psql ...`.
+Status: **mixed**. Scenario P1 is the approved next local CLI slice; the rest
+of this document remains future design. Today, the public MVP CLI still relies
+on commands such as `sqlrs prepare:psql ... run:psql ...`.
 
 Goal: add git-aware capabilities **without changing the user's work habits**. All functions in this document are activated **only by explicit user commands/flags** and do not require repository setup "for Taidon".
 
@@ -46,6 +46,9 @@ Where `<git-ref>` can be: `HEAD`, `origin/main`, `abc1234`, `v1.2.3`, `refs/pull
 Important boundary for the next public slice: this is local-only. Remote-runner
 semantics remain future design.
 
+Additional guardrail for the first public slice: `prepare --ref` remains
+watch-only, so `prepare --ref --no-watch` is rejected.
+
 Behavior options:
 
 - `--ref-mode worktree|blob` (default `worktree`)
@@ -64,6 +67,11 @@ Behavior options:
 5. Collect file-bearing inputs through the shared kind-specific inputset layer.
 6. Continue through the normal `plan` or `prepare` flow.
 7. Remove the temporary worktree unless `--ref-keep-worktree` was requested.
+
+Code-quality constraint for this slice: generic repo/ref/worktree handling
+belongs to `internal/refctx`, alias-target resolution belongs to
+`internal/alias`, and per-kind closure semantics belong to `internal/inputset`.
+`internal/app` should only orchestrate these shared components.
 
 ---
 

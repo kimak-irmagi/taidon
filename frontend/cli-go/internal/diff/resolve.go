@@ -2,17 +2,15 @@ package diff
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/sqlrs/cli/internal/pathutil"
+	"github.com/sqlrs/cli/internal/refctx"
 )
 
 // ResolveScope turns a Scope into two Context values. Ref mode "worktree"
-// (default) creates temporary worktrees (cleanup removes them unless
-// RefKeepWorktree). Ref mode "blob" reads objects via git without checkout.
+// (default) reuses the shared refctx worktree resolver; ref mode "blob"
+// reuses the shared git-object-backed resolver.
 func ResolveScope(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() error, err error) {
 	if strings.TrimSpace(cwd) == "" {
 		cwd = "."
@@ -22,17 +20,7 @@ func ResolveScope(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() e
 		fromCtx, toCtx, err = resolvePathScopeStrings(s.FromPath, s.ToPath, cwd)
 		return fromCtx, toCtx, nil, err
 	case ScopeKindRef:
-		rm := strings.TrimSpace(strings.ToLower(s.RefMode))
-		if rm == "" {
-			rm = "worktree"
-		}
-		if rm == "blob" {
-			return resolveRefGitObjects(s, cwd)
-		}
-		if rm == "worktree" {
-			return resolveRefWorktrees(s, cwd)
-		}
-		return Context{}, Context{}, nil, fmt.Errorf("diff: unknown ref mode %q", s.RefMode)
+		return resolveRefScope(s, cwd)
 	default:
 		return Context{}, Context{}, nil, fmt.Errorf("diff: unknown scope kind %q", s.Kind)
 	}
@@ -64,146 +52,57 @@ func absPathInCwd(p, cwd string) (string, error) {
 	return filepath.Clean(filepath.Join(cwd, p)), nil
 }
 
-func resolveRefWorktrees(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() error, err error) {
-	reason := refWorktreeUnavailable()
-	if reason != "" {
-		return Context{}, Context{}, nil, fmt.Errorf("git worktree: %s", reason)
+func resolveRefScope(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() error, err error) {
+	mode := strings.TrimSpace(strings.ToLower(s.RefMode))
+	if mode == "" {
+		mode = "worktree"
 	}
-	repoRoot, err := gitTopLevel(cwd)
+	if mode != "worktree" && mode != "blob" {
+		return Context{}, Context{}, nil, fmt.Errorf("diff: unknown ref mode %q", s.RefMode)
+	}
+
+	fromRefCtx, err := refctx.Resolve("", cwd, s.FromRef, mode, s.RefKeepWorktree)
 	if err != nil {
-		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: %w", err)
+		return Context{}, Context{}, nil, fmt.Errorf("from-ref %q: %w", s.FromRef, err)
 	}
-	relCwd, err := cwdWithinRepo(repoRoot, cwd)
+
+	toRefCtx, err := refctx.Resolve("", cwd, s.ToRef, mode, s.RefKeepWorktree)
 	if err != nil {
-		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: resolve cwd: %w", err)
+		_ = fromRefCtx.Cleanup()
+		return Context{}, Context{}, nil, fmt.Errorf("to-ref %q: %w", s.ToRef, err)
 	}
-	fromDir, err := os.MkdirTemp("", "sqlrs-diff-from-*")
-	if err != nil {
-		return Context{}, Context{}, nil, fmt.Errorf("mkdir from worktree: %w", err)
+
+	fromCtx = diffContextFromRef(fromRefCtx)
+	toCtx = diffContextFromRef(toRefCtx)
+	if mode == "blob" {
+		return fromCtx, toCtx, nil, nil
 	}
-	toDir, err := os.MkdirTemp("", "sqlrs-diff-to-*")
-	if err != nil {
-		_ = os.RemoveAll(fromDir)
-		return Context{}, Context{}, nil, fmt.Errorf("mkdir to worktree: %w", err)
+	return fromCtx, toCtx, joinRefContextCleanup(fromRefCtx, toRefCtx), nil
+}
+
+func diffContextFromRef(ctx refctx.Context) Context {
+	diffCtx := Context{
+		Root:    ctx.RepoRoot,
+		BaseDir: ctx.BaseDir,
 	}
-	cleanupBoth := func() error {
-		if s.RefKeepWorktree {
-			return nil
-		}
+	if ctx.RefMode == "blob" {
+		diffCtx.GitRef = ctx.GitRef
+	}
+	return diffCtx
+}
+
+func joinRefContextCleanup(fromCtx, toCtx refctx.Context) func() error {
+	return func() error {
 		var errs []string
-		if e := gitWorktreeRemove(repoRoot, fromDir); e != nil {
-			errs = append(errs, fmt.Sprintf("remove from worktree: %v", e))
-			_ = os.RemoveAll(fromDir)
+		if err := fromCtx.Cleanup(); err != nil {
+			errs = append(errs, fmt.Sprintf("remove from worktree: %v", err))
 		}
-		if e := gitWorktreeRemove(repoRoot, toDir); e != nil {
-			errs = append(errs, fmt.Sprintf("remove to worktree: %v", e))
-			_ = os.RemoveAll(toDir)
+		if err := toCtx.Cleanup(); err != nil {
+			errs = append(errs, fmt.Sprintf("remove to worktree: %v", err))
 		}
 		if len(errs) > 0 {
 			return fmt.Errorf("%s", strings.Join(errs, "; "))
 		}
 		return nil
 	}
-	if err := gitWorktreeAddDetach(repoRoot, fromDir, s.FromRef); err != nil {
-		_ = cleanupBoth()
-		return Context{}, Context{}, nil, fmt.Errorf("from-ref %q: %w", s.FromRef, err)
-	}
-	if err := gitWorktreeAddDetach(repoRoot, toDir, s.ToRef); err != nil {
-		_ = cleanupBoth()
-		return Context{}, Context{}, nil, fmt.Errorf("to-ref %q: %w", s.ToRef, err)
-	}
-	fromRoot := pathutil.CanonicalizeBoundaryPath(fromDir)
-	toRoot := pathutil.CanonicalizeBoundaryPath(toDir)
-	fromBase := pathutil.CanonicalizeBoundaryPath(filepath.Join(fromDir, relCwd))
-	toBase := pathutil.CanonicalizeBoundaryPath(filepath.Join(toDir, relCwd))
-	return Context{
-			Root:    fromRoot,
-			BaseDir: fromBase,
-		}, Context{
-			Root:    toRoot,
-			BaseDir: toBase,
-		}, cleanupBoth, nil
-}
-
-func resolveRefGitObjects(s Scope, cwd string) (fromCtx, toCtx Context, cleanup func() error, err error) {
-	if refWorktreeUnavailable() != "" {
-		return Context{}, Context{}, nil, fmt.Errorf("git: %s", refWorktreeUnavailable())
-	}
-	repoRoot, err := gitTopLevel(cwd)
-	if err != nil {
-		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: %w", err)
-	}
-	relCwd, err := cwdWithinRepo(repoRoot, cwd)
-	if err != nil {
-		return Context{}, Context{}, nil, fmt.Errorf("diff ref mode: resolve cwd: %w", err)
-	}
-	rootCanon := pathutil.CanonicalizeBoundaryPath(filepath.Clean(repoRoot))
-	baseDir := pathutil.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relCwd))
-	return Context{
-			Root:    rootCanon,
-			BaseDir: baseDir,
-			GitRef:  s.FromRef,
-		}, Context{
-			Root:    rootCanon,
-			BaseDir: baseDir,
-			GitRef:  s.ToRef,
-		}, nil, nil
-}
-
-func cwdWithinRepo(repoRoot, cwd string) (string, error) {
-	absRepo, err := filepath.Abs(repoRoot)
-	if err != nil {
-		return "", err
-	}
-	absRepo = pathutil.CanonicalizeBoundaryPath(absRepo)
-
-	absCwd, err := filepath.Abs(cwd)
-	if err != nil {
-		return "", err
-	}
-	absCwd = pathutil.CanonicalizeBoundaryPath(absCwd)
-
-	rel, err := filepath.Rel(absRepo, absCwd)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Clean(rel), nil
-}
-
-func refWorktreeUnavailable() string {
-	_, err := exec.LookPath("git")
-	if err != nil {
-		return "git not found in PATH"
-	}
-	return ""
-}
-
-func gitTopLevel(cwd string) (string, error) {
-	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--show-toplevel")
-	out, err := cmd.Output()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
-		}
-		return "", fmt.Errorf("not a git repository (or git failed): %w", err)
-	}
-	return filepath.Clean(strings.TrimSpace(string(out))), nil
-}
-
-func gitWorktreeAddDetach(repoRoot, path, ref string) error {
-	cmd := exec.Command("git", "-C", repoRoot, "worktree", "add", "--detach", path, ref)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func gitWorktreeRemove(repoRoot, path string) error {
-	cmd := exec.Command("git", "-C", repoRoot, "worktree", "remove", "--force", path)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
 }

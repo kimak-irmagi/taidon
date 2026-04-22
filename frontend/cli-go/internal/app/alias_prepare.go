@@ -1,14 +1,11 @@
 package app
 
 import (
-	"path/filepath"
 	"strings"
 
 	aliaspkg "github.com/sqlrs/cli/internal/alias"
 	"github.com/sqlrs/cli/internal/inputset"
 )
-
-const prepareAliasSuffix = ".prep.s9s.yaml"
 
 type prepareAliasInvocation struct {
 	Ref             string
@@ -138,46 +135,16 @@ func resolvePrepareAliasPath(workspaceRoot string, cwd string, ref string) (stri
 }
 
 func resolvePrepareAliasPathWithFS(workspaceRoot string, cwd string, ref string, fs inputset.FileSystem) (string, error) {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		base = strings.TrimSpace(workspaceRoot)
-	}
-	if base == "" {
-		return "", ExitErrorf(2, "workspace root is required to resolve prepare aliases")
-	}
-	base = filepath.Clean(base)
-	boundary := strings.TrimSpace(workspaceRoot)
-	if boundary == "" {
-		boundary = base
-	}
-	boundary = filepath.Clean(boundary)
-
-	cleanedRef := strings.TrimSpace(ref)
-	if cleanedRef == "" {
-		return "", ExitErrorf(2, "missing prepare alias ref")
-	}
-
-	exact := strings.HasSuffix(cleanedRef, ".")
-	if exact {
-		cleanedRef = strings.TrimSuffix(cleanedRef, ".")
-		if strings.TrimSpace(cleanedRef) == "" {
-			return "", ExitErrorf(2, "prepare alias ref is empty")
-		}
-	}
-
-	relativePath := filepath.FromSlash(cleanedRef)
-	if !exact {
-		relativePath += prepareAliasSuffix
-	}
-
-	resolved, _, err := normalizeFilePath(relativePath, boundary, base, nil)
+	target, err := aliaspkg.ResolveTargetWithFS(aliaspkg.ResolveOptions{
+		WorkspaceRoot: workspaceRoot,
+		CWD:           cwd,
+		Ref:           ref,
+		Class:         aliaspkg.ClassPrepare,
+	}, fs)
 	if err != nil {
-		return "", err
+		return "", wrapAliasResolveError(aliaspkg.ClassPrepare, err)
 	}
-	if !prepareAliasFileExists(resolved, fs) {
-		return "", ExitErrorf(2, "prepare alias file not found: %s", resolved)
-	}
-	return resolved, nil
+	return target.Path, nil
 }
 
 func buildPrepareAliasCommandArgs(alias aliaspkg.Definition, invocation prepareAliasInvocation) []string {
@@ -222,9 +189,4 @@ func appendRefArgs(dst []string, gitRef string, refMode string, refKeepWorktree 
 		dst = append(dst, "--ref-keep-worktree")
 	}
 	return dst
-}
-
-func prepareAliasFileExists(path string, fs inputset.FileSystem) bool {
-	info, err := fs.Stat(path)
-	return err == nil && !info.IsDir()
 }

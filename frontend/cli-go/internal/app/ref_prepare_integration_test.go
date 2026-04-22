@@ -78,7 +78,7 @@ func TestPrepareResultRefPsqlUsesSelectedRevision(t *testing.T) {
 	}
 }
 
-func TestRunPlanAliasRefUsesSelectedRevisionAlias(t *testing.T) {
+func TestPlanAliasWithRefUsesProjectedCWDInWorktreeMode(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not in PATH")
 	}
@@ -119,9 +119,59 @@ func TestRunPlanAliasRefUsesSelectedRevisionAlias(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := Run([]string{"--mode", "remote", "--endpoint", server.URL, "--output", "json", "--workspace", repo, "plan", "--ref", parentRef, "chinook"})
+	err := Run([]string{"--mode", "remote", "--endpoint", server.URL, "--output", "json", "--workspace", repo, "plan", "--ref", parentRef, "--ref-mode", "worktree", "chinook"})
 	if err != nil {
 		t.Fatalf("Run(plan alias --ref): %v", err)
+	}
+	if strings.ReplaceAll(capturedContent, "\r\n", "\n") != "select 1;\n" {
+		t.Fatalf("submitted alias content = %q, want %q", capturedContent, "select 1;\n")
+	}
+}
+
+func TestPrepareAliasWithRefUsesProjectedCWDInWorktreeMode(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	repo, parentRef := initPrepareRefTestRepo(t)
+	temp := t.TempDir()
+	setTestDirs(t, temp)
+	withWorkingDir(t, filepath.Join(repo, "examples"))
+
+	var capturedContent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/prepare-jobs":
+			var request map[string]any
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &request)
+			if args, ok := request["psql_args"].([]any); ok && len(args) >= 2 {
+				if path, ok := args[1].(string); ok {
+					data, err := os.ReadFile(path)
+					if err != nil {
+						t.Fatalf("read submitted script %q: %v", path, err)
+					}
+					capturedContent = string(data)
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			io.WriteString(w, `{"job_id":"job-1","status_url":"/v1/prepare-jobs/job-1","events_url":"/v1/prepare-jobs/job-1/events"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1/events":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			io.WriteString(w, `{"type":"status","ts":"2026-01-24T00:00:00Z","status":"succeeded"}`+"\n")
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/prepare-jobs/job-1":
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"job_id":"job-1","status":"succeeded","prepare_kind":"psql","image_id":"image","result":{"dsn":"postgres://sqlrs@127.0.0.1:5432/postgres","instance_id":"inst","state_id":"state","image_id":"image","prepare_kind":"psql","prepare_args_normalized":"-f prepare.sql"}}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	err := Run([]string{"--mode", "remote", "--endpoint", server.URL, "--workspace", repo, "prepare", "--ref", parentRef, "--ref-mode", "worktree", "chinook"})
+	if err != nil {
+		t.Fatalf("Run(prepare alias --ref): %v", err)
 	}
 	if strings.ReplaceAll(capturedContent, "\r\n", "\n") != "select 1;\n" {
 		t.Fatalf("submitted alias content = %q, want %q", capturedContent, "select 1;\n")
