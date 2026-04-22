@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-04-21)
+## Status (as of 2026-04-22)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -144,6 +144,13 @@ gantt
   `\include_relative` from the including file directory). The CLI also keeps
   `worktree` as the default ref mode until explicit `blob` reads match those
   filesystem semantics safely.
+- **Done (M2 bounded local ref execution baseline)**: `sqlrs plan` and
+  `sqlrs prepare` now support bounded local `--ref` reads across raw and
+  alias-backed flows, with projected-cwd semantics aligned with `sqlrs diff`,
+  shared `internal/refctx` ownership for repo/ref/worktree handling, and shared
+  filesystem-aware alias-target resolution in `internal/alias`. In this first
+  public slice, `worktree` remains the default ref mode and `prepare --ref`
+  stays watch-only.
 - **Done (release alias/workspace coverage)**: release/e2e scenarios now
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under
@@ -154,9 +161,9 @@ gantt
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: widen the Git-aware CLI follow-up beyond the
-  current `sqlrs diff` ref surface toward bounded local `--ref`, then add
-  provenance and cache explain for repository-aware prepare flows.
+- **Next public local focus**: add the explanation layer on top of the landed
+  bounded local `--ref` surface: provenance output plus user-facing
+  `cache explain` for repository-aware prepare flows.
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
@@ -164,25 +171,26 @@ gantt
 
 ## Immediate Next Step (Selected)
 
-- **Direction**: finish the remaining repository-guided M2 local DX surface now
-  that alias execution, inspection, and workspace conventions have landed.
-- **Selected next PR**: bounded local `--ref` beyond the current `diff`
-  surface.
+- **Direction**: make the landed repository-aware local flows reproducible and
+  explainable before widening the command surface again.
+- **Selected next PR**: provenance and cache explain baseline for
+  repository-aware local flows.
 - **Next PR slice**:
-  - widen repository-aware local execution beyond `sqlrs diff --ref` with the
-    first bounded `--ref` support for prepare-oriented flows;
-  - preserve the current worktree-first safety posture and existing
-    `internal/inputset` closure semantics while ref-scoped reads remain
-    explicitly bounded;
-  - keep the slice passive/local-only: no Git mutations, no hosted workflow
-    expansion, and no provenance UI yet;
-  - cover ref/path parity, cwd stability, and output/usage contract updates in
+  - define one provenance payload for local `plan` / `prepare` flows that
+    already support aliases and bounded `--ref`;
+  - record the input hashes, selected ref context, and cache hit/miss decision
+    points needed to explain why a prepare flow reused or rebuilt state;
+  - ship a first `sqlrs cache explain ...` surface with human and JSON output
+    for repository-aware local prepare flows;
+  - keep the slice passive/local-only and read-only: no Git mutations, no
+    hosted workflow expansion, and no new execution modes;
+  - cover provenance payload, cache-explain hit/miss, and rendering behavior in
     docs and tests.
-- **Immediately after**: provenance and cache explain.
-- **Rationale**: generic discover analyzers are now shipped, so the next
-  missing M2 local DX step is letting repository-aware prepare flows consume a
-  bounded `--ref` surface beyond `diff` before layering explanation features on
-  top.
+- **Immediately after**: reassess whether the next passive Git-aware slice
+  should be standalone `run --ref` or a zero-copy/cache-hit follow-up.
+- **Rationale**: the bounded local `--ref` execution baseline is now landed, so
+  the next missing M2 local DX layer is explanation: make ref-aware workflows
+  reproducible and debuggable before adding more command shapes.
 
 ---
 
@@ -280,7 +288,9 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
     `.vscode` remediation suggestions
 - Git-aware CLI (passive):
   - `diff` path mode
-  - `diff`/prepare `--ref` (blob/worktree), provenance, cache explain
+  - bounded local `--ref` for `plan` / `prepare` plus ref-aware `diff`
+    semantics (`worktree|blob`)
+  - provenance and cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
   - open SQL editor (via existing VS Code DB tooling)
@@ -290,10 +300,10 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 - A developer can run common workflows using explicit repo-tracked recipes with
   low local setup friction and clear cache provenance diagnostics.
 
-**Status**: In progress. Alias execution, inspection, authoring, and generic
-advisory discovery are landed, `sqlrs diff` path mode is available, and shared
-`internal/inputset` semantics now back `prepare`/`plan`/`run`/`diff`/`alias check`;
-bounded `--ref` and provenance/cache explain are still ahead.
+**Status**: In progress. Alias execution, inspection, authoring, generic
+advisory discovery, shared `internal/inputset` semantics, `sqlrs diff` path
+mode, and the bounded local `plan` / `prepare` `--ref` slice are landed;
+provenance/cache explain are still ahead.
 
 ---
 
