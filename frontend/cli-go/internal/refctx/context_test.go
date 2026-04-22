@@ -193,6 +193,55 @@ func TestResolveDefaultsAndKeepWorktree(t *testing.T) {
 	}
 }
 
+func TestRefCtxProjectedCWDParityForPlanPrepare(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	repo, head := initRefctxTestRepo(t)
+	workspaceRoot := filepath.Join(repo, "workspace")
+	cwd := filepath.Join(workspaceRoot, "app")
+
+	for _, mode := range []string{"worktree", "blob"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, err := Resolve(workspaceRoot, cwd, head, mode, false)
+			if err != nil {
+				t.Fatalf("Resolve(%s): %v", mode, err)
+			}
+			t.Cleanup(func() {
+				if err := ctx.Cleanup(); err != nil {
+					t.Fatalf("Cleanup(%s): %v", mode, err)
+				}
+			})
+
+			baseRel, err := filepath.Rel(ctx.RepoRoot, ctx.BaseDir)
+			if err != nil {
+				t.Fatalf("filepath.Rel(BaseDir): %v", err)
+			}
+			if filepath.Clean(baseRel) != filepath.Join("workspace", "app") {
+				t.Fatalf("BaseDir rel = %q, want %q", baseRel, filepath.Join("workspace", "app"))
+			}
+
+			workspaceRel, err := filepath.Rel(ctx.RepoRoot, ctx.WorkspaceRoot)
+			if err != nil {
+				t.Fatalf("filepath.Rel(WorkspaceRoot): %v", err)
+			}
+			if filepath.Clean(workspaceRel) != "workspace" {
+				t.Fatalf("WorkspaceRoot rel = %q, want %q", workspaceRel, "workspace")
+			}
+
+			data, err := ctx.FileSystem.ReadFile(filepath.Join(ctx.BaseDir, "query.sql"))
+			if err != nil {
+				t.Fatalf("ReadFile(query.sql): %v", err)
+			}
+			normalized := strings.ReplaceAll(string(data), "\r\n", "\n")
+			if normalized != "select 1;\n" {
+				t.Fatalf("query.sql contents = %q, want %q", string(data), "select 1;\n")
+			}
+		})
+	}
+}
+
 func TestResolveRejectsWhenGitUnavailable(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 

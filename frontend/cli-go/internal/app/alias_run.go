@@ -1,14 +1,10 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 
 	aliaspkg "github.com/sqlrs/cli/internal/alias"
 )
-
-const runAliasSuffix = ".run.s9s.yaml"
 
 type runAliasInvocation struct {
 	Ref         string
@@ -63,46 +59,16 @@ func parseRunAliasArgs(args []string, requireInstance bool) (runAliasInvocation,
 }
 
 func resolveRunAliasPath(workspaceRoot string, cwd string, ref string) (string, error) {
-	base := strings.TrimSpace(cwd)
-	if base == "" {
-		base = strings.TrimSpace(workspaceRoot)
-	}
-	if base == "" {
-		return "", ExitErrorf(2, "workspace root is required to resolve run aliases")
-	}
-	base = filepath.Clean(base)
-	boundary := strings.TrimSpace(workspaceRoot)
-	if boundary == "" {
-		boundary = base
-	}
-	boundary = filepath.Clean(boundary)
-
-	cleanedRef := strings.TrimSpace(ref)
-	if cleanedRef == "" {
-		return "", ExitErrorf(2, "missing run alias ref")
-	}
-
-	exact := strings.HasSuffix(cleanedRef, ".")
-	if exact {
-		cleanedRef = strings.TrimSuffix(cleanedRef, ".")
-		if strings.TrimSpace(cleanedRef) == "" {
-			return "", ExitErrorf(2, "run alias ref is empty")
-		}
-	}
-
-	relativePath := filepath.FromSlash(cleanedRef)
-	if !exact {
-		relativePath += runAliasSuffix
-	}
-
-	resolved, _, err := normalizeFilePath(relativePath, boundary, base, nil)
+	target, err := aliaspkg.ResolveTarget(aliaspkg.ResolveOptions{
+		WorkspaceRoot: workspaceRoot,
+		CWD:           cwd,
+		Ref:           ref,
+		Class:         aliaspkg.ClassRun,
+	})
 	if err != nil {
-		return "", err
+		return "", wrapAliasResolveError(aliaspkg.ClassRun, err)
 	}
-	if !runAliasFileExists(resolved) {
-		return "", ExitErrorf(2, "run alias file not found: %s", resolved)
-	}
-	return resolved, nil
+	return target.Path, nil
 }
 
 func resolveRunAliasDefinition(workspaceRoot string, cwd string, ref string) (aliaspkg.Definition, string, error) {
@@ -124,9 +90,4 @@ func buildRunAliasCommandArgs(alias aliaspkg.Definition, invocation runAliasInvo
 	}
 	args = append(args, alias.Args...)
 	return args
-}
-
-func runAliasFileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
 }

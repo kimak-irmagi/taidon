@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Status: proposed bounded local CLI design.**
+**Status: approved bounded local CLI design.**
 
 This document defines the next Git-aware local slice after `sqlrs diff`: allow
 `plan` and `prepare` to read their repository-backed inputs from a selected Git
@@ -40,6 +40,8 @@ Selection rules:
 - `--ref-mode` and `--ref-keep-worktree` are valid only when `--ref` is set;
 - `--ref-mode` defaults to `worktree`;
 - `--ref-keep-worktree` is valid only with `--ref-mode worktree`.
+- `prepare --ref --no-watch` is rejected in this first slice; ref-backed
+  prepare remains watch-only.
 
 The flag belongs to the `plan` / `prepare` stage itself, not to global CLI
 options.
@@ -57,10 +59,13 @@ options.
 - `sqlrs prepare:psql --ref <ref> -- -f ...`
 - `sqlrs prepare:lb --ref <ref> -- update --changelog-file ...`
 
+For `prepare`, this support is intentionally limited to watch mode.
+
 ### Explicitly out of scope
 
 - `sqlrs run --ref ...`
 - `sqlrs prepare ... run ...` when the prepare stage carries `--ref`
+- `sqlrs prepare --ref --no-watch ...`
 - `sqlrs diff` syntax changes
 - remote runner semantics
 - automatic provenance emission
@@ -188,8 +193,9 @@ Successful `plan` and `prepare` output should remain the same shape they have
 today:
 
 - `plan` keeps its existing human/JSON structure;
-- `prepare` keeps DSN output in watch mode and job references in `--no-watch`
-  mode.
+- `prepare --ref` stays in watch mode and keeps DSN output;
+- plain `prepare` without `--ref` still supports `--no-watch` and returns job
+  references.
 
 Ref context is surfaced through:
 
@@ -209,6 +215,7 @@ New validation rules:
 - `--ref-mode` without `--ref` is a usage error;
 - `--ref-keep-worktree` without `--ref` is a usage error;
 - `--ref-keep-worktree` with `--ref-mode blob` is a usage error;
+- `prepare --ref --no-watch` is a usage error in this slice;
 - the selected ref must resolve locally;
 - the caller's projected cwd must exist at that ref;
 - the selected alias file or raw file-bearing entrypoint must exist at that ref.
@@ -265,6 +272,11 @@ Not in this slice:
 sqlrs prepare --ref origin/main chinook run:psql -- -f ./queries.sql
 ```
 
+```bash
+# rejected in this slice
+sqlrs prepare --ref origin/main --no-watch chinook
+```
+
 ---
 
 ## Rationale Summary
@@ -274,6 +286,8 @@ This CLI shape keeps the next Git-aware slice bounded:
 - one explicit `--ref` flag reused by `plan` and `prepare`;
 - the same `worktree` vs `blob` vocabulary already established by `diff`;
 - no changes to successful `plan`/`prepare` output shape yet;
+- `prepare --ref` remains watch-only so async ref-backed prepare semantics stay
+  out of this first PR;
 - no mixed-stage revision semantics in the same PR;
 - alias mode and raw mode keep the same path-base rules they already have today.
 

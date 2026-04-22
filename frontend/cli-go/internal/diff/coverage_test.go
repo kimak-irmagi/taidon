@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -101,17 +100,6 @@ func TestDiffCoverageHelpers(t *testing.T) {
 
 		if _, _, _, err := ResolveScope(Scope{Kind: "bogus"}, workspace); err == nil || !strings.Contains(err.Error(), "unknown scope kind") {
 			t.Fatalf("expected unknown scope kind error, got %v", err)
-		}
-
-		if rel, err := cwdWithinRepo(workspace, filepath.Join(workspace, "nested")); err != nil {
-			t.Fatalf("cwdWithinRepo success: %v", err)
-		} else if rel != "nested" {
-			t.Fatalf("cwdWithinRepo success = %q", rel)
-		}
-		if runtime.GOOS == "windows" {
-			if _, err := cwdWithinRepo(`C:\repo`, `D:\cwd`); err == nil {
-				t.Fatalf("expected cross-volume cwdWithinRepo error")
-			}
 		}
 
 		if got := formatDiffCommandLine(Scope{Kind: ScopeKindPath, FromPath: "/left", ToPath: "/right"}, "plan:psql"); got != "diff --from-path /left --to-path /right plan:psql" {
@@ -237,22 +225,6 @@ func TestDiffResolveRefErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("git helper failures", func(t *testing.T) {
-		if _, err := exec.LookPath("git"); err != nil {
-			t.Skip("git not in PATH")
-		}
-		repoRoot := t.TempDir()
-		if _, err := gitTopLevel(repoRoot); err == nil {
-			t.Fatalf("expected gitTopLevel to fail")
-		}
-		if err := gitWorktreeAddDetach(repoRoot, filepath.Join(repoRoot, "from"), "HEAD"); err == nil {
-			t.Fatalf("expected gitWorktreeAddDetach to fail")
-		}
-		if err := gitWorktreeRemove(repoRoot, filepath.Join(repoRoot, "from")); err == nil {
-			t.Fatalf("expected gitWorktreeRemove to fail")
-		}
-	})
-
 	t.Run("keep worktree cleanup", func(t *testing.T) {
 		if _, err := exec.LookPath("git"); err != nil {
 			t.Skip("git not in PATH")
@@ -299,11 +271,11 @@ func TestDiffResolveRefErrorBranches(t *testing.T) {
 		if err := cleanup(); err != nil {
 			t.Fatalf("cleanup keep worktree: %v", err)
 		}
-		if err := gitWorktreeRemove(repo, fromCtx.Root); err != nil {
-			t.Fatalf("remove from worktree: %v", err)
+		if out, err := exec.Command("git", "-C", repo, "worktree", "remove", "--force", fromCtx.Root).CombinedOutput(); err != nil {
+			t.Fatalf("remove from worktree: %v\n%s", err, out)
 		}
-		if err := gitWorktreeRemove(repo, toCtx.Root); err != nil {
-			t.Fatalf("remove to worktree: %v", err)
+		if out, err := exec.Command("git", "-C", repo, "worktree", "remove", "--force", toCtx.Root).CombinedOutput(); err != nil {
+			t.Fatalf("remove to worktree: %v\n%s", err, out)
 		}
 		if _, _, _, err := ResolveScope(Scope{
 			Kind:    ScopeKindRef,

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/sqlrs/cli/internal/pathutil"
+	"github.com/sqlrs/cli/internal/refctx"
 )
 
 func TestResolveScope_RefWorktrees(t *testing.T) {
@@ -318,5 +319,104 @@ func TestResolveScope_RefRequiresGitRepo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not a git repository") {
 		t.Fatalf("expected git repository error, got %v", err)
+	}
+}
+
+func TestDiffStillSharesRefCtxSemanticsAfterPlanPrepareRefSlice(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	emptyTemplate := t.TempDir()
+	repo := t.TempDir()
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", repo}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	initCmd := exec.Command("git", "-C", repo, "init", "--template", emptyTemplate)
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Skipf("git init skipped (need writable temp; run tests outside sandbox): %v\n%s", err, out)
+	}
+	runGit("config", "user.email", "t@e.st")
+	runGit("config", "user.name", "t")
+
+	sqlPath := filepath.Join(repo, "examples", "prepare.sql")
+	if err := os.MkdirAll(filepath.Dir(sqlPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sqlPath, []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "examples/prepare.sql")
+	runGit("commit", "-m", "initial")
+
+	headRef, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := strings.TrimSpace(string(headRef))
+	cwd := filepath.Join(repo, "examples")
+
+	for _, mode := range []string{"worktree", "blob"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, err := refctx.Resolve("", cwd, head, mode, false)
+			if err != nil {
+				t.Fatalf("refctx.Resolve(%s): %v", mode, err)
+			}
+			t.Cleanup(func() {
+				if err := ctx.Cleanup(); err != nil {
+					t.Fatalf("refctx cleanup(%s): %v", mode, err)
+				}
+			})
+
+			fromCtx, toCtx, cleanup, err := ResolveScope(Scope{
+				Kind:    ScopeKindRef,
+				FromRef: head,
+				ToRef:   head,
+				RefMode: mode,
+			}, cwd)
+			if err != nil {
+				t.Fatalf("ResolveScope(%s): %v", mode, err)
+			}
+			if cleanup != nil {
+				t.Cleanup(func() {
+					if err := cleanup(); err != nil {
+						t.Fatalf("diff cleanup(%s): %v", mode, err)
+					}
+				})
+			}
+
+			diffBaseRel, err := filepath.Rel(fromCtx.Root, fromCtx.BaseDir)
+			if err != nil {
+				t.Fatalf("filepath.Rel(diff BaseDir): %v", err)
+			}
+			refBaseRel, err := filepath.Rel(ctx.RepoRoot, ctx.BaseDir)
+			if err != nil {
+				t.Fatalf("filepath.Rel(refctx BaseDir): %v", err)
+			}
+			if filepath.Clean(diffBaseRel) != filepath.Clean(refBaseRel) {
+				t.Fatalf("base dir rel mismatch: diff=%q refctx=%q", diffBaseRel, refBaseRel)
+			}
+			if filepath.Clean(diffBaseRel) != "examples" {
+				t.Fatalf("diff base dir rel = %q, want %q", diffBaseRel, "examples")
+			}
+
+			toBaseRel, err := filepath.Rel(toCtx.Root, toCtx.BaseDir)
+			if err != nil {
+				t.Fatalf("filepath.Rel(to BaseDir): %v", err)
+			}
+			if filepath.Clean(toBaseRel) != filepath.Clean(refBaseRel) {
+				t.Fatalf("to base dir rel mismatch: diff=%q refctx=%q", toBaseRel, refBaseRel)
+			}
+
+			if mode == "blob" {
+				if !pathutil.SameLocalPath(fromCtx.Root, ctx.RepoRoot) || !pathutil.SameLocalPath(fromCtx.BaseDir, ctx.BaseDir) {
+					t.Fatalf("blob projected paths diverged: diff=%+v refctx=%+v", fromCtx, ctx)
+				}
+			}
+		})
 	}
 }

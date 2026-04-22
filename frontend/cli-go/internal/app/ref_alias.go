@@ -7,30 +7,40 @@ import (
 
 func resolvePrepareAliasWithOptionalRef(workspaceRoot string, cwd string, aliasRef string, gitRef string, refMode string, keepWorktree bool) (aliaspkg.Definition, string, *refctx.Context, error) {
 	if gitRef == "" {
-		aliasPath, err := resolvePrepareAliasPath(workspaceRoot, cwd, aliasRef)
+		target, err := aliaspkg.ResolveTarget(aliaspkg.ResolveOptions{
+			WorkspaceRoot: workspaceRoot,
+			CWD:           cwd,
+			Ref:           aliasRef,
+			Class:         aliaspkg.ClassPrepare,
+		})
 		if err != nil {
-			return aliaspkg.Definition{}, "", nil, err
+			return aliaspkg.Definition{}, "", nil, wrapAliasResolveError(aliaspkg.ClassPrepare, err)
 		}
-		alias, err := aliaspkg.LoadTarget(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: aliasPath})
+		alias, err := aliaspkg.LoadTarget(target)
 		if err != nil {
 			return aliaspkg.Definition{}, "", nil, wrapAliasLoadError(err)
 		}
-		return alias, aliasPath, nil, nil
+		return alias, target.Path, nil, nil
 	}
 
 	ctx, err := refctx.Resolve(workspaceRoot, cwd, gitRef, refMode, keepWorktree)
 	if err != nil {
 		return aliaspkg.Definition{}, "", nil, err
 	}
-	aliasPath, err := resolvePrepareAliasPathWithFS(ctx.WorkspaceRoot, ctx.BaseDir, aliasRef, ctx.FileSystem)
+	target, err := aliaspkg.ResolveTargetWithFS(aliaspkg.ResolveOptions{
+		WorkspaceRoot: ctx.WorkspaceRoot,
+		CWD:           ctx.BaseDir,
+		Ref:           aliasRef,
+		Class:         aliaspkg.ClassPrepare,
+	}, ctx.FileSystem)
 	if err != nil {
 		_ = ctx.Cleanup()
-		return aliaspkg.Definition{}, "", nil, err
+		return aliaspkg.Definition{}, "", nil, wrapAliasResolveError(aliaspkg.ClassPrepare, err)
 	}
-	alias, err := aliaspkg.LoadTargetWithFS(aliaspkg.Target{Class: aliaspkg.ClassPrepare, Path: aliasPath}, ctx.FileSystem)
+	alias, err := aliaspkg.LoadTargetWithFS(target, ctx.FileSystem)
 	if err != nil {
 		_ = ctx.Cleanup()
 		return aliaspkg.Definition{}, "", nil, wrapAliasLoadError(err)
 	}
-	return alias, aliasPath, &ctx, nil
+	return alias, target.Path, &ctx, nil
 }

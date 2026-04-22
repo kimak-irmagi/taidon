@@ -8,6 +8,7 @@ This slice is intentionally narrow:
 
 - it applies to single-stage `plan` and `prepare`;
 - it supports both raw and alias-backed prepare flows;
+- it keeps ref-backed `prepare` in watch mode only;
 - it does not yet support standalone `run --ref`;
 - it does not yet support `prepare ... run ...` composites carrying `--ref`.
 
@@ -75,6 +76,7 @@ stage-local options for `plan` and `prepare`.
 - Without `--ref`, the command keeps today's behavior unchanged.
 - `--ref-mode` and `--ref-keep-worktree` are invalid unless `--ref` is set.
 - `--ref-keep-worktree` is valid only with `--ref-mode worktree`.
+- `prepare --ref --no-watch` is invalid in this slice.
 - This slice rejects `prepare ... run ...` when the prepare stage carries
   `--ref`.
 
@@ -93,6 +95,11 @@ If any of these steps fails, the command terminates before stage binding.
 The projected cwd rule intentionally matches the current `sqlrs diff`
 ref-context behavior so path-base semantics do not diverge between passive
 inspection and ref-backed execution.
+
+Ownership rule for this stage: repo-root discovery, ref resolution, projected
+cwd resolution, and worktree/blob setup all come from the shared
+`internal/refctx` layer so that `plan` / `prepare` do not grow a second copy of
+diff-adjacent ref logic.
 
 ### 3.3 Ref filesystem setup
 
@@ -126,6 +133,10 @@ For alias mode:
 - the alias file must exist in the selected revision;
 - file-bearing paths from the alias file stay relative to that alias file.
 
+Alias target resolution remains owned by `internal/alias`; the app layer only
+chooses whether the command is alias-backed or raw and then passes the selected
+filesystem view into that shared resolver.
+
 For raw mode:
 
 - `plan:<kind>` and `prepare:<kind>` keep their existing argument grammar;
@@ -148,13 +159,19 @@ it reuses the same kind collectors that already back:
 This is the point where include graphs, changelog graphs, and other dependent
 files are discovered from the selected ref context.
 
+To avoid a second layer of kind drift, any shared ref-stage binding helper may
+factor out open/bind/cleanup choreography, but per-kind file closure rules stay
+inside `internal/inputset` and per-kind materialization stays close to the
+existing command-kind implementations.
+
 ### 3.6 Plan/prepare execution
 
 Once the stage is fully bound, the existing app flow continues unchanged.
 
 - `plan` keeps its current human/JSON output.
-- `prepare` keeps DSN output in watch mode and job references in `--no-watch`
-  mode.
+- `prepare --ref` stays in watch mode and keeps DSN output.
+- plain `prepare` without `--ref` still supports `--no-watch` and job
+  references.
 - The command does not add a new top-level output shape for ref metadata in
   this slice.
 
@@ -175,6 +192,8 @@ cleanup errors are already surfaced in `sqlrs diff`.
 ## 4. Failure handling
 
 - If the caller is outside a Git repository, `--ref` is a command error.
+- If `prepare --ref` is combined with `--no-watch`, the command fails as a
+  usage error.
 - If the ref does not resolve locally, the command fails before input binding.
 - If the projected cwd does not exist at that ref, the command fails.
 - If the alias file or raw file entrypoint does not exist at that ref, the

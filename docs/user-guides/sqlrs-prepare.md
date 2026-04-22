@@ -26,8 +26,8 @@ All reproducibility guarantees in sqlrs rely on `prepare`.
 ## Command Syntax
 
 ```text
-sqlrs prepare [--watch|--no-watch] <ref>
-sqlrs prepare:<kind> [--watch|--no-watch] [--image <image-id>] [--] [tool-args...]
+sqlrs prepare [--ref <git-ref>] [--ref-mode worktree|blob] [--ref-keep-worktree] [--watch|--no-watch] <ref>
+sqlrs prepare:<kind> [--ref <git-ref>] [--ref-mode worktree|blob] [--ref-keep-worktree] [--watch|--no-watch] [--image <image-id>] [--] [tool-args...]
 ```
 
 Where:
@@ -35,6 +35,10 @@ Where:
 - bare `prepare <ref>` resolves a repo-tracked prepare alias file
   from the current working directory (`<cwd>/<ref>.prep.s9s.yaml`);
 - `:<kind>` selects the preparation variant (for example, `psql`, `lb`).
+- `--ref <git-ref>` reads prepare inputs from a selected local Git revision.
+- `--ref-mode` chooses `worktree` (default) or `blob`.
+- `--ref-keep-worktree` keeps the detached worktree after exit in
+  `worktree` mode.
 - `--watch` keeps the CLI attached to the job until terminal status (default).
 - `--no-watch` submits the job and exits immediately with job references.
 - `--image <image-id>` overrides the base DB image.
@@ -45,12 +49,19 @@ the alias file directory, not relative to the caller's current working
 directory.
 
 Alias-mode details are described in [`sqlrs-aliases.md`](sqlrs-aliases.md).
+Ref-backed details are described in [`sqlrs-ref.md`](sqlrs-ref.md).
 
 Status note:
 
 - standalone `prepare <ref>` is already implemented;
 - mixed `prepare ... run ...` forms that combine alias mode and raw mode are an
-  approved next-slice extension and follow the syntax below.
+  approved next-slice extension and follow the syntax below;
+- the first bounded `prepare --ref` slice is local-only, single-stage only, and
+  preserves the caller's projected cwd inside the selected revision;
+- `prepare --ref` keeps `worktree` as the default ref mode and offers `blob` as
+  an explicit opt-in;
+- `prepare --ref --no-watch` is rejected in this slice so ref-backed prepare
+  remains watch-only for now.
 
 ### Composite `prepare ... run`
 
@@ -70,6 +81,8 @@ Rules:
 - the composite still has exactly one `prepare` stage and one `run` stage;
 - if the `run` stage follows `prepare` in the same invocation, it targets the
   prepared instance and must not also specify `--instance`;
+- if the `prepare` stage carries `--ref`, the composite form is rejected in the
+  current bounded ref slice;
 - alias stages keep their kind and tool args inside the alias file and do not
   accept per-stage inline tool arguments.
 - raw-stage file paths keep their normal current-working-directory-relative
@@ -166,7 +179,8 @@ DSN=postgres://...
 This DSN uniquely identifies the instance and can be consumed by `sqlrs run`
 or external applications.
 
-When `--no-watch` is used, `prepare` prints job references instead of a DSN:
+When `--no-watch` is used without `--ref`, `prepare` prints job references
+instead of a DSN:
 
 ```text
 JOB_ID=<job-id>

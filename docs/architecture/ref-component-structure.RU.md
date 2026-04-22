@@ -12,6 +12,8 @@ interaction flow в [`ref-flow.RU.md`](ref-flow.RU.md).
 - Slice остается **CLI-only** и **local-only**.
 - Он применяется только к **single-stage** `plan` и `prepare`.
 - Он поддерживает raw и alias-backed prepare flows.
+- Ref-backed `prepare` в этом slice остается только в watch mode; асинхронная
+  semantics через `--no-watch` пока вне scope.
 - Он переиспользует ту же vocabulary `worktree` и `blob`, что уже принята для
   `sqlrs diff`.
 - Он пока не добавляет:
@@ -59,6 +61,18 @@ filesystem context:
 - `internal/refctx` владеет **одним ref-backed filesystem context**;
 - и `plan` / `prepare`, и `diff` используют `internal/refctx`.
 
+Чтобы это разделение оставалось проверяемым, для данного slice дополнительно
+принимаются такие boundary rules:
+
+- только `internal/refctx` может разрешать repo root, выбранный ref,
+  проектировать cwd в эту ревизию и создавать или чистить временные worktree;
+- только `internal/alias` может разрешать prepare-alias stem до конкретного
+  файла и загружать alias YAML из переданного filesystem view;
+- только `internal/inputset` может определять per-kind file-bearing closure
+  rules;
+- `internal/app` может оркестрировать эти части, но не должен становиться
+  вторым владельцем generic ref-resolution или alias-path logic.
+
 ## 4. Предлагаемое размещение пакетов
 
 ### `frontend/cli-go/internal/app`
@@ -69,6 +83,11 @@ filesystem context:
   - `--ref-keep-worktree`
 - отклонять неподдерживаемые `prepare ... run ...`, если prepare-stage несет
   `--ref`
+- отклонять `prepare --ref --no-watch` в том же bounded slice
+- держать в app-level helpers только orchestration и выбор kind
+- если у psql и Liquibase ref binding есть общий lifecycle plumbing, вынести
+  этот plumbing один раз вместо дублирования repo/ref/open/cleanup choreography
+  в per-kind helpers
 - передавать ref options в command executor
 
 ### `frontend/cli-go/internal/refctx`
@@ -92,6 +111,8 @@ filesystem context:
 - отдавать filesystem-aware primitives для resolution и loading prepare alias
 - сохранять suffix rules, YAML parsing и alias schema validation как источник
   истины
+- владеть alias-target resolution как для ref-backed, так и для
+  live-filesystem flow
 
 Пакет не должен предполагать, что alias files всегда читаются из live host
 filesystem.
