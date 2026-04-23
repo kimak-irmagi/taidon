@@ -58,6 +58,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /v1/cache/explain/prepare:
+    post:
+      operationId: explainPrepareCache
+      summary: Explain one prepare-oriented cache decision
+      description: |
+        Computes the same final prepare signature and cache lookup the engine
+        would use for a bound single-stage prepare request, but does not create
+        a job, instance, or mutate cache state.
+      tags:
+        - cache
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CacheExplainPrepareRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CacheExplainPrepareResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/prepare-jobs:
     get:
       operationId: listPrepareJobs
@@ -1003,13 +1040,119 @@ components:
           anyOf:
             - $ref: "#/components/schemas/CacheEvictionSummary"
             - type: "null"
+    CacheExplainPrepareRequest:
+      oneOf:
+        - $ref: "#/components/schemas/CacheExplainPrepareRequestPsql"
+        - $ref: "#/components/schemas/CacheExplainPrepareRequestLiquibase"
+      discriminator:
+        propertyName: prepare_kind
+        mapping:
+          psql: "#/components/schemas/CacheExplainPrepareRequestPsql"
+          lb: "#/components/schemas/CacheExplainPrepareRequestLiquibase"
+    CacheExplainPrepareRequestPsql:
+      type: object
+      additionalProperties: false
+      required:
+        - prepare_kind
+        - image_id
+        - psql_args
+      properties:
+        prepare_kind:
+          type: string
+          enum: [psql]
+          description: Prepare adapter kind.
+        image_id:
+          type: string
+          description: Base Docker image id to use.
+        psql_args:
+          type: array
+          description: |
+            Arguments passed to `psql` (excluding connection flags). Argument
+            ordering is preserved. File paths must already be normalized for
+            the bound local execution context.
+          items:
+            type: string
+        stdin:
+          type: string
+          description: SQL content to use for stdin when `psql_args` includes `-f -`.
+    CacheExplainPrepareRequestLiquibase:
+      type: object
+      additionalProperties: false
+      required:
+        - prepare_kind
+        - image_id
+        - liquibase_args
+      properties:
+        prepare_kind:
+          type: string
+          enum: [lb]
+          description: Prepare adapter kind.
+        image_id:
+          type: string
+          description: Base Docker image id to use.
+        liquibase_args:
+          type: array
+          description: |
+            Arguments passed to Liquibase. Argument ordering is preserved and
+            path-bearing arguments must already reflect the bound local
+            execution context.
+          items:
+            type: string
+        liquibase_exec:
+          type: string
+          description: Optional Liquibase executable override selected by the CLI.
+        liquibase_exec_mode:
+          type: string
+          description: Optional Liquibase executable mode selected by the CLI.
+        liquibase_env:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional environment variables passed through to Liquibase.
+        work_dir:
+          type: string
+          description: Working directory for the Liquibase invocation.
+    CacheExplainPrepareResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - decision
+        - reason_code
+        - signature
+      properties:
+        decision:
+          type: string
+          enum: [hit, miss]
+          description: |
+            Final-state cache decision for the bound prepare invocation.
+        reason_code:
+          type: string
+          description: |
+            Best-known diagnostic reason. Initial values include
+            `exact_state_match`, `no_matching_state`, `input_hash_changed`,
+            `image_changed`, and `cache_lookup_unavailable`.
+        signature:
+          type: string
+          description: Engine-computed final prepare signature used for cache lookup.
+        matched_state_id:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Matching cached state id when `decision=hit`.
+        resolved_image_id:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Resolved image id when the engine can report it.
     PrepareJobRequest:
       oneOf:
         - $ref: "#/components/schemas/PrepareJobRequestPsql"
+        - $ref: "#/components/schemas/PrepareJobRequestLiquibase"
       discriminator:
         propertyName: prepare_kind
         mapping:
           psql: "#/components/schemas/PrepareJobRequestPsql"
+          lb: "#/components/schemas/PrepareJobRequestLiquibase"
     PrepareJobRequestPsql:
       type: object
       additionalProperties: false
@@ -1035,6 +1178,46 @@ components:
         stdin:
           type: string
           description: SQL content to use for stdin when `psql_args` includes `-f -`.
+        plan_only:
+          type: boolean
+          description: When true, only the plan is computed and no instance is created.
+    PrepareJobRequestLiquibase:
+      type: object
+      additionalProperties: false
+      required:
+        - prepare_kind
+        - image_id
+        - liquibase_args
+      properties:
+        prepare_kind:
+          type: string
+          enum: [lb]
+          description: Prepare adapter kind.
+        image_id:
+          type: string
+          description: Base Docker image id to use.
+        liquibase_args:
+          type: array
+          description: |
+            Arguments passed to Liquibase. Argument ordering is preserved and
+            path-bearing arguments must already be normalized for the bound
+            local execution context.
+          items:
+            type: string
+        liquibase_exec:
+          type: string
+          description: Optional Liquibase executable override selected by the CLI.
+        liquibase_exec_mode:
+          type: string
+          description: Optional Liquibase executable mode selected by the CLI.
+        liquibase_env:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional environment variables passed through to Liquibase.
+        work_dir:
+          type: string
+          description: Working directory for the Liquibase invocation.
         plan_only:
           type: boolean
           description: When true, only the plan is computed and no instance is created.

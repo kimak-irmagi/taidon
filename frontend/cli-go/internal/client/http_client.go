@@ -72,6 +72,27 @@ func (c *Client) GetCacheStatus(ctx context.Context) (CacheStatus, error) {
 	return out, nil
 }
 
+func (c *Client) ExplainPrepareCache(ctx context.Context, req PrepareJobRequest) (CacheExplainPrepareResponse, error) {
+	var out CacheExplainPrepareResponse
+	body, err := json.Marshal(req)
+	if err != nil {
+		return out, err
+	}
+	resp, err := c.doRequestWithBody(ctx, http.MethodPost, "/v1/cache/explain/prepare", true, bytes.NewReader(body), "application/json")
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return out, parseErrorResponse(resp)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
 func (c *Client) ListNames(ctx context.Context, filters ListFilters) ([]NameEntry, error) {
 	var out []NameEntry
 	query := url.Values{}

@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/sqlrs/engine-local/internal/auth"
+	"github.com/sqlrs/engine-local/internal/prepare"
 )
 
 type cacheRoutes struct {
@@ -12,6 +14,7 @@ type cacheRoutes struct {
 
 func (routes cacheRoutes) register(mux *http.ServeMux) {
 	mux.HandleFunc("/v1/cache/status", routes.handleStatus)
+	mux.HandleFunc("/v1/cache/explain/prepare", routes.handleExplainPrepare)
 }
 
 func (routes cacheRoutes) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -31,4 +34,38 @@ func (routes cacheRoutes) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = writeJSON(w, status)
+}
+
+func (routes cacheRoutes) handleExplainPrepare(w http.ResponseWriter, r *http.Request) {
+	if !auth.RequireBearer(w, r, routes.opts.AuthToken) {
+		return
+	}
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	if routes.opts.Prepare == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	var req prepare.Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = writeErrorResponse(w, "invalid_argument", "invalid json payload", err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	result, err := routes.opts.Prepare.CacheExplain(r.Context(), req)
+	if err != nil {
+		resp := prepare.ToErrorResponse(err)
+		status := http.StatusInternalServerError
+		if _, ok := err.(prepare.ValidationError); ok {
+			status = http.StatusBadRequest
+		}
+		if _, ok := err.(*prepare.ValidationError); ok {
+			status = http.StatusBadRequest
+		}
+		_ = writeError(w, *resp, status)
+		return
+	}
+	_ = writeJSON(w, result)
 }

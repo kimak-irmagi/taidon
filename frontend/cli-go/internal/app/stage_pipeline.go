@@ -22,10 +22,13 @@ const (
 
 type stageRunRequest struct {
 	mode                    stageMode
+	class                   string
 	kind                    string
 	parsed                  prepareArgs
 	workspaceRoot           string
 	cwd                     string
+	invocationCwd           string
+	aliasPath               string
 	ref                     *refctx.Context
 	output                  string
 	relativizeLiquibasePath bool
@@ -35,6 +38,13 @@ type stageRuntime struct {
 	opts    cli.PrepareOptions
 	watch   bool
 	cleanup func() error
+	trace   prepareTraceBase
+}
+
+type prepareStageResult struct {
+	result   client.PrepareJobResult
+	handled  bool
+	accepted *client.PrepareJobAccepted
 }
 
 func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, req stageRunRequest) (stageRuntime, error) {
@@ -63,9 +73,14 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	runtime.opts.ImageID = imageID
 	runtime.opts.DisableControlPrompt = usesPrepareRef(req.parsed, req.ref)
 
+	actualRef, _, err := resolvePrepareBindingContext(req.workspaceRoot, req.cwd, req.parsed, req.ref)
+	if err != nil {
+		return stageRuntime{}, err
+	}
+
 	switch req.kind {
 	case "psql":
-		bound, err := bindPreparePsqlInputsFn(runOpts, req.workspaceRoot, req.cwd, req.parsed, req.ref, os.Stdin)
+		bound, err := bindPreparePsqlInputsFn(runOpts, req.workspaceRoot, req.cwd, req.parsed, actualRef, os.Stdin)
 		if err != nil {
 			return stageRuntime{}, err
 		}
@@ -82,7 +97,7 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 		if err != nil {
 			return stageRuntime{}, err
 		}
-		bound, err := bindPrepareLiquibaseInputsFn(runOpts, req.workspaceRoot, req.cwd, req.parsed, req.ref, liquibaseExec, liquibaseExecMode, req.relativizeLiquibasePath)
+		bound, err := bindPrepareLiquibaseInputsFn(runOpts, req.workspaceRoot, req.cwd, req.parsed, actualRef, liquibaseExec, liquibaseExecMode, req.relativizeLiquibasePath)
 		if err != nil {
 			return stageRuntime{}, err
 		}
@@ -105,41 +120,48 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	if req.mode == stageModePlan {
 		runtime.opts.PlanOnly = true
 	}
+
+	trace, err := collectPrepareTrace(req, runtime.opts, actualRef)
+	if err != nil {
+		return stageRuntime{}, finishPrepareCleanup(err, runtime.cleanup)
+	}
+	runtime.trace = trace
 	return runtime, nil
 }
 
+func runPlanStage(runtime stageRuntime) (cli.PlanResult, error) {
+	return runPlanFn(context.Background(), runtime.opts)
+}
+
+func renderPlanStage(stdout io.Writer, output string, result cli.PlanResult) error {
+	if output == "json" {
+		return writeJSON(stdout, result)
+	}
+	return cli.PrintPlan(stdout, result)
+}
+
 func executePlanStage(stdout io.Writer, runtime stageRuntime, output string) error {
-	result, err := runPlanFn(context.Background(), runtime.opts)
+	result, err := runPlanStage(runtime)
 	if err != nil {
 		return finishPrepareCleanup(err, runtime.cleanup)
 	}
-	if output == "json" {
-		return finishPrepareCleanup(writeJSON(stdout, result), runtime.cleanup)
-	}
-	return finishPrepareCleanup(cli.PrintPlan(stdout, result), runtime.cleanup)
+	return finishPrepareCleanup(renderPlanStage(stdout, output, result), runtime.cleanup)
 }
 
-func executePrepareStage(w stdoutAndErr, runtime stageRuntime) (result client.PrepareJobResult, handled bool, err error) {
-	cleanupOnReturn := true
-	defer func() {
-		if cleanupOnReturn {
-			err = finishPrepareCleanup(err, runtime.cleanup)
-		}
-	}()
-
+func runPrepareStage(w stdoutAndErr, runtime stageRuntime) (prepareStageResult, error) {
 	if !runtime.watch {
 		accepted, err := submitPrepareFn(context.Background(), runtime.opts)
 		if err != nil {
-			return client.PrepareJobResult{}, false, err
+			return prepareStageResult{}, err
 		}
 		printPrepareJobRefs(w.stdout, accepted)
 		if runtime.opts.CompositeRun {
 			printRunSkipped(w.stdout, "prepare_not_watched")
 		}
-		return client.PrepareJobResult{}, true, nil
+		return prepareStageResult{handled: true, accepted: &accepted}, nil
 	}
 
-	result, err = runPrepareFn(context.Background(), runtime.opts)
+	prepareResult, err := runPrepareFn(context.Background(), runtime.opts)
 	if err != nil {
 		var detached *cli.PrepareDetachedError
 		if errors.As(err, &detached) {
@@ -152,9 +174,17 @@ func executePrepareStage(w stdoutAndErr, runtime stageRuntime) (result client.Pr
 			if runtime.opts.CompositeRun {
 				printRunSkipped(w.stdout, "prepare_detached")
 			}
-			return client.PrepareJobResult{}, true, nil
+			return prepareStageResult{handled: true, accepted: &accepted}, nil
 		}
-		return client.PrepareJobResult{}, false, err
+		return prepareStageResult{}, err
 	}
-	return result, false, nil
+	return prepareStageResult{result: prepareResult}, nil
+}
+
+func executePrepareStage(w stdoutAndErr, runtime stageRuntime) (result client.PrepareJobResult, handled bool, err error) {
+	stageResult, err := runPrepareStage(w, runtime)
+	if err != nil {
+		return client.PrepareJobResult{}, false, finishPrepareCleanup(err, runtime.cleanup)
+	}
+	return stageResult.result, stageResult.handled, finishPrepareCleanup(nil, runtime.cleanup)
 }

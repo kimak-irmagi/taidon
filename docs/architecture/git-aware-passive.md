@@ -1,8 +1,10 @@
 # Git-aware semantics: passive features (CLI)
 
-Status: **mixed**. Scenario P1 is the approved next local CLI slice; the rest
-of this document remains future design. Today, the public MVP CLI still relies
-on commands such as `sqlrs prepare:psql ... run:psql ...`.
+Status: **mixed**. Scenario P1 is the delivered local ref baseline. Scenarios
+P4 and P6 below now capture the approved next bounded local slice for
+provenance and cache explanation; the rest of this document remains future
+design. Today, the public MVP CLI still relies on commands such as
+`sqlrs prepare:psql ... run:psql ...`.
 
 Goal: add git-aware capabilities **without changing the user's work habits**. All functions in this document are activated **only by explicit user commands/flags** and do not require repository setup "for Taidon".
 
@@ -167,41 +169,66 @@ What `diff` compares:
 
 ---
 
-## Scenario P4. Provenance (execution manifest)
+## Scenario P4. Provenance side artifact for local single-stage plan/prepare
 
 ### Motivation
 
-In real commands you quickly need to answer "what exactly did you run?" A portable artifact helps reproduce issues months later.
+In real commands you quickly need to answer "what exactly did you run?" A
+portable artifact helps reproduce issues months later without changing the main
+CLI result contract.
 
 ### UX / CLI
 
-Auto-enabled via flag or config:
+Enabled explicitly via an additive path flag:
 
 ```bash
-sqlrs run --provenance write --provenance-path ./artifacts/provenance.json -- <cmd>
+sqlrs plan --provenance-path ./artifacts/chinook-plan.json chinook
+sqlrs prepare --ref origin/main --provenance-path ./artifacts/chinook-prepare.json chinook
+sqlrs prepare:psql --provenance-path ./artifacts/prepare.json -- -f ./prepare.sql
 ```
 
-Modes:
+Boundaries of the first public slice:
 
-- `write` - write file
-- `print` - print summary to stdout
-- `both`
+- single-stage `plan` and `prepare` only;
+- raw and alias-backed prepare flows;
+- plain local filesystem and bounded local `--ref`;
+- no standalone `run`;
+- no composite `prepare ... run ...`;
+- no automatic emission without the explicit flag;
+- no provenance printed as part of the main stdout payload.
 
 Content (minimum):
 
-- timestamp (start time)
-- git ref + commit (if `--ref` used)
-- `dirty/clean` (working tree state)
-- input file list from `--prepare` + hashes
-- environment params (`dbms.image`, key flags)
-- Taidon snapshot chain used (base/derived)
-- command `sqlrs run -- <cmd>` + argv
+- command family / kind / class (raw vs alias)
+- invocation timestamp
+- workspace root, caller cwd, and selected alias path when applicable
+- selected ref metadata when `--ref` is used
+- normalized prepare args
+- collected input entries with deterministic hashes
+- pre-execution cache decision snapshot:
+  - signature
+  - hit vs miss
+  - matched state id when present
+  - miss reason code when known
+- terminal outcome summary (success/failure/canceled plus state/job identifiers
+  when available)
 
 ### Implementation
 
-1. Collect run context at start.
-2. During `prepare`, record snapshot chain and key decisions (cache hit/miss).
-3. Serialize JSON (and optional text summary) on exit.
+1. Parse and validate the normal `plan` / `prepare` command first.
+2. Bind the selected stage using the same raw/alias/ref semantics as normal
+   execution.
+3. Collect the deterministic local input graph through the shared
+   `internal/inputset` layer.
+4. When `--provenance-path` is present, ask the engine for a read-only
+   pre-execution cache explanation for that bound stage.
+5. Run the normal `plan` or `prepare` flow.
+6. Serialize one JSON side artifact to the requested caller-cwd-relative path.
+
+Important behavior note: the artifact records the cache decision observed
+immediately before execution. If another process mutates cache state between
+that explain step and the actual prepare execution, the recorded explanation is
+still the correct pre-execution diagnostic snapshot, not a post-facto guarantee.
 
 ---
 
@@ -240,29 +267,51 @@ Options:
 
 ---
 
-## Scenario P6. "Explain cache": why fast/slow
+## Scenario P6. `cache explain` for one prepare-oriented decision
 
 ### Motivation
 
-User wants to know why this run was slow: no snapshot? hashes changed? different engine?
+User wants to know whether a single-stage prepare-oriented workflow would reuse
+an existing state now, and if not, why.
 
 ### UX / CLI
 
+For the approved next public slice, the command stays read-only and
+prepare-oriented:
+
 ```bash
-sqlrs cache explain --ref <ref> --prepare <path>
+sqlrs cache explain prepare <prepare-alias>
+sqlrs cache explain prepare --ref <ref> <prepare-alias>
+sqlrs cache explain prepare:psql -- -f ./prepare.sql
+sqlrs cache explain prepare:lb -- update --changelog-file db/changelog.xml
 ```
 
 Output:
 
-- computed changeset hashes
-- nearest anchor (if any)
-- miss reason (no snapshot / engine+version mismatch / missing chain segment)
+- hit vs miss for the final prepare state lookup
+- engine-computed signature
+- matched state id when present
+- best-known reason code when the final state is absent
+
+This first slice does **not** accept wrapped `plan`, wrapped `run`, or
+composite `prepare ... run ...`.
 
 ### Implementation
 
-1. Compute the same key(s) as for `migrate/run`.
-2. Query cache index.
-3. Render explanation.
+1. Parse the wrapped single-stage prepare grammar (`prepare <alias>` or
+   `prepare:<kind> ...`).
+2. Bind the stage through the same raw/alias/ref path as real `prepare`.
+3. Collect the deterministic input graph through the shared `inputset` layer.
+4. Submit one read-only engine request that computes the same final prepare
+   signature and cache lookup as real execution, without creating a job or
+   mutating cache.
+5. Render human or JSON output, merging the engine decision with the local
+   input/ref metadata already known to the CLI.
+
+Store-health diagnostics remain separate:
+
+- `sqlrs status --cache`
+- `sqlrs ls --states --cache-details`
 
 ---
 
@@ -272,5 +321,5 @@ Output:
    `blob`
 2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` for one `plan:*` or
    `prepare:*` command
-3. provenance (write)
-4. `cache explain` (simple version)
+3. provenance side artifact for bounded local single-stage `plan` / `prepare`
+4. `cache explain prepare ...` (simple version)
