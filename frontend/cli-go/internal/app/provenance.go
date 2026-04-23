@@ -101,37 +101,30 @@ func collectPrepareTrace(req stageRunRequest, opts cli.PrepareOptions, actualRef
 			Image: opts.ImageID,
 		},
 	}
+	collectionRoot, baseDir, fs := traceCollectorContext(req, actualRef)
 	if actualRef != nil {
 		trace.RefContext = &cli.CacheExplainRefContext{
 			Requested:      actualRef.GitRef,
 			ResolvedCommit: actualRef.ResolvedCommit,
 			Mode:           actualRef.RefMode,
 		}
-		if actualRef.WorkspaceRoot != "" {
-			trace.WorkspaceRoot = actualRef.WorkspaceRoot
-		} else if actualRef.RepoRoot != "" && trace.WorkspaceRoot == "" {
-			trace.WorkspaceRoot = actualRef.RepoRoot
-		}
 	}
-	trace.AliasPath = relativeTracePath(trace.WorkspaceRoot, req.aliasPath)
+	trace.AliasPath = relativeTracePath(collectionRoot, req.aliasPath)
 
-	root, baseDir, fs := traceCollectorContext(req, actualRef)
 	switch req.kind {
 	case "psql":
-		resolver := inputset.NewWorkspaceResolver(root, baseDir, nil)
-		normalizedArgs, _, err := inputpsql.NormalizeArgs(req.parsed.PsqlArgs, resolver, strings.NewReader(""))
+		resolver := inputset.NewWorkspaceResolver(collectionRoot, baseDir, nil)
+		normalizedArgs, _, err := inputpsql.NormalizeArgs(req.parsed.PsqlArgs, resolver, strings.NewReader(stringPtrOrEmpty(opts.Stdin)))
 		if err != nil {
 			return prepareTraceBase{}, wrapInputsetError(err)
 		}
 		trace.NormalizedArgs = normalizedArgs
-		if psqlHasFileArgs(normalizedArgs) {
-			set, err := inputpsql.Collect(normalizedArgs, resolver, fs)
-			if err == nil {
-				trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, root)...)
-			}
+		set, err := inputpsql.CollectInvocationInputs(normalizedArgs, resolver, opts.Stdin, fs)
+		if err == nil {
+			trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
 		}
 	case "lb":
-		resolver := inputset.NewWorkspaceResolver(root, baseDir, nil)
+		resolver := inputset.NewWorkspaceResolver(collectionRoot, baseDir, nil)
 		normalizedArgs, err := inputliquibase.NormalizeArgs(req.parsed.PsqlArgs, resolver, true)
 		if err != nil {
 			return prepareTraceBase{}, wrapInputsetError(err)
@@ -140,7 +133,7 @@ func collectPrepareTrace(req stageRunRequest, opts cli.PrepareOptions, actualRef
 		if liquibaseHasChangelogArg(normalizedArgs) {
 			set, err := inputliquibase.Collect(normalizedArgs, resolver, fs)
 			if err == nil {
-				trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, root)...)
+				trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
 			}
 		}
 	default:
@@ -148,7 +141,7 @@ func collectPrepareTrace(req stageRunRequest, opts cli.PrepareOptions, actualRef
 	}
 
 	if trace.Command.Class == "alias" && strings.TrimSpace(req.aliasPath) != "" {
-		input, err := traceInputFromPath(req.aliasPath, root, fs)
+		input, err := traceInputFromPath(req.aliasPath, collectionRoot, fs)
 		if err != nil {
 			return prepareTraceBase{}, err
 		}
@@ -213,6 +206,13 @@ func traceInputHash(path string, fs inputset.FileSystem) (string, error) {
 		return "", err
 	}
 	return inputset.HashContent(data), nil
+}
+
+func stringPtrOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func relativeTracePath(root string, value string) string {

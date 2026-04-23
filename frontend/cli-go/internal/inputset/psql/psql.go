@@ -159,6 +159,22 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 		return inputset.InputSet{}, fmt.Errorf("psql command has no -f file (required for diff)")
 	}
 
+	return collectResolvedSources(toFileSources(entryPaths), resolver, fs)
+}
+
+// CollectInvocationInputs builds the deterministic psql file set from all
+// invocation sources, including files reached through `-c` or stdin-backed
+// `-f -` content. This allows provenance and cache-explain consumers to report
+// the same include graph that the engine uses for cache decisions.
+func CollectInvocationInputs(args []string, resolver inputset.Resolver, stdin *string, fs inputset.FileSystem) (inputset.InputSet, error) {
+	sources, err := collectEntrySources(args, resolver, stdin)
+	if err != nil {
+		return inputset.InputSet{}, err
+	}
+	return collectResolvedSources(sources, resolver, fs)
+}
+
+func collectResolvedSources(sources []entrySource, resolver inputset.Resolver, fs inputset.FileSystem) (inputset.InputSet, error) {
 	tracker := &tracker{
 		root:    resolver.Root,
 		baseDir: resolver.BaseDir,
@@ -167,15 +183,28 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 		fs:      fs,
 	}
 	var order []string
-	for _, path := range entryPaths {
-		if err := tracker.collect(path, &order); err != nil {
-			return inputset.InputSet{}, err
+	for _, source := range sources {
+		switch source.kind {
+		case "file":
+			if err := tracker.collect(source.path, &order); err != nil {
+				return inputset.InputSet{}, err
+			}
+		case "content":
+			if err := tracker.collectContent(source.content, "", &order); err != nil {
+				return inputset.InputSet{}, err
+			}
+		default:
+			return inputset.InputSet{}, fmt.Errorf("unsupported psql source kind: %s", source.kind)
 		}
 	}
 
+	return buildInputSet(order, resolver.Root, fs)
+}
+
+func buildInputSet(order []string, root string, fs inputset.FileSystem) (inputset.InputSet, error) {
 	entries := make([]inputset.InputEntry, 0, len(order))
 	for _, path := range order {
-		rel, _ := filepath.Rel(resolver.Root, path)
+		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
 		var hash string
 		if oid, ok := fs.(inputset.BlobOIDer); ok {
@@ -198,6 +227,102 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 		})
 	}
 	return inputset.InputSet{Entries: entries}, nil
+}
+
+type entrySource struct {
+	kind    string
+	path    string
+	content string
+}
+
+func toFileSources(paths []string) []entrySource {
+	sources := make([]entrySource, 0, len(paths))
+	for _, path := range paths {
+		sources = append(sources, entrySource{kind: "file", path: path})
+	}
+	return sources
+}
+
+func collectEntrySources(args []string, resolver inputset.Resolver, stdin *string) ([]entrySource, error) {
+	out := make([]entrySource, 0, 2)
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--":
+			continue
+		case arg == "-c" || arg == "--command":
+			if i+1 >= len(args) {
+				return nil, inputset.Errorf("missing_command_arg", "Missing value for %s", arg)
+			}
+			if source, ok := commandSource(args[i+1]); ok {
+				out = append(out, source)
+			}
+			i++
+		case strings.HasPrefix(arg, "--command="):
+			if source, ok := commandSource(strings.TrimPrefix(arg, "--command=")); ok {
+				out = append(out, source)
+			}
+		case strings.HasPrefix(arg, "-c") && len(arg) > 2:
+			if source, ok := commandSource(arg[2:]); ok {
+				out = append(out, source)
+			}
+		case arg == "-f" || arg == "--file":
+			if i+1 >= len(args) {
+				return nil, inputset.Errorf("missing_file_arg", "Missing value for %s", arg)
+			}
+			source, ok, err := fileSource(args[i+1], resolver, stdin)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				out = append(out, source)
+			}
+			i++
+		case strings.HasPrefix(arg, "--file="):
+			source, ok, err := fileSource(strings.TrimPrefix(arg, "--file="), resolver, stdin)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				out = append(out, source)
+			}
+		case strings.HasPrefix(arg, "-f") && len(arg) > 2:
+			source, ok, err := fileSource(arg[2:], resolver, stdin)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				out = append(out, source)
+			}
+		}
+	}
+	return out, nil
+}
+
+func commandSource(value string) (entrySource, bool) {
+	if strings.TrimSpace(value) == "" {
+		return entrySource{}, false
+	}
+	return entrySource{kind: "content", content: value}, true
+}
+
+func fileSource(value string, resolver inputset.Resolver, stdin *string) (entrySource, bool, error) {
+	cleaned := strings.TrimSpace(value)
+	switch cleaned {
+	case "":
+		return entrySource{}, false, nil
+	case "-":
+		if stdin == nil {
+			return entrySource{}, false, nil
+		}
+		return entrySource{kind: "content", content: *stdin}, true, nil
+	default:
+		path, err := resolver.ResolvePath(cleaned)
+		if err != nil {
+			return entrySource{}, false, err
+		}
+		return entrySource{kind: "file", path: path}, true, nil
+	}
 }
 
 // ValidateArgs accumulates alias-check issues for the same psql file-bearing syntax.
@@ -336,13 +461,17 @@ func (t *tracker) collect(path string, order *[]string) error {
 	}
 	*order = append(*order, path)
 
+	return t.collectContent(string(content), path, order)
+}
+
+func (t *tracker) collectContent(content string, currentFile string, order *[]string) error {
 	scanner := bufio.NewScanner(strings.NewReader(string(content)))
 	for scanner.Scan() {
 		cmd, arg, ok := parseInclude(scanner.Text())
 		if !ok {
 			continue
 		}
-		next := t.resolveInclude(cmd, arg, path)
+		next := t.resolveInclude(cmd, arg, currentFile)
 		if err := t.collect(next, order); err != nil {
 			return err
 		}
