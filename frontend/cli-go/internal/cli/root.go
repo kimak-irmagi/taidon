@@ -87,6 +87,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  alias    Inspect or manage repo-tracked alias files")
+	fmt.Fprintln(w, "  cache    Inspect read-only cache decisions")
 	fmt.Fprintln(w, "  discover  Advisory workspace analysis")
 	fmt.Fprintln(w, "  init     Initialize a workspace")
 	fmt.Fprintln(w, "  ls       List names, instances, or states")
@@ -174,7 +175,7 @@ func findPrepareAliasRunIndex(args []string) int {
 		switch arg {
 		case "--watch", "--no-watch", "--help", "-h":
 			continue
-		case "--ref", "--ref-mode":
+		case "--provenance-path", "--ref", "--ref-mode":
 			if i+1 >= len(args) {
 				return -1
 			}
@@ -208,15 +209,26 @@ func isPrepareArgValue(args []string, idx int) bool {
 	prev := args[idx-1]
 	switch strings.TrimSpace(args[0]) {
 	case "prepare:psql":
-		return prev == "--image" || prev == "-f" || prev == "--file"
+		return prev == "--provenance-path" ||
+			prev == "--ref" ||
+			prev == "--ref-mode" ||
+			prev == "--image" ||
+			prev == "-f" ||
+			prev == "--file"
 	case "prepare:lb":
-		return prev == "--image" ||
+		return prev == "--provenance-path" ||
+			prev == "--ref" ||
+			prev == "--ref-mode" ||
+			prev == "--image" ||
 			prev == "--changelog-file" ||
 			prev == "--defaults-file" ||
 			prev == "--searchPath" ||
 			prev == "--search-path"
 	default:
-		return prev == "--image"
+		return prev == "--provenance-path" ||
+			prev == "--ref" ||
+			prev == "--ref-mode" ||
+			prev == "--image"
 	}
 }
 
@@ -247,7 +259,7 @@ func isRunCommandToken(value string) bool {
 
 func isCommandToken(value string) bool {
 	switch value {
-	case "alias", "discover", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config":
+	case "alias", "cache", "discover", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config":
 		return true
 	}
 	if strings.HasPrefix(value, "prepare:") {

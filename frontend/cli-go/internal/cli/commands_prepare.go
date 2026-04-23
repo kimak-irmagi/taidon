@@ -299,6 +299,10 @@ func prepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, er
 	return cliClient, nil
 }
 
+func PrepareClient(ctx context.Context, opts PrepareOptions) (*client.Client, error) {
+	return prepareClient(ctx, opts)
+}
+
 func waitForPrepare(ctx context.Context, cliClient *client.Client, jobID string, eventsURL string, progress io.Writer, verbose bool) (client.PrepareJobStatus, error) {
 	return waitForPrepareWithOptions(ctx, cliClient, jobID, eventsURL, progress, verbose, waitPrepareOptions{})
 }

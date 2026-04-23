@@ -1,8 +1,9 @@
 # Git-aware semantics: пассивные функции (CLI)
 
-Статус: **смешанный**. Сценарий P1 - это утвержденный следующий local CLI
-slice, а остальная часть документа остается future design. Сейчас публичный
-MVP CLI по-прежнему опирается на вызовы вида
+Статус: **смешанный**. Сценарий P1 - это уже доставленный local ref baseline.
+Сценарии P4 и P6 ниже теперь фиксируют утвержденный следующий bounded local
+slice для provenance и cache explanation; остальная часть документа остается
+future design. Сейчас публичный MVP CLI по-прежнему опирается на вызовы вида
 `sqlrs prepare:psql ... run:psql ...`.
 
 Цель: добавить git-aware возможности **без вмешательства в привычный процесс работы**.
@@ -183,43 +184,67 @@ sqlrs diff --from-path <pathA> --to-path <pathB> prepare:psql -- -f ./prepare.sq
 
 ---
 
-## Сценарий P4. Provenance (execution manifest)
+## Сценарий P4. Provenance side artifact для local single-stage plan/prepare
 
 ### Мотивация
 
 В реальных командах быстро возникает вопрос “что именно ты запускал?”. Нужен
-артефакт, который можно приложить к багрепорту или повторить через месяц.
+артефакт, который можно приложить к багрепорту или повторить через месяц, не
+меняя основной контракт результата CLI-команды.
 
 ### UX / CLI
 
-Автовключение по флагу или настройке:
+Включается явно через добавочный path-флаг:
 
 ```bash
-sqlrs run --provenance write --provenance-path ./artifacts/provenance.json -- <cmd>
+sqlrs plan --provenance-path ./artifacts/chinook-plan.json chinook
+sqlrs prepare --ref origin/main --provenance-path ./artifacts/chinook-prepare.json chinook
+sqlrs prepare:psql --provenance-path ./artifacts/prepare.json -- -f ./prepare.sql
 ```
 
-Режимы:
+Границы первого публичного slice:
 
-- `write` — записать файл
-- `print` — вывести кратко в stdout
-- `both`
+- только single-stage `plan` и `prepare`;
+- raw- и alias-backed prepare flows;
+- обычная local ФС и bounded local `--ref`;
+- без standalone `run`;
+- без composite `prepare ... run ...`;
+- без автоматической эмиссии без явного флага;
+- без печати provenance как части основного stdout payload.
 
 Содержимое (минимум):
 
-- timestamp (время запуска)
-- git ref + commit (если задан `--ref`)
-- `dirty/clean` (грязное/чистое состояние рабочего дерева)
-- список входных файлов `--prepare` + хеши
-- параметры окружения (`dbms.image`, важные флаги)
-- цепочка снапшотов Taidon, использованные base/derived
-- команда `sqlrs run -- <cmd>` + argv
+- family / kind / class команды (raw vs alias)
+- timestamp invocation
+- workspace root, caller cwd и selected alias path при наличии
+- metadata выбранного ref при использовании `--ref`
+- normalized prepare args
+- собранные input entries с детерминированными hash-ами
+- pre-execution cache decision snapshot:
+  - signature
+  - hit vs miss
+  - matched state id при наличии
+  - miss reason code, если он известен
+- terminal outcome summary (success/failure/canceled плюс state/job
+  identifiers, если они доступны)
 
 ### Алгоритм реализации
 
-1. На старте собрать “контекст запуска”.
-2. Во время `prepare` фиксировать цепочку снапшотов и ключевые решения
-   (попадания/промахи кэша).
-3. На выходе сериализовать JSON (и, опционально, текстовую сводку).
+1. Сначала разобрать и провалидировать обычную `plan` / `prepare` команду.
+2. Привязать выбранную stage через те же raw/alias/ref semantics, что и в
+   обычном execution.
+3. Собрать детерминированный local input graph через shared слой
+   `internal/inputset`.
+4. Если задан `--provenance-path`, запросить у engine read-only pre-execution
+   cache explanation для этой уже привязанной stage.
+5. Выполнить обычный flow `plan` или `prepare`.
+6. Сериализовать один JSON side artifact по caller-cwd-relative пути.
+
+Важное замечание по поведению: артефакт фиксирует cache decision, увиденное
+непосредственно перед execution. Если другой процесс изменит состояние cache
+между explain-шагом и реальным `prepare`, записанное объяснение всё равно
+остается корректным pre-execution diagnostic snapshot, а не post-factum
+гарантией.
 
 ---
 
@@ -259,31 +284,53 @@ sqlrs compare \
 
 ---
 
-## Сценарий P6. “Explain cache”: почему быстро/медленно
+## Сценарий P6. `cache explain` для одного prepare-oriented решения
 
 ### Мотивация
 
-Пользователь хочет понять, почему в этот раз было "долго": не было снапшота?
-изменились хеши? другой движок?
+Пользователь хочет понять, переиспользует ли sqlrs уже существующее состояние
+для одного single-stage prepare-oriented workflow прямо сейчас, и если нет, то
+почему.
 
 ### UX / CLI
 
+Для утвержденного следующего публичного slice команда остается read-only и
+prepare-oriented:
+
 ```bash
-sqlrs cache explain --ref <ref> --prepare <path>
+sqlrs cache explain prepare <prepare-alias>
+sqlrs cache explain prepare --ref <ref> <prepare-alias>
+sqlrs cache explain prepare:psql -- -f ./prepare.sql
+sqlrs cache explain prepare:lb -- update --changelog-file db/changelog.xml
 ```
 
 Вывод:
 
-- вычисленные хеши changeset-ов
-- ближайшая опорная точка (если есть)
-- причина промаха (нет снапшота / несовпадение движка/версии / отсутствует
-  сегмент цепочки)
+- hit vs miss для final prepare state lookup
+- engine-computed signature
+- matched state id при наличии
+- best-known reason code, когда final state отсутствует
+
+Этот первый slice **не** принимает wrapped `plan`, wrapped `run` или composite
+`prepare ... run ...`.
 
 ### Алгоритм реализации
 
-1. Построить тот же ключ(и), что и для `migrate/run`.
-2. Запросить индекс кэша.
-3. Отрендерить объяснение.
+1. Разобрать wrapped single-stage prepare grammar (`prepare <alias>` или
+   `prepare:<kind> ...`).
+2. Привязать stage через тот же raw/alias/ref путь, что и у реального
+   `prepare`.
+3. Собрать детерминированный input graph через shared слой `inputset`.
+4. Отправить один read-only запрос в engine, который считает ту же final
+   prepare signature и делает тот же cache lookup, что и реальное execution,
+   но не создает job и не мутирует cache.
+5. Отрендерить human или JSON output, объединив engine decision с local
+   input/ref metadata, уже известными CLI.
+
+Store-health diagnostics остаются отдельными:
+
+- `sqlrs status --cache`
+- `sqlrs ls --states --cache-details`
 
 ---
 
@@ -293,5 +340,5 @@ sqlrs cache explain --ref <ref> --prepare <path>
    `blob`
 2. `sqlrs diff --from-ref/--to-ref <wrapped-command...>` для одной команды
    `plan:*` или `prepare:*`
-3. provenance (write)
-4. `cache explain` (простая версия)
+3. provenance side artifact для bounded local single-stage `plan` / `prepare`
+4. `cache explain prepare ...` (простая версия)

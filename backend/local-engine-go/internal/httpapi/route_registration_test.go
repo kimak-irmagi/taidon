@@ -26,6 +26,7 @@ func TestNewHandlerRegistersResourceRoutes(t *testing.T) {
 		{name: "instances", method: http.MethodGet, path: "/v1/instances", auth: true, want: http.StatusOK},
 		{name: "states", method: http.MethodGet, path: "/v1/states", auth: true, want: http.StatusOK},
 		{name: "cache status", method: http.MethodGet, path: "/v1/cache/status", auth: true, want: http.StatusOK},
+		{name: "cache explain", method: http.MethodGet, path: "/v1/cache/explain/prepare", auth: true, want: http.StatusMethodNotAllowed},
 		{name: "runs", method: http.MethodGet, path: "/v1/runs", auth: true, want: http.StatusMethodNotAllowed},
 	}
 

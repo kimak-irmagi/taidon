@@ -39,6 +39,7 @@ type runnerDeps struct {
 	runPrepareLB    func(io.Writer, io.Writer, cli.PrepareOptions, config.LoadedConfig, string, string, []string) error
 	prepareResultLB func(stdoutAndErr, cli.PrepareOptions, config.LoadedConfig, string, string, []string) (client.PrepareJobResult, bool, error)
 	runPlan         func(io.Writer, io.Writer, cli.PrepareOptions, config.LoadedConfig, string, string, []string, string, string) error
+	runCache        func(io.Writer, io.Writer, cli.PrepareOptions, config.LoadedConfig, string, string, []string, string) error
 	runRun          func(io.Writer, io.Writer, cli.RunOptions, string, []string, string, string) error
 	runStatus       func(io.Writer, cli.StatusOptions, string, string, []string) error
 	runWatch        func(io.Writer, cli.PrepareOptions, []string) error
@@ -109,6 +110,9 @@ func (deps *runnerDeps) withDefaults() {
 	if deps.runPlan == nil {
 		deps.runPlan = runPlanKind
 	}
+	if deps.runCache == nil {
+		deps.runCache = runCache
+	}
 	if deps.runRun == nil {
 		deps.runRun = runRun
 	}
@@ -170,12 +174,20 @@ func (r runner) run(args []string) error {
 		if idx == 0 && len(commands) > 1 && prepareStageUsesRef(cmd) {
 			return fmt.Errorf("prepare --ref does not support composite run yet")
 		}
+		if idx == 0 && len(commands) > 1 && prepareStageUsesProvenance(cmd) {
+			return fmt.Errorf("provenance is not supported with composite prepare ... run")
+		}
 		switch cmd.Name {
 		case "alias":
 			if len(commands) > 1 {
 				return fmt.Errorf("alias cannot be combined with other commands")
 			}
 			return r.deps.runAlias(r.deps.stdout, cmdCtx, cmd.Args)
+		case "cache":
+			if len(commands) > 1 {
+				return fmt.Errorf("cache cannot be combined with other commands")
+			}
+			return r.deps.runCache(r.deps.stdout, r.deps.stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, cmd.Args, cmdCtx.output)
 		case "discover":
 			if len(commands) > 1 {
 				return fmt.Errorf("discover cannot be combined with other commands")
@@ -280,13 +292,42 @@ func (r runner) run(args []string) error {
 				PsqlArgs:       alias.Args,
 				Watch:          invocation.Watch,
 				WatchSpecified: invocation.WatchSpecified,
+				ProvenancePath: invocation.ProvenancePath,
 			}
 			switch alias.Kind {
 			case "psql":
 				if len(commands) == 1 {
-					return runPrepareParsed(r.deps.stdout, r.deps.stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, parsed, ref)
+					result, handled, err := prepareResultStageRequest(stdoutAndErr{stdout: r.deps.stdout, stderr: r.deps.stderr}, prepareOpts, cmdCtx.cfgResult, stageRunRequest{
+						mode:          stageModePrepare,
+						class:         "alias",
+						kind:          "psql",
+						parsed:        parsed,
+						workspaceRoot: cmdCtx.workspaceRoot,
+						cwd:           cmdCtx.cwd,
+						invocationCwd: cmdCtx.cwd,
+						aliasPath:     aliasPath,
+						ref:           ref,
+					})
+					if err != nil {
+						return err
+					}
+					if handled {
+						return nil
+					}
+					fmt.Fprintf(r.deps.stdout, "DSN=%s\n", result.DSN)
+					return nil
 				}
-				result, handled, err := prepareResultParsed(stdoutAndErr{stdout: r.deps.stdout, stderr: r.deps.stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, cmdCtx.cwd, parsed, ref)
+				result, handled, err := prepareResultStageRequest(stdoutAndErr{stdout: r.deps.stdout, stderr: r.deps.stderr}, prepareOpts, cmdCtx.cfgResult, stageRunRequest{
+					mode:          stageModePrepare,
+					class:         "alias",
+					kind:          "psql",
+					parsed:        parsed,
+					workspaceRoot: cmdCtx.workspaceRoot,
+					cwd:           cmdCtx.cwd,
+					invocationCwd: cmdCtx.cwd,
+					aliasPath:     aliasPath,
+					ref:           ref,
+				})
 				if err != nil {
 					return err
 				}
@@ -296,9 +337,39 @@ func (r runner) run(args []string) error {
 				prepared = &result
 			case "lb":
 				if len(commands) == 1 {
-					return runPrepareLiquibaseParsedWithPathMode(r.deps.stdout, r.deps.stderr, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, filepath.Dir(aliasPath), parsed, ref, false)
+					result, handled, err := prepareResultStageRequest(stdoutAndErr{stdout: r.deps.stdout, stderr: r.deps.stderr}, prepareOpts, cmdCtx.cfgResult, stageRunRequest{
+						mode:                    stageModePrepare,
+						class:                   "alias",
+						kind:                    "lb",
+						parsed:                  parsed,
+						workspaceRoot:           cmdCtx.workspaceRoot,
+						cwd:                     filepath.Dir(aliasPath),
+						invocationCwd:           cmdCtx.cwd,
+						aliasPath:               aliasPath,
+						ref:                     ref,
+						relativizeLiquibasePath: false,
+					})
+					if err != nil {
+						return err
+					}
+					if handled {
+						return nil
+					}
+					fmt.Fprintf(r.deps.stdout, "DSN=%s\n", result.DSN)
+					return nil
 				}
-				result, handled, err := prepareResultLiquibaseParsedWithPathMode(stdoutAndErr{stdout: r.deps.stdout, stderr: r.deps.stderr}, prepareOpts, cmdCtx.cfgResult, cmdCtx.workspaceRoot, filepath.Dir(aliasPath), parsed, ref, false)
+				result, handled, err := prepareResultStageRequest(stdoutAndErr{stdout: r.deps.stdout, stderr: r.deps.stderr}, prepareOpts, cmdCtx.cfgResult, stageRunRequest{
+					mode:                    stageModePrepare,
+					class:                   "alias",
+					kind:                    "lb",
+					parsed:                  parsed,
+					workspaceRoot:           cmdCtx.workspaceRoot,
+					cwd:                     filepath.Dir(aliasPath),
+					invocationCwd:           cmdCtx.cwd,
+					aliasPath:               aliasPath,
+					ref:                     ref,
+					relativizeLiquibasePath: false,
+				})
 				if err != nil {
 					return err
 				}
@@ -326,19 +397,19 @@ func (r runner) run(args []string) error {
 				return err
 			}
 			alias.Args = rebasePrepareAliasArgs(alias.Kind, alias.Args, aliasPath)
-			return runPlanKindParsedWithPathMode(
-				r.deps.stdout,
-				r.deps.stderr,
-				cmdCtx.prepareOptions(false),
-				cmdCtx.cfgResult,
-				cmdCtx.workspaceRoot,
-				filepath.Dir(aliasPath),
-				prepareArgs{Image: alias.Image, PsqlArgs: alias.Args},
-				ref,
-				cmdCtx.output,
-				alias.Kind,
-				alias.Kind != "lb",
-			)
+			return runPlanStageRequest(r.deps.stdout, r.deps.stderr, cmdCtx.prepareOptions(false), cmdCtx.cfgResult, stageRunRequest{
+				mode:                    stageModePlan,
+				class:                   "alias",
+				kind:                    alias.Kind,
+				parsed:                  prepareArgs{Image: alias.Image, PsqlArgs: alias.Args, ProvenancePath: invocation.ProvenancePath},
+				workspaceRoot:           cmdCtx.workspaceRoot,
+				cwd:                     filepath.Dir(aliasPath),
+				invocationCwd:           cmdCtx.cwd,
+				aliasPath:               aliasPath,
+				ref:                     ref,
+				output:                  cmdCtx.output,
+				relativizeLiquibasePath: alias.Kind != "lb",
+			})
 		case "run":
 			runOpts := cmdCtx.runOptions()
 			if prepared != nil {
@@ -396,6 +467,18 @@ func prepareStageUsesRef(cmd cli.Command) bool {
 	for _, arg := range cmd.Args {
 		switch strings.TrimSpace(arg) {
 		case "--ref", "--ref-mode", "--ref-keep-worktree":
+			return true
+		}
+	}
+	return false
+}
+
+func prepareStageUsesProvenance(cmd cli.Command) bool {
+	if cmd.Name != "prepare" && !strings.HasPrefix(cmd.Name, "prepare:") {
+		return false
+	}
+	for _, arg := range cmd.Args {
+		if strings.TrimSpace(arg) == "--provenance-path" {
 			return true
 		}
 	}

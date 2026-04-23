@@ -20,9 +20,12 @@
 - `internal/app`
   - Загружает workspace/global config, выбирает профиль и режим.
   - Диспетчеризует граф команд (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
-    `status`, `config`, `init`, `alias`, `discover`, `diff`).
+    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`).
   - Собирает command context и выбирает path resolver-ы и runtime projection-ы
     из `internal/inputset`.
+  - Владеет package-local prepare-trace helper-ами для `--provenance-path` и
+    `cache explain`, чтобы diagnostics переиспользовали тот же bound
+    single-stage prepare path, что и реальное execution.
   - Владеет package-local helper-ами оркестрации WSL/init для Windows local
     mode, включая split bootstrap/storage, переиспользование path translation
     и terminal cleanup/progress helper-ы.
@@ -59,11 +62,13 @@
   - Парсинг diff scope, resolution корней сторон, сравнение и рендеринг.
   - Делегирует file semantics вложенной команды в `internal/inputset`.
 - `internal/cli`
-  - Исполнители клиентских команд и human/JSON renderers.
+  - Исполнители клиентских команд и human/JSON renderers, включая read-only
+    cache-explain rendering.
 - `internal/cli/runkind`
   - Реестр поддерживаемых run kind.
 - `internal/client`
   - HTTP клиент для `/v1/*` endpoint-ов.
+  - Read-only cache explanation requests для bound prepare stages.
   - NDJSON-стриминг событий prepare и вывода run.
 - `internal/daemon`
   - Autostart/discovery локального engine (`engine.json`, lock/state orchestration).
@@ -104,6 +109,9 @@
   - Область сравнения `diff`, резолвленные корни сторон и модель результата.
 - `client.PrepareJobRequest`, `client.PrepareJobStatus`, `client.PrepareJobEvent`
   - Payload prepare API, включая `plan_only` и список задач плана.
+- `client.CacheExplainPrepareRequest`, `client.CacheExplainPrepareResponse`
+  - read-only cache-explain API payload-ы для одного bound single-stage prepare
+    decision.
 - `client.RunRequest`, `client.RunEvent`
   - Payload run API и стрим событий (`stdout`, `stderr`, `exit`, `error`,
     `log`).

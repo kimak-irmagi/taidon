@@ -29,18 +29,24 @@ func runPlanKindWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOption
 }
 
 func runPlanKindParsedWithPathMode(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, output string, kind string, relativizeLiquibasePaths bool) error {
-	runtime, err := buildStageRuntime(stderr, runOpts, cfg, stageRunRequest{
+	return runPlanStageRequest(stdout, stderr, runOpts, cfg, stageRunRequest{
 		mode:                    stageModePlan,
+		class:                   "raw",
 		kind:                    kind,
 		parsed:                  parsed,
 		workspaceRoot:           workspaceRoot,
 		cwd:                     cwd,
+		invocationCwd:           cwd,
 		ref:                     ref,
 		output:                  output,
 		relativizeLiquibasePath: relativizeLiquibasePaths,
 	})
+}
+
+func runPlanStageRequest(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.LoadedConfig, req stageRunRequest) error {
+	runtime, err := buildStageRuntime(stderr, runOpts, cfg, req)
 	if err != nil {
 		return err
 	}
-	return executePlanStage(stdout, runtime, output)
+	return executePlanStageWithProvenance(stdout, runtime, req.output, req.parsed.ProvenancePath)
 }

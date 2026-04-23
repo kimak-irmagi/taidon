@@ -20,6 +20,14 @@ type Accepted struct {
 	Status    string `json:"status,omitempty"`
 }
 
+type CacheExplainPrepareResult struct {
+	Decision        string `json:"decision"`
+	ReasonCode      string `json:"reason_code,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	MatchedStateID  string `json:"matched_state_id,omitempty"`
+	ResolvedImageID string `json:"resolved_image_id,omitempty"`
+}
+
 type Status struct {
 	JobID                 string         `json:"job_id"`
 	Status                string         `json:"status"`

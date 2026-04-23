@@ -30,6 +30,7 @@ type prepareArgs struct {
 	PsqlArgs        []string
 	Watch           bool
 	WatchSpecified  bool
+	ProvenancePath  string
 	Ref             string
 	RefMode         string
 	RefKeepWorktree bool
@@ -70,6 +71,16 @@ func parsePrepareArgs(args []string) (prepareArgs, bool, error) {
 		case arg == "--no-watch":
 			opts.Watch = false
 			opts.WatchSpecified = true
+		case arg == "--provenance-path":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
+			}
+			opts.ProvenancePath = value
+			i++
 		case arg == "--ref":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref")
@@ -224,18 +235,16 @@ func prepareResult(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.Loaded
 }
 
 func prepareResultParsed(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context) (result client.PrepareJobResult, handled bool, err error) {
-	runtime, err := buildStageRuntime(w.stderr, runOpts, cfg, stageRunRequest{
+	return prepareResultStageRequest(w, runOpts, cfg, stageRunRequest{
 		mode:          stageModePrepare,
+		class:         "raw",
 		kind:          "psql",
 		parsed:        parsed,
 		workspaceRoot: workspaceRoot,
 		cwd:           cwd,
+		invocationCwd: cwd,
 		ref:           ref,
 	})
-	if err != nil {
-		return client.PrepareJobResult{}, false, err
-	}
-	return executePrepareStage(w, runtime)
 }
 
 func prepareResultLiquibase(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, args []string) (client.PrepareJobResult, bool, error) {
@@ -258,19 +267,25 @@ func prepareResultLiquibaseWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptio
 }
 
 func prepareResultLiquibaseParsedWithPathMode(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, workspaceRoot string, cwd string, parsed prepareArgs, ref *refctx.Context, relativizePaths bool) (result client.PrepareJobResult, handled bool, err error) {
-	runtime, err := buildStageRuntime(w.stderr, runOpts, cfg, stageRunRequest{
+	return prepareResultStageRequest(w, runOpts, cfg, stageRunRequest{
 		mode:                    stageModePrepare,
+		class:                   "raw",
 		kind:                    "lb",
 		parsed:                  parsed,
 		workspaceRoot:           workspaceRoot,
 		cwd:                     cwd,
+		invocationCwd:           cwd,
 		ref:                     ref,
 		relativizeLiquibasePath: relativizePaths,
 	})
+}
+
+func prepareResultStageRequest(w stdoutAndErr, runOpts cli.PrepareOptions, cfg config.LoadedConfig, req stageRunRequest) (result client.PrepareJobResult, handled bool, err error) {
+	runtime, err := buildStageRuntime(w.stderr, runOpts, cfg, req)
 	if err != nil {
 		return client.PrepareJobResult{}, false, err
 	}
-	return executePrepareStage(w, runtime)
+	return executePrepareStageWithProvenance(w, runtime, req.parsed.ProvenancePath)
 }
 
 func usesPrepareRef(parsed prepareArgs, ref *refctx.Context) bool {
