@@ -137,6 +137,122 @@ func TestCollectPrepareTracePreservesCallerWorkspaceRootForRefWorktree(t *testin
 	}
 }
 
+func TestCollectPrepareTraceUsesProjectedRefBaseDirForAliasPsqlIncludes(t *testing.T) {
+	t.Parallel()
+
+	workspaceRoot := t.TempDir()
+	cwd := filepath.Join(workspaceRoot, "app")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("MkdirAll workspace cwd: %v", err)
+	}
+
+	projectedRoot := t.TempDir()
+	projectedCwd := filepath.Join(projectedRoot, "app")
+	aliasPath := filepath.Join(projectedRoot, "aliases", "demo.prep.s9s.yaml")
+	writeTraceFile(t, aliasPath, "kind: psql\nimage: img\nargs:\n  - -c\n  - \\\\i schema.sql\n")
+	writeTraceFile(t, filepath.Join(projectedCwd, "schema.sql"), "select 1;\n")
+
+	actualRef := &refctx.Context{
+		RepoRoot:       projectedRoot,
+		WorkspaceRoot:  projectedRoot,
+		BaseDir:        projectedCwd,
+		GitRef:         "HEAD^",
+		ResolvedCommit: "abc123",
+		RefMode:        "worktree",
+		FileSystem:     inputset.OSFileSystem{},
+	}
+
+	trace, err := collectPrepareTrace(stageRunRequest{
+		mode:          stageModePrepare,
+		class:         "alias",
+		kind:          "psql",
+		parsed:        prepareArgs{PsqlArgs: []string{"-c", `\i schema.sql`}},
+		workspaceRoot: workspaceRoot,
+		cwd:           cwd,
+		invocationCwd: cwd,
+		aliasPath:     aliasPath,
+		ref:           actualRef,
+	}, cli.PrepareOptions{
+		PrepareKind: "psql",
+		ImageID:     "img",
+		PsqlArgs:    []string{"-c", `\i schema.sql`},
+	}, actualRef)
+	if err != nil {
+		t.Fatalf("collectPrepareTrace: %v", err)
+	}
+
+	if !hasTraceInputPath(trace, "aliases/demo.prep.s9s.yaml") {
+		t.Fatalf("inputs = %+v, want alias path", trace.Inputs)
+	}
+	if !hasTraceInputPath(trace, "app/schema.sql") {
+		t.Fatalf("inputs = %+v, want projected ref include path", trace.Inputs)
+	}
+}
+
+func TestCollectPrepareTraceFailsWhenPsqlInvocationInputsCannotBeCollected(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cwd := filepath.Join(root, "app")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	_, err := collectPrepareTrace(stageRunRequest{
+		mode:          stageModePlan,
+		class:         "raw",
+		kind:          "psql",
+		parsed:        prepareArgs{PsqlArgs: []string{"-c", `\i missing.sql`}},
+		workspaceRoot: root,
+		cwd:           cwd,
+		invocationCwd: cwd,
+	}, cli.PrepareOptions{
+		PrepareKind: "psql",
+		ImageID:     "img",
+		PsqlArgs:    []string{"-c", `\i missing.sql`},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected collectPrepareTrace error")
+	}
+}
+
+func TestCollectPrepareTraceFailsWhenLiquibaseInputsCannotBeCollected(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cwd := filepath.Join(root, "app")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeTraceFile(t, filepath.Join(cwd, "master.xml"), `<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"><include file="missing.xml"/></databaseChangeLog>`)
+
+	_, err := collectPrepareTrace(stageRunRequest{
+		mode:          stageModePlan,
+		class:         "raw",
+		kind:          "lb",
+		parsed:        prepareArgs{PsqlArgs: []string{"update", "--changelog-file", "master.xml"}},
+		workspaceRoot: root,
+		cwd:           cwd,
+		invocationCwd: cwd,
+	}, cli.PrepareOptions{
+		PrepareKind:   "lb",
+		ImageID:       "img",
+		LiquibaseArgs: []string{"update", "--changelog-file", "master.xml"},
+	}, nil)
+	if err == nil {
+		t.Fatal("expected collectPrepareTrace error")
+	}
+}
+
+func hasTraceInputPath(trace prepareTraceBase, want string) bool {
+	for _, input := range trace.Inputs {
+		if input.Path == want {
+			return true
+		}
+	}
+	return false
+}
+
 func writeTraceFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

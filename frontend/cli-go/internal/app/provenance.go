@@ -120,9 +120,10 @@ func collectPrepareTrace(req stageRunRequest, opts cli.PrepareOptions, actualRef
 		}
 		trace.NormalizedArgs = normalizedArgs
 		set, err := inputpsql.CollectInvocationInputs(normalizedArgs, resolver, opts.Stdin, fs)
-		if err == nil {
-			trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
+		if err != nil {
+			return prepareTraceBase{}, wrapInputsetError(err)
 		}
+		trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
 	case "lb":
 		resolver := inputset.NewWorkspaceResolver(collectionRoot, baseDir, nil)
 		normalizedArgs, err := inputliquibase.NormalizeArgs(req.parsed.PsqlArgs, resolver, true)
@@ -132,9 +133,10 @@ func collectPrepareTrace(req stageRunRequest, opts cli.PrepareOptions, actualRef
 		trace.NormalizedArgs = normalizedArgs
 		if liquibaseHasChangelogArg(normalizedArgs) {
 			set, err := inputliquibase.Collect(normalizedArgs, resolver, fs)
-			if err == nil {
-				trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
+			if err != nil {
+				return prepareTraceBase{}, wrapInputsetError(err)
 			}
+			trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
 		}
 	default:
 		trace.NormalizedArgs = append([]string{}, req.parsed.PsqlArgs...)
@@ -161,9 +163,24 @@ func traceCollectorContext(req stageRunRequest, actualRef *refctx.Context) (stri
 		} else if actualRef.RepoRoot != "" && strings.TrimSpace(root) == "" {
 			root = actualRef.RepoRoot
 		}
-		baseDir = effectiveRefBindBaseDir(req.cwd, actualRef, req.ref)
+		baseDir = traceBindBaseDir(req, actualRef)
 	}
 	return root, baseDir, fs
+}
+
+func traceBindBaseDir(req stageRunRequest, actualRef *refctx.Context) string {
+	if actualRef == nil {
+		return req.cwd
+	}
+	switch strings.TrimSpace(strings.ToLower(req.kind)) {
+	case "lb":
+		return effectiveRefBindBaseDir(req.cwd, actualRef, req.ref)
+	default:
+		if strings.TrimSpace(actualRef.BaseDir) != "" {
+			return actualRef.BaseDir
+		}
+		return req.cwd
+	}
 }
 
 func traceCommandClass(value string) string {
