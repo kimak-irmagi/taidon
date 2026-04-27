@@ -35,10 +35,13 @@ type stageRunRequest struct {
 }
 
 type stageRuntime struct {
-	opts    cli.PrepareOptions
-	watch   bool
-	cleanup func() error
-	trace   prepareTraceBase
+	opts       cli.PrepareOptions
+	watch      bool
+	cleanup    func() error
+	trace      prepareTraceBase
+	traceReq   stageRunRequest
+	actualRef  *refctx.Context
+	traceReady bool
 }
 
 type prepareStageResult struct {
@@ -67,8 +70,9 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	}
 
 	runtime := stageRuntime{
-		opts:  runOpts,
-		watch: req.parsed.Watch,
+		opts:     runOpts,
+		watch:    req.parsed.Watch,
+		traceReq: req,
 	}
 	runtime.opts.ImageID = imageID
 	runtime.opts.DisableControlPrompt = usesPrepareRef(req.parsed, req.ref)
@@ -77,6 +81,7 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	if err != nil {
 		return stageRuntime{}, err
 	}
+	runtime.actualRef = actualRef
 
 	switch req.kind {
 	case "psql":
@@ -120,13 +125,20 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	if req.mode == stageModePlan {
 		runtime.opts.PlanOnly = true
 	}
+	return runtime, nil
+}
 
-	trace, err := collectPrepareTrace(req, runtime.opts, actualRef)
+func ensurePrepareTrace(runtime *stageRuntime) error {
+	if runtime == nil || runtime.traceReady {
+		return nil
+	}
+	trace, err := collectPrepareTrace(runtime.traceReq, runtime.opts, runtime.actualRef)
 	if err != nil {
-		return stageRuntime{}, finishPrepareCleanup(err, runtime.cleanup)
+		return err
 	}
 	runtime.trace = trace
-	return runtime, nil
+	runtime.traceReady = true
+	return nil
 }
 
 func runPlanStage(runtime stageRuntime) (cli.PlanResult, error) {

@@ -340,6 +340,9 @@ func executePlanStageWithProvenance(stdout io.Writer, runtime stageRuntime, outp
 	if strings.TrimSpace(provenancePath) == "" {
 		return executePlanStage(stdout, runtime, output)
 	}
+	if err := ensurePrepareTrace(&runtime); err != nil {
+		return finishPrepareCleanup(err, runtime.cleanup)
+	}
 
 	explainOpts := runtime.opts
 	explainOpts.PlanOnly = false
@@ -375,6 +378,9 @@ func executePlanStageWithProvenance(stdout io.Writer, runtime stageRuntime, outp
 func executePrepareStageWithProvenance(w stdoutAndErr, runtime stageRuntime, provenancePath string) (client.PrepareJobResult, bool, error) {
 	if strings.TrimSpace(provenancePath) == "" {
 		return executePrepareStage(w, runtime)
+	}
+	if err := ensurePrepareTrace(&runtime); err != nil {
+		return client.PrepareJobResult{}, false, finishPrepareCleanup(err, runtime.cleanup)
 	}
 
 	explain, err := explainPrepareCacheFn(context.Background(), runtime.opts)

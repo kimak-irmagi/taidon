@@ -125,6 +125,9 @@ func runCacheStage(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg con
 	if err != nil {
 		return err
 	}
+	if err := ensurePrepareTrace(&runtime); err != nil {
+		return finishPrepareCleanup(err, runtime.cleanup)
+	}
 	explain, err := explainPrepareCacheFn(context.Background(), runtime.opts)
 	if err != nil {
 		return finishPrepareCleanup(err, runtime.cleanup)
