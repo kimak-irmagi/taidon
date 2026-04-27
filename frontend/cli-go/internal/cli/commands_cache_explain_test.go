@@ -33,8 +33,9 @@ func TestPrintCacheExplainHumanAndJSON(t *testing.T) {
 			Mode:           "worktree",
 		},
 		Cache: CacheExplainDecision{
-			Signature:      "sig-1",
-			MatchedStateID: "state-1",
+			Signature:       "sig-1",
+			MatchedStateID:  "state-1",
+			ResolvedImageID: "postgres@sha256:resolved",
 		},
 		Inputs: []CacheExplainInput{
 			{Path: "examples/chinook.prep.s9s.yaml", Hash: "sha256:aaa"},
@@ -53,6 +54,7 @@ func TestPrintCacheExplainHumanAndJSON(t *testing.T) {
 		"prepare.kind: psql",
 		"cache.signature: sig-1",
 		"cache.stateId: state-1",
+		"cache.resolvedImageId: postgres@sha256:resolved",
 		"ref.requested: origin/main",
 		"ref.resolvedCommit: abcdef123456",
 		"input.count: 2",
@@ -67,7 +69,7 @@ func TestPrintCacheExplainHumanAndJSON(t *testing.T) {
 	if err := PrintCacheExplain(&jsonOut, result, "json"); err != nil {
 		t.Fatalf("PrintCacheExplain(json): %v", err)
 	}
-	if !strings.Contains(jsonOut.String(), `"decision":"hit"`) || !strings.Contains(jsonOut.String(), `"reasonCode":"exact_state_match"`) {
+	if !strings.Contains(jsonOut.String(), `"decision":"hit"`) || !strings.Contains(jsonOut.String(), `"reasonCode":"exact_state_match"`) || !strings.Contains(jsonOut.String(), `"resolvedImageId":"postgres@sha256:resolved"`) {
 		t.Fatalf("unexpected json output: %q", jsonOut.String())
 	}
 }

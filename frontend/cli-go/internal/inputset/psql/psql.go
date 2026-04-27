@@ -484,7 +484,7 @@ func (t *tracker) resolveInclude(cmd string, arg string, currentFile string) str
 	if strings.TrimSpace(base) == "" {
 		base = t.root
 	}
-	if cmd == `\ir` || cmd == `\include_relative` {
+	if (cmd == `\ir` || cmd == `\include_relative`) && strings.TrimSpace(currentFile) != "" {
 		base = filepath.Dir(currentFile)
 	}
 	if filepath.IsAbs(arg) {

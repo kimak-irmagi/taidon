@@ -42,6 +42,9 @@ func TestCacheExplainMatchesPrepareBindingForRawStage(t *testing.T) {
 	if cacheResult.Prepare != artifact.Prepare {
 		t.Fatalf("cache prepare = %+v, want %+v", cacheResult.Prepare, artifact.Prepare)
 	}
+	if cacheResult.Cache.ResolvedImageID != artifact.Cache.ResolvedImageID {
+		t.Fatalf("cache resolved image = %q, want %q", cacheResult.Cache.ResolvedImageID, artifact.Cache.ResolvedImageID)
+	}
 }
 
 func TestCacheExplainMatchesPrepareBindingForAliasStage(t *testing.T) {
@@ -173,9 +176,10 @@ func captureRawPrepareAndCacheParity(t *testing.T, workspaceRoot string, cwd str
 	explainPrepareCacheFn = func(_ context.Context, opts cli.PrepareOptions) (client.CacheExplainPrepareResponse, error) {
 		explainCalls = append(explainCalls, opts)
 		return client.CacheExplainPrepareResponse{
-			Decision:   "miss",
-			ReasonCode: "no_matching_state",
-			Signature:  "sig-raw",
+			Decision:        "miss",
+			ReasonCode:      "no_matching_state",
+			Signature:       "sig-raw",
+			ResolvedImageID: "img@sha256:resolved",
 		}, nil
 	}
 	t.Cleanup(func() { explainPrepareCacheFn = prevExplain })

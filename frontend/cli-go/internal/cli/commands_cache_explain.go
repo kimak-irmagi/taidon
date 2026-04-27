@@ -19,8 +19,9 @@ type CacheExplainRefContext struct {
 }
 
 type CacheExplainDecision struct {
-	Signature      string `json:"signature,omitempty"`
-	MatchedStateID string `json:"matchedStateId,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	MatchedStateID  string `json:"matchedStateId,omitempty"`
+	ResolvedImageID string `json:"resolvedImageId,omitempty"`
 }
 
 type CacheExplainInput struct {
@@ -60,6 +61,9 @@ func PrintCacheExplain(w io.Writer, result CacheExplainResult, output string) er
 	}
 	if result.Cache.MatchedStateID != "" {
 		fmt.Fprintf(w, "cache.stateId: %s\n", result.Cache.MatchedStateID)
+	}
+	if result.Cache.ResolvedImageID != "" {
+		fmt.Fprintf(w, "cache.resolvedImageId: %s\n", result.Cache.ResolvedImageID)
 	}
 	if result.RefContext != nil {
 		if result.RefContext.Requested != "" {

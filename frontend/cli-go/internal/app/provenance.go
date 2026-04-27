@@ -25,10 +25,11 @@ type provenanceCommand struct {
 }
 
 type provenanceCache struct {
-	Decision       string `json:"decision,omitempty"`
-	ReasonCode     string `json:"reasonCode,omitempty"`
-	Signature      string `json:"signature,omitempty"`
-	MatchedStateID string `json:"matchedStateId,omitempty"`
+	Decision        string `json:"decision,omitempty"`
+	ReasonCode      string `json:"reasonCode,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	MatchedStateID  string `json:"matchedStateId,omitempty"`
+	ResolvedImageID string `json:"resolvedImageId,omitempty"`
 }
 
 type provenanceOutcome struct {
@@ -271,8 +272,9 @@ func cacheExplainResult(trace prepareTraceBase, response client.CacheExplainPrep
 		Prepare:    trace.Prepare,
 		RefContext: trace.RefContext,
 		Cache: cli.CacheExplainDecision{
-			Signature:      response.Signature,
-			MatchedStateID: response.MatchedStateID,
+			Signature:       response.Signature,
+			MatchedStateID:  response.MatchedStateID,
+			ResolvedImageID: response.ResolvedImageID,
 		},
 		Inputs: append([]cli.CacheExplainInput{}, trace.Inputs...),
 	}
@@ -294,10 +296,11 @@ func provenanceFromTrace(trace prepareTraceBase, response client.CacheExplainPre
 		NormalizedArgs: append([]string{}, trace.NormalizedArgs...),
 		Inputs:         append([]cli.CacheExplainInput{}, trace.Inputs...),
 		Cache: provenanceCache{
-			Decision:       response.Decision,
-			ReasonCode:     response.ReasonCode,
-			Signature:      response.Signature,
-			MatchedStateID: response.MatchedStateID,
+			Decision:        response.Decision,
+			ReasonCode:      response.ReasonCode,
+			Signature:       response.Signature,
+			MatchedStateID:  response.MatchedStateID,
+			ResolvedImageID: response.ResolvedImageID,
 		},
 		Outcome: outcome,
 	}
@@ -338,7 +341,12 @@ func executePlanStageWithProvenance(stdout io.Writer, runtime stageRuntime, outp
 		return executePlanStage(stdout, runtime, output)
 	}
 
-	explain, err := explainPrepareCacheFn(context.Background(), runtime.opts)
+	explainOpts := runtime.opts
+	explainOpts.PlanOnly = false
+
+	// Provenance keeps the prepare-oriented cache decision that a later prepare
+	// would reuse, even when the current command is `plan`.
+	explain, err := explainPrepareCacheFn(context.Background(), explainOpts)
 	if err != nil {
 		return finishPrepareCleanup(err, runtime.cleanup)
 	}

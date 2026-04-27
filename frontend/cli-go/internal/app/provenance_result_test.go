@@ -30,18 +30,23 @@ func TestRunPlanWritesProvenanceArtifactWithoutChangingOutput(t *testing.T) {
 	t.Cleanup(func() { bindPreparePsqlInputsFn = prevBind })
 
 	prevExplain := explainPrepareCacheFn
-	explainPrepareCacheFn = func(context.Context, cli.PrepareOptions) (client.CacheExplainPrepareResponse, error) {
+	var gotExplainOpts cli.PrepareOptions
+	explainPrepareCacheFn = func(_ context.Context, opts cli.PrepareOptions) (client.CacheExplainPrepareResponse, error) {
+		gotExplainOpts = opts
 		return client.CacheExplainPrepareResponse{
-			Decision:       "hit",
-			ReasonCode:     "exact_state_match",
-			Signature:      "sig-1",
-			MatchedStateID: "state-1",
+			Decision:        "hit",
+			ReasonCode:      "exact_state_match",
+			Signature:       "sig-1",
+			MatchedStateID:  "state-1",
+			ResolvedImageID: "img@sha256:resolved",
 		}, nil
 	}
 	t.Cleanup(func() { explainPrepareCacheFn = prevExplain })
 
 	prevRunPlan := runPlanFn
-	runPlanFn = func(context.Context, cli.PrepareOptions) (cli.PlanResult, error) {
+	var gotPlanOpts cli.PrepareOptions
+	runPlanFn = func(_ context.Context, opts cli.PrepareOptions) (cli.PlanResult, error) {
+		gotPlanOpts = opts
 		return cli.PlanResult{
 			PrepareKind:           "psql",
 			ImageID:               "img",
@@ -71,6 +76,12 @@ func TestRunPlanWritesProvenanceArtifactWithoutChangingOutput(t *testing.T) {
 	if plan.PrepareKind != "psql" || plan.ImageID != "img" {
 		t.Fatalf("unexpected plan output: %+v", plan)
 	}
+	if gotExplainOpts.PlanOnly {
+		t.Fatalf("expected prepare-oriented explain call, got %+v", gotExplainOpts)
+	}
+	if !gotPlanOpts.PlanOnly {
+		t.Fatalf("expected plan execution to remain plan-only, got %+v", gotPlanOpts)
+	}
 
 	data, err := os.ReadFile(provenancePath)
 	if err != nil {
@@ -85,7 +96,7 @@ func TestRunPlanWritesProvenanceArtifactWithoutChangingOutput(t *testing.T) {
 		t.Fatalf("unexpected command payload: %+v", artifact["command"])
 	}
 	cache, ok := artifact["cache"].(map[string]any)
-	if !ok || cache["decision"] != "hit" || cache["signature"] != "sig-1" {
+	if !ok || cache["decision"] != "hit" || cache["signature"] != "sig-1" || cache["resolvedImageId"] != "img@sha256:resolved" {
 		t.Fatalf("unexpected cache payload: %+v", artifact["cache"])
 	}
 	outcome, ok := artifact["outcome"].(map[string]any)

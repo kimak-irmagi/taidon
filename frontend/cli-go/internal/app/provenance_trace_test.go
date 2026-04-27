@@ -29,9 +29,26 @@ func TestCollectPrepareTraceCapturesPsqlInvocationInputs(t *testing.T) {
 			wantPath: "app/schema.sql",
 		},
 		{
+			name: "command include relative",
+			args: []string{"-c", `\ir schema.sql`},
+			setup: func(t *testing.T, cwd string) {
+				writeTraceFile(t, filepath.Join(cwd, "schema.sql"), "select 1;\n")
+			},
+			wantPath: "app/schema.sql",
+		},
+		{
 			name:  "stdin include",
 			args:  []string{"-f", "-"},
 			stdin: stringPtr("\\i includes/seed.sql\n"),
+			setup: func(t *testing.T, cwd string) {
+				writeTraceFile(t, filepath.Join(cwd, "includes", "seed.sql"), "select 1;\n")
+			},
+			wantPath: "app/includes/seed.sql",
+		},
+		{
+			name:  "stdin include relative",
+			args:  []string{"-f", "-"},
+			stdin: stringPtr("\\include_relative includes/seed.sql\n"),
 			setup: func(t *testing.T, cwd string) {
 				writeTraceFile(t, filepath.Join(cwd, "includes", "seed.sql"), "select 1;\n")
 			},
