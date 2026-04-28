@@ -232,10 +232,11 @@ func stringPtrOrEmpty(value *string) string {
 }
 
 func relativeTracePath(root string, value string) string {
-	cleaned := filepath.Clean(strings.TrimSpace(value))
-	if cleaned == "" {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
 		return ""
 	}
+	cleaned := filepath.Clean(trimmed)
 	base := strings.TrimSpace(root)
 	if base != "" {
 		if rel, err := filepath.Rel(base, cleaned); err == nil {

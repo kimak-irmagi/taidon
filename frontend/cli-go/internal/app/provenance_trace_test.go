@@ -92,6 +92,36 @@ func TestCollectPrepareTraceCapturesPsqlInvocationInputs(t *testing.T) {
 	}
 }
 
+func TestCollectPrepareTraceOmitsAliasPathForRawCommand(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cwd := filepath.Join(root, "app")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	trace, err := collectPrepareTrace(stageRunRequest{
+		mode:          stageModePrepare,
+		class:         "raw",
+		kind:          "psql",
+		parsed:        prepareArgs{PsqlArgs: []string{"-c", "select 1"}},
+		workspaceRoot: root,
+		cwd:           cwd,
+		invocationCwd: cwd,
+	}, cli.PrepareOptions{
+		PrepareKind: "psql",
+		ImageID:     "img",
+		PsqlArgs:    []string{"-c", "select 1"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("collectPrepareTrace: %v", err)
+	}
+	if trace.AliasPath != "" {
+		t.Fatalf("AliasPath = %q, want empty for raw command", trace.AliasPath)
+	}
+}
+
 func TestCollectPrepareTracePreservesCallerWorkspaceRootForRefWorktree(t *testing.T) {
 	t.Parallel()
 

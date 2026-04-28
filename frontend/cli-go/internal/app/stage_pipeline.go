@@ -77,11 +77,12 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	runtime.opts.ImageID = imageID
 	runtime.opts.DisableControlPrompt = usesPrepareRef(req.parsed, req.ref)
 
-	actualRef, _, err := resolvePrepareBindingContext(req.workspaceRoot, req.cwd, req.parsed, req.ref)
+	actualRef, refCleanup, err := resolvePrepareBindingContext(req.workspaceRoot, req.cwd, req.parsed, req.ref)
 	if err != nil {
 		return stageRuntime{}, err
 	}
 	runtime.actualRef = actualRef
+	runtime.cleanup = refCleanup
 
 	switch req.kind {
 	case "psql":
@@ -96,11 +97,11 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	case "lb":
 		liquibaseExec, err := resolveLiquibaseExec(cfg)
 		if err != nil {
-			return stageRuntime{}, err
+			return stageRuntime{}, combineBindingCleanupError(err, runStageCleanup(refCleanup))
 		}
 		liquibaseExecMode, err := resolveLiquibaseExecMode(cfg)
 		if err != nil {
-			return stageRuntime{}, err
+			return stageRuntime{}, combineBindingCleanupError(err, runStageCleanup(refCleanup))
 		}
 		bound, err := bindPrepareLiquibaseInputsFn(runOpts, req.workspaceRoot, req.cwd, req.parsed, actualRef, liquibaseExec, liquibaseExecMode, req.relativizeLiquibasePath)
 		if err != nil {
@@ -116,9 +117,9 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	default:
 		switch req.mode {
 		case stageModePlan:
-			return stageRuntime{}, ExitErrorf(2, "unsupported plan kind: %s", req.kind)
+			return stageRuntime{}, combineBindingCleanupError(ExitErrorf(2, "unsupported plan kind: %s", req.kind), runStageCleanup(refCleanup))
 		default:
-			return stageRuntime{}, ExitErrorf(2, "unsupported prepare kind: %s", req.kind)
+			return stageRuntime{}, combineBindingCleanupError(ExitErrorf(2, "unsupported prepare kind: %s", req.kind), runStageCleanup(refCleanup))
 		}
 	}
 
@@ -126,6 +127,13 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 		runtime.opts.PlanOnly = true
 	}
 	return runtime, nil
+}
+
+func runStageCleanup(cleanup func() error) error {
+	if cleanup == nil {
+		return nil
+	}
+	return cleanup()
 }
 
 func ensurePrepareTrace(runtime *stageRuntime) error {

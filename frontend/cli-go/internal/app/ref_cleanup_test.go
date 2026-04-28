@@ -75,6 +75,40 @@ func TestBindPrepareLiquibaseInputsCleansWorktreeOnError(t *testing.T) {
 	}
 }
 
+func TestBuildStageRuntimeLiquibaseConfigErrorCleansWorktreeOnError(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	repo, _ := initPrepareRefTestRepo(t)
+	cwd := filepath.Join(repo, "examples")
+	before := countGitWorktrees(t, repo)
+
+	configPath := filepath.Join(t.TempDir(), "broken-config.yaml")
+	if err := os.WriteFile(configPath, []byte("liquibase:\n  exec: [\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := buildStageRuntime(io.Discard, cli.PrepareOptions{}, config.LoadedConfig{
+		ProjectConfigPath: configPath,
+	}, stageRunRequest{
+		mode:          stageModePlan,
+		kind:          "lb",
+		parsed:        prepareArgs{Ref: "HEAD", RefMode: "worktree", Image: "img", PsqlArgs: []string{"update"}},
+		workspaceRoot: repo,
+		cwd:           cwd,
+		invocationCwd: cwd,
+	})
+	if err == nil {
+		t.Fatal("expected buildStageRuntime error")
+	}
+
+	after := countGitWorktrees(t, repo)
+	if after != before {
+		t.Fatalf("worktree count = %d, want %d after cleanup", after, before)
+	}
+}
+
 func TestBindPrepareLiquibaseInputsBlobKeepsWindowsPathsForWindowsBat(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("windows-specific path conversion coverage")
