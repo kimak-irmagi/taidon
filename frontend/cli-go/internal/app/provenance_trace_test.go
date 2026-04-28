@@ -261,6 +261,40 @@ func TestCollectPrepareTraceFailsWhenLiquibaseInputsCannotBeCollected(t *testing
 	}
 }
 
+func TestCollectPrepareTraceCapturesLiquibaseDefaultsFileWithoutChangelog(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cwd := filepath.Join(root, "app")
+	if err := os.MkdirAll(cwd, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeTraceFile(t, filepath.Join(cwd, "defaults.properties"), "x=y\n")
+
+	trace, err := collectPrepareTrace(stageRunRequest{
+		mode:          stageModePlan,
+		class:         "raw",
+		kind:          "lb",
+		parsed:        prepareArgs{PsqlArgs: []string{"update", "--defaults-file", "defaults.properties"}},
+		workspaceRoot: root,
+		cwd:           cwd,
+		invocationCwd: cwd,
+	}, cli.PrepareOptions{
+		PrepareKind:   "lb",
+		ImageID:       "img",
+		LiquibaseArgs: []string{"update", "--defaults-file", "defaults.properties"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("collectPrepareTrace: %v", err)
+	}
+	if len(trace.Inputs) != 1 {
+		t.Fatalf("inputs = %+v, want 1 entry", trace.Inputs)
+	}
+	if trace.Inputs[0].Path != "app/defaults.properties" {
+		t.Fatalf("inputs[0].Path = %q, want %q", trace.Inputs[0].Path, "app/defaults.properties")
+	}
+}
+
 func hasTraceInputPath(trace prepareTraceBase, want string) bool {
 	for _, input := range trace.Inputs {
 		if input.Path == want {

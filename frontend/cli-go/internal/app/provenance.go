@@ -132,13 +132,11 @@ func collectPrepareTrace(req stageRunRequest, opts cli.PrepareOptions, actualRef
 			return prepareTraceBase{}, wrapInputsetError(err)
 		}
 		trace.NormalizedArgs = normalizedArgs
-		if liquibaseHasChangelogArg(normalizedArgs) {
-			set, err := inputliquibase.Collect(normalizedArgs, resolver, fs)
-			if err != nil {
-				return prepareTraceBase{}, wrapInputsetError(err)
-			}
-			trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
+		set, err := inputliquibase.CollectInvocationInputs(normalizedArgs, resolver, fs)
+		if err != nil {
+			return prepareTraceBase{}, wrapInputsetError(err)
 		}
+		trace.Inputs = append(trace.Inputs, traceInputsFromSet(set, collectionRoot)...)
 	default:
 		trace.NormalizedArgs = append([]string{}, req.parsed.PsqlArgs...)
 	}
@@ -250,19 +248,6 @@ func relativeTracePath(root string, value string) string {
 		}
 	}
 	return filepath.ToSlash(cleaned)
-}
-
-func liquibaseHasChangelogArg(args []string) bool {
-	for _, arg := range args {
-		trimmed := strings.TrimSpace(arg)
-		switch {
-		case trimmed == "--changelog-file":
-			return true
-		case strings.HasPrefix(trimmed, "--changelog-file="):
-			return true
-		}
-	}
-	return false
 }
 
 func cacheExplainResult(trace prepareTraceBase, response client.CacheExplainPrepareResponse) cli.CacheExplainResult {

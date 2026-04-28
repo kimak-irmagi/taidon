@@ -134,7 +134,21 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 	if changelogPath == "" {
 		return inputset.InputSet{}, fmt.Errorf("liquibase command has no --changelog-file (required for diff)")
 	}
+	return collectInputSet(declared, searchPaths, resolver, fs)
+}
 
+// CollectInvocationInputs builds the deterministic Liquibase input set for a
+// concrete invocation and includes the changelog graph when a changelog file is
+// declared.
+func CollectInvocationInputs(args []string, resolver inputset.Resolver, fs inputset.FileSystem) (inputset.InputSet, error) {
+	declared, searchPaths, _, err := collectDeclared(args, resolver)
+	if err != nil {
+		return inputset.InputSet{}, err
+	}
+	return collectInputSet(declared, searchPaths, resolver, fs)
+}
+
+func collectInputSet(declared []declaredPath, searchPaths []string, resolver inputset.Resolver, fs inputset.FileSystem) (inputset.InputSet, error) {
 	tracker := &tracker{
 		fs:          fs,
 		root:        resolver.Root,
@@ -154,9 +168,13 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 		}
 	}
 
+	return buildInputSet(order, resolver.Root, fs)
+}
+
+func buildInputSet(order []string, root string, fs inputset.FileSystem) (inputset.InputSet, error) {
 	entries := make([]inputset.InputEntry, 0, len(order))
 	for _, path := range order {
-		rel, _ := filepath.Rel(resolver.Root, path)
+		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
 		var hash string
 		if oid, ok := fs.(inputset.BlobOIDer); ok {

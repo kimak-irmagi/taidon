@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sqlrs/engine-local/internal/store"
@@ -77,6 +78,63 @@ func TestCacheExplainReturnsMiss(t *testing.T) {
 	}
 	if result.MatchedStateID != "" || result.Signature == "" {
 		t.Fatalf("unexpected miss payload: %+v", result)
+	}
+}
+
+func TestCacheExplainLiquibaseUsesIsolatedTempStateRoot(t *testing.T) {
+	queueStore := newQueueStore(t)
+	runtime := &fakeRuntime{}
+	liquibase := &fakeLiquibaseRunner{
+		output: strings.Join([]string{
+			"-- Changeset changelog.xml::1::dev",
+			"CREATE TABLE test(id INT);",
+		}, "\n"),
+	}
+	stateRoot := filepath.Join(t.TempDir(), "persistent-state-root")
+	mgr := newManagerWithDeps(t, &fakeStore{}, queueStore, &testDeps{
+		runtime:   runtime,
+		liquibase: liquibase,
+		stateRoot: stateRoot,
+	})
+
+	changelog := filepath.Join(t.TempDir(), "changelog.xml")
+	if err := os.WriteFile(changelog, []byte("<databaseChangeLog/>"), 0o600); err != nil {
+		t.Fatalf("write changelog: %v", err)
+	}
+
+	result, err := mgr.CacheExplain(context.Background(), Request{
+		PrepareKind:   "lb",
+		ImageID:       "image-1",
+		LiquibaseArgs: []string{"update", "--changelog-file", changelog},
+	})
+	if err != nil {
+		t.Fatalf("CacheExplain: %v", err)
+	}
+	if result.Decision != "miss" || result.Signature == "" {
+		t.Fatalf("unexpected explain result: %+v", result)
+	}
+	if len(runtime.initCalls) != 1 {
+		t.Fatalf("expected one base init, got %+v", runtime.initCalls)
+	}
+	if len(runtime.startCalls) != 1 {
+		t.Fatalf("expected one runtime start, got %+v", runtime.startCalls)
+	}
+	if strings.HasPrefix(runtime.initCalls[0].DataDir, stateRoot) {
+		t.Fatalf("base state leaked into persistent root: %q", runtime.initCalls[0].DataDir)
+	}
+	if strings.HasPrefix(runtime.startCalls[0].DataDir, stateRoot) {
+		t.Fatalf("runtime dir leaked into persistent root: %q", runtime.startCalls[0].DataDir)
+	}
+	if _, err := os.Stat(stateRoot); !os.IsNotExist(err) {
+		t.Fatalf("expected persistent root to stay untouched, stat err=%v", err)
+	}
+
+	jobs, err := queueStore.ListJobs(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("expected no queued jobs, got %+v", jobs)
 	}
 }
 

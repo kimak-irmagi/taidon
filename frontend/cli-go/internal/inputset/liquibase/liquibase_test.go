@@ -83,6 +83,26 @@ func TestCollectResolvesRelativeFalseAgainstSearchPath(t *testing.T) {
 	}
 }
 
+func TestCollectInvocationInputsIncludesDefaultsFileWithoutChangelog(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "defaults.properties"), "x=y\n")
+
+	resolver := inputset.NewWorkspaceResolver(root, root, nil)
+	set, err := CollectInvocationInputs([]string{
+		"update",
+		"--defaults-file", "defaults.properties",
+	}, resolver, inputset.OSFileSystem{})
+	if err != nil {
+		t.Fatalf("CollectInvocationInputs: %v", err)
+	}
+	if len(set.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %+v", set.Entries)
+	}
+	if set.Entries[0].Path != "defaults.properties" {
+		t.Fatalf("entry[0] = %+v", set.Entries[0])
+	}
+}
+
 func TestValidateArgsAccumulatesLiquibaseIssues(t *testing.T) {
 	root := t.TempDir()
 	aliasPath := filepath.Join(root, "aliases", "demo.prep.s9s.yaml")
