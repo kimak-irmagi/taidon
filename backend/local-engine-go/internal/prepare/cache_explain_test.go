@@ -119,14 +119,47 @@ func TestCacheExplainLiquibaseUsesIsolatedTempStateRoot(t *testing.T) {
 	if len(runtime.startCalls) != 1 {
 		t.Fatalf("expected one runtime start, got %+v", runtime.startCalls)
 	}
-	if strings.HasPrefix(runtime.initCalls[0].DataDir, stateRoot) {
-		t.Fatalf("base state leaked into persistent root: %q", runtime.initCalls[0].DataDir)
+	if !strings.HasPrefix(runtime.initCalls[0].DataDir, stateRoot) {
+		t.Fatalf("base state should stay under persistent root: %q", runtime.initCalls[0].DataDir)
 	}
-	if strings.HasPrefix(runtime.startCalls[0].DataDir, stateRoot) {
-		t.Fatalf("runtime dir leaked into persistent root: %q", runtime.startCalls[0].DataDir)
+	if !strings.HasPrefix(runtime.startCalls[0].DataDir, stateRoot) {
+		t.Fatalf("runtime dir should stay under persistent root: %q", runtime.startCalls[0].DataDir)
 	}
-	if _, err := os.Stat(stateRoot); !os.IsNotExist(err) {
-		t.Fatalf("expected persistent root to stay untouched, stat err=%v", err)
+
+	relInit, err := filepath.Rel(stateRoot, runtime.initCalls[0].DataDir)
+	if err != nil {
+		t.Fatalf("Rel init: %v", err)
+	}
+	if relInit == "." {
+		t.Fatalf("expected nested init dir under temporary state root, got %q", runtime.initCalls[0].DataDir)
+	}
+	initTop := strings.Split(filepath.ToSlash(relInit), "/")[0]
+	if !strings.HasPrefix(initTop, "cache-explain-") {
+		t.Fatalf("expected temp root prefix for init dir, got %q", relInit)
+	}
+
+	relStart, err := filepath.Rel(stateRoot, runtime.startCalls[0].DataDir)
+	if err != nil {
+		t.Fatalf("Rel start: %v", err)
+	}
+	if relStart == "." {
+		t.Fatalf("expected nested runtime dir under temporary state root, got %q", runtime.startCalls[0].DataDir)
+	}
+	startTop := strings.Split(filepath.ToSlash(relStart), "/")[0]
+	if startTop != initTop {
+		t.Fatalf("expected init and runtime dirs to share temp root, got %q and %q", relInit, relStart)
+	}
+
+	tempRoot := filepath.Join(stateRoot, initTop)
+	if _, err := os.Stat(tempRoot); !os.IsNotExist(err) {
+		t.Fatalf("expected temp root cleanup, stat err=%v", err)
+	}
+	entries, err := os.ReadDir(stateRoot)
+	if err != nil {
+		t.Fatalf("ReadDir state root: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected persistent root to be empty after cleanup, got %+v", entries)
 	}
 
 	jobs, err := queueStore.ListJobs(context.Background(), "")

@@ -41,3 +41,10 @@ func TestRunCacheRejectsMissingWrappedStage(t *testing.T) {
 		t.Fatalf("expected missing wrapped stage error, got %v", err)
 	}
 }
+
+func TestRunCacheRejectsEmptyWrappedKind(t *testing.T) {
+	err := runCache(io.Discard, io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, t.TempDir(), t.TempDir(), []string{"explain", "prepare:", "--", "-c", "select 1"}, "human")
+	if err == nil || !strings.Contains(err.Error(), "cache explain requires a prepare kind after prepare:") {
+		t.Fatalf("expected empty kind error, got %v", err)
+	}
+}

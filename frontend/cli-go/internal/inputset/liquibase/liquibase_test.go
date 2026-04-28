@@ -103,6 +103,42 @@ func TestCollectInvocationInputsIncludesDefaultsFileWithoutChangelog(t *testing.
 	}
 }
 
+func TestCollectInvocationInputsIncludesSecondaryLocalAssets(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "changelog", "master.xml"), strings.Join([]string{
+		`<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog">`,
+		`  <changeSet id="1" author="dev">`,
+		`    <sqlFile path="seed.sql" relativeToChangelogFile="true"/>`,
+		`    <loadData file="seed.csv" relativeToChangelogFile="true"/>`,
+		`  </changeSet>`,
+		`</databaseChangeLog>`,
+	}, "\n"))
+	writeFile(t, filepath.Join(root, "changelog", "seed.sql"), "select 1;\n")
+	writeFile(t, filepath.Join(root, "changelog", "seed.csv"), "id,name\n1,test\n")
+
+	resolver := inputset.NewWorkspaceResolver(root, root, nil)
+	set, err := CollectInvocationInputs([]string{
+		"update",
+		"--changelog-file", "changelog/master.xml",
+	}, resolver, inputset.OSFileSystem{})
+	if err != nil {
+		t.Fatalf("CollectInvocationInputs: %v", err)
+	}
+
+	if len(set.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %+v", set.Entries)
+	}
+	if set.Entries[0].Path != filepath.ToSlash("changelog/master.xml") {
+		t.Fatalf("entry[0] = %+v", set.Entries[0])
+	}
+	if set.Entries[1].Path != filepath.ToSlash("changelog/seed.sql") {
+		t.Fatalf("entry[1] = %+v", set.Entries[1])
+	}
+	if set.Entries[2].Path != filepath.ToSlash("changelog/seed.csv") {
+		t.Fatalf("entry[2] = %+v", set.Entries[2])
+	}
+}
+
 func TestValidateArgsAccumulatesLiquibaseIssues(t *testing.T) {
 	root := t.TempDir()
 	aliasPath := filepath.Join(root, "aliases", "demo.prep.s9s.yaml")

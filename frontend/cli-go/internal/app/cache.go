@@ -104,7 +104,7 @@ func runCache(stdout, stderr io.Writer, runOpts cli.PrepareOptions, cfg config.L
 		}
 		kind := strings.TrimSpace(strings.TrimPrefix(invocation.stageName, "prepare:"))
 		if kind == "" {
-			kind = "psql"
+			return ExitErrorf(2, "cache explain requires a prepare kind after prepare:")
 		}
 		return runCacheStage(stdout, stderr, runOpts, cfg, stageRunRequest{
 			mode:                    stageModePrepare,

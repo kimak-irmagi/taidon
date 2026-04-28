@@ -77,7 +77,10 @@ func (m *PrepareService) CacheExplain(ctx context.Context, req Request) (result 
 }
 
 func (m *PrepareService) newCacheExplainPlanner() (*PrepareService, string, func() error, error) {
-	tempRoot, err := os.MkdirTemp("", "sqlrs-cache-explain-*")
+	if err := os.MkdirAll(m.stateStoreRoot, 0o700); err != nil {
+		return nil, "", nil, err
+	}
+	tempRoot, err := os.MkdirTemp(m.stateStoreRoot, "cache-explain-*")
 	if err != nil {
 		return nil, "", nil, err
 	}
