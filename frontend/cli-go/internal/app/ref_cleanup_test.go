@@ -109,6 +109,54 @@ func TestBuildStageRuntimeLiquibaseConfigErrorCleansWorktreeOnError(t *testing.T
 	}
 }
 
+func TestBuildStageRuntimeLiquibaseRefUsesProjectedWorktreePaths(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	repo, parentRef := initPrepareRefTestRepo(t)
+	cwd := filepath.Join(repo, "examples")
+	before := countGitWorktrees(t, repo)
+
+	runtime, err := buildStageRuntime(io.Discard, cli.PrepareOptions{}, config.LoadedConfig{}, stageRunRequest{
+		mode:                    stageModePrepare,
+		kind:                    "lb",
+		parsed:                  prepareArgs{Ref: parentRef, RefMode: "worktree", Image: "img", PsqlArgs: []string{"update", "--changelog-file", "config/liquibase/master.xml"}},
+		workspaceRoot:           repo,
+		cwd:                     cwd,
+		invocationCwd:           cwd,
+		relativizeLiquibasePath: true,
+	})
+	if err != nil {
+		t.Fatalf("buildStageRuntime: %v", err)
+	}
+	if runtime.cleanup == nil {
+		t.Fatal("expected cleanup for projected worktree")
+	}
+	t.Cleanup(func() {
+		if err := runtime.cleanup(); err != nil {
+			t.Fatalf("cleanup: %v", err)
+		}
+		after := countGitWorktrees(t, repo)
+		if after != before {
+			t.Fatalf("worktree count = %d, want %d after cleanup", after, before)
+		}
+	})
+
+	if runtime.actualRef == nil {
+		t.Fatal("expected resolved ref context")
+	}
+	if runtime.opts.WorkDir != runtime.actualRef.BaseDir {
+		t.Fatalf("WorkDir = %q, want projected base dir %q", runtime.opts.WorkDir, runtime.actualRef.BaseDir)
+	}
+	if len(runtime.opts.LiquibaseArgs) < 3 {
+		t.Fatalf("unexpected liquibase args: %+v", runtime.opts.LiquibaseArgs)
+	}
+	if got, want := filepath.Clean(runtime.opts.LiquibaseArgs[2]), filepath.Join("config", "liquibase", "master.xml"); got != want {
+		t.Fatalf("changelog arg = %q, want %q", runtime.opts.LiquibaseArgs[2], want)
+	}
+}
+
 func TestBindPrepareLiquibaseInputsBlobKeepsWindowsPathsForWindowsBat(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("windows-specific path conversion coverage")
