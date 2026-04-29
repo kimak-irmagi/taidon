@@ -20,9 +20,12 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `internal/app`
   - Loads workspace/global config and resolves profile/mode.
   - Dispatches the command graph (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
-    `status`, `config`, `init`, `alias`, `discover`, `diff`).
+    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`).
   - Builds command context and chooses path resolvers and runtime projections
     from `internal/inputset`.
+  - Owns package-local prepare-trace helpers used by `--provenance-path` and
+    `cache explain` so diagnostics reuse the same bound single-stage prepare
+    path as real execution.
   - Owns package-local WSL/init orchestration helpers for Windows local mode,
     including bootstrap/storage splitting, path translation reuse, and terminal
     cleanup/progress helpers.
@@ -58,11 +61,13 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - Diff-scope parsing, side-root resolution, comparison, and rendering.
   - Delegates wrapped-command file semantics to `internal/inputset`.
 - `internal/cli`
-  - Client-side command executors and human/JSON renderers.
+  - Client-side command executors and human/JSON renderers, including
+    read-only cache-explain rendering.
 - `internal/cli/runkind`
   - Registry of supported run kinds.
 - `internal/client`
   - HTTP API client for `/v1/*` endpoints.
+  - Read-only cache explanation requests for bound prepare stages.
   - NDJSON streaming for prepare events and run output.
 - `internal/daemon`
   - Local engine autostart/discovery (`engine.json`, lock/state orchestration).
@@ -103,6 +108,9 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - `diff` comparison scope, resolved side roots, and rendered comparison model.
 - `client.PrepareJobRequest`, `client.PrepareJobStatus`, `client.PrepareJobEvent`
   - Prepare API payloads, including `plan_only` and planned tasks.
+- `client.CacheExplainPrepareRequest`, `client.CacheExplainPrepareResponse`
+  - Read-only cache-explain API payloads for one bound single-stage prepare
+    decision.
 - `client.RunRequest`, `client.RunEvent`
   - Run API payload and streamed events (`stdout`, `stderr`, `exit`, `error`,
     `log`).

@@ -42,6 +42,12 @@
   `plan` / `prepare --ref`.
 - [`ref-component-structure.RU.md`](ref-component-structure.RU.md) - внутренняя
   компонентная структура bounded local ref-backed `plan` / `prepare`.
+- [`provenance-cache-flow.RU.md`](provenance-cache-flow.RU.md) - поток
+  взаимодействия для `--provenance-path` и `sqlrs cache explain` в
+  single-stage local prepare-oriented workflows.
+- [`provenance-cache-component-structure.RU.md`](provenance-cache-component-structure.RU.md) -
+  внутренняя компонентная структура baseline-среза для provenance и
+  cache-explain.
 - [`alias-inspection-flow.RU.md`](alias-inspection-flow.RU.md) - поток
   взаимодействия для `sqlrs alias ls` и `sqlrs alias check`.
 - [`alias-inspection-component-structure.RU.md`](alias-inspection-component-structure.RU.md) -

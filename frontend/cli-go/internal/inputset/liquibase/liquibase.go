@@ -41,9 +41,10 @@ func (b boolish) useChangelogDir() bool {
 }
 
 type xmlChangeLog struct {
-	XMLName    xml.Name      `xml:"databaseChangeLog"`
-	Includes   []includeSpec `xml:"include"`
-	IncludeAll []includeAll  `xml:"includeAll"`
+	XMLName    xml.Name       `xml:"databaseChangeLog"`
+	Includes   []includeSpec  `xml:"include"`
+	IncludeAll []includeAll   `xml:"includeAll"`
+	ChangeSets []xmlChangeSet `xml:"changeSet"`
 }
 
 type structuredChangeLog struct {
@@ -51,8 +52,9 @@ type structuredChangeLog struct {
 }
 
 type changeItem struct {
-	Include    *includeSpec `yaml:"include" json:"include"`
-	IncludeAll *includeAll  `yaml:"includeAll" json:"includeAll"`
+	Include    *includeSpec   `yaml:"include" json:"include"`
+	IncludeAll *includeAll    `yaml:"includeAll" json:"includeAll"`
+	ChangeSet  *changeSetSpec `yaml:"changeSet" json:"changeSet"`
 }
 
 type includeSpec struct {
@@ -63,6 +65,38 @@ type includeSpec struct {
 type includeAll struct {
 	Path                    string  `xml:"path,attr" yaml:"path" json:"path"`
 	RelativeToChangelogFile boolish `xml:"relativeToChangelogFile,attr" yaml:"relativeToChangelogFile" json:"relativeToChangelogFile"`
+}
+
+type xmlChangeSet struct {
+	SQLFiles       []localPathRef `xml:"sqlFile"`
+	LoadData       []localPathRef `xml:"loadData"`
+	LoadUpdateData []localPathRef `xml:"loadUpdateData"`
+}
+
+type changeSetSpec struct {
+	SQLFile        *localPathRef     `yaml:"sqlFile" json:"sqlFile"`
+	LoadData       *localPathRef     `yaml:"loadData" json:"loadData"`
+	LoadUpdateData *localPathRef     `yaml:"loadUpdateData" json:"loadUpdateData"`
+	Changes        []changeSetChange `yaml:"changes" json:"changes"`
+}
+
+type changeSetChange struct {
+	SQLFile        *localPathRef `yaml:"sqlFile" json:"sqlFile"`
+	LoadData       *localPathRef `yaml:"loadData" json:"loadData"`
+	LoadUpdateData *localPathRef `yaml:"loadUpdateData" json:"loadUpdateData"`
+}
+
+type localPathRef struct {
+	File                    string  `xml:"file,attr" yaml:"file" json:"file"`
+	Path                    string  `xml:"path,attr" yaml:"path" json:"path"`
+	RelativeToChangelogFile boolish `xml:"relativeToChangelogFile,attr" yaml:"relativeToChangelogFile" json:"relativeToChangelogFile"`
+}
+
+func (r localPathRef) rawPath() string {
+	if strings.TrimSpace(r.Path) != "" {
+		return r.Path
+	}
+	return r.File
 }
 
 type declaredPath struct {
@@ -134,7 +168,21 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 	if changelogPath == "" {
 		return inputset.InputSet{}, fmt.Errorf("liquibase command has no --changelog-file (required for diff)")
 	}
+	return collectInputSet(declared, searchPaths, resolver, fs)
+}
 
+// CollectInvocationInputs builds the deterministic Liquibase input set for a
+// concrete invocation and includes the changelog graph when a changelog file is
+// declared.
+func CollectInvocationInputs(args []string, resolver inputset.Resolver, fs inputset.FileSystem) (inputset.InputSet, error) {
+	declared, searchPaths, _, err := collectDeclared(args, resolver)
+	if err != nil {
+		return inputset.InputSet{}, err
+	}
+	return collectInputSet(declared, searchPaths, resolver, fs)
+}
+
+func collectInputSet(declared []declaredPath, searchPaths []string, resolver inputset.Resolver, fs inputset.FileSystem) (inputset.InputSet, error) {
 	tracker := &tracker{
 		fs:          fs,
 		root:        resolver.Root,
@@ -154,9 +202,13 @@ func Collect(args []string, resolver inputset.Resolver, fs inputset.FileSystem) 
 		}
 	}
 
+	return buildInputSet(order, resolver.Root, fs)
+}
+
+func buildInputSet(order []string, root string, fs inputset.FileSystem) (inputset.InputSet, error) {
 	entries := make([]inputset.InputEntry, 0, len(order))
 	for _, path := range order {
-		rel, _ := filepath.Rel(resolver.Root, path)
+		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
 		var hash string
 		if oid, ok := fs.(inputset.BlobOIDer); ok {
@@ -392,13 +444,13 @@ func (t *tracker) collect(path string, order *[]string) error {
 	if err != nil {
 		return err
 	}
-	includes, includeAlls, err := parseIncludes(path, content)
+	refs, err := parseChangelogRefs(path, content)
 	if err != nil {
 		return err
 	}
 
 	changelogDir := filepath.Dir(path)
-	for _, inc := range includes {
+	for _, inc := range refs.includes {
 		next := t.resolveIncludePath(changelogDir, inc.File, inc.RelativeToChangelogFile.useChangelogDir())
 		if next == "" {
 			continue
@@ -407,12 +459,21 @@ func (t *tracker) collect(path string, order *[]string) error {
 			return err
 		}
 	}
-	for _, inc := range includeAlls {
+	for _, inc := range refs.includeAlls {
 		dir := t.resolveIncludePath(changelogDir, inc.Path, inc.RelativeToChangelogFile.useChangelogDir())
 		if dir == "" {
 			continue
 		}
 		if err := t.collectIncludeAll(dir, order); err != nil {
+			return err
+		}
+	}
+	for _, ref := range refs.localPaths {
+		next := t.resolveIncludePath(changelogDir, ref.rawPath(), ref.RelativeToChangelogFile.useChangelogDir())
+		if next == "" {
+			continue
+		}
+		if err := t.addLeaf(next, order); err != nil {
 			return err
 		}
 	}
@@ -469,29 +530,55 @@ func (t *tracker) resolveIncludePath(changelogDir string, raw string, relativeTo
 	return filepath.Clean(filepath.Join(t.root, filepath.FromSlash(raw)))
 }
 
-func parseIncludes(path string, content []byte) ([]includeSpec, []includeAll, error) {
+type changelogRefs struct {
+	includes    []includeSpec
+	includeAlls []includeAll
+	localPaths  []localPathRef
+}
+
+func parseChangelogRefs(path string, content []byte) (changelogRefs, error) {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".xml":
 		var log xmlChangeLog
 		if err := xml.Unmarshal(content, &log); err != nil {
-			return nil, nil, fmt.Errorf("parse liquibase changelog %s: %w", path, err)
+			return changelogRefs{}, fmt.Errorf("parse liquibase changelog %s: %w", path, err)
 		}
-		return log.Includes, log.IncludeAll, nil
+		return changelogRefs{
+			includes:    log.Includes,
+			includeAlls: log.IncludeAll,
+			localPaths:  flattenXMLLocalPathRefs(log.ChangeSets),
+		}, nil
 	case ".yaml", ".yml":
 		var log structuredChangeLog
 		if err := yaml.Unmarshal(content, &log); err != nil {
-			return nil, nil, fmt.Errorf("parse liquibase changelog %s: %w", path, err)
+			return changelogRefs{}, fmt.Errorf("parse liquibase changelog %s: %w", path, err)
 		}
-		return flattenIncludes(log.DatabaseChangeLog), flattenIncludeAll(log.DatabaseChangeLog), nil
+		return changelogRefs{
+			includes:    flattenIncludes(log.DatabaseChangeLog),
+			includeAlls: flattenIncludeAll(log.DatabaseChangeLog),
+			localPaths:  flattenLocalPathRefs(log.DatabaseChangeLog),
+		}, nil
 	case ".json":
 		var log structuredChangeLog
 		if err := json.Unmarshal(content, &log); err != nil {
-			return nil, nil, fmt.Errorf("parse liquibase changelog %s: %w", path, err)
+			return changelogRefs{}, fmt.Errorf("parse liquibase changelog %s: %w", path, err)
 		}
-		return flattenIncludes(log.DatabaseChangeLog), flattenIncludeAll(log.DatabaseChangeLog), nil
+		return changelogRefs{
+			includes:    flattenIncludes(log.DatabaseChangeLog),
+			includeAlls: flattenIncludeAll(log.DatabaseChangeLog),
+			localPaths:  flattenLocalPathRefs(log.DatabaseChangeLog),
+		}, nil
 	default:
-		return nil, nil, nil
+		return changelogRefs{}, nil
 	}
+}
+
+func parseIncludes(path string, content []byte) ([]includeSpec, []includeAll, error) {
+	refs, err := parseChangelogRefs(path, content)
+	if err != nil {
+		return nil, nil, err
+	}
+	return refs.includes, refs.includeAlls, nil
 }
 
 func flattenIncludes(items []changeItem) []includeSpec {
@@ -509,6 +596,52 @@ func flattenIncludeAll(items []changeItem) []includeAll {
 	for _, item := range items {
 		if item.IncludeAll != nil {
 			out = append(out, *item.IncludeAll)
+		}
+	}
+	return out
+}
+
+func flattenXMLLocalPathRefs(changeSets []xmlChangeSet) []localPathRef {
+	out := make([]localPathRef, 0, len(changeSets))
+	for _, set := range changeSets {
+		out = append(out, set.SQLFiles...)
+		out = append(out, set.LoadData...)
+		out = append(out, set.LoadUpdateData...)
+	}
+	return out
+}
+
+func flattenLocalPathRefs(items []changeItem) []localPathRef {
+	out := make([]localPathRef, 0, len(items))
+	for _, item := range items {
+		if item.ChangeSet == nil {
+			continue
+		}
+		out = append(out, localPathRefsFromChangeSet(*item.ChangeSet)...)
+	}
+	return out
+}
+
+func localPathRefsFromChangeSet(set changeSetSpec) []localPathRef {
+	out := make([]localPathRef, 0, 3+len(set.Changes))
+	if set.SQLFile != nil {
+		out = append(out, *set.SQLFile)
+	}
+	if set.LoadData != nil {
+		out = append(out, *set.LoadData)
+	}
+	if set.LoadUpdateData != nil {
+		out = append(out, *set.LoadUpdateData)
+	}
+	for _, change := range set.Changes {
+		if change.SQLFile != nil {
+			out = append(out, *change.SQLFile)
+		}
+		if change.LoadData != nil {
+			out = append(out, *change.LoadData)
+		}
+		if change.LoadUpdateData != nil {
+			out = append(out, *change.LoadUpdateData)
 		}
 	}
 	return out

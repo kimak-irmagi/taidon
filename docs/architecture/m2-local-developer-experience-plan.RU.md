@@ -304,19 +304,26 @@ revision без изменения working tree.
 
 **Основной результат**:
 
-- provenance output для local alias/Git-ref workflows
-- `sqlrs cache explain ...` для user-facing hit/miss diagnostics
+- `--provenance-path <path>` для single-stage local `plan` / `prepare`
+  workflows, включая raw, alias-backed и bounded local `--ref` binding
+- `sqlrs cache explain prepare ...` для read-only user-facing hit/miss
+  diagnostics над одним single-stage prepare-oriented решением
 
 **Ожидаемая работа**:
 
 - определить provenance payload
-- записывать input hashes и cache decisions
-- реализовать human и JSON output для cache explain
+- переиспользовать shared local binding path, чтобы собирать детерминированные
+  input hashes и для provenance, и для cache explanation
+- добавить read-only engine API для prepare-oriented cache explanation
+- реализовать human и JSON output для cache explain без расширения текущих
+  result envelopes у `plan` / `prepare`
 
 **Ожидаемые тесты**:
 
 - тесты provenance payload
 - cache-explain tests для hit/miss
+- тесты binding parity, доказывающие, что `cache explain` и provenance
+  переиспользуют те же raw/alias/ref semantics, что и реальный `prepare`
 - тесты text/JSON rendering
 
 ## 5. Сквозные Правила

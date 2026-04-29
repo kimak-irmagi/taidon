@@ -14,6 +14,7 @@ type prepareAliasInvocation struct {
 	RefKeepWorktree bool
 	Watch           bool
 	WatchSpecified  bool
+	ProvenancePath  string
 }
 
 type planAliasInvocation struct {
@@ -21,6 +22,7 @@ type planAliasInvocation struct {
 	GitRef          string
 	RefMode         string
 	RefKeepWorktree bool
+	ProvenancePath  string
 }
 
 func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) {
@@ -36,6 +38,16 @@ func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) 
 		case "--no-watch":
 			opts.Watch = false
 			opts.WatchSpecified = true
+		case "--provenance-path":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
+			}
+			opts.ProvenancePath = value
+			i++
 		case "--ref":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref")
@@ -89,6 +101,16 @@ func parsePlanAliasArgs(args []string) (planAliasInvocation, bool, error) {
 			return opts, true, nil
 		case "--watch", "--no-watch":
 			return opts, false, ExitErrorf(2, "plan does not support --watch/--no-watch")
+		case "--provenance-path":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
+			}
+			opts.ProvenancePath = value
+			i++
 		case "--ref":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref")

@@ -109,7 +109,7 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 		baseDir := cwd
 		if ctx != nil {
 			boundaryRoot = ctx.WorkspaceRoot
-			baseDir = effectiveRefBindBaseDir(cwd, ctx, existing)
+			baseDir = effectiveLiquibaseBindBaseDir(cwd, ctx, existing, parsed)
 		}
 		localConverter := converter
 		if shouldUseLiquibaseWindowsMode(liquibaseExec, liquibaseExecMode) {
@@ -136,7 +136,7 @@ func bindPrepareLiquibaseInputs(runOpts cli.PrepareOptions, workspaceRoot string
 		}, nil
 	}
 
-	baseDir := effectiveRefBindBaseDir(cwd, ctx, existing)
+	baseDir := effectiveLiquibaseBindBaseDir(cwd, ctx, existing, parsed)
 	resolver := inputset.NewWorkspaceResolver(ctx.WorkspaceRoot, baseDir, nil)
 	args, err := inputliquibase.NormalizeArgs(parsed.PsqlArgs, resolver, true)
 	if err != nil {
@@ -205,6 +205,19 @@ func resolvePrepareBindingContext(workspaceRoot string, cwd string, parsed prepa
 		return nil, nil, err
 	}
 	return &ctx, ctx.Cleanup, nil
+}
+
+// Raw Liquibase `--ref` commands must keep resolving relative paths from the
+// projected current working directory, while alias-backed ref invocations use
+// the already projected alias directory passed as `cwd`.
+func effectiveLiquibaseBindBaseDir(cwd string, ctx *refctx.Context, existing *refctx.Context, parsed prepareArgs) string {
+	if strings.TrimSpace(parsed.Ref) != "" {
+		if ctx != nil && strings.TrimSpace(ctx.BaseDir) != "" {
+			return ctx.BaseDir
+		}
+		return cwd
+	}
+	return effectiveRefBindBaseDir(cwd, ctx, existing)
 }
 
 func effectiveRefBindBaseDir(cwd string, ctx *refctx.Context, existing *refctx.Context) string {

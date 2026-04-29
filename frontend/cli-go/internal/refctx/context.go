@@ -19,6 +19,7 @@ type Context struct {
 	WorkspaceRoot   string
 	BaseDir         string
 	GitRef          string
+	ResolvedCommit  string
 	RefMode         string
 	KeepWorktree    bool
 	FileSystem      inputset.FileSystem
@@ -53,6 +54,10 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 	if err != nil {
 		return Context{}, err
 	}
+	resolvedCommit, err := gitCommit(repoRoot, gitRef)
+	if err != nil {
+		return Context{}, err
+	}
 	relCwd, err := pathWithinRepo(repoRoot, cwd)
 	if err != nil {
 		return Context{}, fmt.Errorf("resolve cwd: %w", err)
@@ -71,13 +76,14 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 			return Context{}, err
 		}
 		ctx := Context{
-			RepoRoot:      rootCanon,
-			WorkspaceRoot: "",
-			BaseDir:       baseDir,
-			GitRef:        gitRef,
-			RefMode:       mode,
-			KeepWorktree:  keepWorktree,
-			FileSystem:    inputset.NewGitRevFileSystem(rootCanon, gitRef),
+			RepoRoot:       rootCanon,
+			WorkspaceRoot:  "",
+			BaseDir:        baseDir,
+			GitRef:         gitRef,
+			ResolvedCommit: resolvedCommit,
+			RefMode:        mode,
+			KeepWorktree:   keepWorktree,
+			FileSystem:     inputset.NewGitRevFileSystem(rootCanon, gitRef),
 		}
 		if hasWorkspaceRoot {
 			ctx.WorkspaceRoot = pathutil.CanonicalizeBoundaryPath(filepath.Join(rootCanon, relWorkspace))
@@ -121,6 +127,7 @@ func Resolve(workspaceRoot, cwd, gitRef, refMode string, keepWorktree bool) (Con
 			WorkspaceRoot:   "",
 			BaseDir:         baseDir,
 			GitRef:          gitRef,
+			ResolvedCommit:  resolvedCommit,
 			RefMode:         mode,
 			KeepWorktree:    keepWorktree,
 			FileSystem:      inputset.OSFileSystem{},
@@ -205,6 +212,18 @@ func gitTopLevel(cwd string) (string, error) {
 		return "", fmt.Errorf("not a git repository (or git failed): %w", err)
 	}
 	return filepath.Clean(strings.TrimSpace(string(out))), nil
+}
+
+func gitCommit(repoRoot string, ref string) (string, error) {
+	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", ref+"^{commit}")
+	out, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+			return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(ee.Stderr)))
+		}
+		return "", fmt.Errorf("resolve commit for %s: %w", ref, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func gitWorktreeAddDetach(repoRoot, path, ref string) error {

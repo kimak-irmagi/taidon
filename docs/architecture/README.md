@@ -41,6 +41,11 @@ Entry points for Taidon architecture and service design.
   `plan` / `prepare --ref`.
 - [`ref-component-structure.md`](ref-component-structure.md) - internal
   component structure for bounded local ref-backed `plan` / `prepare`.
+- [`provenance-cache-flow.md`](provenance-cache-flow.md) - interaction flow for
+  `--provenance-path` and `sqlrs cache explain` on single-stage local
+  prepare-oriented workflows.
+- [`provenance-cache-component-structure.md`](provenance-cache-component-structure.md) -
+  internal component structure for the provenance and cache-explain baseline.
 - [`alias-inspection-flow.md`](alias-inspection-flow.md) - interaction flow for
   `sqlrs alias ls` and `sqlrs alias check`.
 - [`alias-inspection-component-structure.md`][aics] -

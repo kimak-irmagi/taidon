@@ -87,6 +87,7 @@ supported for jobs.
 sqlrs
   init
   status
+  cache
   ls
   rm
   discover
@@ -192,6 +193,7 @@ ID prefix support (implemented):
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-prepare.md`](../user-guides/sqlrs-prepare.md)
+- [`docs/user-guides/sqlrs-provenance.md`](../user-guides/sqlrs-provenance.md)
 - [`docs/user-guides/sqlrs-watch.md`](../user-guides/sqlrs-watch.md)
 
 Current behavior plus approved next-slice extension:
@@ -215,6 +217,10 @@ Current behavior plus approved next-slice extension:
   or alias mode on each stage.
 - the bounded `--ref` slice does **not** yet extend to `prepare ... run ...`;
   a prepare stage carrying `--ref` remains single-stage only for now.
+- the approved next reproducibility slice adds
+  `--provenance-path <path>` to single-stage local `prepare` without changing
+  the command's primary stdout/stderr contract; the JSON artifact is written as
+  a side file resolved from the caller's current working directory.
 - file-bearing paths read from a prepare alias resolve relative to that alias
   file, while raw-stage file paths keep their normal current-working-directory
   base.
@@ -235,6 +241,7 @@ See the user guide for the authoritative, up-to-date command semantics:
 - [`docs/user-guides/sqlrs-plan.md`](../user-guides/sqlrs-plan.md)
 - [`docs/user-guides/sqlrs-plan-psql.md`](../user-guides/sqlrs-plan-psql.md)
 - [`docs/user-guides/sqlrs-plan-liquibase.md`](../user-guides/sqlrs-plan-liquibase.md)
+- [`docs/user-guides/sqlrs-provenance.md`](../user-guides/sqlrs-provenance.md)
 
 The CLI must expose `plan:<kind>` for every supported `prepare:<kind>`.
 
@@ -245,6 +252,9 @@ Current alias mode:
 - bounded local `plan --ref <git-ref>` is the accepted next Git-aware slice for
   local, single-stage plan only; it reuses the same projected-cwd, `worktree`,
   and explicit `blob` rules as bounded `prepare --ref`.
+- the approved next reproducibility slice also adds
+  `--provenance-path <path>` to single-stage local `plan`; it writes one JSON
+  side artifact without changing the main human/JSON result payload.
 
 ---
 
@@ -412,6 +422,25 @@ See:
 - [`alias-create-flow.md`](alias-create-flow.md)
 - [`alias-create-component-structure.md`](alias-create-component-structure.md)
 - [`alias-inspection-flow.md`](alias-inspection-flow.md)
+
+---
+
+### 3.12 `sqlrs cache`
+
+See the user guide for the authoritative, up-to-date command semantics:
+
+- [`docs/user-guides/sqlrs-cache-explain.md`](../user-guides/sqlrs-cache-explain.md)
+
+Current design direction:
+
+- `status --cache` remains the global operator-facing cache health command;
+- `ls --states --cache-details` remains the per-state cache metadata surface;
+- `cache explain prepare ...` is the approved next read-only cache-diagnostics
+  command for one single-stage prepare-oriented decision;
+- `cache explain` reuses the same raw, alias-backed, and bounded local `--ref`
+  binding semantics as single-stage `prepare`;
+- the first slice does **not** yet support wrapped `plan`, wrapped `run`, or
+  composite `prepare ... run ...`.
 
 ---
 

@@ -416,6 +416,222 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
+## explainPrepareCache
+
+<a id="opIdexplainPrepareCache"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X POST http://127.0.0.1:{port}/v1/cache/explain/prepare \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+POST http://127.0.0.1:{port}/v1/cache/explain/prepare HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Accept: application/json
+
+```
+
+```javascript
+const inputBody = '{
+  "prepare_kind": "psql",
+  "image_id": "string",
+  "psql_args": [
+    "string"
+  ],
+  "stdin": "string"
+}';
+const headers = {
+  'Content-Type':'application/json',
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/cache/explain/prepare',
+{
+  method: 'POST',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/json',
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.post 'http://127.0.0.1:{port}/v1/cache/explain/prepare',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.post('http://127.0.0.1:{port}/v1/cache/explain/prepare', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('POST','http://127.0.0.1:{port}/v1/cache/explain/prepare', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/cache/explain/prepare");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("POST");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/json"},
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("POST", "http://127.0.0.1:{port}/v1/cache/explain/prepare", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`POST /v1/cache/explain/prepare`
+
+*Explain one prepare-oriented cache decision*
+
+Computes the same final prepare signature and cache lookup the engine
+would use for a bound single-stage prepare request, but does not create
+a job, instance, or mutate cache state.
+
+> Body parameter
+
+```json
+{
+  "prepare_kind": "psql",
+  "image_id": "string",
+  "psql_args": [
+    "string"
+  ],
+  "stdin": "string"
+}
+```
+
+<h3 id="explainpreparecache-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[CacheExplainPrepareRequest](#schemacacheexplainpreparerequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "decision": "hit",
+  "reason_code": "string",
+  "signature": "string",
+  "matched_state_id": "string",
+  "resolved_image_id": "string"
+}
+```
+
+<h3 id="explainpreparecache-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[CacheExplainPrepareResponse](#schemacacheexplainprepareresponse)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 <h1 id="the-sqlrs-engine-api-prepare">prepare</h1>
 
 ## listPrepareJobs
@@ -4607,6 +4823,181 @@ or
 |---|---|---|---|---|
 |» *anonymous*|null|false|none|none|
 
+<h2 id="tocS_CacheExplainPrepareRequest">CacheExplainPrepareRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemacacheexplainpreparerequest"></a>
+<a id="schema_CacheExplainPrepareRequest"></a>
+<a id="tocScacheexplainpreparerequest"></a>
+<a id="tocscacheexplainpreparerequest"></a>
+
+```json
+{
+  "prepare_kind": "psql",
+  "image_id": "string",
+  "psql_args": [
+    "string"
+  ],
+  "stdin": "string"
+}
+
+```
+
+### Properties
+
+oneOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[CacheExplainPrepareRequestPsql](#schemacacheexplainpreparerequestpsql)|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[CacheExplainPrepareRequestLiquibase](#schemacacheexplainpreparerequestliquibase)|false|none|none|
+
+<h2 id="tocS_CacheExplainPrepareRequestPsql">CacheExplainPrepareRequestPsql</h2>
+<!-- backwards compatibility -->
+<a id="schemacacheexplainpreparerequestpsql"></a>
+<a id="schema_CacheExplainPrepareRequestPsql"></a>
+<a id="tocScacheexplainpreparerequestpsql"></a>
+<a id="tocscacheexplainpreparerequestpsql"></a>
+
+```json
+{
+  "prepare_kind": "psql",
+  "image_id": "string",
+  "psql_args": [
+    "string"
+  ],
+  "stdin": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|prepare_kind|string|true|none|Prepare adapter kind.|
+|image_id|string|true|none|Base Docker image id to use.|
+|psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must already be normalized for<br>the bound local execution context.|
+|stdin|string|false|none|SQL content to use for stdin when `psql_args` includes `-f -`.|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|prepare_kind|psql|
+
+<h2 id="tocS_CacheExplainPrepareRequestLiquibase">CacheExplainPrepareRequestLiquibase</h2>
+<!-- backwards compatibility -->
+<a id="schemacacheexplainpreparerequestliquibase"></a>
+<a id="schema_CacheExplainPrepareRequestLiquibase"></a>
+<a id="tocScacheexplainpreparerequestliquibase"></a>
+<a id="tocscacheexplainpreparerequestliquibase"></a>
+
+```json
+{
+  "prepare_kind": "lb",
+  "image_id": "string",
+  "liquibase_args": [
+    "string"
+  ],
+  "liquibase_exec": "string",
+  "liquibase_exec_mode": "string",
+  "liquibase_env": {
+    "property1": "string",
+    "property2": "string"
+  },
+  "work_dir": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|prepare_kind|string|true|none|Prepare adapter kind.|
+|image_id|string|true|none|Base Docker image id to use.|
+|liquibase_args|[string]|true|none|Arguments passed to Liquibase. Argument ordering is preserved and<br>path-bearing arguments must already reflect the bound local<br>execution context.|
+|liquibase_exec|string|false|none|Optional Liquibase executable override selected by the CLI.|
+|liquibase_exec_mode|string|false|none|Optional Liquibase executable mode selected by the CLI.|
+|liquibase_env|object|false|none|Optional environment variables passed through to Liquibase.|
+|» **additionalProperties**|string|false|none|none|
+|work_dir|string|false|none|Working directory for the Liquibase invocation.|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|prepare_kind|lb|
+
+<h2 id="tocS_CacheExplainPrepareResponse">CacheExplainPrepareResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemacacheexplainprepareresponse"></a>
+<a id="schema_CacheExplainPrepareResponse"></a>
+<a id="tocScacheexplainprepareresponse"></a>
+<a id="tocscacheexplainprepareresponse"></a>
+
+```json
+{
+  "decision": "hit",
+  "reason_code": "string",
+  "signature": "string",
+  "matched_state_id": "string",
+  "resolved_image_id": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|decision|string|true|none|Final-state cache decision for the bound prepare invocation.|
+|reason_code|string|true|none|Best-known diagnostic reason. Initial values include<br>`exact_state_match`, `no_matching_state`, `input_hash_changed`,<br>`image_changed`, and `cache_lookup_unavailable`.|
+|signature|string|true|none|Engine-computed final prepare signature used for cache lookup.|
+|matched_state_id|any|false|none|Matching cached state id when `decision=hit`.|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|resolved_image_id|any|false|none|Resolved image id when the engine can report it.|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|decision|hit|
+|decision|miss|
+
 <h2 id="tocS_PrepareJobRequest">PrepareJobRequest</h2>
 <!-- backwards compatibility -->
 <a id="schemapreparejobrequest"></a>
@@ -4629,7 +5020,17 @@ or
 
 ### Properties
 
-*None*
+oneOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[PrepareJobRequestPsql](#schemapreparejobrequestpsql)|false|none|none|
+
+xor
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[PrepareJobRequestLiquibase](#schemapreparejobrequestliquibase)|false|none|none|
 
 <h2 id="tocS_PrepareJobRequestPsql">PrepareJobRequestPsql</h2>
 <!-- backwards compatibility -->
@@ -4666,6 +5067,52 @@ or
 |Property|Value|
 |---|---|
 |prepare_kind|psql|
+
+<h2 id="tocS_PrepareJobRequestLiquibase">PrepareJobRequestLiquibase</h2>
+<!-- backwards compatibility -->
+<a id="schemapreparejobrequestliquibase"></a>
+<a id="schema_PrepareJobRequestLiquibase"></a>
+<a id="tocSpreparejobrequestliquibase"></a>
+<a id="tocspreparejobrequestliquibase"></a>
+
+```json
+{
+  "prepare_kind": "lb",
+  "image_id": "string",
+  "liquibase_args": [
+    "string"
+  ],
+  "liquibase_exec": "string",
+  "liquibase_exec_mode": "string",
+  "liquibase_env": {
+    "property1": "string",
+    "property2": "string"
+  },
+  "work_dir": "string",
+  "plan_only": true
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|prepare_kind|string|true|none|Prepare adapter kind.|
+|image_id|string|true|none|Base Docker image id to use.|
+|liquibase_args|[string]|true|none|Arguments passed to Liquibase. Argument ordering is preserved and<br>path-bearing arguments must already be normalized for the bound<br>local execution context.|
+|liquibase_exec|string|false|none|Optional Liquibase executable override selected by the CLI.|
+|liquibase_exec_mode|string|false|none|Optional Liquibase executable mode selected by the CLI.|
+|liquibase_env|object|false|none|Optional environment variables passed through to Liquibase.|
+|» **additionalProperties**|string|false|none|none|
+|work_dir|string|false|none|Working directory for the Liquibase invocation.|
+|plan_only|boolean|false|none|When true, only the plan is computed and no instance is created.|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|prepare_kind|lb|
 
 <h2 id="tocS_ConfigSetRequest">ConfigSetRequest</h2>
 <!-- backwards compatibility -->

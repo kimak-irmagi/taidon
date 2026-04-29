@@ -37,6 +37,14 @@ type CacheStatus struct {
 	LastEviction       *CacheEvictionSummary `json:"last_eviction,omitempty"`
 }
 
+type CacheExplainPrepareResponse struct {
+	Decision        string `json:"decision"`
+	ReasonCode      string `json:"reason_code,omitempty"`
+	Signature       string `json:"signature,omitempty"`
+	MatchedStateID  string `json:"matched_state_id,omitempty"`
+	ResolvedImageID string `json:"resolved_image_id,omitempty"`
+}
+
 type ListFilters struct {
 	Name     string
 	Instance string

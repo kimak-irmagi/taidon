@@ -124,9 +124,13 @@ func TestIsPrepareArgValueBranches(t *testing.T) {
 		want bool
 	}{
 		{name: "idx too small", args: []string{"prepare", "--image"}, idx: 1, want: false},
+		{name: "prepare psql provenance path", args: []string{"prepare:psql", "--provenance-path", "run"}, idx: 2, want: true},
+		{name: "prepare psql ref", args: []string{"prepare:psql", "--ref", "run"}, idx: 2, want: true},
+		{name: "prepare psql ref mode", args: []string{"prepare:psql", "--ref-mode", "run"}, idx: 2, want: true},
 		{name: "prepare psql image", args: []string{"prepare:psql", "--image", "img"}, idx: 2, want: true},
 		{name: "prepare psql file", args: []string{"prepare:psql", "-f", "file"}, idx: 2, want: true},
 		{name: "prepare psql file flag", args: []string{"prepare:psql", "--file", "file"}, idx: 2, want: true},
+		{name: "prepare lb provenance path", args: []string{"prepare:lb", "--provenance-path", "run"}, idx: 2, want: true},
 		{name: "prepare lb changelog", args: []string{"prepare:lb", "--changelog-file", "file"}, idx: 2, want: true},
 		{name: "prepare lb defaults", args: []string{"prepare:lb", "--defaults-file", "file"}, idx: 2, want: true},
 		{name: "prepare lb search path camel", args: []string{"prepare:lb", "--searchPath", "dir"}, idx: 2, want: true},
@@ -151,6 +155,7 @@ func TestFindPrepareAliasRunIndexBranches(t *testing.T) {
 	}{
 		{name: "plain composite", args: []string{"prepare", "chinook", "run", "smoke"}, want: 2},
 		{name: "skips watch flags", args: []string{"prepare", "chinook", "--watch", "--no-watch", "--help", "-h", "run", "smoke"}, want: 6},
+		{name: "skips provenance path", args: []string{"prepare", "--provenance-path", "run", "chinook", "run", "smoke"}, want: 4},
 		{name: "skips ref flags", args: []string{"prepare", "--ref", "HEAD", "--ref-mode", "blob", "--ref-keep-worktree", "chinook", "run", "smoke"}, want: 7},
 		{name: "missing ref value", args: []string{"prepare", "--ref"}, want: -1},
 		{name: "missing ref mode value", args: []string{"prepare", "--ref", "HEAD", "--ref-mode"}, want: -1},

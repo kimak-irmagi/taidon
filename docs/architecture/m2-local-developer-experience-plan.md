@@ -303,19 +303,26 @@ without touching the working tree.
 
 **Primary outcome**:
 
-- provenance output for local alias/Git-ref workflows
-- `sqlrs cache explain ...` for user-facing hit/miss diagnostics
+- `--provenance-path <path>` for single-stage local `plan` / `prepare`
+  workflows, including raw, alias-backed, and bounded local `--ref` binding
+- `sqlrs cache explain prepare ...` for read-only user-facing hit/miss
+  diagnostics over one single-stage prepare-oriented decision
 
 **Expected work**:
 
 - define provenance payload
-- record input hashes and cache decisions
-- implement human and JSON cache-explain output
+- reuse the shared local binding path to collect deterministic input hashes for
+  both provenance and cache explanation
+- add a read-only engine API for prepare-oriented cache explanation
+- implement human and JSON cache-explain output without widening existing
+  `plan` / `prepare` result envelopes
 
 **Tests expected**:
 
 - provenance payload tests
 - cache-explain hit/miss tests
+- binding-parity tests proving `cache explain` and provenance reuse the same
+  raw/alias/ref semantics as real `prepare`
 - text/JSON rendering tests
 
 ## 5. Cross-Slice Rules

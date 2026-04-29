@@ -235,6 +235,50 @@ func TestParseArgsCompositePrepareAliasRunAliasWithRefOptions(t *testing.T) {
 	}
 }
 
+func TestParseArgsCompositePrepareAliasRunAliasWithProvenancePath(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{
+		"prepare", "--provenance-path", "run", "chinook",
+		"run", "smoke",
+	})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %+v", cmds)
+	}
+	if cmds[0].Name != "prepare" {
+		t.Fatalf("unexpected first command name: %+v", cmds[0])
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "--provenance-path|run|chinook" {
+		t.Fatalf("unexpected first command args: %q", got)
+	}
+	if cmds[1].Name != "run" || len(cmds[1].Args) != 1 || cmds[1].Args[0] != "smoke" {
+		t.Fatalf("unexpected second command: %+v", cmds[1])
+	}
+}
+
+func TestParseArgsCompositePrepareRawRunAliasWithProvenancePath(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{
+		"prepare:psql", "--provenance-path", "run", "--", "-f", "prepare.sql",
+		"run", "smoke",
+	})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 2 {
+		t.Fatalf("expected 2 commands, got %+v", cmds)
+	}
+	if cmds[0].Name != "prepare:psql" {
+		t.Fatalf("unexpected first command name: %+v", cmds[0])
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "--provenance-path|run|--|-f|prepare.sql" {
+		t.Fatalf("unexpected first command args: %q", got)
+	}
+	if cmds[1].Name != "run" || len(cmds[1].Args) != 1 || cmds[1].Args[0] != "smoke" {
+		t.Fatalf("unexpected second command: %+v", cmds[1])
+	}
+}
+
 func TestParseArgsRunAliasStandalone(t *testing.T) {
 	_, cmds, err := ParseArgs([]string{"run", "smoke", "--instance", "dev"})
 	if err != nil {
