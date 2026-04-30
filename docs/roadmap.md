@@ -42,7 +42,7 @@ gantt
     CLI UX + deterministic runs                :done, b2, after a2, 45d
     State cache v1 (reuse states)              :done, b3, after a3, 45d
     State cache guardrails (size + eviction)   :done, b3g, after b3, 30d
-    Git-aware CLI (ref/diff/provenance)        :b4, after b3, 30d
+    Git-aware CLI (ref/diff/provenance)        :done, b4, after b3, 30d
 
     section Team (On-Prem)
     Shared control plane + policy baseline     :c1, after b2, 45d
@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-04-22)
+## Status (as of 2026-04-30)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -151,6 +151,12 @@ gantt
   filesystem-aware alias-target resolution in `internal/alias`. In this first
   public slice, `worktree` remains the default ref mode and `prepare --ref`
   stays watch-only.
+- **Done (M2 provenance + cache explain baseline)**: single-stage local
+  `plan` / `prepare` now support `--provenance-path` JSON side artifacts across
+  raw, alias-backed, and bounded `--ref` flows; the CLI also ships read-only
+  `sqlrs cache explain prepare ...` with matching raw/alias/ref binding
+  semantics, plus a dedicated local engine `POST /v1/cache/explain/prepare`
+  endpoint and regression coverage for hit/miss, rendering, and binding parity.
 - **Done (release alias/workspace coverage)**: release/e2e scenarios now
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under
@@ -161,36 +167,31 @@ gantt
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: add the explanation layer on top of the landed
-  bounded local `--ref` surface: provenance output plus user-facing
-  `cache explain` for repository-aware prepare flows.
+- **Next public local focus (selection pending)**: reassess whether the next
+  repository-aware follow-up should be standalone `run --ref` or a
+  zero-copy/cache-hit slice now that provenance and `cache explain` are landed.
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
 ---
 
-## Immediate Next Step (Selected)
+## Immediate Next Step (Needs Selection)
 
-- **Direction**: make the landed repository-aware local flows reproducible and
-  explainable before widening the command surface again.
-- **Selected next PR**: provenance and cache explain baseline for
-  repository-aware local flows.
-- **Next PR slice**:
-  - define one provenance payload for local `plan` / `prepare` flows that
-    already support aliases and bounded `--ref`;
-  - record the input hashes, selected ref context, and cache hit/miss decision
-    points needed to explain why a prepare flow reused or rebuilt state;
-  - ship a first `sqlrs cache explain ...` surface with human and JSON output
-    for repository-aware local prepare flows;
-  - keep the slice passive/local-only and read-only: no Git mutations, no
-    hosted workflow expansion, and no new execution modes;
-  - cover provenance payload, cache-explain hit/miss, and rendering behavior in
-    docs and tests.
-- **Immediately after**: reassess whether the next passive Git-aware slice
-  should be standalone `run --ref` or a zero-copy/cache-hit follow-up.
-- **Rationale**: the bounded local `--ref` execution baseline is now landed, so
-  the next missing M2 local DX layer is explanation: make ref-aware workflows
-  reproducible and debuggable before adding more command shapes.
+- **Direction**: choose one incremental repository-aware follow-up now that the
+  explanation layer is already in `main`.
+- **Just completed**: provenance and cache explain baseline for
+  repository-aware local `plan` / `prepare` flows.
+- **Next slice candidates**:
+  - standalone `run --ref`;
+  - zero-copy/cache-hit follow-up on top of the landed provenance/explain trace
+    path.
+- **Shared constraints**:
+  - keep Git handling bounded and local-only;
+  - avoid Git mutations and hosted workflow expansion;
+  - reuse the landed raw/alias/ref binding path instead of introducing a second
+    repository-aware execution stack.
+- **Why selection is still open**: the previous roadmap explicitly deferred this
+  choice until after provenance/cache explain merged.
 
 ---
 
@@ -300,10 +301,12 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 - A developer can run common workflows using explicit repo-tracked recipes with
   low local setup friction and clear cache provenance diagnostics.
 
-**Status**: In progress. Alias execution, inspection, authoring, generic
-advisory discovery, shared `internal/inputset` semantics, `sqlrs diff` path
-mode, and the bounded local `plan` / `prepare` `--ref` slice are landed;
-provenance/cache explain are still ahead.
+**Status**: Done (public/local baseline). Alias execution, inspection,
+authoring, generic advisory discovery, shared `internal/inputset` semantics,
+`sqlrs diff`, bounded local `plan` / `prepare` `--ref`, and
+provenance/cache explain are landed. Follow-up candidates such as standalone
+`run --ref` or zero-copy/cache-hit reuse now sit beyond the accepted M2
+baseline.
 
 ---
 

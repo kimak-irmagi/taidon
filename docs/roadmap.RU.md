@@ -43,7 +43,7 @@ gantt
     CLI UX + детерминированные запуски        :done, b2, after a2, 45d
     Кэш состояний v1 (reuse states)           :done, b3, after a3, 45d
     Ограничения кэша (размер + eviction)      :done, b3g, after b3, 30d
-    Git-aware CLI (ref/diff/provenance)       :b4, after b3, 30d
+    Git-aware CLI (ref/diff/provenance)       :done, b4, after b3, 30d
 
     section Team (On-Prem)
     Базовый shared control plane + policy      :c1, after b2, 45d
@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-04-22)
+## Статус (на 2026-04-30)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -152,6 +152,13 @@ gantt
   и общим filesystem-aware alias-target resolution в `internal/alias`. В этом
   первом публичном slice `worktree` остается ref-mode по умолчанию, а
   `prepare --ref` пока остается только в watch mode.
+- **Сделано (baseline M2 provenance + cache explain)**: single-stage local
+  `plan` / `prepare` теперь поддерживают JSON side artifacts через
+  `--provenance-path` для raw, alias-backed и bounded `--ref` flow; CLI также
+  включает read-only `sqlrs cache explain prepare ...` с теми же
+  raw/alias/ref binding semantics, отдельный local engine endpoint
+  `POST /v1/cache/explain/prepare` и regression coverage для hit/miss,
+  rendering и binding parity.
 - **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
   гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
   Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.
@@ -161,37 +168,32 @@ gantt
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
-- **Следующий публичный local-фокус**: добавить слой объяснимости поверх уже
-  реализованного bounded local `--ref`: provenance output и user-facing
-  `cache explain` для repository-aware prepare flow.
+- **Следующий публичный local-фокус (выбор ещё открыт)**: переоценить, должен ли
+  следующий repository-aware follow-up быть standalone `run --ref` или
+  zero-copy/cache-hit срезом теперь, когда provenance и `cache explain`
+  уже реализованы.
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
 ---
 
-## Ближайший Следующий Шаг (Выбран)
+## Ближайший Следующий Шаг (Требует Выбора)
 
-- **Направление**: сделать уже реализованные repository-aware local flow
-  воспроизводимыми и объяснимыми до дальнейшего расширения command surface.
-- **Выбранный следующий PR**: baseline для provenance и cache explain в
-  repository-aware local flow.
-- **Следующий PR-срез**:
-  - определить единый provenance payload для local `plan` / `prepare` flow,
-    которые уже поддерживают aliases и bounded `--ref`;
-  - записывать input hashes, выбранный ref context и точки cache hit/miss,
-    нужные для объяснения, почему prepare-flow переиспользовал или перестроил
-    state;
-  - отгрузить первую поверхность `sqlrs cache explain ...` с human и JSON
-    output для repository-aware local prepare flow;
-  - удержать срез пассивным, локальным и read-only: без Git mutations, без
-    hosted workflow expansion и без новых execution modes;
-  - покрыть docs и тестами provenance payload, cache-explain hit/miss и
-    rendering behavior.
-- **Сразу после этого**: переоценить, должен ли следующим passive Git-aware
-  slice стать standalone `run --ref` или zero-copy/cache-hit follow-up.
-- **Почему сейчас**: bounded local `--ref` execution baseline уже реализован,
-  поэтому следующий недостающий слой в M2 local DX — explanation: сделать
-  ref-aware workflow воспроизводимыми и дебажимыми до добавления новых команд.
+- **Направление**: выбрать один incremental repository-aware follow-up теперь,
+  когда explanation layer уже в `main`.
+- **Что только что завершено**: baseline для provenance и cache explain в
+  repository-aware local `plan` / `prepare` flow.
+- **Кандидаты на следующий срез**:
+  - standalone `run --ref`;
+  - zero-copy/cache-hit follow-up поверх уже реализованного
+    provenance/explain trace path.
+- **Общие ограничения**:
+  - держать Git handling bounded и local-only;
+  - не добавлять Git mutations и hosted workflow expansion;
+  - переиспользовать уже реализованный raw/alias/ref binding path вместо
+    второй repository-aware execution stack.
+- **Почему выбор еще открыт**: предыдущий roadmap явно откладывал это решение
+  до момента, когда provenance/cache explain будут влиты.
 
 ---
 
@@ -303,10 +305,12 @@ gantt
   с низким локальным setup friction и понятной диагностикой происхождения/
   содержимого кэша.
 
-**Статус**: в работе. Базовые alias execution, inspection, authoring, generic
-advisory discovery, shared `internal/inputset` semantics, `sqlrs diff` в path
-mode и bounded local slice для `plan` / `prepare` с `--ref` уже реализованы;
-provenance/cache explain ещё впереди.
+**Статус**: сделано (public/local baseline). Alias execution, inspection,
+authoring, generic advisory discovery, shared `internal/inputset` semantics,
+`sqlrs diff`, bounded local `plan` / `prepare` с `--ref` и
+provenance/cache explain уже реализованы. Follow-up варианты вроде standalone
+`run --ref` или zero-copy/cache-hit reuse теперь находятся уже за пределами
+принятого M2 baseline.
 
 ---
 
