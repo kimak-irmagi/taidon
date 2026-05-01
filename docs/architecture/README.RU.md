@@ -42,6 +42,8 @@
   `plan` / `prepare --ref`.
 - [`ref-component-structure.RU.md`](ref-component-structure.RU.md) - внутренняя
   компонентная структура bounded local ref-backed `plan` / `prepare`.
+- [`run-ref-flow.RU.md`](run-ref-flow.RU.md) - поток взаимодействия для bounded
+  local standalone `run --ref`.
 - [`provenance-cache-flow.RU.md`](provenance-cache-flow.RU.md) - поток
   взаимодействия для `--provenance-path` и `sqlrs cache explain` в
   single-stage local prepare-oriented workflows.

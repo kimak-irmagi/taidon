@@ -167,31 +167,34 @@ gantt
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus (selection pending)**: reassess whether the next
-  repository-aware follow-up should be standalone `run --ref` or a
-  zero-copy/cache-hit slice now that provenance and `cache explain` are landed.
+- **Next public local focus**: land the bounded standalone `run --ref` slice
+  for repository-aware raw and alias-backed run flows, reusing the existing
+  local ref context and inputset path.
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
 ---
 
-## Immediate Next Step (Needs Selection)
+## Immediate Next Step (Selected)
 
-- **Direction**: choose one incremental repository-aware follow-up now that the
-  explanation layer is already in `main`.
-- **Just completed**: provenance and cache explain baseline for
-  repository-aware local `plan` / `prepare` flows.
-- **Next slice candidates**:
-  - standalone `run --ref`;
-  - zero-copy/cache-hit follow-up on top of the landed provenance/explain trace
-    path.
-- **Shared constraints**:
-  - keep Git handling bounded and local-only;
-  - avoid Git mutations and hosted workflow expansion;
-  - reuse the landed raw/alias/ref binding path instead of introducing a second
-    repository-aware execution stack.
-- **Why selection is still open**: the previous roadmap explicitly deferred this
-  choice until after provenance/cache explain merged.
+- **Direction**: extend the landed repository-aware local surface from
+  prepare-oriented flows into standalone `run` without widening into composite
+  ref semantics yet.
+- **Selected next PR**: standalone `run --ref` baseline for raw and
+  alias-backed single-stage run flows.
+- **Next PR slice**:
+  - add the existing `--ref` / `--ref-mode` / `--ref-keep-worktree` family to
+    standalone `run` and `run:<kind>`;
+  - resolve run aliases and raw file-bearing run inputs in the same
+    projected-cwd ref context already used by `plan` / `prepare`;
+  - keep the slice CLI-only, local-only, and standalone: no Git mutations, no
+    hosted workflow expansion, and no `prepare ... run ...` with a ref-backed
+    run stage;
+  - cover raw/alias/ref behavior for `run:psql` and `run:pgbench` in docs and
+    tests.
+- **Deferred after this slice**: composite ref-backed `prepare ... run`,
+  run-side provenance, `cache explain run ...`, and zero-copy/cache-hit
+  follow-ups.
 
 ---
 
@@ -304,9 +307,9 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 **Status**: Done (public/local baseline). Alias execution, inspection,
 authoring, generic advisory discovery, shared `internal/inputset` semantics,
 `sqlrs diff`, bounded local `plan` / `prepare` `--ref`, and
-provenance/cache explain are landed. Follow-up candidates such as standalone
-`run --ref` or zero-copy/cache-hit reuse now sit beyond the accepted M2
-baseline.
+provenance/cache explain are landed. The selected next repository-aware
+follow-up is the standalone `run --ref` slice; broader ref-backed composites
+and zero-copy/cache-hit reuse now sit beyond the accepted M2 baseline.
 
 ---
 

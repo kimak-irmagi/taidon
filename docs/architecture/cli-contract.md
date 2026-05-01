@@ -263,15 +263,29 @@ Current alias mode:
 See the user guide for the authoritative, up-to-date command semantics:
 
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
+- [`docs/user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md)
 
-Approved next slice:
+Current behavior plus approved next Git-aware follow-up:
 
 - standalone `sqlrs run <run-ref> --instance <id|name>` resolves a repo-tracked
   `*.run.s9s.yaml` file from the current working directory while keeping runtime
   instance selection explicit;
+- bounded local `run --ref <git-ref>` is the approved next Git-aware slice for
+  local, single-stage `run`; it applies to alias-backed `run <run-ref>` and raw
+  `run:psql` / `run:pgbench`, projecting the caller cwd into the selected ref
+  context;
+- `run --ref-mode worktree|blob` and `--ref-keep-worktree` reuse the same
+  vocabulary and defaults already accepted for `plan` / `prepare` / `diff`:
+  `worktree` by default, `blob` as an explicit opt-in, and
+  `--ref-keep-worktree` only with `worktree`;
+- raw ref-backed file-bearing inputs keep the same shared `internal/inputset`
+  semantics already used by live-filesystem `run` for `psql` and `pgbench`;
 - in `prepare ... run <run-ref>`, the run alias consumes the instance produced
   by the preceding `prepare`;
 - in that composite form, `--instance` is forbidden as an explicit ambiguity.
+- the first bounded `run --ref` slice does **not** yet extend to
+  `prepare ... run ...`; a run stage carrying `--ref` remains single-stage only
+  for now;
 - file-bearing paths read from a run alias resolve relative to that alias file.
 
 ---
