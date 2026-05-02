@@ -2,9 +2,9 @@
 
 ## Overview
 
-**Status: proposed next local CLI slice.**
+**Status: approved next local CLI slice.**
 
-This document proposes the next bounded Git-aware local slice after landed
+This document defines the next bounded Git-aware local slice after landed
 `plan` / `prepare --ref`, provenance, and `cache explain`: allow standalone
 `run` commands to read repository-backed alias files and file-bearing run inputs
 from a selected Git revision without changing the caller's working tree.
@@ -28,7 +28,7 @@ into the same PR.
 
 ## Command Shape
 
-Proposed public syntax:
+Approved public syntax:
 
 ```text
 sqlrs run [--ref <git-ref>] [--ref-mode worktree|blob] [--ref-keep-worktree] <run-ref> --instance <id|name>
@@ -291,6 +291,7 @@ This CLI shape keeps the next `run`-aware Git slice bounded:
 - raw mode and alias mode keep the same path-base rules they already have
   today.
 
-If approved, the next design step should move from this CLI shape into
-interaction flow and internal component structure for local ref-backed `run`
-execution.
+Accepted follow-up design documents:
+
+- [`../architecture/run-ref-flow.md`](../architecture/run-ref-flow.md)
+- [`../architecture/run-ref-component-structure.md`](../architecture/run-ref-component-structure.md)

@@ -4,9 +4,12 @@
 Сценарии P4 и P6 фиксируют уже реализованный slice для provenance и
 cache explanation. Следующий утвержденный bounded local follow-up - это
 standalone `run --ref`, который сейчас описан в
-[`../user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md); остальная
-часть документа остается future design. Сейчас публичный MVP CLI по-прежнему
-опирается на вызовы вида `sqlrs prepare:psql ... run:psql ...`.
+[`../user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md), с
+утвержденным interaction flow в [`run-ref-flow.RU.md`](run-ref-flow.RU.md) и
+утвержденной внутренней структурой в
+[`run-ref-component-structure.RU.md`](run-ref-component-structure.RU.md);
+остальная часть документа остается future design. Сейчас публичный MVP CLI
+по-прежнему опирается на вызовы вида `sqlrs prepare:psql ... run:psql ...`.
 
 Цель: добавить git-aware возможности **без вмешательства в привычный процесс работы**.
 Все функции в этом документе активируются **только по явной команде/флагу пользователя**

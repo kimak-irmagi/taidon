@@ -1,6 +1,6 @@
 # Ref-Backed Run - Component Structure
 
-This document defines the proposed internal component structure for the bounded
+This document defines the approved internal component structure for the bounded
 local standalone `run --ref` slice:
 
 - `sqlrs run --ref ...`
@@ -30,7 +30,7 @@ accepted interaction flow in [`run-ref-flow.md`](run-ref-flow.md).
   - forcing standalone `run` into the prepare-oriented stage pipeline when the
     transport and output behavior remain different
 
-## 2. Proposed component split
+## 2. Approved component split
 
 | Component | Responsibility | Caller |
 |-----------|----------------|--------|
@@ -45,7 +45,7 @@ accepted interaction flow in [`run-ref-flow.md`](run-ref-flow.md).
 
 ## 3. Shared owner for this slice: a package-local run binding helper in `internal/app`
 
-The proposed structure keeps ref-aware standalone `run` binding package-local to
+The approved structure keeps ref-aware standalone `run` binding package-local to
 `internal/app` instead of introducing a new top-level package immediately.
 
 Rationale:
@@ -202,7 +202,7 @@ flowchart TB
 
 ## 8. Consequences for existing docs
 
-If accepted, standalone `run --ref` gains its own internal structure:
+Because standalone `run --ref` now has its own accepted internal structure:
 
 - `cli-component-structure.md` must describe `internal/refctx` as shared by
   standalone `run --ref`, not only `plan` / `prepare --ref` and `diff`;
@@ -211,7 +211,7 @@ If accepted, standalone `run --ref` gains its own internal structure:
 - `ref-component-structure.md` remains scoped to `plan` / `prepare` and should
   not be read as the owner of standalone `run --ref`;
 - `cli-contract.md` and `git-aware-passive.md` should point standalone
-  `run --ref` readers to this document once the design is accepted.
+  `run --ref` readers to this document.
 
 ## 9. References
 

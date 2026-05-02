@@ -23,6 +23,10 @@
     `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`).
   - Собирает command context и выбирает path resolver-ы и runtime projection-ы
     из `internal/inputset`.
+  - Владеет package-local helper-ами ref-aware run binding для standalone
+    `run --ref`, чтобы raw и alias-backed run flow переиспользовали общие
+    boundaries `refctx`, `alias` и `inputset`, не входя в
+    prepare-oriented stage pipeline.
   - Владеет package-local prepare-trace helper-ами для `--provenance-path` и
     `cache explain`, чтобы diagnostics переиспользовали тот же bound
     single-stage prepare path, что и реальное execution.
@@ -36,8 +40,8 @@
   - Переиспользует `internal/alias` и `internal/inputset` для aliases
     анализатора.
 - `internal/refctx`
-  - Общий ref-backed filesystem context для `plan` / `prepare --ref` и
-    ref-mode у `diff`.
+  - Общий ref-backed filesystem context для `plan` / `prepare --ref`,
+    standalone `run --ref` и ref-mode у `diff`.
   - Владеет поиском repo root, локальным разрешением ref, mapping projected
     cwd, lifecycle detached worktree и setup blob-backed filesystem.
 - `internal/inputset`

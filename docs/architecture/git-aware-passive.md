@@ -3,9 +3,12 @@
 Status: **mixed**. Scenario P1 is the delivered local ref baseline. Scenarios
 P4 and P6 capture the landed provenance and cache-explain slice. The approved
 next bounded local follow-up is standalone `run --ref`, currently documented in
-[`../user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md); the rest
-of this document remains future design. Today, the public MVP CLI still relies
-on commands such as `sqlrs prepare:psql ... run:psql ...`.
+[`../user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md), with the
+accepted interaction flow in [`run-ref-flow.md`](run-ref-flow.md) and accepted
+internal structure in
+[`run-ref-component-structure.md`](run-ref-component-structure.md); the rest of
+this document remains future design. Today, the public MVP CLI still relies on
+commands such as `sqlrs prepare:psql ... run:psql ...`.
 
 Goal: add git-aware capabilities **without changing the user's work habits**. All functions in this document are activated **only by explicit user commands/flags** and do not require repository setup "for Taidon".
 

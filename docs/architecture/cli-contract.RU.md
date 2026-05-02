@@ -257,6 +257,11 @@ CLI должен предоставлять `plan:<kind>` для каждого 
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
 - [`docs/user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md)
 
+Утвержденные design-документы для ref-aware follow-up:
+
+- [`run-ref-flow.RU.md`](run-ref-flow.RU.md)
+- [`run-ref-component-structure.RU.md`](run-ref-component-structure.RU.md)
+
 Текущее поведение и утвержденный следующий Git-aware follow-up:
 
 - standalone `sqlrs run <run-ref> --instance <id|name>` резолвит repo-tracked

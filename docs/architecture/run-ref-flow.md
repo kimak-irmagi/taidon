@@ -1,6 +1,6 @@
 # Ref-Backed Run Flow
 
-This document describes the proposed local interaction flow for the next
+This document describes the approved local interaction flow for the next
 bounded repository-aware slice after landed `plan` / `prepare --ref`,
 provenance, and cache explanation:
 

@@ -265,6 +265,11 @@ See the user guide for the authoritative, up-to-date command semantics:
 - [`docs/user-guides/sqlrs-run.md`](../user-guides/sqlrs-run.md)
 - [`docs/user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md)
 
+Accepted ref-aware follow-up design documents:
+
+- [`run-ref-flow.md`](run-ref-flow.md)
+- [`run-ref-component-structure.md`](run-ref-component-structure.md)
+
 Current behavior plus approved next Git-aware follow-up:
 
 - standalone `sqlrs run <run-ref> --instance <id|name>` resolves a repo-tracked

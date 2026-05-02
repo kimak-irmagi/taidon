@@ -7,8 +7,11 @@ import (
 )
 
 type runAliasInvocation struct {
-	Ref         string
-	InstanceRef string
+	Ref             string
+	GitRef          string
+	RefMode         string
+	RefKeepWorktree bool
+	InstanceRef     string
 }
 
 func parseRunAliasArgs(args []string, requireInstance bool) (runAliasInvocation, bool, error) {
@@ -33,6 +36,24 @@ func parseRunAliasArgs(args []string, requireInstance bool) (runAliasInvocation,
 			}
 			opts.InstanceRef = value
 			i++
+		case arg == "--ref":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.GitRef = value
+			i++
+		case arg == "--ref-mode":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = strings.TrimSpace(args[i+1])
+			i++
+		case arg == "--ref-keep-worktree":
+			opts.RefKeepWorktree = true
 		case strings.HasPrefix(arg, "--instance="):
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--instance="))
 			if value == "" {
@@ -49,6 +70,11 @@ func parseRunAliasArgs(args []string, requireInstance bool) (runAliasInvocation,
 			opts.Ref = strings.TrimSpace(arg)
 		}
 	}
+	mode, err := normalizeRefMode(opts.GitRef, opts.RefMode, opts.RefKeepWorktree)
+	if err != nil {
+		return opts, false, err
+	}
+	opts.RefMode = mode
 	if opts.Ref == "" {
 		return opts, false, ExitErrorf(2, "missing run alias ref")
 	}

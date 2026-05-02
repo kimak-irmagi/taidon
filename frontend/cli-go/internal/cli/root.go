@@ -243,18 +243,40 @@ func isCompositeRunBoundary(args []string, idx int) bool {
 	if strings.HasPrefix(token, "run:") {
 		return strings.TrimSpace(strings.TrimPrefix(token, "run:")) != ""
 	}
-	if idx+1 >= len(args) {
-		return false
-	}
-	next := strings.TrimSpace(args[idx+1])
-	if next == "" || next == "--" {
-		return false
-	}
-	return next == "--help" || next == "-h" || !strings.HasPrefix(next, "-")
+	return looksLikeRunAliasStage(args[idx+1:])
 }
 
 func isRunCommandToken(value string) bool {
 	return value == "run" || strings.HasPrefix(value, "run:")
+}
+
+func looksLikeRunAliasStage(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		switch {
+		case arg == "" || arg == "--":
+			return false
+		case arg == "--help" || arg == "-h":
+			return true
+		case arg == "--instance" || arg == "--ref" || arg == "--ref-mode":
+			if i+1 >= len(args) {
+				return false
+			}
+			i++
+		case arg == "--ref-keep-worktree":
+			continue
+		case strings.HasPrefix(arg, "--instance="):
+			continue
+		case strings.HasPrefix(arg, "-"):
+			return false
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 func isCommandToken(value string) bool {

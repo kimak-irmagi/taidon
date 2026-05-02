@@ -1,6 +1,6 @@
 # Ref-Backed Run - Структура Компонентов
 
-Этот документ определяет предлагаемую внутреннюю компонентную структуру для
+Этот документ определяет утвержденную внутреннюю компонентную структуру для
 bounded local standalone slice `run --ref`:
 
 - `sqlrs run --ref ...`
@@ -30,7 +30,7 @@ bounded local standalone slice `run --ref`:
   - насильственного включения standalone `run` в prepare-oriented stage
     pipeline, когда transport и output behavior остаются другими
 
-## 2. Предлагаемое разбиение компонентов
+## 2. Утвержденное разбиение компонентов
 
 | Компонент | Ответственность | Caller |
 |-----------|-----------------|--------|
@@ -45,7 +45,7 @@ bounded local standalone slice `run --ref`:
 
 ## 3. Общий owner для этого slice: package-local run binding helper в `internal/app`
 
-Предлагаемая структура оставляет ref-aware binding для standalone `run`
+Утвержденная структура оставляет ref-aware binding для standalone `run`
 package-local внутри `internal/app`, а не вводит сразу новый top-level package.
 
 Обоснование:
@@ -206,8 +206,8 @@ flowchart TB
 
 ## 8. Consequences для существующих документов
 
-Если design будет принят, standalone `run --ref` получит собственную internal
-structure:
+Поскольку standalone `run --ref` теперь получил собственную утвержденную
+internal structure:
 
 - `cli-component-structure.RU.md` должен описывать `internal/refctx` как
   shared не только для `plan` / `prepare --ref` и `diff`, но и для standalone
@@ -217,7 +217,7 @@ structure:
 - `ref-component-structure.RU.md` остается scoped к `plan` / `prepare` и не
   должен читаться как owner standalone `run --ref`;
 - `cli-contract.RU.md` и `git-aware-passive.RU.md` должны ссылаться на этот
-  документ для standalone `run --ref`, когда design будет принят.
+  документ для standalone `run --ref`.
 
 ## 9. References
 

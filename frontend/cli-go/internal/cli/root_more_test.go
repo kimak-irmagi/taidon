@@ -154,6 +154,8 @@ func TestFindPrepareAliasRunIndexBranches(t *testing.T) {
 		want int
 	}{
 		{name: "plain composite", args: []string{"prepare", "chinook", "run", "smoke"}, want: 2},
+		{name: "run alias ref flags", args: []string{"prepare", "chinook", "run", "--ref", "HEAD", "smoke"}, want: 2},
+		{name: "run alias instance flag", args: []string{"prepare", "chinook", "run", "--instance", "dev", "smoke"}, want: 2},
 		{name: "skips watch flags", args: []string{"prepare", "chinook", "--watch", "--no-watch", "--help", "-h", "run", "smoke"}, want: 6},
 		{name: "skips provenance path", args: []string{"prepare", "--provenance-path", "run", "chinook", "run", "smoke"}, want: 4},
 		{name: "skips ref flags", args: []string{"prepare", "--ref", "HEAD", "--ref-mode", "blob", "--ref-keep-worktree", "chinook", "run", "smoke"}, want: 7},
@@ -186,6 +188,8 @@ func TestIsCompositeRunBoundaryBranches(t *testing.T) {
 		{name: "empty raw run suffix", args: []string{"prepare:psql", "run:"}, idx: 1, want: false},
 		{name: "help after run", args: []string{"prepare:psql", "run", "--help"}, idx: 1, want: true},
 		{name: "short help after run", args: []string{"prepare:psql", "run", "-h"}, idx: 1, want: true},
+		{name: "ref flags before alias ref", args: []string{"prepare:psql", "run", "--ref", "HEAD", "smoke"}, idx: 1, want: true},
+		{name: "instance flag before alias ref", args: []string{"prepare:psql", "run", "--instance", "dev", "smoke"}, idx: 1, want: true},
 		{name: "separator after run", args: []string{"prepare:psql", "run", "--"}, idx: 1, want: false},
 		{name: "flag after run", args: []string{"prepare:psql", "run", "-c"}, idx: 1, want: false},
 		{name: "missing next token", args: []string{"prepare:psql", "run"}, idx: 1, want: false},

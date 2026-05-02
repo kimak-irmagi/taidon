@@ -1,6 +1,6 @@
 # Поток Ref-Backed Run
 
-Этот документ описывает предлагаемый локальный interaction flow для следующего
+Этот документ описывает утвержденный локальный interaction flow для следующего
 bounded repository-aware slice после уже реализованных `plan` / `prepare --ref`,
 provenance и cache explanation:
 
