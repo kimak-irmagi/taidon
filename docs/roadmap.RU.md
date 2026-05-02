@@ -72,7 +72,7 @@ gantt
 
 ---
 
-## Статус (на 2026-04-30)
+## Статус (на 2026-05-02)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -159,6 +159,12 @@ gantt
   raw/alias/ref binding semantics, отдельный local engine endpoint
   `POST /v1/cache/explain/prepare` и regression coverage для hit/miss,
   rendering и binding parity.
+- **Сделано (baseline M2 standalone `run --ref`)**: standalone local
+  `run`, `run:psql` и `run:pgbench` теперь поддерживают bounded `--ref`
+  чтение и для raw, и для alias-backed flow, переиспользуя существующие
+  projected-cwd ref context и inputset semantics; на CLI boundary также
+  режется ref-backed `prepare ... run`, пока не будет принят отдельный
+  composite design.
 - **Сделано (release alias/workspace coverage)**: release/e2e сценарии теперь
   гоняют repo-tracked prepare aliases для примеров Chinook, Sakila и
   Liquibase/JHipster, удерживая alias/workspace conventions под валидацией.
@@ -168,34 +174,30 @@ gantt
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
-- **Следующий публичный local-фокус**: реализовать bounded standalone
-  `run --ref` slice для repository-aware raw и alias-backed run flow,
-  переиспользуя уже существующий local ref context и inputset path.
+- **Следующий публичный local-фокус (ожидает выбора)**: выбрать первый
+  post-`run --ref` repository-aware follow-up, скорее всего между composite
+  ref-backed `prepare ... run`, run-side diagnostics (`provenance` /
+  `cache explain`) и zero-copy/cache-hit reuse.
 - **Запланировано**: ZFS snapshot backend, опциональная VS Code интеграция,
   team on-prem baseline, облачный sharing, образование.
 
 ---
 
-## Ближайший Следующий Шаг (Выбран)
+## Ближайший Следующий Шаг (Ожидает Выбора)
 
-- **Направление**: расширить уже реализованную repository-aware local surface
-  от prepare-oriented flow к standalone `run`, не расширяясь пока в composite
-  ref semantics.
-- **Выбранный следующий PR**: baseline для standalone `run --ref` у raw и
-  alias-backed single-stage run flow.
-- **Следующий PR-срез**:
-  - добавить существующее семейство `--ref` / `--ref-mode` /
-    `--ref-keep-worktree` в standalone `run` и `run:<kind>`;
-  - резолвить run alias-ы и raw file-bearing run inputs в том же
-    projected-cwd ref context, который уже используют `plan` / `prepare`;
-  - удержать slice CLI-only, local-only и standalone: без Git mutations, без
-    hosted workflow expansion и без `prepare ... run ...` с ref-backed
-    run-stage;
-  - покрыть docs и тестами raw/alias/ref behavior для `run:psql` и
-    `run:pgbench`.
-- **Отложено после этого slice**: composite ref-backed `prepare ... run`,
-  provenance для run-side, `cache explain run ...` и zero-copy/cache-hit
-  follow-up.
+- **Направление**: продолжить repository-aware local CLI после уже
+  реализованного standalone `run --ref` baseline, не раздувая scope без
+  отдельного решения.
+- **Текущая точка выбора**: определить первый post-`run --ref` follow-up PR.
+- **Наиболее вероятные кандидаты**:
+  - composite ref-backed semantics для `prepare ... run`, включая явный
+    stage-boundary contract для run-side refs;
+  - parity для run-side diagnostics, начиная с `--provenance-path` и/или
+    `cache explain run ...` для raw и alias-backed flow;
+  - более глубокая runtime/cache reuse работа, например zero-copy/cache-hit
+    follow-up поверх уже существующего repository-aware binding path.
+- **По-прежнему отложено дальше следующего slice**: hosted workflow expansion,
+  Git mutation flow и более широкие team/cloud repository features.
 
 ---
 
@@ -294,8 +296,8 @@ gantt
     исправлению `.gitignore` и `.vscode`
 - Git-aware CLI (passive):
   - `diff` в path mode
-  - bounded local `--ref` для `plan` / `prepare` плюс ref-aware semantics в
-    `diff` (`worktree|blob`)
+  - bounded local `--ref` для `plan` / `prepare` / standalone `run` плюс
+    ref-aware semantics в `diff` (`worktree|blob`)
   - provenance и cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
@@ -309,11 +311,11 @@ gantt
 
 **Статус**: сделано (public/local baseline). Alias execution, inspection,
 authoring, generic advisory discovery, shared `internal/inputset` semantics,
-`sqlrs diff`, bounded local `plan` / `prepare` с `--ref` и
-provenance/cache explain уже реализованы. Выбранный следующий
-repository-aware follow-up - это standalone `run --ref`; более широкие
-ref-backed composite-семантики и zero-copy/cache-hit reuse теперь находятся за
-пределами принятого M2 baseline.
+`sqlrs diff`, bounded local `plan` / `prepare` / standalone `run` с `--ref` и
+provenance/cache explain уже реализованы. Следующий repository-aware
+follow-up ещё не выбран; более широкие ref-backed composite-семантики,
+run-side diagnostics и zero-copy/cache-hit reuse теперь находятся за пределами
+принятого M2 baseline.
 
 ---
 

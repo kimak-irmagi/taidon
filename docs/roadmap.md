@@ -71,7 +71,7 @@ gantt
 
 ---
 
-## Status (as of 2026-04-30)
+## Status (as of 2026-05-02)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -157,6 +157,11 @@ gantt
   `sqlrs cache explain prepare ...` with matching raw/alias/ref binding
   semantics, plus a dedicated local engine `POST /v1/cache/explain/prepare`
   endpoint and regression coverage for hit/miss, rendering, and binding parity.
+- **Done (M2 standalone `run --ref` baseline)**: standalone local
+  `run`, `run:psql`, and `run:pgbench` now support bounded `--ref` reads across
+  raw and alias-backed flows, reusing the existing projected-cwd ref context and
+  inputset semantics; the CLI also rejects ref-backed `prepare ... run`
+  composites at the boundary until a dedicated composite design is accepted.
 - **Done (release alias/workspace coverage)**: release/e2e scenarios now
   exercise repo-tracked prepare aliases for Chinook, Sakila, and
   Liquibase/JHipster examples, keeping alias/workspace conventions under
@@ -167,34 +172,29 @@ gantt
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
-- **Next public local focus**: land the bounded standalone `run --ref` slice
-  for repository-aware raw and alias-backed run flows, reusing the existing
-  local ref context and inputset path.
+- **Next public local focus (pending selection)**: choose the first
+  post-`run --ref` repository-aware follow-up, most likely between composite
+  ref-backed `prepare ... run` semantics and a run-side diagnostics slice
+  (`provenance` / `cache explain`) or zero-copy/cache-hit reuse.
 - **Planned**: ZFS snapshot backend, optional VS Code integration, team on-prem
   baseline, cloud sharing, education.
 
 ---
 
-## Immediate Next Step (Selected)
+## Immediate Next Step (Pending Selection)
 
-- **Direction**: extend the landed repository-aware local surface from
-  prepare-oriented flows into standalone `run` without widening into composite
-  ref semantics yet.
-- **Selected next PR**: standalone `run --ref` baseline for raw and
-  alias-backed single-stage run flows.
-- **Next PR slice**:
-  - add the existing `--ref` / `--ref-mode` / `--ref-keep-worktree` family to
-    standalone `run` and `run:<kind>`;
-  - resolve run aliases and raw file-bearing run inputs in the same
-    projected-cwd ref context already used by `plan` / `prepare`;
-  - keep the slice CLI-only, local-only, and standalone: no Git mutations, no
-    hosted workflow expansion, and no `prepare ... run ...` with a ref-backed
-    run stage;
-  - cover raw/alias/ref behavior for `run:psql` and `run:pgbench` in docs and
-    tests.
-- **Deferred after this slice**: composite ref-backed `prepare ... run`,
-  run-side provenance, `cache explain run ...`, and zero-copy/cache-hit
-  follow-ups.
+- **Direction**: continue the repository-aware local CLI after the landed
+  standalone `run --ref` baseline without widening scope blindly.
+- **Current decision point**: pick the first post-`run --ref` follow-up PR.
+- **Most likely candidates**:
+  - composite ref-backed `prepare ... run` semantics, including a dedicated
+    stage-boundary contract for run-side refs;
+  - run-side diagnostics parity, starting with `--provenance-path` and/or
+    `cache explain run ...` for raw and alias-backed flows;
+  - deeper runtime/cache reuse work, such as zero-copy/cache-hit follow-ups on
+    top of the existing repository-aware binding path.
+- **Still deferred beyond the next slice**: any hosted workflow expansion, Git
+  mutation flows, and broader team/cloud repository features.
 
 ---
 
@@ -292,8 +292,8 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
     `.vscode` remediation suggestions
 - Git-aware CLI (passive):
   - `diff` path mode
-  - bounded local `--ref` for `plan` / `prepare` plus ref-aware `diff`
-    semantics (`worktree|blob`)
+  - bounded local `--ref` for `plan` / `prepare` / standalone `run` plus
+    ref-aware `diff` semantics (`worktree|blob`)
   - provenance and cache explain
 - VS Code extension v1 (optional):
   - one-click copy DSN
@@ -306,10 +306,10 @@ primarily in M2 developer experience and optional runtime extensions such as ZFS
 
 **Status**: Done (public/local baseline). Alias execution, inspection,
 authoring, generic advisory discovery, shared `internal/inputset` semantics,
-`sqlrs diff`, bounded local `plan` / `prepare` `--ref`, and
-provenance/cache explain are landed. The selected next repository-aware
-follow-up is the standalone `run --ref` slice; broader ref-backed composites
-and zero-copy/cache-hit reuse now sit beyond the accepted M2 baseline.
+`sqlrs diff`, bounded local `plan` / `prepare` / standalone `run` `--ref`, and
+provenance/cache explain are landed. The next repository-aware follow-up has
+not been selected yet; broader ref-backed composites, run-side diagnostics, and
+zero-copy/cache-hit reuse now sit beyond the accepted M2 baseline.
 
 ---
 
