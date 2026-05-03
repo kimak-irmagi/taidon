@@ -66,6 +66,18 @@ func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) 
 			i++
 		case "--ref-keep-worktree":
 			opts.RefKeepWorktree = true
+		case strings.HasPrefix(arg, "--ref="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.GitRef = value
+		case strings.HasPrefix(arg, "--ref-mode="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref-mode="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = value
 		case "--":
 			return opts, false, ExitErrorf(2, "prepare aliases do not accept inline tool args")
 		default:
@@ -129,6 +141,18 @@ func parsePlanAliasArgs(args []string) (planAliasInvocation, bool, error) {
 			i++
 		case "--ref-keep-worktree":
 			opts.RefKeepWorktree = true
+		case strings.HasPrefix(arg, "--ref="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.GitRef = value
+		case strings.HasPrefix(arg, "--ref-mode="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref-mode="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = value
 		case "--":
 			return opts, false, ExitErrorf(2, "plan aliases do not accept inline tool args")
 		default:

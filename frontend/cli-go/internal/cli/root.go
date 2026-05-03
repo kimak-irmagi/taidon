@@ -183,6 +183,8 @@ func findPrepareAliasRunIndex(args []string) int {
 			continue
 		case "--ref-keep-worktree":
 			continue
+		case strings.HasPrefix(arg, "--ref="), strings.HasPrefix(arg, "--ref-mode="):
+			continue
 		case "--":
 			return -1
 		default:
