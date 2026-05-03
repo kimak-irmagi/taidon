@@ -268,7 +268,9 @@ func looksLikeRunAliasStage(args []string) bool {
 			i++
 		case arg == "--ref-keep-worktree":
 			continue
-		case strings.HasPrefix(arg, "--instance="):
+		case strings.HasPrefix(arg, "--instance="),
+			strings.HasPrefix(arg, "--ref="),
+			strings.HasPrefix(arg, "--ref-mode="):
 			continue
 		case strings.HasPrefix(arg, "-"):
 			return false

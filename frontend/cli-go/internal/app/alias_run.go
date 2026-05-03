@@ -60,6 +60,18 @@ func parseRunAliasArgs(args []string, requireInstance bool) (runAliasInvocation,
 				return opts, false, ExitErrorf(2, "Missing value for --instance")
 			}
 			opts.InstanceRef = value
+		case strings.HasPrefix(arg, "--ref="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.GitRef = value
+		case strings.HasPrefix(arg, "--ref-mode="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref-mode="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = value
 		default:
 			if strings.HasPrefix(arg, "-") {
 				return opts, false, ExitErrorf(2, "unknown run alias option: %s", arg)

@@ -112,6 +112,28 @@ func TestParseRunAliasArgsAcceptsRefFlagsAndPreservesStandaloneInstanceRequireme
 		}
 	})
 
+	t.Run("accepts equals ref flags", func(t *testing.T) {
+		invocation, showHelp, err := parseRunAliasArgs([]string{"--ref=HEAD~1", "--ref-mode=blob", "smoke", "--instance=dev"}, true)
+		if err != nil {
+			t.Fatalf("parseRunAliasArgs: %v", err)
+		}
+		if showHelp {
+			t.Fatal("unexpected help")
+		}
+		if invocation.GitRef != "HEAD~1" {
+			t.Fatalf("GitRef = %q, want %q", invocation.GitRef, "HEAD~1")
+		}
+		if invocation.RefMode != "blob" {
+			t.Fatalf("RefMode = %q, want %q", invocation.RefMode, "blob")
+		}
+		if invocation.Ref != "smoke" {
+			t.Fatalf("Ref = %q, want %q", invocation.Ref, "smoke")
+		}
+		if invocation.InstanceRef != "dev" {
+			t.Fatalf("InstanceRef = %q, want %q", invocation.InstanceRef, "dev")
+		}
+	})
+
 	t.Run("still requires instance when standalone", func(t *testing.T) {
 		_, _, err := parseRunAliasArgs([]string{"--ref", "HEAD~1", "smoke"}, true)
 		if err == nil || !strings.Contains(err.Error(), "run alias requires --instance") {
