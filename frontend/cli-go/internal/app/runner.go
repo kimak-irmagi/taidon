@@ -442,10 +442,11 @@ func (r runner) run(args []string) error {
 				}
 				continue
 			}
+			runAliasCWD := projectedRunInvocationCWD(cmdCtx.cwd, ref)
 			if err := runRunParsed(r.deps.stdout, r.deps.stderr, runOpts, alias.Kind, runArgs{
 				InstanceRef: invocation.InstanceRef,
 				Args:        alias.Args,
-			}, cmdCtx.workspaceRoot, filepath.Dir(aliasPath), ref); err != nil {
+			}, cmdCtx.workspaceRoot, runAliasCWD, ref); err != nil {
 				return err
 			}
 		default:

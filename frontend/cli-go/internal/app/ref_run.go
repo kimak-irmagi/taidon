@@ -55,3 +55,13 @@ func resolveRunBindingContext(workspaceRoot string, cwd string, parsed runArgs, 
 	}
 	return &ctx, ctx.Cleanup, nil
 }
+
+// projectedRunInvocationCWD preserves run alias command-source semantics under
+// `--ref`: plain `\i` / `\include` still resolve from the caller's projected
+// cwd, while explicit file args are rebased separately from the alias file.
+func projectedRunInvocationCWD(invocationCWD string, ctx *refctx.Context) string {
+	if ctx == nil || strings.TrimSpace(ctx.BaseDir) == "" {
+		return invocationCWD
+	}
+	return ctx.BaseDir
+}

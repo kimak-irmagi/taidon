@@ -13,6 +13,7 @@ import (
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/client"
 	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/refctx"
 )
 
 func TestParseRunArgsAcceptsRefFlagsAndDefaultsToWorktree(t *testing.T) {
@@ -239,6 +240,23 @@ func TestResolveRunAliasWithOptionalRefCleansRefContextOnResolveOrLoadFailure(t 
 			t.Fatalf("worktree count = %d, want %d", got, baseline)
 		}
 	})
+}
+
+func TestProjectedRunInvocationCWDPrefersProjectedRefBaseDir(t *testing.T) {
+	liveCWD := filepath.Join(t.TempDir(), "examples")
+	projectedCWD := filepath.Join(t.TempDir(), "projected", "examples")
+
+	if got := projectedRunInvocationCWD(liveCWD, nil); got != liveCWD {
+		t.Fatalf("projectedRunInvocationCWD(nil) = %q, want %q", got, liveCWD)
+	}
+
+	if got := projectedRunInvocationCWD(liveCWD, &refctx.Context{}); got != liveCWD {
+		t.Fatalf("projectedRunInvocationCWD(blank) = %q, want %q", got, liveCWD)
+	}
+
+	if got := projectedRunInvocationCWD(liveCWD, &refctx.Context{BaseDir: projectedCWD}); got != projectedCWD {
+		t.Fatalf("projectedRunInvocationCWD(ref) = %q, want %q", got, projectedCWD)
+	}
 }
 
 func TestRunRefRawPsqlBindsFileInputsFromProjectedCwd(t *testing.T) {
