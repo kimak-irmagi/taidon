@@ -44,6 +44,28 @@ func TestParseRunArgsAcceptsRefFlagsAndDefaultsToWorktree(t *testing.T) {
 	}
 }
 
+func TestParseRunArgsAcceptsEqualsRefFlags(t *testing.T) {
+	parsed, showHelp, err := parseRunArgs([]string{"--ref=HEAD~1", "--ref-mode=blob", "--instance=dev", "--", "-c", "select 1"})
+	if err != nil {
+		t.Fatalf("parseRunArgs: %v", err)
+	}
+	if showHelp {
+		t.Fatal("unexpected help")
+	}
+	if parsed.Ref != "HEAD~1" {
+		t.Fatalf("Ref = %q, want %q", parsed.Ref, "HEAD~1")
+	}
+	if parsed.RefMode != "blob" {
+		t.Fatalf("RefMode = %q, want %q", parsed.RefMode, "blob")
+	}
+	if parsed.InstanceRef != "dev" {
+		t.Fatalf("InstanceRef = %q, want %q", parsed.InstanceRef, "dev")
+	}
+	if got := strings.Join(parsed.Args, " "); got != "-c select 1" {
+		t.Fatalf("Args = %q, want %q", got, "-c select 1")
+	}
+}
+
 func TestParseRunArgsRejectsRefModeWithoutRefAndRejectsBlobKeepWorktree(t *testing.T) {
 	t.Run("ref mode requires ref", func(t *testing.T) {
 		_, _, err := parseRunArgs([]string{"--ref-mode", "blob", "--instance", "dev"})
