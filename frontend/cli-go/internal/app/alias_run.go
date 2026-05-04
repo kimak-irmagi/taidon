@@ -50,7 +50,11 @@ func parseRunAliasArgs(args []string, requireInstance bool) (runAliasInvocation,
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
 			}
-			opts.RefMode = strings.TrimSpace(args[i+1])
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = value
 			i++
 		case arg == "--ref-keep-worktree":
 			opts.RefKeepWorktree = true

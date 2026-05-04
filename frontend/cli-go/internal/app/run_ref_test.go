@@ -74,6 +74,13 @@ func TestParseRunArgsRejectsRefModeWithoutRefAndRejectsBlobKeepWorktree(t *testi
 		}
 	})
 
+	t.Run("blank ref mode value", func(t *testing.T) {
+		_, _, err := parseRunArgs([]string{"--ref", "HEAD", "--ref-mode", " ", "--instance", "dev"})
+		if err == nil || !strings.Contains(err.Error(), "Missing value for --ref-mode") {
+			t.Fatalf("expected missing --ref-mode value, got %v", err)
+		}
+	})
+
 	t.Run("keep worktree requires ref", func(t *testing.T) {
 		_, _, err := parseRunArgs([]string{"--ref-keep-worktree", "--instance", "dev"})
 		if err == nil || !strings.Contains(err.Error(), "--ref-keep-worktree requires --ref") {
@@ -162,6 +169,11 @@ func TestParseRunAliasArgsRejectsInvalidRefFlagCombinations(t *testing.T) {
 			name: "missing ref value",
 			args: []string{"--ref", " ", "smoke", "--instance", "dev"},
 			want: "Missing value for --ref",
+		},
+		{
+			name: "blank ref mode value",
+			args: []string{"--ref", "HEAD", "--ref-mode", " ", "smoke", "--instance", "dev"},
+			want: "Missing value for --ref-mode",
 		},
 		{
 			name: "missing ref mode value",
