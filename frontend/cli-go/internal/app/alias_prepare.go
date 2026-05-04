@@ -29,16 +29,16 @@ func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) 
 	opts := prepareAliasInvocation{Watch: true}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		switch arg {
-		case "--help", "-h":
+		switch {
+		case arg == "--help" || arg == "-h":
 			return opts, true, nil
-		case "--watch":
+		case arg == "--watch":
 			opts.Watch = true
 			opts.WatchSpecified = true
-		case "--no-watch":
+		case arg == "--no-watch":
 			opts.Watch = false
 			opts.WatchSpecified = true
-		case "--provenance-path":
+		case arg == "--provenance-path":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
 			}
@@ -48,7 +48,7 @@ func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) 
 			}
 			opts.ProvenancePath = value
 			i++
-		case "--ref":
+		case arg == "--ref":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref")
 			}
@@ -58,13 +58,13 @@ func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) 
 			}
 			opts.GitRef = value
 			i++
-		case "--ref-mode":
+		case arg == "--ref-mode":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
 			}
 			opts.RefMode = strings.TrimSpace(args[i+1])
 			i++
-		case "--ref-keep-worktree":
+		case arg == "--ref-keep-worktree":
 			opts.RefKeepWorktree = true
 		case strings.HasPrefix(arg, "--ref="):
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref="))
@@ -78,7 +78,7 @@ func parsePrepareAliasArgs(args []string) (prepareAliasInvocation, bool, error) 
 				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
 			}
 			opts.RefMode = value
-		case "--":
+		case arg == "--":
 			return opts, false, ExitErrorf(2, "prepare aliases do not accept inline tool args")
 		default:
 			if strings.HasPrefix(arg, "-") {
@@ -108,12 +108,12 @@ func parsePlanAliasArgs(args []string) (planAliasInvocation, bool, error) {
 	opts := planAliasInvocation{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		switch arg {
-		case "--help", "-h":
+		switch {
+		case arg == "--help" || arg == "-h":
 			return opts, true, nil
-		case "--watch", "--no-watch":
+		case arg == "--watch" || arg == "--no-watch":
 			return opts, false, ExitErrorf(2, "plan does not support --watch/--no-watch")
-		case "--provenance-path":
+		case arg == "--provenance-path":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --provenance-path")
 			}
@@ -123,7 +123,7 @@ func parsePlanAliasArgs(args []string) (planAliasInvocation, bool, error) {
 			}
 			opts.ProvenancePath = value
 			i++
-		case "--ref":
+		case arg == "--ref":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref")
 			}
@@ -133,13 +133,13 @@ func parsePlanAliasArgs(args []string) (planAliasInvocation, bool, error) {
 			}
 			opts.GitRef = value
 			i++
-		case "--ref-mode":
+		case arg == "--ref-mode":
 			if i+1 >= len(args) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
 			}
 			opts.RefMode = strings.TrimSpace(args[i+1])
 			i++
-		case "--ref-keep-worktree":
+		case arg == "--ref-keep-worktree":
 			opts.RefKeepWorktree = true
 		case strings.HasPrefix(arg, "--ref="):
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref="))
@@ -153,7 +153,7 @@ func parsePlanAliasArgs(args []string) (planAliasInvocation, bool, error) {
 				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
 			}
 			opts.RefMode = value
-		case "--":
+		case arg == "--":
 			return opts, false, ExitErrorf(2, "plan aliases do not accept inline tool args")
 		default:
 			if strings.HasPrefix(arg, "-") {

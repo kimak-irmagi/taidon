@@ -482,8 +482,7 @@ func prepareStageUsesRef(cmd cli.Command) bool {
 		return false
 	}
 	for _, arg := range cmd.Args {
-		switch strings.TrimSpace(arg) {
-		case "--ref", "--ref-mode", "--ref-keep-worktree":
+		if usesRefFlagToken(strings.TrimSpace(arg)) {
 			return true
 		}
 	}
@@ -507,13 +506,22 @@ func runStageUsesRef(cmd cli.Command) bool {
 	}
 
 	for _, arg := range cmd.Args {
-		value := strings.TrimSpace(arg)
-		switch {
-		case value == "--ref", value == "--ref-mode", value == "--ref-keep-worktree":
+		if usesRefFlagToken(strings.TrimSpace(arg)) {
 			return true
 		}
 	}
 	return false
+}
+
+func usesRefFlagToken(value string) bool {
+	switch {
+	case value == "--ref", value == "--ref-mode", value == "--ref-keep-worktree":
+		return true
+	case strings.HasPrefix(value, "--ref="), strings.HasPrefix(value, "--ref-mode="):
+		return true
+	default:
+		return false
+	}
 }
 
 func prepareStageUsesProvenance(cmd cli.Command) bool {

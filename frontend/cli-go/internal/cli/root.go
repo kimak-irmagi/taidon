@@ -172,20 +172,20 @@ func findPrepareAliasRunIndex(args []string) int {
 	hasRef := false
 	for i := 1; i < len(args); i++ {
 		arg := args[i]
-		switch arg {
-		case "--watch", "--no-watch", "--help", "-h":
+		switch {
+		case arg == "--watch" || arg == "--no-watch" || arg == "--help" || arg == "-h":
 			continue
-		case "--provenance-path", "--ref", "--ref-mode":
+		case arg == "--provenance-path" || arg == "--ref" || arg == "--ref-mode":
 			if i+1 >= len(args) {
 				return -1
 			}
 			i++
 			continue
-		case "--ref-keep-worktree":
+		case arg == "--ref-keep-worktree":
 			continue
-		case strings.HasPrefix(arg, "--ref="), strings.HasPrefix(arg, "--ref-mode="):
+		case strings.HasPrefix(arg, "--ref=") || strings.HasPrefix(arg, "--ref-mode="):
 			continue
-		case "--":
+		case arg == "--":
 			return -1
 		default:
 			if strings.HasPrefix(arg, "-") {
