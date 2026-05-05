@@ -456,6 +456,49 @@ func TestRunRefAliasRebasesFileBearingArgsRelativeToAliasFileAtRef(t *testing.T)
 	}
 }
 
+func TestRunRefAliasPreservesExplicitAliasCommand(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	repo, parentRef := initRunRefTestRepo(t)
+	setTestDirs(t, t.TempDir())
+	withWorkingDir(t, filepath.Join(repo, "examples"))
+
+	for _, mode := range []string{"blob", "worktree"} {
+		t.Run(mode, func(t *testing.T) {
+			var gotRequest client.RunRequest
+			server := newRunCaptureServer(t, func(req client.RunRequest, _ map[string]any) {
+				gotRequest = req
+			})
+			defer server.Close()
+
+			err := Run([]string{
+				"--mode", "remote",
+				"--endpoint", server.URL,
+				"--workspace", repo,
+				"run",
+				"--ref", parentRef,
+				"--ref-mode", mode,
+				"wrapped",
+				"--instance", "dev",
+			})
+			if err != nil {
+				t.Fatalf("Run(run alias --ref explicit command): %v", err)
+			}
+			if gotRequest.Command == nil || *gotRequest.Command != "psql" {
+				t.Fatalf("Command = %+v, want %q", gotRequest.Command, "psql")
+			}
+			if len(gotRequest.Steps) != 1 {
+				t.Fatalf("Steps len = %d, want 1", len(gotRequest.Steps))
+			}
+			if got := strings.Join(gotRequest.Steps[0].Args, " "); got != "-c select 'wrapped'" {
+				t.Fatalf("step args = %q, want %q", got, "-c select 'wrapped'")
+			}
+		})
+	}
+}
+
 func TestRunRefFailsWhenProjectedCwdIsMissingAtSelectedRef(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not in PATH")
@@ -696,6 +739,7 @@ func initRunRefTestRepo(t *testing.T) (string, string) {
 	writeTestFile(t, repo, filepath.Join("examples", "bench.sql"), "\\set aid 1\n")
 	writeTestFile(t, repo, filepath.Join("examples", "chinook", "scripts", "first.sql"), "select 'first';\n")
 	writeRunAliasFile(t, filepath.Join(repo, "examples"), filepath.Join("chinook", "smoke.run.s9s.yaml"), "kind: psql\nargs:\n  - -f\n  - ./scripts/first.sql\n")
+	writeRunAliasFile(t, filepath.Join(repo, "examples"), "wrapped.run.s9s.yaml", "kind: psql\nargs:\n  - psql\n  - -c\n  - select 'wrapped'\n")
 	writeRunAliasFile(t, filepath.Join(repo, "examples"), "broken.run.s9s.yaml", "kind: [\n")
 	runGit("add", "examples")
 	runGit("commit", "-m", "first")
@@ -704,6 +748,7 @@ func initRunRefTestRepo(t *testing.T) (string, string) {
 	writeTestFile(t, repo, filepath.Join("examples", "bench.sql"), "\\set aid 2\n")
 	writeTestFile(t, repo, filepath.Join("examples", "chinook", "scripts", "second.sql"), "select 'second';\n")
 	writeRunAliasFile(t, filepath.Join(repo, "examples"), filepath.Join("chinook", "smoke.run.s9s.yaml"), "kind: psql\nargs:\n  - -f\n  - ./scripts/second.sql\n")
+	writeRunAliasFile(t, filepath.Join(repo, "examples"), "wrapped.run.s9s.yaml", "kind: psql\nargs:\n  - psql\n  - -c\n  - select 'wrapped current'\n")
 	writeRunAliasFile(t, filepath.Join(repo, "examples"), "current-only.run.s9s.yaml", "kind: psql\nargs:\n  - -f\n  - ./current-only.sql\n")
 	writeTestFile(t, repo, filepath.Join("examples", "current-only.sql"), "select 'current';\n")
 	writeTestFile(t, repo, filepath.Join("examples", "later", "query.sql"), "select 'later';\n")

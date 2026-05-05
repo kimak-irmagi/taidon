@@ -442,11 +442,16 @@ func (r runner) run(args []string) error {
 				}
 				continue
 			}
+			parsedRun, showHelp, err := parseRunArgs(buildRunAliasCommandArgs(alias, invocation))
+			if err != nil {
+				return err
+			}
+			if showHelp {
+				cli.PrintRunUsage(r.deps.stdout)
+				return nil
+			}
 			runAliasCWD := projectedRunInvocationCWD(cmdCtx.cwd, ref)
-			if err := runRunParsed(r.deps.stdout, r.deps.stderr, runOpts, alias.Kind, runArgs{
-				InstanceRef: invocation.InstanceRef,
-				Args:        alias.Args,
-			}, cmdCtx.workspaceRoot, runAliasCWD, ref); err != nil {
+			if err := runRunParsed(r.deps.stdout, r.deps.stderr, runOpts, alias.Kind, parsedRun, cmdCtx.workspaceRoot, runAliasCWD, ref); err != nil {
 				return err
 			}
 		default:
