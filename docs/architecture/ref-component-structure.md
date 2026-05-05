@@ -17,7 +17,7 @@ interaction flow in [`ref-flow.md`](ref-flow.md).
 - It reuses the same `worktree` and `blob` vocabulary already accepted for
   `sqlrs diff`.
 - It does not yet add:
-  - standalone `run --ref`
+  - the later approved standalone `run --ref` follow-up
   - `prepare ... run ...` with a ref-backed prepare stage
   - provenance or `cache explain`
 - The architecture must avoid duplicating detached-worktree lifecycle and
@@ -198,8 +198,8 @@ contexts:
 - `cli-component-structure.md` must list `internal/refctx` alongside
   `internal/diff`, `internal/discover`, and `internal/inputset`;
 - `cli-contract.md` must describe `plan` / `prepare --ref` as the accepted next
-  bounded slice, while keeping `run --ref` and composite ref semantics out of
-  the current approved scope.
+  bounded slice, while later standalone `run --ref` is documented separately
+  and composite ref semantics stay out of this document's scope.
 
 ## 9. References
 

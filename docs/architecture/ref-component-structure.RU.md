@@ -17,7 +17,7 @@ interaction flow в [`ref-flow.RU.md`](ref-flow.RU.md).
 - Он переиспользует ту же vocabulary `worktree` и `blob`, что уже принята для
   `sqlrs diff`.
 - Он пока не добавляет:
-  - standalone `run --ref`
+  - более поздний утвержденный follow-up для standalone `run --ref`
   - `prepare ... run ...` с ref-backed prepare-stage
   - provenance или `cache explain`
 - Архитектура не должна дублировать detached-worktree lifecycle и
@@ -201,8 +201,9 @@ contexts:
 - `cli-component-structure.RU.md` должен перечислять `internal/refctx` рядом с
   `internal/diff`, `internal/discover` и `internal/inputset`;
 - `cli-contract.RU.md` должен описывать `plan` / `prepare --ref` как
-  утвержденный следующий bounded slice, оставляя `run --ref` и composite
-  ref-semantics вне текущего approved scope.
+  утвержденный bounded slice, а более поздний standalone `run --ref` должен
+  быть описан отдельно; composite ref-semantics остаются вне scope этого
+  документа.
 
 ## 9. Ссылки
 

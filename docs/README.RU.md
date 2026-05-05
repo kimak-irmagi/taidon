@@ -8,6 +8,7 @@
 - ADR: `docs/adr/` (архитектурные решения)
 - Дизайн‑заметки: `docs/design-notes/`
 - User guides: `docs/user-guides/`
+  Текущий guide по следующему slice: [`docs/user-guides/sqlrs-run-ref.md`](user-guides/sqlrs-run-ref.md)
 - API guides: `docs/api-guides/`
 
 - Эксперименты: [`docs/experiments.md`](docs/experiments.RU.md)

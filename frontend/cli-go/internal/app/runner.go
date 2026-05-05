@@ -149,6 +149,19 @@ func (r runner) run(args []string) error {
 	if len(commands) == 0 {
 		return fmt.Errorf("missing command")
 	}
+	if len(commands) > 1 && prepareStageUsesRef(commands[0]) {
+		return fmt.Errorf("prepare --ref does not support composite run yet")
+	}
+	if len(commands) > 1 && prepareStageUsesProvenance(commands[0]) {
+		return fmt.Errorf("provenance is not supported with composite prepare ... run")
+	}
+	if len(commands) > 1 {
+		for _, cmd := range commands[1:] {
+			if runStageUsesRef(cmd) {
+				return fmt.Errorf("run --ref does not support composite prepare ... run yet")
+			}
+		}
+	}
 
 	if commands[0].Name == "init" {
 		if len(commands) > 1 {
@@ -170,13 +183,7 @@ func (r runner) run(args []string) error {
 	}
 
 	var prepared *client.PrepareJobResult
-	for idx, cmd := range commands {
-		if idx == 0 && len(commands) > 1 && prepareStageUsesRef(cmd) {
-			return fmt.Errorf("prepare --ref does not support composite run yet")
-		}
-		if idx == 0 && len(commands) > 1 && prepareStageUsesProvenance(cmd) {
-			return fmt.Errorf("provenance is not supported with composite prepare ... run")
-		}
+	for _, cmd := range commands {
 		switch cmd.Name {
 		case "alias":
 			if len(commands) > 1 {
@@ -424,12 +431,27 @@ func (r runner) run(args []string) error {
 				cli.PrintRunUsage(r.deps.stdout)
 				return nil
 			}
-			alias, aliasPath, err := resolveRunAliasDefinition(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref)
+			alias, aliasPath, ref, err := resolveRunAliasWithOptionalRef(cmdCtx.workspaceRoot, cmdCtx.cwd, invocation.Ref, invocation.GitRef, invocation.RefMode, invocation.RefKeepWorktree)
 			if err != nil {
 				return err
 			}
 			alias.Args = rebaseRunAliasArgs(alias.Kind, alias.Args, aliasPath)
-			if err := r.deps.runRun(r.deps.stdout, r.deps.stderr, runOpts, alias.Kind, buildRunAliasCommandArgs(alias, invocation), cmdCtx.workspaceRoot, cmdCtx.cwd); err != nil {
+			if ref == nil {
+				if err := r.deps.runRun(r.deps.stdout, r.deps.stderr, runOpts, alias.Kind, buildRunAliasCommandArgs(alias, invocation), cmdCtx.workspaceRoot, cmdCtx.cwd); err != nil {
+					return err
+				}
+				continue
+			}
+			parsedRun, showHelp, err := parseRunArgs(buildRunAliasCommandArgs(alias, invocation))
+			if err != nil {
+				return err
+			}
+			if showHelp {
+				cli.PrintRunUsage(r.deps.stdout)
+				return nil
+			}
+			runAliasCWD := projectedRunInvocationCWD(cmdCtx.cwd, ref)
+			if err := runRunParsed(r.deps.stdout, r.deps.stderr, runOpts, alias.Kind, parsedRun, cmdCtx.workspaceRoot, runAliasCWD, ref); err != nil {
 				return err
 			}
 		default:
@@ -465,12 +487,46 @@ func prepareStageUsesRef(cmd cli.Command) bool {
 		return false
 	}
 	for _, arg := range cmd.Args {
-		switch strings.TrimSpace(arg) {
-		case "--ref", "--ref-mode", "--ref-keep-worktree":
+		if usesRefFlagToken(strings.TrimSpace(arg)) {
 			return true
 		}
 	}
 	return false
+}
+
+func runStageUsesRef(cmd cli.Command) bool {
+	switch {
+	case cmd.Name == "run":
+		invocation, _, err := parseRunAliasArgs(cmd.Args, false)
+		if err == nil {
+			return strings.TrimSpace(invocation.GitRef) != ""
+		}
+	case strings.HasPrefix(cmd.Name, "run:"):
+		parsed, _, err := parseRunArgs(cmd.Args)
+		if err == nil {
+			return strings.TrimSpace(parsed.Ref) != ""
+		}
+	default:
+		return false
+	}
+
+	for _, arg := range cmd.Args {
+		if usesRefFlagToken(strings.TrimSpace(arg)) {
+			return true
+		}
+	}
+	return false
+}
+
+func usesRefFlagToken(value string) bool {
+	switch {
+	case value == "--ref", value == "--ref-mode", value == "--ref-keep-worktree":
+		return true
+	case strings.HasPrefix(value, "--ref="), strings.HasPrefix(value, "--ref-mode="):
+		return true
+	default:
+		return false
+	}
 }
 
 func prepareStageUsesProvenance(cmd cli.Command) bool {

@@ -49,8 +49,10 @@ command.
 Status note:
 
 - raw `run:<kind>` is implemented today;
-- alias-mode `run <run-ref>` and mixed `prepare ... run ...` composites are the
-  approved next slice and are documented here as the intended CLI contract.
+- alias-mode `run <run-ref>` and mixed `prepare ... run ...` composites are
+  implemented today;
+- the next Git-aware follow-up for standalone repository-backed runs is
+  documented separately in [`sqlrs-run-ref.md`](sqlrs-run-ref.md).
 
 ---
 

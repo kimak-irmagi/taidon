@@ -41,6 +41,10 @@ Entry points for Taidon architecture and service design.
   `plan` / `prepare --ref`.
 - [`ref-component-structure.md`](ref-component-structure.md) - internal
   component structure for bounded local ref-backed `plan` / `prepare`.
+- [`run-ref-flow.md`](run-ref-flow.md) - interaction flow for bounded local
+  standalone `run --ref`.
+- [`run-ref-component-structure.md`](run-ref-component-structure.md) - internal
+  component structure for bounded local standalone `run --ref`.
 - [`provenance-cache-flow.md`](provenance-cache-flow.md) - interaction flow for
   `--provenance-path` and `sqlrs cache explain` on single-stage local
   prepare-oriented workflows.

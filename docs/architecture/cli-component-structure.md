@@ -23,6 +23,10 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`).
   - Builds command context and chooses path resolvers and runtime projections
     from `internal/inputset`.
+  - Owns package-local ref-aware run-binding helpers for standalone
+    `run --ref` so raw and alias-backed run flows reuse shared `refctx`,
+    `alias`, and `inputset` boundaries without entering the prepare-oriented
+    stage pipeline.
   - Owns package-local prepare-trace helpers used by `--provenance-path` and
     `cache explain` so diagnostics reuse the same bound single-stage prepare
     path as real execution.
@@ -35,8 +39,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     copy-paste `alias create` command synthesis, and report aggregation.
   - Reuses `internal/alias` and `internal/inputset` for the aliases analyzer.
 - `internal/refctx`
-  - Shared ref-backed filesystem context for `plan` / `prepare --ref` and
-    `diff` ref-mode.
+  - Shared ref-backed filesystem context for `plan` / `prepare --ref`,
+    standalone `run --ref`, and `diff` ref-mode.
   - Owns repo-root discovery, local ref resolution, projected-cwd mapping,
     detached-worktree lifecycle, and blob-backed filesystem setup.
 - `internal/inputset`

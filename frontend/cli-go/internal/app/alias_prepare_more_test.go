@@ -47,6 +47,16 @@ func TestParsePrepareAliasArgsAdditionalBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("ref equals options", func(t *testing.T) {
+		invocation, showHelp, err := parsePrepareAliasArgs([]string{"--ref=HEAD~1", "--ref-mode=blob", "chinook"})
+		if err != nil || showHelp {
+			t.Fatalf("parsePrepareAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if invocation.Ref != "chinook" || invocation.GitRef != "HEAD~1" || invocation.RefMode != "blob" {
+			t.Fatalf("unexpected invocation: %+v", invocation)
+		}
+	})
+
 	t.Run("ref defaults to worktree", func(t *testing.T) {
 		invocation, showHelp, err := parsePrepareAliasArgs([]string{"--ref", "origin/main", "chinook"})
 		if err != nil || showHelp {
@@ -201,6 +211,16 @@ func TestParsePlanAliasArgsAdditionalBranches(t *testing.T) {
 			t.Fatalf("ref = %q", invocation.Ref)
 		}
 		if invocation.GitRef != "origin/main" || invocation.RefMode != "worktree" || !invocation.RefKeepWorktree {
+			t.Fatalf("unexpected invocation: %+v", invocation)
+		}
+	})
+
+	t.Run("ref equals options", func(t *testing.T) {
+		invocation, showHelp, err := parsePlanAliasArgs([]string{"--ref=origin/main", "--ref-mode=blob", "chinook"})
+		if err != nil || showHelp {
+			t.Fatalf("parsePlanAliasArgs: err=%v showHelp=%v", err, showHelp)
+		}
+		if invocation.Ref != "chinook" || invocation.GitRef != "origin/main" || invocation.RefMode != "blob" {
 			t.Fatalf("unexpected invocation: %+v", invocation)
 		}
 	})

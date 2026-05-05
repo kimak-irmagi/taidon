@@ -12,7 +12,8 @@ This slice is intentionally narrow:
 
 - supported: single-stage `plan` and `prepare`
 - supported: raw and alias-backed prepare flows
-- not supported yet: standalone `run --ref`
+- standalone `run --ref` is designed separately in
+  [`sqlrs-run-ref.md`](sqlrs-run-ref.md)
 - not supported yet: composite `prepare ... run ...` with `--ref`
 - not supported yet: provenance and `cache explain`
 
@@ -63,7 +64,8 @@ For `prepare`, this support is intentionally limited to watch mode.
 
 ### Explicitly out of scope
 
-- `sqlrs run --ref ...`
+- standalone `run --ref ...` in this document (see
+  [`sqlrs-run-ref.md`](sqlrs-run-ref.md))
 - `sqlrs prepare ... run ...` when the prepare stage carries `--ref`
 - `sqlrs prepare --ref --no-watch ...`
 - `sqlrs diff` syntax changes

@@ -1,16 +1,22 @@
 # Git-aware semantics: passive features (CLI)
 
 Status: **mixed**. Scenario P1 is the delivered local ref baseline. Scenarios
-P4 and P6 below now capture the approved next bounded local slice for
-provenance and cache explanation; the rest of this document remains future
-design. Today, the public MVP CLI still relies on commands such as
-`sqlrs prepare:psql ... run:psql ...`.
+P4 and P6 capture the landed provenance and cache-explain slice. The approved
+next bounded local follow-up is standalone `run --ref`, currently documented in
+[`../user-guides/sqlrs-run-ref.md`](../user-guides/sqlrs-run-ref.md), with the
+accepted interaction flow in [`run-ref-flow.md`](run-ref-flow.md) and accepted
+internal structure in
+[`run-ref-component-structure.md`](run-ref-component-structure.md); the rest of
+this document remains future design. Today, the public MVP CLI still relies on
+commands such as `sqlrs prepare:psql ... run:psql ...`.
 
 Goal: add git-aware capabilities **without changing the user's work habits**. All functions in this document are activated **only by explicit user commands/flags** and do not require repository setup "for Taidon".
 
 ## Design principles
 
-- **Do not guess intent from the repo.** The user defines context: `--prepare <path>` (migration file/dir) and the `sqlrs run -- <cmd>` command.
+- **Do not guess intent from the repo.** The user defines context with explicit
+  command shapes such as `sqlrs plan|prepare --ref ...`, `sqlrs run --ref ...`,
+  and `sqlrs diff ...`.
 - **Minimum side effects.** Prefer Git-object reads when they preserve command semantics, but keep compatibility first. Temporary `worktree` checkouts remain the default where full filesystem semantics matter and leave minimal traces under `.git/worktrees` that can be cleaned up.
 - **Fast path first.** Try to find a ready state in the Taidon cache by hashes of the involved files. If not found, build it.
 - **Everything is reproducible.** Any execution can save a manifest (provenance) to reproduce the same state 1:1.
@@ -20,10 +26,9 @@ Goal: add git-aware capabilities **without changing the user's work habits**. Al
 
 ## Scenario P1. Repository-backed plan/prepare by git ref: `--ref`
 
-Current public-slice note: the next accepted local CLI slice is narrower than
-the broader future design in this document. It adds bounded `--ref` support to
-single-stage `plan` and `prepare` only; `run --ref`, provenance, and
-`cache explain` remain later follow-ups.
+Current public-slice note: this scenario describes the already-landed bounded
+`plan` / `prepare --ref` baseline. Later local follow-ups split out
+provenance/cache explanation and now standalone `run --ref` as separate slices.
 
 ### Motivation
 
@@ -85,10 +90,11 @@ In large repositories, checkout is expensive, while Taidon may already have the 
 
 ### UX / CLI
 
-Enabled automatically in `--ref-mode blob` (or via an explicit flag):
+Enabled automatically in ref-backed prepare-oriented flows using
+`--ref-mode blob` (or via an explicit flag):
 
 ```bash
-sqlrs run --ref <ref> --ref-mode blob --prepare migrations/ -- <cmd>
+sqlrs prepare --ref <ref> --ref-mode blob <prepare-alias>
 ```
 
 Optional:
@@ -323,3 +329,4 @@ Store-health diagnostics remain separate:
    `prepare:*` command
 3. provenance side artifact for bounded local single-stage `plan` / `prepare`
 4. `cache explain prepare ...` (simple version)
+5. standalone `run --ref` for raw and alias-backed single-stage run flows

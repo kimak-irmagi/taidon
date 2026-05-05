@@ -12,12 +12,16 @@ import (
 	"github.com/sqlrs/cli/internal/inputset"
 	inputpgbench "github.com/sqlrs/cli/internal/inputset/pgbench"
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
+	"github.com/sqlrs/cli/internal/refctx"
 )
 
 type runArgs struct {
-	InstanceRef string
-	Command     string
-	Args        []string
+	InstanceRef     string
+	Ref             string
+	RefMode         string
+	RefKeepWorktree bool
+	Command         string
+	Args            []string
 }
 
 const pgbenchStdinPath = "/dev/stdin"
@@ -31,7 +35,7 @@ func parseRunArgs(args []string) (runArgs, bool, error) {
 		arg := args[i]
 		switch {
 		case arg == "--":
-			return parseRunCommand(opts, args[i+1:])
+			return finalizeRunCommand(parseRunCommand(opts, args[i+1:]))
 		case arg == "--help" || arg == "-h":
 			return opts, true, nil
 		case arg == "--instance":
@@ -44,16 +48,55 @@ func parseRunArgs(args []string) (runArgs, bool, error) {
 			}
 			opts.InstanceRef = value
 			i++
+		case arg == "--ref":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.Ref = value
+			i++
+		case arg == "--ref-mode":
+			if i+1 >= len(args) {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			value := strings.TrimSpace(args[i+1])
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = value
+			i++
+		case arg == "--ref-keep-worktree":
+			opts.RefKeepWorktree = true
 		case strings.HasPrefix(arg, "--instance="):
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--instance="))
 			if value == "" {
 				return opts, false, ExitErrorf(2, "Missing value for --instance")
 			}
 			opts.InstanceRef = value
+		case strings.HasPrefix(arg, "--ref="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref")
+			}
+			opts.Ref = value
+		case strings.HasPrefix(arg, "--ref-mode="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--ref-mode="))
+			if value == "" {
+				return opts, false, ExitErrorf(2, "Missing value for --ref-mode")
+			}
+			opts.RefMode = value
 		default:
-			return parseRunCommand(opts, args[i:])
+			return finalizeRunCommand(parseRunCommand(opts, args[i:]))
 		}
 	}
+	mode, err := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+	if err != nil {
+		return opts, false, err
+	}
+	opts.RefMode = mode
 	return opts, false, nil
 }
 
@@ -70,6 +113,18 @@ func parseRunCommand(opts runArgs, args []string) (runArgs, bool, error) {
 	return opts, false, nil
 }
 
+func finalizeRunCommand(opts runArgs, showHelp bool, err error) (runArgs, bool, error) {
+	if err != nil || showHelp {
+		return opts, showHelp, err
+	}
+	mode, modeErr := normalizeRefMode(opts.Ref, opts.RefMode, opts.RefKeepWorktree)
+	if modeErr != nil {
+		return opts, false, modeErr
+	}
+	opts.RefMode = mode
+	return opts, false, nil
+}
+
 func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind string, args []string, workspaceRoot string, cwd string) error {
 	parsed, showHelp, err := parseRunArgs(args)
 	if err != nil {
@@ -79,7 +134,12 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 		cli.PrintRunUsage(stdout)
 		return nil
 	}
+	return runRunParsed(stdout, stderr, runOpts, kind, parsed, workspaceRoot, cwd, nil)
+}
 
+// runRunParsed executes one standalone run stage after applying the optional
+// git-ref binding flow described in docs/architecture/run-ref-flow.md.
+func runRunParsed(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind string, parsed runArgs, workspaceRoot string, cwd string, ref *refctx.Context) (err error) {
 	if parsed.InstanceRef != "" && runOpts.InstanceRef != "" {
 		return fmt.Errorf("instance is already selected by a preceding prepare")
 	}
@@ -99,13 +159,25 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 		return ExitErrorf(2, "Conflicting connection arguments for run:%s", kind)
 	}
 
+	actualRef, cleanup, err := resolveRunBindingContext(workspaceRoot, cwd, parsed, ref)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = finishPrepareCleanup(err, cleanup)
+	}()
+	bindCWD := cwd
+	if ref == nil && actualRef != nil && strings.TrimSpace(actualRef.BaseDir) != "" {
+		bindCWD = actualRef.BaseDir
+	}
+
 	runOpts.Kind = kind
 	runOpts.InstanceRef = instanceRef
 	runOpts.Command = strings.TrimSpace(parsed.Command)
 	runArgs := append([]string{}, parsed.Args...)
 	switch kind {
 	case runkind.KindPsql:
-		steps, err := buildPsqlRunSteps(runArgs, workspaceRoot, cwd, os.Stdin)
+		steps, err := buildPsqlRunStepsForContext(runArgs, workspaceRoot, bindCWD, actualRef, os.Stdin)
 		if err != nil {
 			return err
 		}
@@ -113,7 +185,7 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 		runOpts.Args = nil
 		runOpts.Stdin = nil
 	case runkind.KindPgbench:
-		normalizedArgs, stdinValue, err := materializePgbenchRunArgs(runArgs, workspaceRoot, cwd, os.Stdin)
+		normalizedArgs, stdinValue, err := materializePgbenchRunArgsForContext(runArgs, workspaceRoot, bindCWD, actualRef, os.Stdin)
 		if err != nil {
 			return err
 		}
@@ -137,11 +209,30 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 }
 
 func buildPsqlRunSteps(args []string, workspaceRoot string, cwd string, stdin io.Reader) ([]cli.RunStep, error) {
+	return buildPsqlRunStepsWithResolver(args, inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil), stdin, inputset.OSFileSystem{})
+}
+
+func buildPsqlRunStepsForContext(args []string, workspaceRoot string, cwd string, ctx *refctx.Context, stdin io.Reader) ([]cli.RunStep, error) {
+	if ctx == nil {
+		return buildPsqlRunSteps(args, workspaceRoot, cwd, stdin)
+	}
+	root := strings.TrimSpace(ctx.WorkspaceRoot)
+	if root == "" {
+		root = strings.TrimSpace(workspaceRoot)
+	}
+	baseDir := strings.TrimSpace(cwd)
+	if baseDir == "" {
+		baseDir = ctx.BaseDir
+	}
+	return buildPsqlRunStepsWithResolver(args, inputset.NewWorkspaceResolver(root, baseDir, nil), stdin, ctx.FileSystem)
+}
+
+func buildPsqlRunStepsWithResolver(args []string, resolver inputset.Resolver, stdin io.Reader, fs inputset.FileSystem) ([]cli.RunStep, error) {
 	steps, err := inputpsql.BuildRunSteps(
 		args,
-		inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil),
+		resolver,
 		stdin,
-		inputset.OSFileSystem{},
+		fs,
 	)
 	if err != nil {
 		return nil, wrapInputsetError(err)
@@ -182,11 +273,30 @@ type pgbenchFileSource struct {
 }
 
 func materializePgbenchRunArgs(args []string, workspaceRoot string, cwd string, stdin io.Reader) ([]string, *string, error) {
+	return materializePgbenchRunArgsWithResolver(args, inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil), stdin, inputset.OSFileSystem{})
+}
+
+func materializePgbenchRunArgsForContext(args []string, workspaceRoot string, cwd string, ctx *refctx.Context, stdin io.Reader) ([]string, *string, error) {
+	if ctx == nil {
+		return materializePgbenchRunArgs(args, workspaceRoot, cwd, stdin)
+	}
+	root := strings.TrimSpace(ctx.WorkspaceRoot)
+	if root == "" {
+		root = strings.TrimSpace(workspaceRoot)
+	}
+	baseDir := strings.TrimSpace(cwd)
+	if baseDir == "" {
+		baseDir = ctx.BaseDir
+	}
+	return materializePgbenchRunArgsWithResolver(args, inputset.NewWorkspaceResolver(root, baseDir, nil), stdin, ctx.FileSystem)
+}
+
+func materializePgbenchRunArgsWithResolver(args []string, resolver inputset.Resolver, stdin io.Reader, fs inputset.FileSystem) ([]string, *string, error) {
 	normalized, stdinValue, err := inputpgbench.MaterializeArgs(
 		args,
-		inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil),
+		resolver,
 		stdin,
-		inputset.OSFileSystem{},
+		fs,
 	)
 	if err != nil {
 		return nil, nil, wrapInputsetError(err)
