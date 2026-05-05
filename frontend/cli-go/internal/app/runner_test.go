@@ -311,6 +311,54 @@ func TestRunnerRejectsMalformedCompositeRunRefEqualsBeforePrepareDispatch(t *tes
 	}
 }
 
+func TestRunnerAllowsCompositeRawRunWrapperArgsNamedRef(t *testing.T) {
+	cwd := t.TempDir()
+	prepareCalled := false
+	runCalled := false
+
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{
+		{Name: "prepare:psql", Args: []string{"--image", "img", "--", "-c", "select 1"}},
+		{Name: "run:psql", Args: []string{"--", "my-wrapper", "--ref", "upstream"}},
+	}, func(deps *runnerDeps) {
+		deps.getwd = func() (string, error) {
+			return cwd, nil
+		}
+		deps.resolveCommandContext = func(string, cli.GlobalOptions) (commandContext, error) {
+			return testCommandContext(cwd, "human", false), nil
+		}
+		deps.prepareResult = func(stdoutAndErr, cli.PrepareOptions, config.LoadedConfig, string, string, []string) (client.PrepareJobResult, bool, error) {
+			prepareCalled = true
+			return client.PrepareJobResult{InstanceID: "inst-1"}, false, nil
+		}
+		deps.runRun = func(_ io.Writer, _ io.Writer, runOpts cli.RunOptions, kind string, args []string, workspaceRoot string, gotCwd string) error {
+			runCalled = true
+			if runOpts.InstanceRef != "inst-1" {
+				t.Fatalf("instance ref = %q, want %q", runOpts.InstanceRef, "inst-1")
+			}
+			if kind != "psql" {
+				t.Fatalf("kind = %q, want %q", kind, "psql")
+			}
+			if workspaceRoot != cwd || gotCwd != cwd {
+				t.Fatalf("unexpected run paths: workspaceRoot=%q cwd=%q", workspaceRoot, gotCwd)
+			}
+			if got := strings.Join(args, "|"); got != "--|my-wrapper|--ref|upstream" {
+				t.Fatalf("args = %q, want %q", got, "--|my-wrapper|--ref|upstream")
+			}
+			return nil
+		}
+		deps.cleanupPreparedInstance = func(context.Context, io.Writer, cli.RunOptions, string, bool) {}
+	})
+	if err != nil {
+		t.Fatalf("runner.run: %v", err)
+	}
+	if !prepareCalled {
+		t.Fatal("prepareResult should be called for composite prepare/run")
+	}
+	if !runCalled {
+		t.Fatal("runRun should be called for composite raw run with wrapper --ref arg")
+	}
+}
+
 func TestRunnerRoutesAliasAndDiscoverThroughInjectedHandlers(t *testing.T) {
 	t.Run("alias", func(t *testing.T) {
 		cwd := t.TempDir()

@@ -501,21 +501,26 @@ func runStageUsesRef(cmd cli.Command) bool {
 		if err == nil {
 			return strings.TrimSpace(invocation.GitRef) != ""
 		}
+		for _, arg := range cmd.Args {
+			if usesRefFlagToken(strings.TrimSpace(arg)) {
+				return true
+			}
+		}
+		return false
 	case strings.HasPrefix(cmd.Name, "run:"):
 		parsed, _, err := parseRunArgs(cmd.Args)
 		if err == nil {
 			return strings.TrimSpace(parsed.Ref) != ""
 		}
+		for _, arg := range cmd.Args {
+			if usesRefFlagToken(strings.TrimSpace(arg)) {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}
-
-	for _, arg := range cmd.Args {
-		if usesRefFlagToken(strings.TrimSpace(arg)) {
-			return true
-		}
-	}
-	return false
 }
 
 func usesRefFlagToken(value string) bool {
