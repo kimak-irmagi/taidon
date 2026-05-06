@@ -140,6 +140,15 @@ func runRun(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind str
 // runRunParsed executes one standalone run stage after applying the optional
 // git-ref binding flow described in docs/architecture/run-ref-flow.md.
 func runRunParsed(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, kind string, parsed runArgs, workspaceRoot string, cwd string, ref *refctx.Context) (err error) {
+	actualRef := ref
+	var cleanup func() error
+	if actualRef != nil {
+		cleanup = actualRef.Cleanup
+		defer func() {
+			err = finishPrepareCleanup(err, cleanup)
+		}()
+	}
+
 	if parsed.InstanceRef != "" && runOpts.InstanceRef != "" {
 		return fmt.Errorf("instance is already selected by a preceding prepare")
 	}
@@ -159,13 +168,15 @@ func runRunParsed(stdout io.Writer, stderr io.Writer, runOpts cli.RunOptions, ki
 		return ExitErrorf(2, "Conflicting connection arguments for run:%s", kind)
 	}
 
-	actualRef, cleanup, err := resolveRunBindingContext(workspaceRoot, cwd, parsed, ref)
-	if err != nil {
-		return err
+	if actualRef == nil {
+		actualRef, cleanup, err = resolveRunBindingContext(workspaceRoot, cwd, parsed, ref)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			err = finishPrepareCleanup(err, cleanup)
+		}()
 	}
-	defer func() {
-		err = finishPrepareCleanup(err, cleanup)
-	}()
 	bindCWD := cwd
 	if ref == nil && actualRef != nil && strings.TrimSpace(actualRef.BaseDir) != "" {
 		bindCWD = actualRef.BaseDir

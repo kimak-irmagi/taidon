@@ -671,6 +671,34 @@ func TestRunRefCleansDetachedWorktreeOnSuccessAndOnBindingFailure(t *testing.T) 
 	})
 }
 
+func TestRunRefAliasValidationFailureCleansDetachedWorktree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	repo, _ := initRunRefTestRepo(t)
+	setTestDirs(t, t.TempDir())
+	withWorkingDir(t, filepath.Join(repo, "examples"))
+	baseline := gitWorktreeCount(t, repo)
+
+	err := Run([]string{
+		"--mode", "remote",
+		"--endpoint", "http://example.invalid",
+		"--workspace", repo,
+		"run",
+		"--ref", "HEAD",
+		"--ref-mode", "worktree",
+		"conflict",
+		"--instance", "dev",
+	})
+	if err == nil || !strings.Contains(err.Error(), "Conflicting connection arguments") {
+		t.Fatalf("expected connection-argument validation error, got %v", err)
+	}
+	if got := gitWorktreeCount(t, repo); got != baseline {
+		t.Fatalf("worktree count = %d, want %d", got, baseline)
+	}
+}
+
 func newRunCaptureServer(t *testing.T, onRequest func(client.RunRequest, map[string]any)) *httptest.Server {
 	t.Helper()
 
@@ -749,6 +777,7 @@ func initRunRefTestRepo(t *testing.T) (string, string) {
 	writeTestFile(t, repo, filepath.Join("examples", "chinook", "scripts", "second.sql"), "select 'second';\n")
 	writeRunAliasFile(t, filepath.Join(repo, "examples"), filepath.Join("chinook", "smoke.run.s9s.yaml"), "kind: psql\nargs:\n  - -f\n  - ./scripts/second.sql\n")
 	writeRunAliasFile(t, filepath.Join(repo, "examples"), "wrapped.run.s9s.yaml", "kind: psql\nargs:\n  - psql\n  - -c\n  - select 'wrapped current'\n")
+	writeRunAliasFile(t, filepath.Join(repo, "examples"), "conflict.run.s9s.yaml", "kind: psql\nargs:\n  - --host\n  - db.local\n")
 	writeRunAliasFile(t, filepath.Join(repo, "examples"), "current-only.run.s9s.yaml", "kind: psql\nargs:\n  - -f\n  - ./current-only.sql\n")
 	writeTestFile(t, repo, filepath.Join("examples", "current-only.sql"), "select 'current';\n")
 	writeTestFile(t, repo, filepath.Join("examples", "later", "query.sql"), "select 'later';\n")
