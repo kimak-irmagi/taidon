@@ -112,12 +112,12 @@ jobs:
 
           def fmt_time(ns):
               if ns >= 1e9:
-                  return f"{ns/1e9:.2f} с"
+                  return f"{ns/1e9:.2f} s"
               if ns >= 1e6:
-                  return f"{ns/1e6:.1f} мс"
+                  return f"{ns/1e6:.1f} ms"
               if ns >= 1e3:
-                  return f"{ns/1e3:.1f} мкс"
-              return f"{ns:.0f} нс"
+                  return f"{ns/1e3:.1f} µs"
+              return f"{ns:.0f} ns"
 
           def speedup(cold_ns, warm_ns):
               if warm_ns and warm_ns > 0:
@@ -127,33 +127,33 @@ jobs:
           lines = []
           lines.append("## Benchmark: ZFS vs BTRFS — Snapshot Operations\n")
           lines.append(
-              "**Сценарии**: холодный старт (создание датасета + запись 100 МБ + снапшот) "
-              "и тёплый старт (клонирование готового датасета).  "
+              "**Scenarios**: cold start (create dataset + write 100 MB + snapshot) "
+              "and warm start (clone existing dataset).  "
           )
-          lines.append("**Данные**: 100 файлов × 1 МБ = 100 МБ\n")
+          lines.append("**Data**: 100 files × 1 MB = 100 MB\n")
 
           benchmarks = [
-              ("ZfsColdStart",   "ZFS",   "Холодный"),
-              ("ZfsWarmStart",   "ZFS",   "Тёплый"),
-              ("BtrfsColdStart", "BTRFS", "Холодный"),
-              ("BtrfsWarmStart", "BTRFS", "Тёплый"),
+              ("ZfsColdStart",   "ZFS",   "Cold"),
+              ("ZfsWarmStart",   "ZFS",   "Warm"),
+              ("BtrfsColdStart", "BTRFS", "Cold"),
+              ("BtrfsWarmStart", "BTRFS", "Warm"),
           ]
 
-          lines.append("| Файловая система | Сценарий | Итерации | Время/оп |")
-          lines.append("|-----------------|----------|----------|----------|")
+          lines.append("| Filesystem | Scenario | Iterations | Time/op |")
+          lines.append("|------------|----------|------------|---------|")
           for key, fs, scenario in benchmarks:
               if key in results:
                   r = results[key]
-                  lines.append(f"| {fs} | {scenario} старт | {r['n']} | {fmt_time(r['ns'])} |")
+                  lines.append(f"| {fs} | {scenario} start | {r['n']} | {fmt_time(r['ns'])} |")
               elif key in skipped:
-                  lines.append(f"| {fs} | {scenario} старт | — | пропущен |")
+                  lines.append(f"| {fs} | {scenario} start | — | skipped |")
               else:
-                  lines.append(f"| {fs} | {scenario} старт | — | нет данных |")
+                  lines.append(f"| {fs} | {scenario} start | — | no data |")
 
           lines.append("")
-          lines.append("### Ускорение тёплого старта относительно холодного\n")
-          lines.append("| Файловая система | Холодный | Тёплый | Ускорение |")
-          lines.append("|-----------------|----------|--------|-----------|")
+          lines.append("### Warm start speedup over cold start\n")
+          lines.append("| Filesystem | Cold start | Warm start | Speedup |")
+          lines.append("|------------|------------|------------|---------|")
           for fs_key, fs_name in [("Zfs", "ZFS"), ("Btrfs", "BTRFS")]:
               cold = results.get(f"{fs_key}ColdStart")
               warm = results.get(f"{fs_key}WarmStart")
@@ -164,7 +164,7 @@ jobs:
 
           lines.append("")
           lines.append("<details>")
-          lines.append("<summary>Полный вывод <code>go test -bench</code></summary>\n")
+          lines.append("<summary>Full <code>go test -bench</code> output</summary>\n")
           lines.append("```")
           lines.append(raw.strip())
           lines.append("```")
