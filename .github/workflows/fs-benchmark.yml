@@ -18,6 +18,9 @@ jobs:
   snapshot-benchmark:
     name: Snapshot FS Benchmark (ZFS vs BTRFS)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -170,8 +173,42 @@ jobs:
           summary = "\n".join(lines) + "\n"
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write(summary)
+          with open("/tmp/bench-comment.md", "w") as f:
+              f.write(summary)
           print(summary)
           EOF
+
+      - name: Find existing benchmark comment
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: peter-evans/find-comment@v3
+        id: bench-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "Benchmark: ZFS vs BTRFS"
+
+      - name: Post benchmark comment on PR
+        if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.bench-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body-file: /tmp/bench-comment.md
+
+      - name: Post benchmark comment on main
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            if (!fs.existsSync('/tmp/bench-comment.md')) { return }
+            const body = fs.readFileSync('/tmp/bench-comment.md', 'utf8')
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body,
+            })
 
       - name: Cleanup
         if: always()
