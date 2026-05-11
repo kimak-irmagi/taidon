@@ -48,6 +48,7 @@ func BenchmarkZfsWarmStart(b *testing.B) {
 	benchWriteTestData(b, srcDir)
 	b.Cleanup(func() {
 		_ = mgr.Destroy(context.Background(), srcDir)
+		_ = os.Remove(srcDir) // ZFS leaves the mount-point dir behind after destroy
 	})
 
 	b.SetBytes(int64(benchFileCount) * benchFileSize)
@@ -63,6 +64,7 @@ func BenchmarkZfsWarmStart(b *testing.B) {
 		if err := result.Cleanup(); err != nil {
 			b.Fatalf("Cleanup iteration %d: %v", i, err)
 		}
+		_ = os.Remove(destDir)
 		b.StartTimer()
 	}
 }
@@ -96,7 +98,9 @@ func BenchmarkZfsColdStart(b *testing.B) {
 
 		b.StopTimer()
 		_ = mgr.Destroy(ctx, snapDir)
+		_ = os.Remove(snapDir)
 		_ = mgr.Destroy(ctx, srcDir)
+		_ = os.Remove(srcDir)
 		b.StartTimer()
 	}
 }
@@ -119,6 +123,7 @@ func BenchmarkBtrfsWarmStart(b *testing.B) {
 	benchWriteTestData(b, srcDir)
 	b.Cleanup(func() {
 		_ = mgr.Destroy(context.Background(), srcDir)
+		_ = os.Remove(srcDir) // btrfs subvolume delete leaves the mount point dir
 	})
 
 	b.SetBytes(int64(benchFileCount) * benchFileSize)
@@ -134,6 +139,7 @@ func BenchmarkBtrfsWarmStart(b *testing.B) {
 		if err := result.Cleanup(); err != nil {
 			b.Fatalf("Cleanup iteration %d: %v", i, err)
 		}
+		_ = os.Remove(destDir)
 		b.StartTimer()
 	}
 }
@@ -167,7 +173,9 @@ func BenchmarkBtrfsColdStart(b *testing.B) {
 
 		b.StopTimer()
 		_ = mgr.Destroy(ctx, snapDir)
+		_ = os.Remove(snapDir)
 		_ = mgr.Destroy(ctx, srcDir)
+		_ = os.Remove(srcDir)
 		b.StartTimer()
 	}
 }
