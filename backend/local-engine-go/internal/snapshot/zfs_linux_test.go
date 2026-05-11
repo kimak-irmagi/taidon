@@ -61,6 +61,13 @@ func withZfsSnapSuffix(t *testing.T, suffix string) {
 	t.Cleanup(func() { zfsNewSnapSuffix = prev })
 }
 
+func withZfsDestDataset(t *testing.T, result string) {
+	t.Helper()
+	prev := zfsDestDatasetFn
+	zfsDestDatasetFn = func(_, _, _ string) (string, error) { return result, nil }
+	t.Cleanup(func() { zfsDestDatasetFn = prev })
+}
+
 // ---- Kind & Capabilities -----------------------------------------------
 
 func TestNewZfsManagerKindAndCapabilities(t *testing.T) {
@@ -88,14 +95,11 @@ func TestZfsManagerCloneRequiresDirs(t *testing.T) {
 
 func TestZfsManagerCloneCreatesSnapshotAndClone(t *testing.T) {
 	src := t.TempDir()
-	destParent := t.TempDir()
-	dest := filepath.Join(destParent, "state-1")
+	dest := filepath.Join(t.TempDir(), "state-1")
 
 	withZfsSnapSuffix(t, "42")
-	withZfsDatasetMap(t, map[string]string{
-		src:        "pool/states/base",
-		destParent: "pool/states",
-	})
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/state-1")
 
 	runner := &zfsFakeRunner{}
 	mgr := zfsManager{runner: runner}
@@ -108,19 +112,22 @@ func TestZfsManagerCloneCreatesSnapshotAndClone(t *testing.T) {
 		t.Fatalf("unexpected mount dir: %s", res.MountDir)
 	}
 
-	if len(runner.calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d: %+v", len(runner.calls), runner.calls)
+	if len(runner.calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d: %+v", len(runner.calls), runner.calls)
 	}
 
-	snapCall := runner.calls[0]
-	if snapCall.name != "zfs" || !equalArgs(snapCall.args, []string{"snapshot", "pool/states/base@taidon-clone-42"}) {
+	createCall := runner.calls[0]
+	wantCreate := []string{"create", "-p", "-o", "canmount=off", "pool/states"}
+	if !equalArgs(createCall.args, wantCreate) {
+		t.Fatalf("unexpected create parent call: %+v", createCall.args)
+	}
+
+	snapCall := runner.calls[1]
+	if !equalArgs(snapCall.args, []string{"snapshot", "pool/states/base@taidon-clone-42"}) {
 		t.Fatalf("unexpected snapshot call: %+v", snapCall)
 	}
 
-	cloneCall := runner.calls[1]
-	if cloneCall.name != "zfs" {
-		t.Fatalf("expected zfs command, got %s", cloneCall.name)
-	}
+	cloneCall := runner.calls[2]
 	wantClone := []string{"clone", "-o", "mountpoint=" + dest, "pool/states/base@taidon-clone-42", "pool/states/state-1"}
 	if !equalArgs(cloneCall.args, wantClone) {
 		t.Fatalf("unexpected clone args: %+v", cloneCall.args)
@@ -129,14 +136,11 @@ func TestZfsManagerCloneCreatesSnapshotAndClone(t *testing.T) {
 
 func TestZfsManagerCloneCleanupDestroysCloneAndSnap(t *testing.T) {
 	src := t.TempDir()
-	destParent := t.TempDir()
-	dest := filepath.Join(destParent, "state-1")
+	dest := filepath.Join(t.TempDir(), "state-1")
 
 	withZfsSnapSuffix(t, "99")
-	withZfsDatasetMap(t, map[string]string{
-		src:        "pool/states/base",
-		destParent: "pool/states",
-	})
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/state-1")
 
 	runner := &zfsFakeRunner{}
 	mgr := zfsManager{runner: runner}
@@ -150,16 +154,17 @@ func TestZfsManagerCloneCleanupDestroysCloneAndSnap(t *testing.T) {
 		t.Fatalf("Cleanup: %v", err)
 	}
 
-	if len(runner.calls) != 4 {
-		t.Fatalf("expected 4 calls (snapshot+clone+destroy-clone+destroy-snap), got %d: %+v", len(runner.calls), runner.calls)
+	// calls: create-parent, snapshot, clone, destroy-clone, destroy-snap
+	if len(runner.calls) != 5 {
+		t.Fatalf("expected 5 calls (create-parent+snapshot+clone+destroy-clone+destroy-snap), got %d: %+v", len(runner.calls), runner.calls)
 	}
 
-	destroyClone := runner.calls[2]
+	destroyClone := runner.calls[3]
 	if !equalArgs(destroyClone.args, []string{"destroy", "pool/states/state-1"}) {
 		t.Fatalf("unexpected destroy clone call: %+v", destroyClone)
 	}
 
-	destroySnap := runner.calls[3]
+	destroySnap := runner.calls[4]
 	if !equalArgs(destroySnap.args, []string{"destroy", "pool/states/base@taidon-clone-99"}) {
 		t.Fatalf("unexpected destroy snap call: %+v", destroySnap)
 	}
@@ -167,16 +172,14 @@ func TestZfsManagerCloneCleanupDestroysCloneAndSnap(t *testing.T) {
 
 func TestZfsManagerCloneCleanupErrorPropagates(t *testing.T) {
 	src := t.TempDir()
-	destParent := t.TempDir()
-	dest := filepath.Join(destParent, "state-1")
+	dest := filepath.Join(t.TempDir(), "state-1")
 
 	withZfsSnapSuffix(t, "1")
-	withZfsDatasetMap(t, map[string]string{
-		src:        "pool/states/base",
-		destParent: "pool/states",
-	})
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/state-1")
 
-	runner := &zfsSequencedRunner{failOnCall: 3, err: errors.New("destroy failed")}
+	// calls: 1=create-parent, 2=snapshot, 3=clone, 4=destroy-clone (fail here)
+	runner := &zfsSequencedRunner{failOnCall: 4, err: errors.New("destroy failed")}
 	mgr := zfsManager{runner: runner}
 
 	res, err := mgr.Clone(context.Background(), src, dest)
@@ -188,18 +191,32 @@ func TestZfsManagerCloneCleanupErrorPropagates(t *testing.T) {
 	}
 }
 
-func TestZfsManagerCloneSnapshotCommandError(t *testing.T) {
+func TestZfsManagerCloneParentDatasetError(t *testing.T) {
 	src := t.TempDir()
-	destParent := t.TempDir()
-	dest := filepath.Join(destParent, "state-1")
+	dest := filepath.Join(t.TempDir(), "state-1")
 
 	withZfsSnapSuffix(t, "1")
-	withZfsDatasetMap(t, map[string]string{
-		src:        "pool/states/base",
-		destParent: "pool/states",
-	})
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/state-1")
 
-	mgr := zfsManager{runner: &zfsFakeRunner{err: errors.New("snapshot failed")}}
+	// call 1 = create-parent; fail it
+	mgr := zfsManager{runner: &zfsFakeRunner{err: errors.New("create failed")}}
+	if _, err := mgr.Clone(context.Background(), src, dest); err == nil {
+		t.Fatalf("expected error when parent dataset creation fails")
+	}
+}
+
+func TestZfsManagerCloneSnapshotCommandError(t *testing.T) {
+	src := t.TempDir()
+	dest := filepath.Join(t.TempDir(), "state-1")
+
+	withZfsSnapSuffix(t, "1")
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/state-1")
+
+	// calls: 1=create-parent (ok), 2=snapshot (fail)
+	runner := &zfsSequencedRunner{failOnCall: 2, err: errors.New("snapshot failed")}
+	mgr := zfsManager{runner: runner}
 	if _, err := mgr.Clone(context.Background(), src, dest); err == nil {
 		t.Fatalf("expected snapshot error")
 	}
@@ -207,16 +224,14 @@ func TestZfsManagerCloneSnapshotCommandError(t *testing.T) {
 
 func TestZfsManagerCloneCommandError(t *testing.T) {
 	src := t.TempDir()
-	destParent := t.TempDir()
-	dest := filepath.Join(destParent, "state-1")
+	dest := filepath.Join(t.TempDir(), "state-1")
 
 	withZfsSnapSuffix(t, "1")
-	withZfsDatasetMap(t, map[string]string{
-		src:        "pool/states/base",
-		destParent: "pool/states",
-	})
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/state-1")
 
-	runner := &zfsSequencedRunner{failOnCall: 2, err: errors.New("clone failed")}
+	// calls: 1=create-parent (ok), 2=snapshot (ok), 3=clone (fail)
+	runner := &zfsSequencedRunner{failOnCall: 3, err: errors.New("clone failed")}
 	mgr := zfsManager{runner: runner}
 	if _, err := mgr.Clone(context.Background(), src, dest); err == nil {
 		t.Fatalf("expected clone error")
@@ -250,14 +265,11 @@ func TestZfsManagerSnapshotRequiresDirs(t *testing.T) {
 
 func TestZfsManagerSnapshotCreatesReadonlyClone(t *testing.T) {
 	src := t.TempDir()
-	destParent := t.TempDir()
-	dest := filepath.Join(destParent, "snap-1")
+	dest := filepath.Join(t.TempDir(), "snap-1")
 
 	withZfsSnapSuffix(t, "77")
-	withZfsDatasetMap(t, map[string]string{
-		src:        "pool/states/base",
-		destParent: "pool/states",
-	})
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/snap-1")
 
 	runner := &zfsFakeRunner{}
 	mgr := zfsManager{runner: runner}
@@ -266,16 +278,23 @@ func TestZfsManagerSnapshotCreatesReadonlyClone(t *testing.T) {
 		t.Fatalf("Snapshot: %v", err)
 	}
 
-	if len(runner.calls) != 2 {
-		t.Fatalf("expected 2 calls, got %d: %+v", len(runner.calls), runner.calls)
+	// calls: create-parent, snapshot, clone(readonly)
+	if len(runner.calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d: %+v", len(runner.calls), runner.calls)
 	}
 
-	snapCall := runner.calls[0]
+	createCall := runner.calls[0]
+	wantCreate := []string{"create", "-p", "-o", "canmount=off", "pool/states"}
+	if !equalArgs(createCall.args, wantCreate) {
+		t.Fatalf("unexpected create parent call: %+v", createCall.args)
+	}
+
+	snapCall := runner.calls[1]
 	if !equalArgs(snapCall.args, []string{"snapshot", "pool/states/base@taidon-snap-77"}) {
 		t.Fatalf("unexpected snapshot args: %+v", snapCall.args)
 	}
 
-	cloneCall := runner.calls[1]
+	cloneCall := runner.calls[2]
 	wantClone := []string{"clone", "-o", "mountpoint=" + dest, "-o", "readonly=on", "pool/states/base@taidon-snap-77", "pool/states/snap-1"}
 	if !equalArgs(cloneCall.args, wantClone) {
 		t.Fatalf("unexpected clone args: %+v", cloneCall.args)
@@ -295,14 +314,11 @@ func TestZfsManagerSnapshotMkdirError(t *testing.T) {
 
 func TestZfsManagerSnapshotCommandError(t *testing.T) {
 	src := t.TempDir()
-	destParent := t.TempDir()
-	dest := filepath.Join(destParent, "snap-1")
+	dest := filepath.Join(t.TempDir(), "snap-1")
 
 	withZfsSnapSuffix(t, "1")
-	withZfsDatasetMap(t, map[string]string{
-		src:        "pool/states/base",
-		destParent: "pool/states",
-	})
+	withZfsDatasetMap(t, map[string]string{src: "pool/states/base"})
+	withZfsDestDataset(t, "pool/states/snap-1")
 
 	mgr := zfsManager{runner: &zfsFakeRunner{err: errors.New("boom")}}
 	if err := mgr.Snapshot(context.Background(), src, dest); err == nil {
@@ -445,7 +461,12 @@ func TestZfsEnsureDatasetExistingDataset(t *testing.T) {
 	parent := t.TempDir()
 	path := filepath.Join(parent, "state-1")
 
-	withZfsDatasetMap(t, map[string]string{parent: "pool/states"})
+	// path itself must be in the map so zfsDatasetForPathFn resolves it to a
+	// dataset name, which is then passed to "zfs list <dataset>".
+	withZfsDatasetMap(t, map[string]string{
+		parent: "pool/states",
+		path:   "pool/states/state-1",
+	})
 
 	prev := osStatZfs
 	osStatZfs = func(string) (os.FileInfo, error) { return &zfsFakeFileInfo{}, nil }
@@ -456,8 +477,13 @@ func TestZfsEnsureDatasetExistingDataset(t *testing.T) {
 	if err := mgr.EnsureDataset(context.Background(), path); err != nil {
 		t.Fatalf("EnsureDataset for existing dataset: %v", err)
 	}
-	if len(runner.calls) != 1 || runner.calls[0].args[0] != "list" {
-		t.Fatalf("expected list call, got %+v", runner.calls)
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 call, got %d: %+v", len(runner.calls), runner.calls)
+	}
+	// Must use the dataset name, not the mount path.
+	want := []string{"list", "-H", "-o", "name", "pool/states/state-1"}
+	if !equalArgs(runner.calls[0].args, want) {
+		t.Fatalf("unexpected list args: %+v", runner.calls[0].args)
 	}
 }
 
@@ -465,16 +491,22 @@ func TestZfsEnsureDatasetPathExistsNotDataset(t *testing.T) {
 	parent := t.TempDir()
 	path := filepath.Join(parent, "state-1")
 
+	// path is NOT in the map → zfsDatasetForPathFn returns an error →
+	// EnsureDataset must report the path exists but is not a ZFS dataset
+	// without calling the runner at all.
 	withZfsDatasetMap(t, map[string]string{parent: "pool/states"})
 
 	prev := osStatZfs
 	osStatZfs = func(string) (os.FileInfo, error) { return &zfsFakeFileInfo{}, nil }
 	t.Cleanup(func() { osStatZfs = prev })
 
-	runner := &zfsFakeRunner{err: errors.New("not a dataset")}
+	runner := &zfsFakeRunner{}
 	mgr := zfsManager{runner: runner}
 	if err := mgr.EnsureDataset(context.Background(), path); err == nil {
 		t.Fatalf("expected error for non-dataset path")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("expected no runner calls when path is not a dataset mountpoint, got %+v", runner.calls)
 	}
 }
 
@@ -571,36 +603,19 @@ func TestZfsDatasetForPathExactMount(t *testing.T) {
 	}
 }
 
-func TestZfsDatasetForPathRelative(t *testing.T) {
-	prev := zfsListAllFn
-	zfsListAllFn = func() (string, error) {
-		return "pool\t/data\n", nil
-	}
-	t.Cleanup(func() { zfsListAllFn = prev })
-
-	ds, err := zfsDatasetForPath("/data/states/base")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if ds != "pool/states/base" {
-		t.Fatalf("expected pool/states/base, got %s", ds)
-	}
-}
-
-func TestZfsDatasetForPathPrefersLongestMount(t *testing.T) {
+func TestZfsDatasetForPathSubdirReturnsError(t *testing.T) {
 	prev := zfsListAllFn
 	zfsListAllFn = func() (string, error) {
 		return "pool\t/data\npool/states\t/data/states\n", nil
 	}
 	t.Cleanup(func() { zfsListAllFn = prev })
 
-	ds, err := zfsDatasetForPath("/data/states/base")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// A subdirectory inside a dataset is not a dataset itself.
+	if _, err := zfsDatasetForPath("/data/states/base"); err == nil {
+		t.Fatalf("expected error for subdirectory path that is not a dataset mountpoint")
 	}
-	// Should prefer /data/states over /data as the base mount
-	if ds != "pool/states/base" {
-		t.Fatalf("expected pool/states/base, got %s", ds)
+	if _, err := zfsDatasetForPath("/data/states/snap-1"); err == nil {
+		t.Fatalf("expected error for subdirectory path that is not a dataset mountpoint")
 	}
 }
 
@@ -698,6 +713,66 @@ func TestZfsSupportedNonZfs(t *testing.T) {
 
 	if zfsSupported("/data") {
 		t.Fatalf("expected unsupported on non-zfs fs")
+	}
+}
+
+// ---- zfsDestDataset ------------------------------------------------------
+
+func TestZfsDestDataset(t *testing.T) {
+	tests := []struct {
+		name       string
+		srcDir     string
+		srcDataset string
+		destDir    string
+		want       string
+		wantErr    bool
+	}{
+		{
+			name:       "sibling in same parent",
+			srcDir:     "/mnt/pool/base",
+			srcDataset: "tank/states/base",
+			destDir:    "/mnt/pool/state-1",
+			want:       "tank/states/state-1",
+		},
+		{
+			name:       "nested dest",
+			srcDir:     "/mnt/pool/base",
+			srcDataset: "tank/states/base",
+			destDir:    "/mnt/pool/states/snap-1",
+			want:       "tank/states/states/snap-1",
+		},
+		{
+			name:       "dest equals src parent",
+			srcDir:     "/mnt/pool/base",
+			srcDataset: "tank/states/base",
+			destDir:    "/mnt/pool",
+			wantErr:    true,
+		},
+		{
+			name:       "dest outside src parent",
+			srcDir:     "/mnt/pool/base",
+			srcDataset: "tank/states/base",
+			destDir:    "/other/dir",
+			wantErr:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := zfsDestDataset(tc.srcDir, tc.srcDataset, tc.destDir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
 	}
 }
 

@@ -50,18 +50,15 @@ var zfsNewSnapSuffix = func() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
-// zfsDatasetForPath resolves a filesystem path to its ZFS dataset name.
-// For paths that are exact dataset mountpoints it returns the dataset name directly.
-// For paths inside a dataset it appends the relative path to the closest ancestor dataset.
+// zfsDatasetForPath returns the ZFS dataset name for path only when path is the
+// exact mountpoint of an existing dataset.  It never fabricates dataset names
+// for subdirectories: every directory that ZFS operates on must itself be a
+// real dataset (created via EnsureDataset or an equivalent mechanism).
 func zfsDatasetForPath(path string) (string, error) {
 	out, err := zfsListAllFn()
 	if err != nil {
 		return "", fmt.Errorf("zfs list: %w", err)
 	}
-
-	bestDataset := ""
-	bestMountLen := -1
-
 	for _, line := range strings.Split(out, "\n") {
 		parts := strings.Fields(line)
 		if len(parts) != 2 {
@@ -74,19 +71,31 @@ func zfsDatasetForPath(path string) (string, error) {
 		if mount == path {
 			return name, nil
 		}
-		prefix := mount + "/"
-		if strings.HasPrefix(path, prefix) && len(mount) > bestMountLen {
-			rel := path[len(prefix):]
-			bestDataset = filepath.Join(name, rel)
-			bestMountLen = len(mount)
-		}
 	}
-
-	if bestDataset == "" {
-		return "", fmt.Errorf("no ZFS dataset found for path: %s", path)
-	}
-	return bestDataset, nil
+	return "", fmt.Errorf("no ZFS dataset mounted at: %s", path)
 }
+
+// zfsDestDataset computes the ZFS dataset name for destDir given srcDir and
+// its already-resolved srcDataset. destDir must be under the same parent
+// directory as srcDir (i.e. they are siblings in the mount namespace).
+//
+// The function mirrors the ZFS dataset hierarchy: if srcDataset is
+// pool/X/base and destDir is /mount/X/states/state-1 (where /mount/X is
+// the parent of srcDir /mount/X/base), then destDataset is pool/X/states/state-1.
+func zfsDestDataset(srcDir, srcDataset, destDir string) (string, error) {
+	srcParent := filepath.Dir(srcDir)
+	srcParentDataset := filepath.Dir(srcDataset)
+	rel, err := filepath.Rel(srcParent, destDir)
+	if err != nil {
+		return "", fmt.Errorf("cannot compute relative path from %s to %s: %w", srcParent, destDir, err)
+	}
+	if rel == "." || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("destDir %s is not under srcDir parent %s", destDir, srcParent)
+	}
+	return filepath.Join(srcParentDataset, rel), nil
+}
+
+var zfsDestDatasetFn = zfsDestDataset
 
 func zfsSupported(path string) bool {
 	if strings.TrimSpace(path) == "" {
@@ -136,11 +145,17 @@ func (m zfsManager) Clone(ctx context.Context, srcDir string, destDir string) (C
 		return CloneResult{}, fmt.Errorf("zfs: resolve src dataset: %w", err)
 	}
 
-	destParent, err := zfsDatasetForPathFn(filepath.Dir(destDir))
+	destDataset, err := zfsDestDatasetFn(srcDir, srcDataset, destDir)
 	if err != nil {
-		return CloneResult{}, fmt.Errorf("zfs: resolve dest parent dataset: %w", err)
+		return CloneResult{}, fmt.Errorf("zfs: compute dest dataset: %w", err)
 	}
-	destDataset := filepath.Join(destParent, filepath.Base(destDir))
+	destParentDataset := filepath.Dir(destDataset)
+
+	parentArgs := []string{"create", "-p", "-o", "canmount=off", destParentDataset}
+	log.Printf("zfs: clone exec %s", formatCommand("zfs", parentArgs))
+	if err := m.runner.Run(ctx, "zfs", parentArgs); err != nil {
+		return CloneResult{}, fmt.Errorf("zfs: ensure parent dataset %s: %w", destParentDataset, err)
+	}
 
 	snapName := "taidon-clone-" + zfsNewSnapSuffix()
 	fullSnap := srcDataset + "@" + snapName
@@ -191,11 +206,17 @@ func (m zfsManager) Snapshot(ctx context.Context, srcDir string, destDir string)
 		return fmt.Errorf("zfs: resolve src dataset: %w", err)
 	}
 
-	destParent, err := zfsDatasetForPathFn(filepath.Dir(destDir))
+	destDataset, err := zfsDestDatasetFn(srcDir, srcDataset, destDir)
 	if err != nil {
-		return fmt.Errorf("zfs: resolve dest parent dataset: %w", err)
+		return fmt.Errorf("zfs: compute dest dataset: %w", err)
 	}
-	destDataset := filepath.Join(destParent, filepath.Base(destDir))
+	destParentDataset := filepath.Dir(destDataset)
+
+	parentArgs := []string{"create", "-p", "-o", "canmount=off", destParentDataset}
+	log.Printf("zfs: snapshot exec %s", formatCommand("zfs", parentArgs))
+	if err := m.runner.Run(ctx, "zfs", parentArgs); err != nil {
+		return fmt.Errorf("zfs: ensure parent dataset %s: %w", destParentDataset, err)
+	}
 
 	snapName := "taidon-snap-" + zfsNewSnapSuffix()
 	fullSnap := srcDataset + "@" + snapName
@@ -257,10 +278,15 @@ func (m zfsManager) EnsureDataset(ctx context.Context, path string) error {
 	}
 
 	if _, err := osStatZfs(path); err == nil {
-		checkArgs := []string{"list", "-H", "-o", "name", path}
-		log.Printf("zfs: ensure dataset exec %s", formatCommand("zfs", checkArgs))
-		if m.runner.Run(ctx, "zfs", checkArgs) == nil {
-			return nil
+		// zfs list requires a dataset name, not a mount path.
+		// Resolve path to its dataset name first; if it resolves, the path is
+		// an exact dataset mountpoint and we can verify it with zfs list.
+		if dataset, dsErr := zfsDatasetForPathFn(path); dsErr == nil {
+			checkArgs := []string{"list", "-H", "-o", "name", dataset}
+			log.Printf("zfs: ensure dataset exec %s", formatCommand("zfs", checkArgs))
+			if m.runner.Run(ctx, "zfs", checkArgs) == nil {
+				return nil
+			}
 		}
 		return fmt.Errorf("path exists but is not a ZFS dataset: %s", path)
 	} else if !os.IsNotExist(err) {
