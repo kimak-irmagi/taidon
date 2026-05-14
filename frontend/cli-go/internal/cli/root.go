@@ -256,31 +256,35 @@ func looksLikeRunAliasStage(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
+	sawRunControl := false
 	for i := 0; i < len(args); i++ {
 		arg := strings.TrimSpace(args[i])
 		switch {
 		case arg == "" || arg == "--":
-			return false
+			return sawRunControl
 		case arg == "--help" || arg == "-h":
 			return true
 		case arg == "--instance" || arg == "--ref" || arg == "--ref-mode":
+			sawRunControl = true
 			if i+1 >= len(args) {
-				return false
+				return true
 			}
 			i++
 		case arg == "--ref-keep-worktree":
+			sawRunControl = true
 			continue
 		case strings.HasPrefix(arg, "--instance="),
 			strings.HasPrefix(arg, "--ref="),
 			strings.HasPrefix(arg, "--ref-mode="):
+			sawRunControl = true
 			continue
 		case strings.HasPrefix(arg, "-"):
-			return false
+			return sawRunControl
 		default:
 			return true
 		}
 	}
-	return false
+	return sawRunControl
 }
 
 func isCommandToken(value string) bool {

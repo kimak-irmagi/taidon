@@ -44,6 +44,40 @@ func TestSplitCommandsCompositePrepareAliasRunAlias(t *testing.T) {
 	}
 }
 
+func TestSplitCommandsCompositePrepareRawRunAliasRefErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "missing alias after ref flag",
+			args: []string{"prepare:psql", "--image", "img", "run", "--ref", "HEAD"},
+		},
+		{
+			name: "unknown flag after ref flag",
+			args: []string{"prepare:psql", "--image", "img", "run", "--ref", "HEAD", "--bad"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmds, err := splitCommands(tc.args)
+			if err != nil {
+				t.Fatalf("splitCommands(%v): %v", tc.args, err)
+			}
+			if len(cmds) != 2 {
+				t.Fatalf("expected 2 commands, got %+v", cmds)
+			}
+			if cmds[0].Name != "prepare:psql" || len(cmds[0].Args) != 2 || cmds[0].Args[0] != "--image" || cmds[0].Args[1] != "img" {
+				t.Fatalf("unexpected first command: %+v", cmds[0])
+			}
+			if cmds[1].Name != "run" {
+				t.Fatalf("unexpected second command: %+v", cmds[1])
+			}
+		})
+	}
+}
+
 func TestSplitCommandsPrepareRawDoesNotSplitToolArgNamedRun(t *testing.T) {
 	cases := [][]string{
 		{"prepare:psql", "--", "-f", "run", "smoke"},
@@ -194,6 +228,9 @@ func TestIsCompositeRunBoundaryBranches(t *testing.T) {
 		{name: "ref equals flag before alias ref", args: []string{"prepare:psql", "run", "--ref=HEAD", "smoke"}, idx: 1, want: true},
 		{name: "ref mode equals flag before alias ref", args: []string{"prepare:psql", "run", "--ref", "HEAD", "--ref-mode=blob", "smoke"}, idx: 1, want: true},
 		{name: "instance flag before alias ref", args: []string{"prepare:psql", "run", "--instance", "dev", "smoke"}, idx: 1, want: true},
+		{name: "missing alias after ref flag", args: []string{"prepare:psql", "run", "--ref", "HEAD"}, idx: 1, want: true},
+		{name: "missing ref flag value", args: []string{"prepare:psql", "run", "--ref"}, idx: 1, want: true},
+		{name: "unknown flag after ref flag", args: []string{"prepare:psql", "run", "--ref", "HEAD", "--bad"}, idx: 1, want: true},
 		{name: "separator after run", args: []string{"prepare:psql", "run", "--"}, idx: 1, want: false},
 		{name: "flag after run", args: []string{"prepare:psql", "run", "-c"}, idx: 1, want: false},
 		{name: "missing next token", args: []string{"prepare:psql", "run"}, idx: 1, want: false},
