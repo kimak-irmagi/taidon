@@ -444,11 +444,11 @@ func (r runner) run(args []string) error {
 			}
 			parsedRun, showHelp, err := parseRunArgs(buildRunAliasCommandArgs(alias, invocation))
 			if err != nil {
-				return err
+				return finishPrepareCleanup(err, ref.Cleanup)
 			}
 			if showHelp {
 				cli.PrintRunUsage(r.deps.stdout)
-				return nil
+				return finishPrepareCleanup(nil, ref.Cleanup)
 			}
 			runAliasCWD := projectedRunInvocationCWD(cmdCtx.cwd, ref)
 			if err := runRunParsed(r.deps.stdout, r.deps.stderr, runOpts, alias.Kind, parsedRun, cmdCtx.workspaceRoot, runAliasCWD, ref); err != nil {
