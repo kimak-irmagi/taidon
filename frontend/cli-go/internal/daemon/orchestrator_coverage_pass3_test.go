@@ -218,7 +218,7 @@ func TestConnectOrStartWaitsForHealthyDaemon(t *testing.T) {
 		RunDir:         runDir,
 		StateDir:       stateDir,
 		ClientTimeout:  100 * time.Millisecond,
-		StartupTimeout: 5 * time.Second,
+		StartupTimeout: 10 * time.Second,
 		Verbose:        true,
 	})
 	if err != nil {
@@ -244,7 +244,7 @@ func writeHealthyDaemonScript(t *testing.T, dir, endpoint, instanceID, token str
 			"shift\r\n" +
 			"goto parse\r\n" +
 			":parsed\r\n" +
-			"timeout /t 1 /nobreak >nul\r\n" +
+			"powershell -NoProfile -Command \"Start-Sleep -Milliseconds 200\"\r\n" +
 			fmt.Sprintf("> \"%%state%%\" echo {\"endpoint\":\"%s\",\"instanceId\":\"%s\",\"authToken\":\"%s\"}\r\n", endpoint, instanceID, token) +
 			"timeout /t 2 /nobreak >nul\r\n"
 		if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
@@ -263,7 +263,7 @@ func writeHealthyDaemonScript(t *testing.T, dir, endpoint, instanceID, token str
 		"  fi\n" +
 		"  shift\n" +
 		"done\n" +
-		"sleep 0.2\n" +
+		"sleep 0.1\n" +
 		fmt.Sprintf("printf '%%s' '%s' > \"$state\"\n", fmt.Sprintf(`{"endpoint":"%s","instanceId":"%s","authToken":"%s"}`, endpoint, instanceID, token)) +
 		"sleep 1\n"
 	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {

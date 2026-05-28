@@ -253,6 +253,112 @@ func TestRunnerRejectsCompositePrepareRefBeforeRunDispatch(t *testing.T) {
 	}
 }
 
+func TestRunnerRejectsCompositePrepareRefEqualsBeforeRunDispatch(t *testing.T) {
+	cwd := t.TempDir()
+	runCalled := false
+
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{
+		{Name: "prepare", Args: []string{"--ref=HEAD", "examples/chinook"}},
+		{Name: "run:psql", Args: []string{"--", "-c", "select 1"}},
+	}, func(deps *runnerDeps) {
+		deps.getwd = func() (string, error) {
+			return cwd, nil
+		}
+		deps.resolveCommandContext = func(string, cli.GlobalOptions) (commandContext, error) {
+			return testCommandContext(cwd, "human", false), nil
+		}
+		deps.runRun = func(io.Writer, io.Writer, cli.RunOptions, string, []string, string, string) error {
+			runCalled = true
+			return nil
+		}
+		deps.runPrepare = func(io.Writer, io.Writer, cli.PrepareOptions, config.LoadedConfig, string, string, []string) error {
+			t.Fatal("runPrepare should not be called after composite --ref rejection")
+			return nil
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "prepare --ref does not support composite run yet") {
+		t.Fatalf("expected composite --ref error, got %v", err)
+	}
+	if runCalled {
+		t.Fatal("runRun should not be called after composite --ref rejection")
+	}
+}
+
+func TestRunnerRejectsMalformedCompositeRunRefEqualsBeforePrepareDispatch(t *testing.T) {
+	cwd := t.TempDir()
+	prepareCalled := false
+
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{
+		{Name: "prepare:psql", Args: []string{"--image", "img", "--", "-c", "select 1"}},
+		{Name: "run", Args: []string{"--ref=HEAD", "--bad", "smoke"}},
+	}, func(deps *runnerDeps) {
+		deps.getwd = func() (string, error) {
+			return cwd, nil
+		}
+		deps.resolveCommandContext = func(string, cli.GlobalOptions) (commandContext, error) {
+			return testCommandContext(cwd, "human", false), nil
+		}
+		deps.prepareResult = func(stdoutAndErr, cli.PrepareOptions, config.LoadedConfig, string, string, []string) (client.PrepareJobResult, bool, error) {
+			prepareCalled = true
+			return client.PrepareJobResult{}, false, nil
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "run --ref does not support composite prepare ... run yet") {
+		t.Fatalf("expected composite run --ref error, got %v", err)
+	}
+	if prepareCalled {
+		t.Fatal("prepareResult should not be called after composite run --ref rejection")
+	}
+}
+
+func TestRunnerAllowsCompositeRawRunWrapperArgsNamedRef(t *testing.T) {
+	cwd := t.TempDir()
+	prepareCalled := false
+	runCalled := false
+
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{
+		{Name: "prepare:psql", Args: []string{"--image", "img", "--", "-c", "select 1"}},
+		{Name: "run:psql", Args: []string{"--", "my-wrapper", "--ref", "upstream"}},
+	}, func(deps *runnerDeps) {
+		deps.getwd = func() (string, error) {
+			return cwd, nil
+		}
+		deps.resolveCommandContext = func(string, cli.GlobalOptions) (commandContext, error) {
+			return testCommandContext(cwd, "human", false), nil
+		}
+		deps.prepareResult = func(stdoutAndErr, cli.PrepareOptions, config.LoadedConfig, string, string, []string) (client.PrepareJobResult, bool, error) {
+			prepareCalled = true
+			return client.PrepareJobResult{InstanceID: "inst-1"}, false, nil
+		}
+		deps.runRun = func(_ io.Writer, _ io.Writer, runOpts cli.RunOptions, kind string, args []string, workspaceRoot string, gotCwd string) error {
+			runCalled = true
+			if runOpts.InstanceRef != "inst-1" {
+				t.Fatalf("instance ref = %q, want %q", runOpts.InstanceRef, "inst-1")
+			}
+			if kind != "psql" {
+				t.Fatalf("kind = %q, want %q", kind, "psql")
+			}
+			if workspaceRoot != cwd || gotCwd != cwd {
+				t.Fatalf("unexpected run paths: workspaceRoot=%q cwd=%q", workspaceRoot, gotCwd)
+			}
+			if got := strings.Join(args, "|"); got != "--|my-wrapper|--ref|upstream" {
+				t.Fatalf("args = %q, want %q", got, "--|my-wrapper|--ref|upstream")
+			}
+			return nil
+		}
+		deps.cleanupPreparedInstance = func(context.Context, io.Writer, cli.RunOptions, string, bool) {}
+	})
+	if err != nil {
+		t.Fatalf("runner.run: %v", err)
+	}
+	if !prepareCalled {
+		t.Fatal("prepareResult should be called for composite prepare/run")
+	}
+	if !runCalled {
+		t.Fatal("runRun should be called for composite raw run with wrapper --ref arg")
+	}
+}
+
 func TestRunnerRoutesAliasAndDiscoverThroughInjectedHandlers(t *testing.T) {
 	t.Run("alias", func(t *testing.T) {
 		cwd := t.TempDir()

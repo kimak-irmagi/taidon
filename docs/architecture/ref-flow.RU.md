@@ -9,7 +9,7 @@ bounded `--ref` slice после принятия CLI-синтаксиса в
 - он применяется только к single-stage `plan` и `prepare`;
 - он поддерживает raw и alias-backed prepare flows;
 - ref-backed `prepare` в нем остается только в watch mode;
-- он пока не поддерживает standalone `run --ref`;
+- он не покрывает более поздний утвержденный follow-up для standalone `run --ref`;
 - он пока не поддерживает composite `prepare ... run ...` с `--ref`.
 
 ## 1. Участники
@@ -213,7 +213,7 @@ cleanup detached worktree уже поднимаются в `sqlrs diff`.
 Этот flow намеренно оставляет на следующие slices:
 
 - `prepare ... run ...` с ref-backed prepare-stage;
-- standalone `run --ref`;
+- standalone `run --ref` (уже вынесен в более поздний follow-up design);
 - provenance output для ref-backed runs;
 - `sqlrs cache explain` поверх ref-backed inputs;
 - remote runner или hosted Git semantics.

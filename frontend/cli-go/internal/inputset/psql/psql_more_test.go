@@ -339,3 +339,88 @@ func TestPsqlTrackerAndCollectHelpers(t *testing.T) {
 		t.Fatalf("expected existing file to pass, got %+v", issue)
 	}
 }
+
+func TestCollectInvocationInputsTracksInvocationSources(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "command.sql"), "select 1;\n")
+	writeFile(t, filepath.Join(root, "inline.sql"), "select 2;\n")
+	writeFile(t, filepath.Join(root, "separate.sql"), "select 3;\n")
+	writeFile(t, filepath.Join(root, "equals.sql"), "select 4;\n")
+	writeFile(t, filepath.Join(root, "short.sql"), "select 5;\n")
+	writeFile(t, filepath.Join(root, "stdin.sql"), "select 6;\n")
+
+	stdinValue := "\\i stdin.sql\n"
+	set, err := CollectInvocationInputs([]string{
+		"--",
+		"-c", "\\i command.sql",
+		"--command=select 0",
+		"-c\\i inline.sql",
+		"-f", "separate.sql",
+		"--file=equals.sql",
+		"-fshort.sql",
+		"-f-",
+	}, inputset.NewWorkspaceResolver(root, root, nil), &stdinValue, inputset.OSFileSystem{})
+	if err != nil {
+		t.Fatalf("CollectInvocationInputs: %v", err)
+	}
+
+	got := make([]string, 0, len(set.Entries))
+	for _, entry := range set.Entries {
+		got = append(got, entry.Path)
+		if entry.Hash == "" {
+			t.Fatalf("expected hash for %+v", entry)
+		}
+	}
+	want := []string{
+		"command.sql",
+		"inline.sql",
+		"separate.sql",
+		"equals.sql",
+		"short.sql",
+		"stdin.sql",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("paths = %q, want %q", strings.Join(got, "|"), strings.Join(want, "|"))
+	}
+}
+
+func TestInvocationSourceHelpers(t *testing.T) {
+	root := t.TempDir()
+	resolver := inputset.NewWorkspaceResolver(root, root, nil)
+
+	if _, err := collectEntrySources([]string{"-c"}, resolver, nil); err == nil || !strings.Contains(err.Error(), "Missing value for -c") {
+		t.Fatalf("expected missing -c error, got %v", err)
+	}
+	if _, err := collectEntrySources([]string{"--file"}, resolver, nil); err == nil || !strings.Contains(err.Error(), "Missing value for --file") {
+		t.Fatalf("expected missing --file error, got %v", err)
+	}
+
+	if source, ok := commandSource(" \n\t "); ok || source.kind != "" {
+		t.Fatalf("expected blank command source to be ignored, got %+v ok=%v", source, ok)
+	}
+	if source, ok := commandSource("select 1"); !ok || source.kind != "content" || source.content != "select 1" {
+		t.Fatalf("unexpected command source: %+v ok=%v", source, ok)
+	}
+
+	if source, ok, err := fileSource(" ", resolver, nil); err != nil || ok || source.kind != "" {
+		t.Fatalf("expected blank file source to be ignored, got %+v ok=%v err=%v", source, ok, err)
+	}
+	if source, ok, err := fileSource("-", resolver, nil); err != nil || ok || source.kind != "" {
+		t.Fatalf("expected missing stdin source to be ignored, got %+v ok=%v err=%v", source, ok, err)
+	}
+
+	stdinValue := "select from stdin;\n"
+	if source, ok, err := fileSource("-", resolver, &stdinValue); err != nil || !ok || source.kind != "content" || source.content != stdinValue {
+		t.Fatalf("unexpected stdin file source: %+v ok=%v err=%v", source, ok, err)
+	}
+	if source, ok, err := fileSource("query.sql", resolver, nil); err != nil || !ok || source.kind != "file" || source.path != filepath.Join(root, "query.sql") {
+		t.Fatalf("unexpected resolved file source: %+v ok=%v err=%v", source, ok, err)
+	}
+
+	badResolver := inputset.NewWorkspaceResolver(root, root, func(string) (string, error) {
+		return "", errors.New("boom")
+	})
+	if _, _, err := fileSource("query.sql", badResolver, nil); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected resolver error, got %v", err)
+	}
+}

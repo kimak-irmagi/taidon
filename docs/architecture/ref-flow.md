@@ -9,7 +9,7 @@ This slice is intentionally narrow:
 - it applies to single-stage `plan` and `prepare`;
 - it supports both raw and alias-backed prepare flows;
 - it keeps ref-backed `prepare` in watch mode only;
-- it does not yet support standalone `run --ref`;
+- it does not cover the later approved standalone `run --ref` follow-up;
 - it does not yet support `prepare ... run ...` composites carrying `--ref`.
 
 ## 1. Participants
@@ -209,7 +209,7 @@ cleanup errors are already surfaced in `sqlrs diff`.
 This flow intentionally leaves the following to later slices:
 
 - `prepare ... run ...` with a ref-backed prepare stage;
-- standalone `run --ref`;
+- standalone `run --ref` (covered by a later follow-up design);
 - provenance output for ref-backed runs;
 - `sqlrs cache explain` over ref-backed inputs;
 - remote runner or hosted Git semantics.

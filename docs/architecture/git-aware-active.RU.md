@@ -181,7 +181,8 @@
 
 - ✅ Warmup OK (N contexts)
 - How to reproduce:
-  - `sqlrs run --ref <head> --prepare <path> -- <cmd>`
+  - `sqlrs prepare --ref <head> <prepare-ref>`
+  - `sqlrs run --ref <head> <run-ref> --instance <prepared-instance>`
 - Links: logs, provenance
 
 ---
