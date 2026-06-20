@@ -50,6 +50,7 @@ gantt
     Team deployment gateway baseline           :c6, after c1, 30d
     Artifact handling + audit baseline         :c2, after c1, 45d
     CI/CD integration templates                :active, c3, after c1, 30d
+    Users/orgs client contract slice           :done, c4a, after c1, 20d
     Auth + tenant access baseline              :c4, after c1, 45d
     Shared capacity scaling                    :c5, after c2, 30d
 
@@ -169,6 +170,12 @@ gantt
 - **Done (CLI alias coverage hardening)**: `internal/alias` regression tests now
   cover the remaining create, resolve, and scan edge branches, bringing the CLI
   alias package above the minimum coverage threshold in `go test --cover ./...`.
+- **Done (remote users/orgs client/API contract slice)**: the CLI now has
+  remote-only `sqlrs user me`, `sqlrs user register`, `sqlrs user create`,
+  `sqlrs org create`, `sqlrs org ls`, and `sqlrs org get` flows backed by the
+  documented users/organizations OpenAPI contract. The slice deliberately
+  excludes local-engine support and server-side persistence/provider
+  implementation.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
@@ -325,6 +332,9 @@ zero-copy/cache-hit reuse now sit beyond the accepted M2 baseline.
 **Deliverables**:
 
 - Shared control-plane baseline for authenticated multi-user deployments
+- Remote users/orgs API contract and CLI client surface — **Done (client/API
+  contract slice)**; server-side persistence/provider implementation remains in
+  the shared control-plane/auth baseline.
 - Team deployment gateway and service entrypoint baseline
 - Shared state, artifact, and audit handling with retention controls
 - Basic auth, tenant access, quotas, and policy enforcement

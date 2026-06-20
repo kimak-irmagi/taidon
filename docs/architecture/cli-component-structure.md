@@ -20,9 +20,12 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `internal/app`
   - Loads workspace/global config and resolves profile/mode.
   - Dispatches the command graph (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
-    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`).
+    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`, `user`,
+    `org`).
   - Builds command context and chooses path resolvers and runtime projections
     from `internal/inputset`.
+  - Rejects remote-only user and organization commands in local mode before
+    local engine discovery or autostart.
   - Owns package-local ref-aware run-binding helpers for standalone
     `run --ref` so raw and alias-backed run flows reuse shared `refctx`,
     `alias`, and `inputset` boundaries without entering the prepare-oriented
@@ -66,12 +69,14 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - Delegates wrapped-command file semantics to `internal/inputset`.
 - `internal/cli`
   - Client-side command executors and human/JSON renderers, including
-    read-only cache-explain rendering.
+    read-only cache-explain rendering and remote-only user/organization
+    management rendering.
 - `internal/cli/runkind`
   - Registry of supported run kinds.
 - `internal/client`
   - HTTP API client for `/v1/*` endpoints.
   - Read-only cache explanation requests for bound prepare stages.
+  - User and organization management requests for remote/shared deployments.
   - NDJSON streaming for prepare events and run output.
 - `internal/daemon`
   - Local engine autostart/discovery (`engine.json`, lock/state orchestration).
@@ -120,6 +125,12 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     `log`).
 - `cli.ConfigOptions`, `client.ConfigValue`
   - Config command options and API value payloads.
+- `cli.UserOptions`, `cli.OrganizationOptions`
+  - Remote-only command options for `sqlrs user` and `sqlrs org`.
+- `client.UserProfile`, `client.ExternalIdentity`, `client.Organization`,
+  `client.OrganizationMembership`
+  - User and organization API payloads. External identity uniqueness is owned
+    by the server over `provider + issuer + subject`.
 
 ## 4. Data ownership
 
@@ -134,6 +145,9 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - Rendered alias-create commands are ephemeral and exist only in CLI output.
 - Server config is owned by engine-side storage and accessed via HTTP
   (`/v1/config*`), not cached by the CLI.
+- User profiles, external identities, organizations, and memberships are owned
+  by the remote/shared control-plane store. The CLI does not cache them, and
+  local engine discovery state is not involved in these commands.
 
 ## 5. Dependency diagram
 

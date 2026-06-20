@@ -20,12 +20,13 @@ flowchart TD
   end
 
   subgraph ControlPlane
+    PROFILE["User Profile Service"]
     ORCH["Orchestrator (queue/prio/quotas)"]
     RUN["Runner Service (sqlrs engine instances)"]
     CACHE[state-cache service/index]
     ART[Artifact Store API]
     OBS[Telemetry/Audit]
-    META[(Control DB)]
+    META[(Control metadata store)]
   end
 
   subgraph DataPlane
@@ -35,6 +36,8 @@ flowchart TD
   end
 
   Client --> GW --> AUTH --> ORCH
+  GW --> PROFILE
+  PROFILE --> META
   ORCH --> RUN
   RUN --> ENV
   RUN --> CACHE
@@ -51,7 +54,11 @@ flowchart TD
 ## 3. Процесс и поток запросов
 
 - Клиенты (CLI/IDE/UI) вызывают Gateway по аутентифицированному REST/gRPC для prepare jobs и cache/snapshot операций.
-- Gateway проверяет authN/authZ, rate limits, org quotas; форвардит в Orchestrator.
+- Gateway проверяет authN/authZ, rate limits, org quotas; prepare и
+  cache/snapshot операции форвардит в Orchestrator.
+- Gateway форвардит запросы управления пользователями и организациями в
+  User Profile Service. Сервис создает и читает профили пользователей, связи с
+  external identity, организации и memberships из server-owned user/org state.
 - Orchestrator ставит job в очередь с учетом приоритетов/квот; dispatch в Runner-экземпляры.
 - Runner (stateless engine) забирает job, делает prepare planning/cache lookup, запрашивает у env-manager instance, выполняет prepare шаги, снапшотит, делает bind/select instance, сохраняет артефакты, обновляет статус в Orchestrator.
 - Статусы/события стримятся через Gateway (SSE/WS) для watch-mode клиентов.
@@ -62,7 +69,7 @@ flowchart TD
 
 - **Lifecycle**: долгоживущий сервис (Deployment) с HPA; нет процессов, которые спавнит CLI.
 - **Ingress**: за Gateway; нет loopback/UDS; нужна auth.
-- **State store**: общий store (PVC/S3) + metadata в Control DB или отдельный SQLite на шарде с синком в Control DB; per-tenant разделение через namespaces/prefixes.
+- **State store**: общий store (PVC/S3) + control metadata store или отдельный SQLite на шарде с синком в control plane; per-tenant разделение через namespaces/prefixes.
 - **Cache service**: может быть отдельным сервисом, стоящим за cache client engine.
 - **Liquibase**: выполняется как внешний CLI в контролируемых runner pods/containers; секреты из K8s Secrets/Vault. Накладные расходы измеряются и оптимизируются при необходимости.
 - **Snapshotter**: использует кластерные хранилища (CSI snapshots/PVC + CoW при наличии); резолвинг путей по namespace.
@@ -71,6 +78,13 @@ flowchart TD
 ## 5. Изоляция и безопасность
 
 - Auth: OIDC/JWT через Gateway; runner получает principal/org из токена.
+- User Profile Service выводит current-user identity key для
+  `PUT /v1/users/me` из проверенных OAuth/OIDC claims, может отклонять
+  self-registration при отключенной политике и обеспечивает уникальность
+  external identity по `provider + issuer + subject`.
+- User Profile Service требует conditional writes для user profiles:
+  `If-None-Match: *` для create-only registration/provisioning и
+  `If-Match: <etag>` для update-only изменений.
 - Сеть: Namespace/NetworkPolicy для изоляции экземпляров; ограничение egress.
 - Хранилища: per-tenant prefixes в snapshot/artifact stores; ACL на уровне сервиса и backend IAM, где применимо.
 - Quotas/limits: enforced Orchestrator и env-manager (CPU/RAM/TTL/concurrency).
@@ -86,7 +100,10 @@ flowchart TD
 ## 7. Персистентность и хранилища
 
 - **State cache**: общий store с индексом; eviction политика учитывает org pins/retention.
-- **Control DB**: метаданные по jobs, states, artefacts, audit.
+- **Control metadata store**: метаданные по jobs, states, artefacts, audit.
+- **User profile store**: server-owned state за User Profile Service.
+  Технология хранения вне текущего client slice; identity links уникальны по
+  provider, issuer и subject.
 - **Artifact store**: S3/PVC; неизменяемые bundle для шаринга.
 - **Snapshot store**: CoW-friendly volumes или CSI snapshots; send/receive для удаленных копий, где доступно.
 
@@ -95,6 +112,9 @@ flowchart TD
 - Метрики: длина/возраст очереди, латентность runner, cache hit ratio, латентность bind/start экземпляра, размеры/время снапшотов, ошибки.
 - Логи: структурированные, централизованные (Loki/ELK); коррелированы по job/prepare_id/org.
 - Audit: prepare jobs, snapshots, действия по шарингу, события масштабирования.
+- Lifecycle-действия пользователей и организаций являются audit events:
+  self-registration, administrator-created users, organization creation и
+  membership changes.
 
 ## 9. Примечания об эволюции
 
@@ -107,21 +127,33 @@ flowchart TD
 ### 10.1 Компоненты и ответственность
 
 - **Gateway**
-  - Экспортирует `GET /v1/prepare-jobs`, `DELETE /v1/prepare-jobs/{jobId}` и `GET /v1/tasks`.
-  - Проверяет authN/authZ и проксирует в Orchestrator.
+  - Экспортирует `GET /v1/prepare-jobs`, `DELETE /v1/prepare-jobs/{jobId}`,
+    `GET /v1/tasks` и remote-only API пользователей/организаций.
+  - Проверяет authN/authZ и проксирует в Orchestrator или User Profile Service.
+- **User Profile Service**
+  - Владеет профилями пользователей, external identity links, организациями и
+    memberships.
+  - Применяет self-registration policy и administrator authorization для
+    ручного provisioning пользователей.
+  - Реализует `PUT /v1/users/me` и `PUT /v1/users/by-identity` как
+    identity-keyed conditional writes.
+  - Обеспечивает уникальность external identity links.
 - **Orchestrator**
   - Владеет реестром jobs и представлением очереди tasks.
   - Применяет правила scheduling, quota и deletion.
 - **Runner**
   - Выполняет tasks и репортит переходы статусов.
   - Стримит логи/события для observability.
-- **Control DB**
+- **Control metadata store**
   - Персистит метаданные jobs/tasks и историю статусов.
 
 ### 10.2 Ключевые типы и интерфейсы
 
 - `PrepareJobEntry`, `TaskEntry`
   - Payload списка для job/task запросов.
+- `UserProfile`, `ExternalIdentity`, `Organization`,
+  `OrganizationMembership`
+  - Payload-ы управления пользователями и организациями.
 - `TaskStatus`
   - `queued | running | succeeded | failed`.
 - `DeleteResult`
@@ -129,5 +161,9 @@ flowchart TD
 
 ### 10.3 Владение данными
 
-- Control DB - источник истины для jobs/tasks в shared деплойменте.
-- Orchestrator держит in-memory состояние очереди, синхронизированное с Control DB.
+- Control metadata store - источник истины для jobs/tasks в shared деплойменте.
+- User Profile Service владеет источником истины для users, external identities,
+  organizations и memberships в shared деплойменте. Конкретная технология
+  хранения вне текущего client slice.
+- Orchestrator держит in-memory состояние очереди, синхронизированное с control
+  metadata store.

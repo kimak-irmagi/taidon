@@ -56,6 +56,8 @@ flowchart LR
 - Находить или запускать локальный процесс engine
 - Общаться с engine по HTTP через loopback или Unix socket
 - Выполнять `run` команды локально против подготовленного экземпляра
+- Отклонять remote-only команды управления пользователями и организациями до
+  discovery или autostart локального engine
 - Завершаться сразу после выполнения команды
 - Опционально: pre-flight проверки (container runtime доступен, state store доступен для записи), вывод endpoint/version для диагностики
 
@@ -66,6 +68,8 @@ CLI намеренно **тонкий** и без состояния.
 - Нет логики оркестрации container runtime
 - Нет логики snapshotting
 - Нет прямого выполнения скриптов
+- Нет управления user profiles, external identities, organizations или
+  memberships
 
 ---
 
@@ -127,6 +131,9 @@ CLI намеренно **тонкий** и без состояния.
 - `POST /snapshots` - ручной snapshot
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - опциональная мягкая остановка
+
+Локальный engine не экспортирует `/v1/users*` или `/v1/organizations*`. Эти
+ресурсы принадлежат shared/team/cloud деплойментам за Gateway.
 
 ### 5.1 Долгие операции: async jobs, sync CLI
 

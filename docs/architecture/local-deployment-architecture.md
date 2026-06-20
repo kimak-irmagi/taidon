@@ -56,6 +56,8 @@ flowchart LR
 - Discover or spawn a local engine process
 - Communicate with engine via HTTP over loopback or Unix socket
 - Execute `run` commands locally against a prepared instance/instance
+- Reject remote-only user and organization management commands before local
+  engine discovery or autostart
 - Exit immediately after command completion
 - Optional: pre-flight checks (container runtime reachable, state store writable), show engine endpoint/version for diagnostics
 
@@ -66,6 +68,7 @@ The CLI is intentionally **thin** and stateless.
 - No container runtime orchestration logic
 - No snapshotting logic
 - No direct script execution
+- No user profile, external identity, organization, or membership management
 
 ---
 
@@ -127,6 +130,9 @@ Key engine endpoints (logical):
 - `POST /snapshots` - manual snapshot
 - `GET /cache/{key}` - cache lookup
 - `POST /engine/shutdown` - optional graceful stop
+
+Local engine does not expose `/v1/users*` or `/v1/organizations*`. Those
+resources belong to shared/team/cloud deployments behind the Gateway.
 
 ### 5.1 Long-running operations: async jobs, sync CLI
 

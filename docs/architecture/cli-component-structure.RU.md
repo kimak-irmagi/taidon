@@ -20,9 +20,12 @@
 - `internal/app`
   - Загружает workspace/global config, выбирает профиль и режим.
   - Диспетчеризует граф команд (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
-    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`).
+    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`, `user`,
+    `org`).
   - Собирает command context и выбирает path resolver-ы и runtime projection-ы
     из `internal/inputset`.
+  - Отклоняет remote-only команды управления пользователями и организациями в
+    local mode до discovery или autostart локального engine.
   - Владеет package-local helper-ами ref-aware run binding для standalone
     `run --ref`, чтобы raw и alias-backed run flow переиспользовали общие
     boundaries `refctx`, `alias` и `inputset`, не входя в
@@ -67,12 +70,15 @@
   - Делегирует file semantics вложенной команды в `internal/inputset`.
 - `internal/cli`
   - Исполнители клиентских команд и human/JSON renderers, включая read-only
-    cache-explain rendering.
+    cache-explain rendering и rendering remote-only управления пользователями
+    и организациями.
 - `internal/cli/runkind`
   - Реестр поддерживаемых run kind.
 - `internal/client`
   - HTTP клиент для `/v1/*` endpoint-ов.
   - Read-only cache explanation requests для bound prepare stages.
+  - Запросы управления пользователями и организациями для remote/shared
+    деплойментов.
   - NDJSON-стриминг событий prepare и вывода run.
 - `internal/daemon`
   - Autostart/discovery локального engine (`engine.json`, lock/state orchestration).
@@ -121,6 +127,12 @@
     `log`).
 - `cli.ConfigOptions`, `client.ConfigValue`
   - Опции config-команд и API payload значений.
+- `cli.UserOptions`, `cli.OrganizationOptions`
+  - Remote-only опции команд для `sqlrs user` и `sqlrs org`.
+- `client.UserProfile`, `client.ExternalIdentity`, `client.Organization`,
+  `client.OrganizationMembership`
+  - API payload-ы пользователей и организаций. Уникальность external identity
+    принадлежит серверу и задается по `provider + issuer + subject`.
 
 ## 4. Владение данными
 
@@ -135,6 +147,9 @@
 - Rendered alias-create commands эфемерны и существуют только в CLI output.
 - Server config принадлежит engine-side storage и читается/изменяется по HTTP
   (`/v1/config*`), без локального кеширования в CLI.
+- Профили пользователей, external identities, организации и memberships
+  принадлежат remote/shared control-plane store. CLI не кеширует их, а
+  discovery-состояние локального engine в этих командах не участвует.
 
 ## 5. Диаграмма зависимостей
 

@@ -32,6 +32,8 @@ From the user’s point of view, `sqlrs` manages:
 - **instances**: mutable copies of states; all database modifications happen here
 - **plans**: ordered sets of changes to apply (e.g., Liquibase changesets)
 - **runs**: executions of plans, scripts, or commands
+- in remote/shared deployments, **users** and **organizations** that define the
+  authenticated principal and tenant context for future shared workflows
 
 ```text
 state  --(materialize)-->  instance  --(run)-->  new state
@@ -86,6 +88,8 @@ supported for jobs.
 ```text
 sqlrs
   init
+  user
+  org
   status
   cache
   ls
@@ -460,6 +464,46 @@ Current design direction:
   binding semantics as single-stage `prepare`;
 - the first slice does **not** yet support wrapped `plan`, wrapped `run`, or
   composite `prepare ... run ...`.
+
+---
+
+### 3.13 `sqlrs user`
+
+See the user guide for the authoritative command semantics:
+
+- [`docs/user-guides/sqlrs-users-orgs.md`](../user-guides/sqlrs-users-orgs.md)
+
+Current design direction:
+
+- `user` is a remote/shared deployment command group; local mode rejects it
+  before local engine discovery or autostart.
+- `user register` creates or returns the current authenticated user's profile by
+  deriving the target external identity from validated OAuth/OIDC bearer-token
+  claims.
+- `user register` can be rejected when server-side self-registration is
+  disabled.
+- `user create` is a separate administrator command for provisioning a profile
+  linked to an explicitly supplied external identity.
+- External identity uniqueness is server-owned and enforced over
+  `provider + issuer + subject`.
+
+---
+
+### 3.14 `sqlrs org`
+
+See the user guide for the authoritative command semantics:
+
+- [`docs/user-guides/sqlrs-users-orgs.md`](../user-guides/sqlrs-users-orgs.md)
+
+Current design direction:
+
+- `org` is a remote/shared deployment command group; local mode rejects it
+  before local engine discovery or autostart.
+- `org create <slug>` creates a new organization for a registered user who is
+  not yet attached to an organization and makes that user the organization
+  admin.
+- `org ls` and `org get <org-ref>` are scoped to organizations visible to the
+  current authenticated user.
 
 ---
 

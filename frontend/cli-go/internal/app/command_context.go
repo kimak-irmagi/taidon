@@ -306,3 +306,14 @@ func (ctx commandContext) configOptions() cli.ConfigOptions {
 		Verbose:         ctx.verbose,
 	}
 }
+
+func (ctx commandContext) userOrgOptions() cli.UserOrgOptions {
+	return cli.UserOrgOptions{
+		ProfileName: ctx.profileName,
+		Mode:        ctx.mode,
+		AuthToken:   ctx.authToken,
+		Endpoint:    ctx.profile.Endpoint,
+		Timeout:     ctx.timeout,
+		Verbose:     ctx.verbose,
+	}
+}

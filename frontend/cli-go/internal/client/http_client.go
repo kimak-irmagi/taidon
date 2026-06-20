@@ -431,6 +431,10 @@ func (c *Client) doRequest(ctx context.Context, method, path string, useAuth boo
 }
 
 func (c *Client) doRequestWithBody(ctx context.Context, method, path string, useAuth bool, body io.Reader, contentType string) (*http.Response, error) {
+	return c.doRequestWithBodyHeaders(ctx, method, path, useAuth, body, contentType, nil)
+}
+
+func (c *Client) doRequestWithBodyHeaders(ctx context.Context, method, path string, useAuth bool, body io.Reader, contentType string, headers map[string]string) (*http.Response, error) {
 	url := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
@@ -444,6 +448,12 @@ func (c *Client) doRequestWithBody(ctx context.Context, method, path string, use
 	}
 	if useAuth && c.authToken != "" {
 		req.Header.Set("Authorization", "Bearer "+c.authToken)
+	}
+	for key, value := range headers {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		req.Header.Set(key, value)
 	}
 	return c.http.Do(req)
 }
@@ -482,6 +492,26 @@ func (e *HTTPStatusError) Error() string {
 	return fmt.Sprintf("unexpected status: %s", e.Status)
 }
 
+// ErrorResponseError preserves structured API error metadata while keeping
+// Error() compatible with the previous message-only behavior.
+type ErrorResponseError struct {
+	StatusCode int
+	Status     string
+	Code       string
+	Message    string
+	Details    string
+}
+
+func (e *ErrorResponseError) Error() string {
+	if strings.TrimSpace(e.Message) == "" {
+		return fmt.Sprintf("unexpected status: %s", e.Status)
+	}
+	if strings.TrimSpace(e.Details) != "" {
+		return fmt.Sprintf("%s: %s", e.Message, e.Details)
+	}
+	return e.Message
+}
+
 func addFilter(values url.Values, key, value string) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -505,10 +535,13 @@ func parseErrorResponse(resp *http.Response) error {
 	data, _ := io.ReadAll(resp.Body)
 	if len(data) > 0 {
 		if json.Unmarshal(data, &errResp) == nil && errResp.Message != "" {
-			if errResp.Details != "" {
-				return fmt.Errorf("%s: %s", errResp.Message, errResp.Details)
+			return &ErrorResponseError{
+				StatusCode: resp.StatusCode,
+				Status:     resp.Status,
+				Code:       errResp.Code,
+				Message:    errResp.Message,
+				Details:    errResp.Details,
 			}
-			return fmt.Errorf("%s", errResp.Message)
 		}
 		body := strings.TrimSpace(string(data))
 		if body != "" {
