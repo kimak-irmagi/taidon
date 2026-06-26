@@ -135,23 +135,24 @@ func PrintUserProfile(w io.Writer, result client.UserProfileResult) {
 	if result.User.Email != nil && *result.User.Email != "" {
 		fmt.Fprintf(w, "email: %s\n", *result.User.Email)
 	}
-	if len(result.Identities) > 0 {
-		fmt.Fprintln(w, "identities:")
-		for _, identity := range result.Identities {
-			fmt.Fprintf(w, "  - %s %s %s\n", identity.Provider, identity.Issuer, identity.Subject)
-		}
+	for _, identity := range result.Identities {
+		fmt.Fprintf(w, "identity: %s %s %s\n", identity.Provider, identity.Issuer, identity.Subject)
 	}
-	if len(result.Memberships) > 0 {
-		fmt.Fprintln(w, "memberships:")
-		for _, membership := range result.Memberships {
-			fmt.Fprintf(w, "  - %s %s\n", membership.Organization.Slug, membership.Membership.Role)
-		}
+	if len(result.Memberships) == 0 {
+		fmt.Fprintln(w, "organizations: 0")
+		return
+	}
+	fmt.Fprintln(w, "organizations:")
+	for _, membership := range result.Memberships {
+		fmt.Fprintf(w, "  %s %s\n", membership.Organization.Slug, membership.Membership.Role)
 	}
 }
 
 func PrintOrganizationMembership(w io.Writer, result client.OrganizationMembershipView) {
-	fmt.Fprintf(w, "organization: %s\n", result.Organization.ID)
-	fmt.Fprintf(w, "slug: %s\n", result.Organization.Slug)
+	fmt.Fprintf(w, "organization: %s\n", result.Organization.Slug)
+	if result.Organization.ID != "" {
+		fmt.Fprintf(w, "id: %s\n", result.Organization.ID)
+	}
 	if result.Organization.DisplayName != "" {
 		fmt.Fprintf(w, "name: %s\n", result.Organization.DisplayName)
 	}
@@ -164,11 +165,10 @@ func PrintOrganizationList(w io.Writer, rows []client.OrganizationMembershipView
 	table := make([][]string, 0, len(rows))
 	for _, row := range rows {
 		table = append(table, []string{
-			row.Organization.ID,
 			row.Organization.Slug,
-			row.Organization.DisplayName,
 			row.Membership.Role,
+			row.Organization.DisplayName,
 		})
 	}
-	printCompactTable(w, []string{"ORG_ID", "SLUG", "NAME", "ROLE"}, table, false, compactTableColumnGap)
+	printCompactTable(w, []string{"SLUG", "ROLE", "NAME"}, table, false, compactTableColumnGap)
 }

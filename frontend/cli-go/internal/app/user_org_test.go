@@ -70,6 +70,17 @@ func TestParseOrgArgsCreateAndGetRequireRefs(t *testing.T) {
 	if cmd.action != "create" || cmd.slug != "evil-lab" || cmd.displayName != "Evil Lab" {
 		t.Fatalf("unexpected org command: %+v", cmd)
 	}
+
+	cmd, showHelp, err = parseOrgArgs([]string{"create", "evil-lab", "--name", "Evil Lab"})
+	if err != nil {
+		t.Fatalf("parseOrgArgs interspersed: %v", err)
+	}
+	if showHelp {
+		t.Fatalf("did not expect help")
+	}
+	if cmd.action != "create" || cmd.slug != "evil-lab" || cmd.displayName != "Evil Lab" {
+		t.Fatalf("unexpected interspersed org command: %+v", cmd)
+	}
 }
 
 func TestParseUserOrgArgsHelpAndValidation(t *testing.T) {
@@ -226,10 +237,10 @@ func TestRunOrgCommandsRemoteOutput(t *testing.T) {
 	}
 
 	var out strings.Builder
-	if err := runOrg(&out, ctx, []string{"create", "--name", "Evil Lab", "evil-lab"}, "human"); err != nil {
+	if err := runOrg(&out, ctx, []string{"create", "evil-lab", "--name", "Evil Lab"}, "human"); err != nil {
 		t.Fatalf("runOrg create: %v", err)
 	}
-	if !strings.Contains(out.String(), "role: admin") {
+	if !strings.Contains(out.String(), "organization: evil-lab") || !strings.Contains(out.String(), "id: org_1") || !strings.Contains(out.String(), "role: admin") {
 		t.Fatalf("unexpected create output: %q", out.String())
 	}
 
@@ -245,7 +256,7 @@ func TestRunOrgCommandsRemoteOutput(t *testing.T) {
 	if err := runOrg(&out, ctx, []string{"get", "evil-lab"}, "human"); err != nil {
 		t.Fatalf("runOrg get: %v", err)
 	}
-	if !strings.Contains(out.String(), "organization: org_1") {
+	if !strings.Contains(out.String(), "organization: evil-lab") || !strings.Contains(out.String(), "id: org_1") {
 		t.Fatalf("unexpected get output: %q", out.String())
 	}
 }

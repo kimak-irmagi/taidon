@@ -195,7 +195,7 @@ func parseOrgCreateArgs(args []string) (orgCommand, bool, error) {
 	help := fs.Bool("help", false, "show help")
 	helpShort := fs.Bool("h", false, "show help")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizeOrgCreateArgs(args)); err != nil {
 		return cmd, false, ExitErrorf(2, "Invalid arguments: %v", err)
 	}
 	if *help || *helpShort {
@@ -213,6 +213,30 @@ func parseOrgCreateArgs(args []string) (orgCommand, bool, error) {
 	}
 	cmd.displayName = strings.TrimSpace(*displayName)
 	return cmd, false, nil
+}
+
+// normalizeOrgCreateArgs preserves the documented `org create <slug> --name`
+// form while still using flag.FlagSet for validation and value parsing.
+func normalizeOrgCreateArgs(args []string) []string {
+	flagArgs := make([]string, 0, len(args))
+	positionalArgs := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		trimmed := strings.TrimSpace(arg)
+		switch {
+		case trimmed == "--name" || trimmed == "-name":
+			flagArgs = append(flagArgs, arg)
+			if i+1 < len(args) {
+				i++
+				flagArgs = append(flagArgs, args[i])
+			}
+		case strings.HasPrefix(trimmed, "--name=") || strings.HasPrefix(trimmed, "-name=") || trimmed == "--help" || trimmed == "-h" || strings.HasPrefix(trimmed, "-"):
+			flagArgs = append(flagArgs, arg)
+		default:
+			positionalArgs = append(positionalArgs, arg)
+		}
+	}
+	return append(flagArgs, positionalArgs...)
 }
 
 func hasHelpArg(args []string) bool {

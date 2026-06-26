@@ -44,7 +44,7 @@ func TestRunUserRegisterCreatedAndPrintHuman(t *testing.T) {
 
 	var out bytes.Buffer
 	PrintUserProfile(&out, result)
-	if got := out.String(); !strings.Contains(got, "user: usr_1") || !strings.Contains(got, "status: created") || !strings.Contains(got, "oidc https://issuer.example.test sub-1") {
+	if got := out.String(); !strings.Contains(got, "user: usr_1") || !strings.Contains(got, "status: created") || !strings.Contains(got, "identity: oidc https://issuer.example.test sub-1") || !strings.Contains(got, "organizations: 0") || strings.Contains(got, "identities:") || strings.Contains(got, "memberships:") {
 		t.Fatalf("unexpected user output: %q", got)
 	}
 }
@@ -227,7 +227,7 @@ func TestRunOrganizationCreateListGetAndPrint(t *testing.T) {
 	PrintOrganizationMembership(&out, got)
 	PrintOrganizationList(&out, list)
 	human := out.String()
-	if !strings.Contains(human, "organization: org_1") || !strings.Contains(human, "slug: evil-lab") || !strings.Contains(human, "admin") {
+	if !strings.Contains(human, "organization: evil-lab") || !strings.Contains(human, "id: org_1") || strings.Contains(human, "ORG_ID") || !strings.Contains(human, "SLUG") || !strings.Contains(human, "ROLE") || !strings.Contains(human, "NAME") {
 		t.Fatalf("unexpected organization output: %q", human)
 	}
 }
@@ -270,7 +270,7 @@ func TestPrintUserProfileIncludesMemberships(t *testing.T) {
 			},
 		},
 	})
-	if got := out.String(); !strings.Contains(got, "memberships:") || !strings.Contains(got, "evil-lab admin") {
+	if got := out.String(); !strings.Contains(got, "organizations:") || !strings.Contains(got, "  evil-lab admin") || strings.Contains(got, "memberships:") || strings.Contains(got, "organizations: 0") {
 		t.Fatalf("unexpected membership output: %q", got)
 	}
 }
