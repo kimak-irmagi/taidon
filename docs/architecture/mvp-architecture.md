@@ -6,15 +6,19 @@ Interaction and component diagrams: [`docs/architecture/diagrams.md`](docs/archi
 ## 1. Users and isolation
 
 - Two user types: anonymous (~900 concurrent), registered (~100). Each gets a separate instance (DB container + snapshots).
-- Two-level model at start: instance -> account. Later: orgs -> accounts -> instances (GitHub-like hierarchy).
-- Secrets (Git tokens) are stored in k8s Secrets; access is limited to instance/account scope.
+- Initial remote profile management introduces organizations as the registered
+  user's ownership container. Full GitHub-like hierarchy and organization-wide
+  instance authorization stay later.
+- Secrets (Git tokens) are stored in k8s Secrets; access is initially limited
+  to instance/account scope.
 
 ## 2. MVP service set
 
 - `frontend/main`: SPA for editor/results.
 - `backend/gateway`: BFF for the frontend; auth termination, rate limiting, routing to services.
 - `idp`: authentication (email/password/OIDC), token session management for anonymous/registered users.
-- `user-profile`: accounts, instances, quotas/limits (no billing).
+- `user-profile`: accounts, external identities, organizations, memberships,
+  quotas/limits (no billing).
 - `vcs-sync`: work with projects on local FS and optional Git sync (pull/push on demand), secrets storage.
 - `env-manager`: instance orchestration: create/delete k8s Pod/StatefulSet with PostgreSQL, mount snapshots, enforce resource limits and network policies.
 - `snapshot-cache`: snapshot management (by SQL chain hash), retention/eviction policy, CoW storage integration.
@@ -31,7 +35,10 @@ Interaction and component diagrams: [`docs/architecture/diagrams.md`](docs/archi
 
 ## 4. Data and storage
 
-- **Platform metadata**: separate PostgreSQL (control plane) for users, instances, snapshot descriptions, audit.
+- **Platform metadata**: separate control-plane metadata store for users,
+  external identities, organizations, memberships, instances, snapshot
+  descriptions, audit. The concrete storage technology is not selected by the
+  client slice.
 - **Snapshots**: CoW layers for PostgreSQL containers. On-prem: local PV (qcow2/ZFS/btrfs/LVM-thin) with periodic materialization; minikube: hostPath/local volume. Future: S3-compatible object storage for layers.
 - **Logs/audit**: centralized logs (stdout -> Loki/ELK), audit in control plane table.
 - **Secrets**: k8s Secrets + optional KMS/Vault integration later.
@@ -56,7 +63,8 @@ Interaction and component diagrams: [`docs/architecture/diagrams.md`](docs/archi
 - No billing; simple quotas (instance count, resource limits).
 - No background scheduler; cache maintenance via `snapshot-cache` calls on events or periodic k8s cronjob.
 - External integrations limited to Git (optional).
-- Orgs and complex RBAC later (account/instance for now).
+- Invitations, membership management, roles beyond first admin, and complex
+  organization RBAC later.
 
 ## 8. Open questions / risks
 

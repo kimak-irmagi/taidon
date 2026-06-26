@@ -46,6 +46,11 @@
   local standalone `run --ref`.
 - [`run-ref-component-structure.RU.md`](run-ref-component-structure.RU.md) -
   внутренняя компонентная структура bounded local standalone `run --ref`.
+- [`user-org-flow.RU.md`](user-org-flow.RU.md) - поток взаимодействия для
+  remote-only управления пользователями и организациями.
+- [`user-org-component-structure.RU.md`](user-org-component-structure.RU.md) -
+  внутренняя компонентная структура remote-only управления пользователями и
+  организациями.
 - [`provenance-cache-flow.RU.md`](provenance-cache-flow.RU.md) - поток
   взаимодействия для `--provenance-path` и `sqlrs cache explain` в
   single-stage local prepare-oriented workflows.
@@ -77,8 +82,10 @@
   SQLite для локального engine.
 - [`release-happy-path-e2e.RU.md`](release-happy-path-e2e.RU.md) - release-gated
   happy-path E2E flow и внутренняя структура компонентов.
-- [`../api-guides/sqlrs-engine.openapi.yaml`][openAPI] -
-  спецификация OpenAPI 3.1 для локального engine (MVP).
+- [`../api-guides/sqlrs-engine.openapi.yaml`][openAPI] - спецификация OpenAPI
+  3.1 для sqlrs HTTP API. Локальный engine реализует local runtime subset;
+  shared deployment также реализует remote-only endpoint-ы пользователей и
+  организаций.
 - [`query-analysis-workflow-review.RU.md`][qawr] -
   заметки по workflow анализа запросов.
 - [`git-aware-passive.RU.md`](git-aware-passive.RU.md) - сценарии работы с git,

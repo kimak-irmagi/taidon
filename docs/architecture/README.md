@@ -45,6 +45,11 @@ Entry points for Taidon architecture and service design.
   standalone `run --ref`.
 - [`run-ref-component-structure.md`](run-ref-component-structure.md) - internal
   component structure for bounded local standalone `run --ref`.
+- [`user-org-flow.md`](user-org-flow.md) - interaction flow for remote-only
+  user and organization management.
+- [`user-org-component-structure.md`](user-org-component-structure.md) -
+  internal component structure for remote-only user and organization
+  management.
 - [`provenance-cache-flow.md`](provenance-cache-flow.md) - interaction flow for
   `--provenance-path` and `sqlrs cache explain` on single-stage local
   prepare-oriented workflows.
@@ -75,8 +80,10 @@ Entry points for Taidon architecture and service design.
   schema for local engine state.
 - [`release-happy-path-e2e.md`](release-happy-path-e2e.md) - release-gated
   happy-path E2E flow and component structure.
-- [`../api-guides/sqlrs-engine.openapi.yaml`][openAPI] -
-  OpenAPI 3.1 spec for the local engine (MVP).
+- [`../api-guides/sqlrs-engine.openapi.yaml`][openAPI] - OpenAPI 3.1 spec for
+  the sqlrs HTTP API. Local engine deployments implement the local runtime
+  subset; shared deployments also implement remote-only user and organization
+  endpoints.
 - [`query-analysis-workflow-review.md`](query-analysis-workflow-review.md) - notes
   on query analysis workflow.
 - [`git-aware-passive.md`](git-aware-passive.md) — notes on the `git` interaction

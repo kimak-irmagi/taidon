@@ -23,8 +23,11 @@ headingLevel: 2
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
-Local sqlrs engine HTTP API (MVP).
-This file is the design source of truth for the engine API.
+sqlrs HTTP API (MVP).
+This file is the design source of truth for the engine API. Local engine
+deployments implement the local runtime subset. Shared/team/cloud
+deployments additionally implement remote-only user and organization
+management endpoints.
 
 Base URLs:
 
@@ -2855,6 +2858,1639 @@ To perform this operation, you must be authenticated by means of one of the foll
 bearerAuth
 </aside>
 
+<h1 id="the-sqlrs-engine-api-users">users</h1>
+
+## getCurrentUser
+
+<a id="opIdgetCurrentUser"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/users/me \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/users/me HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/users/me',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/users/me',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/users/me', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/users/me', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/users/me");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/users/me", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/users/me`
+
+*Get current user profile*
+
+Remote/shared deployments only. Returns the current user profile,
+linked external identities, and organization memberships.
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "status": "created",
+  "user": {
+    "id": "string",
+    "display_name": "string",
+    "email": "user@example.com",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "identities": [
+    {
+      "provider": "oidc",
+      "issuer": "string",
+      "subject": "string"
+    }
+  ],
+  "memberships": [
+    {
+      "organization": {
+        "id": "string",
+        "slug": "string",
+        "display_name": "string",
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      },
+      "membership": {
+        "user_id": "string",
+        "organization_id": "string",
+        "role": "admin",
+        "created_at": "2019-08-24T14:15:22Z"
+      }
+    }
+  ]
+}
+```
+
+<h3 id="getcurrentuser-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[UserProfileResult](#schemauserprofileresult)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|User profile not found|[ErrorResponse](#schemaerrorresponse)|
+
+### Response Headers
+
+|Status|Header|Type|Format|Description|
+|---|---|---|---|---|
+|200|ETag|string||Current entity tag for conditional updates.|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## putCurrentUser
+
+<a id="opIdputCurrentUser"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X PUT http://127.0.0.1:{port}/v1/users/me \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'If-None-Match: string' \
+  -H 'If-Match: string' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+PUT http://127.0.0.1:{port}/v1/users/me HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Accept: application/json
+If-None-Match: string
+If-Match: string
+
+```
+
+```javascript
+const inputBody = '{
+  "display_name": "string",
+  "email": "user@example.com"
+}';
+const headers = {
+  'Content-Type':'application/json',
+  'Accept':'application/json',
+  'If-None-Match':'string',
+  'If-Match':'string',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/users/me',
+{
+  method: 'PUT',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/json',
+  'Accept' => 'application/json',
+  'If-None-Match' => 'string',
+  'If-Match' => 'string',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.put 'http://127.0.0.1:{port}/v1/users/me',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'If-None-Match': 'string',
+  'If-Match': 'string',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.put('http://127.0.0.1:{port}/v1/users/me', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/json',
+    'If-None-Match' => 'string',
+    'If-Match' => 'string',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('PUT','http://127.0.0.1:{port}/v1/users/me', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/users/me");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("PUT");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/json"},
+        "Accept": []string{"application/json"},
+        "If-None-Match": []string{"string"},
+        "If-Match": []string{"string"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("PUT", "http://127.0.0.1:{port}/v1/users/me", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`PUT /v1/users/me`
+
+*Create or update current user profile*
+
+Remote/shared deployments only.
+
+Conditional PUT for the current authenticated external identity. The
+server derives `provider + issuer + subject` from validated bearer-token
+claims.
+
+Clients must send exactly one HTTP precondition:
+
+- `If-None-Match: *` for self-registration create-only behavior.
+- `If-Match: <etag>` for update-only changes to an existing profile.
+
+Missing preconditions are rejected with `428 Precondition Required`.
+Sending both preconditions is rejected with `400`. If
+self-registration is disabled and no current user profile exists yet,
+create-only requests are rejected with `403`.
+
+> Body parameter
+
+```json
+{
+  "display_name": "string",
+  "email": "user@example.com"
+}
+```
+
+<h3 id="putcurrentuser-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|If-None-Match|header|string|false|Use `*` for self-registration create-only behavior.|
+|If-Match|header|string|false|Use the current ETag for update-only changes.|
+|body|body|[UserProfileWriteRequest](#schemauserprofilewriterequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "status": "created",
+  "user": {
+    "id": "string",
+    "display_name": "string",
+    "email": "user@example.com",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "identities": [
+    {
+      "provider": "oidc",
+      "issuer": "string",
+      "subject": "string"
+    }
+  ],
+  "memberships": [
+    {
+      "organization": {
+        "id": "string",
+        "slug": "string",
+        "display_name": "string",
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      },
+      "membership": {
+        "user_id": "string",
+        "organization_id": "string",
+        "role": "admin",
+        "created_at": "2019-08-24T14:15:22Z"
+      }
+    }
+  ]
+}
+```
+
+<h3 id="putcurrentuser-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Current user profile updated|[UserProfileResult](#schemauserprofileresult)|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Current user profile created|[UserProfileResult](#schemauserprofileresult)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input or conflicting preconditions|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|403|[Forbidden](https://tools.ietf.org/html/rfc7231#section-6.5.3)|Self-registration disabled or forbidden|[ErrorResponse](#schemaerrorresponse)|
+|412|[Precondition Failed](https://tools.ietf.org/html/rfc7232#section-4.2)|Precondition failed|[ErrorResponse](#schemaerrorresponse)|
+|428|[Precondition Required](https://tools.ietf.org/html/rfc6585#section-3)|Precondition required|[ErrorResponse](#schemaerrorresponse)|
+
+### Response Headers
+
+|Status|Header|Type|Format|Description|
+|---|---|---|---|---|
+|200|ETag|string||New entity tag for the updated current user profile.|
+|201|ETag|string||Entity tag for the created current user profile.|
+|201|Location|string||Current user resource URL.|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## getUserByIdentity
+
+<a id="opIdgetUserByIdentity"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/users/by-identity',
+  params: {
+  'provider' => 'string',
+'issuer' => 'string',
+'subject' => 'string'
+}, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/users/by-identity', params={
+  'provider': 'oidc',  'issuer': 'string',  'subject': 'string'
+}, headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/users/by-identity', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/users/by-identity", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/users/by-identity`
+
+*Get a user by external identity*
+
+Remote/shared deployments only.
+
+Administrator operation that resolves a user profile by the natural
+external identity key `provider + issuer + subject`.
+
+<h3 id="getuserbyidentity-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|provider|query|string|true|External identity provider kind.|
+|issuer|query|string|true|OAuth/OIDC issuer identifier.|
+|subject|query|string|true|Provider-local subject identifier.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "status": "created",
+  "user": {
+    "id": "string",
+    "display_name": "string",
+    "email": "user@example.com",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "identities": [
+    {
+      "provider": "oidc",
+      "issuer": "string",
+      "subject": "string"
+    }
+  ],
+  "memberships": [
+    {
+      "organization": {
+        "id": "string",
+        "slug": "string",
+        "display_name": "string",
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      },
+      "membership": {
+        "user_id": "string",
+        "organization_id": "string",
+        "role": "admin",
+        "created_at": "2019-08-24T14:15:22Z"
+      }
+    }
+  ]
+}
+```
+
+<h3 id="getuserbyidentity-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[UserProfileResult](#schemauserprofileresult)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|403|[Forbidden](https://tools.ietf.org/html/rfc7231#section-6.5.3)|Administrator permission required|[ErrorResponse](#schemaerrorresponse)|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|External identity not linked|[ErrorResponse](#schemaerrorresponse)|
+
+### Response Headers
+
+|Status|Header|Type|Format|Description|
+|---|---|---|---|---|
+|200|ETag|string||Current entity tag for conditional updates.|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## putUserByIdentity
+
+<a id="opIdputUserByIdentity"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X PUT http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'If-None-Match: string' \
+  -H 'If-Match: string' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+PUT http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Accept: application/json
+If-None-Match: string
+If-Match: string
+
+```
+
+```javascript
+const inputBody = '{
+  "display_name": "string",
+  "email": "user@example.com"
+}';
+const headers = {
+  'Content-Type':'application/json',
+  'Accept':'application/json',
+  'If-None-Match':'string',
+  'If-Match':'string',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string',
+{
+  method: 'PUT',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/json',
+  'Accept' => 'application/json',
+  'If-None-Match' => 'string',
+  'If-Match' => 'string',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.put 'http://127.0.0.1:{port}/v1/users/by-identity',
+  params: {
+  'provider' => 'string',
+'issuer' => 'string',
+'subject' => 'string'
+}, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'If-None-Match': 'string',
+  'If-Match': 'string',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.put('http://127.0.0.1:{port}/v1/users/by-identity', params={
+  'provider': 'oidc',  'issuer': 'string',  'subject': 'string'
+}, headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/json',
+    'If-None-Match' => 'string',
+    'If-Match' => 'string',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('PUT','http://127.0.0.1:{port}/v1/users/by-identity', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/users/by-identity?provider=oidc&issuer=string&subject=string");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("PUT");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/json"},
+        "Accept": []string{"application/json"},
+        "If-None-Match": []string{"string"},
+        "If-Match": []string{"string"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("PUT", "http://127.0.0.1:{port}/v1/users/by-identity", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`PUT /v1/users/by-identity`
+
+*Create or update a user by external identity*
+
+Remote/shared deployments only.
+
+Administrator operation keyed by the natural external identity
+`provider + issuer + subject`.
+
+Clients must send exactly one HTTP precondition:
+
+- `If-None-Match: *` for create-only provisioning.
+- `If-Match: <etag>` for update-only changes to an existing profile.
+
+Missing preconditions are rejected with `428 Precondition Required`.
+Sending both preconditions is rejected with `400`. The server enforces
+external identity uniqueness over `provider + issuer + subject`.
+
+> Body parameter
+
+```json
+{
+  "display_name": "string",
+  "email": "user@example.com"
+}
+```
+
+<h3 id="putuserbyidentity-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|provider|query|string|true|External identity provider kind.|
+|issuer|query|string|true|OAuth/OIDC issuer identifier.|
+|subject|query|string|true|Provider-local subject identifier.|
+|If-None-Match|header|string|false|Use `*` for create-only provisioning.|
+|If-Match|header|string|false|Use the current ETag for update-only changes.|
+|body|body|[UserProfileWriteRequest](#schemauserprofilewriterequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "status": "created",
+  "user": {
+    "id": "string",
+    "display_name": "string",
+    "email": "user@example.com",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "identities": [
+    {
+      "provider": "oidc",
+      "issuer": "string",
+      "subject": "string"
+    }
+  ],
+  "memberships": [
+    {
+      "organization": {
+        "id": "string",
+        "slug": "string",
+        "display_name": "string",
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      },
+      "membership": {
+        "user_id": "string",
+        "organization_id": "string",
+        "role": "admin",
+        "created_at": "2019-08-24T14:15:22Z"
+      }
+    }
+  ]
+}
+```
+
+<h3 id="putuserbyidentity-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|User profile updated|[UserProfileResult](#schemauserprofileresult)|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|User profile created|[UserProfileResult](#schemauserprofileresult)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|403|[Forbidden](https://tools.ietf.org/html/rfc7231#section-6.5.3)|Administrator permission required|[ErrorResponse](#schemaerrorresponse)|
+|412|[Precondition Failed](https://tools.ietf.org/html/rfc7232#section-4.2)|Precondition failed (identity already linked or stale ETag)|[ErrorResponse](#schemaerrorresponse)|
+|428|[Precondition Required](https://tools.ietf.org/html/rfc6585#section-3)|Precondition required|[ErrorResponse](#schemaerrorresponse)|
+
+### Response Headers
+
+|Status|Header|Type|Format|Description|
+|---|---|---|---|---|
+|200|ETag|string||New entity tag for the updated user profile.|
+|201|ETag|string||Entity tag for the created user profile.|
+|201|Location|string||Identity-keyed user resource URL.|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+<h1 id="the-sqlrs-engine-api-organizations">organizations</h1>
+
+## listOrganizations
+
+<a id="opIdlistOrganizations"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/organizations \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/organizations HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/organizations',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/organizations',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/organizations', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/organizations', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/organizations");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/organizations", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/organizations`
+
+*List current user's organizations*
+
+Remote/shared deployments only. Returns organizations visible to the
+current authenticated user.
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "organization": {
+      "id": "string",
+      "slug": "string",
+      "display_name": "string",
+      "created_at": "2019-08-24T14:15:22Z",
+      "updated_at": "2019-08-24T14:15:22Z"
+    },
+    "membership": {
+      "user_id": "string",
+      "organization_id": "string",
+      "role": "admin",
+      "created_at": "2019-08-24T14:15:22Z"
+    }
+  }
+]
+```
+
+<h3 id="listorganizations-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|Inline|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|User profile not found|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listorganizations-responseschema">Response Schema</h3>
+
+Status Code **200**
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[OrganizationMembershipView](#schemaorganizationmembershipview)]|false|none|none|
+|» organization|[Organization](#schemaorganization)|true|none|none|
+|»» id|string|true|none|Stable sqlrs organization id.|
+|»» slug|string|true|none|Stable human-readable organization reference.|
+|»» display_name|string|true|none|none|
+|»» created_at|string(date-time)|true|none|none|
+|»» updated_at|string(date-time)|true|none|none|
+|» membership|[OrganizationMembership](#schemaorganizationmembership)|true|none|none|
+|»» user_id|string|true|none|none|
+|»» organization_id|string|true|none|none|
+|»» role|string|true|none|none|
+|»» created_at|string(date-time)|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|role|admin|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## createOrganization
+
+<a id="opIdcreateOrganization"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X POST http://127.0.0.1:{port}/v1/organizations \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+POST http://127.0.0.1:{port}/v1/organizations HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/json
+Accept: application/json
+
+```
+
+```javascript
+const inputBody = '{
+  "slug": "string",
+  "display_name": "string"
+}';
+const headers = {
+  'Content-Type':'application/json',
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/organizations',
+{
+  method: 'POST',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/json',
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.post 'http://127.0.0.1:{port}/v1/organizations',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.post('http://127.0.0.1:{port}/v1/organizations', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/json',
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('POST','http://127.0.0.1:{port}/v1/organizations', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/organizations");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("POST");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/json"},
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("POST", "http://127.0.0.1:{port}/v1/organizations", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`POST /v1/organizations`
+
+*Create an organization*
+
+Remote/shared deployments only. Creates a new organization and makes
+the current registered user its `admin`. In the first slice, the server
+rejects organization creation for users that already belong to an
+organization.
+
+> Body parameter
+
+```json
+{
+  "slug": "string",
+  "display_name": "string"
+}
+```
+
+<h3 id="createorganization-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[OrganizationCreateRequest](#schemaorganizationcreaterequest)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "organization": {
+    "id": "string",
+    "slug": "string",
+    "display_name": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "membership": {
+    "user_id": "string",
+    "organization_id": "string",
+    "role": "admin",
+    "created_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="createorganization-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Organization created|[OrganizationCreateResponse](#schemaorganizationcreateresponse)|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|User profile not found|[ErrorResponse](#schemaerrorresponse)|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Slug already taken or user is already attached to an organization|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+## getOrganization
+
+<a id="opIdgetOrganization"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X GET http://127.0.0.1:{port}/v1/organizations/{orgRef} \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+GET http://127.0.0.1:{port}/v1/organizations/{orgRef} HTTP/1.1
+Host: 127.0.0.1
+Accept: application/json
+
+```
+
+```javascript
+
+const headers = {
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/organizations/{orgRef}',
+{
+  method: 'GET',
+
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.get 'http://127.0.0.1:{port}/v1/organizations/{orgRef}',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.get('http://127.0.0.1:{port}/v1/organizations/{orgRef}', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('GET','http://127.0.0.1:{port}/v1/organizations/{orgRef}', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/organizations/{orgRef}");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("GET");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("GET", "http://127.0.0.1:{port}/v1/organizations/{orgRef}", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`GET /v1/organizations/{orgRef}`
+
+*Get an organization visible to current user*
+
+Remote/shared deployments only. Returns an organization by id or slug
+when it is visible to the current authenticated user. Non-members
+receive `404`.
+
+<h3 id="getorganization-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|orgRef|path|string|true|Organization id or slug.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "organization": {
+    "id": "string",
+    "slug": "string",
+    "display_name": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "membership": {
+    "user_id": "string",
+    "organization_id": "string",
+    "role": "admin",
+    "created_at": "2019-08-24T14:15:22Z"
+  }
+}
+```
+
+<h3 id="getorganization-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[OrganizationMembershipView](#schemaorganizationmembershipview)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|404|[Not Found](https://tools.ietf.org/html/rfc7231#section-6.5.4)|User profile or visible organization not found|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
 <h1 id="the-sqlrs-engine-api-names">names</h1>
 
 ## listNames
@@ -5249,6 +6885,307 @@ xor
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |*anonymous*|[any]|false|none|none|
+
+<h2 id="tocS_UserProfileWriteRequest">UserProfileWriteRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemauserprofilewriterequest"></a>
+<a id="schema_UserProfileWriteRequest"></a>
+<a id="tocSuserprofilewriterequest"></a>
+<a id="tocsuserprofilewriterequest"></a>
+
+```json
+{
+  "display_name": "string",
+  "email": "user@example.com"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|display_name|string|false|none|Optional profile display name.|
+|email|string(email)|false|none|Optional profile email.|
+
+<h2 id="tocS_UserProfileResult">UserProfileResult</h2>
+<!-- backwards compatibility -->
+<a id="schemauserprofileresult"></a>
+<a id="schema_UserProfileResult"></a>
+<a id="tocSuserprofileresult"></a>
+<a id="tocsuserprofileresult"></a>
+
+```json
+{
+  "status": "created",
+  "user": {
+    "id": "string",
+    "display_name": "string",
+    "email": "user@example.com",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "identities": [
+    {
+      "provider": "oidc",
+      "issuer": "string",
+      "subject": "string"
+    }
+  ],
+  "memberships": [
+    {
+      "organization": {
+        "id": "string",
+        "slug": "string",
+        "display_name": "string",
+        "created_at": "2019-08-24T14:15:22Z",
+        "updated_at": "2019-08-24T14:15:22Z"
+      },
+      "membership": {
+        "user_id": "string",
+        "organization_id": "string",
+        "role": "admin",
+        "created_at": "2019-08-24T14:15:22Z"
+      }
+    }
+  ]
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|status|string|false|none|Present when the response comes from a create or update command.|
+|user|[UserProfile](#schemauserprofile)|true|none|none|
+|identities|[[ExternalIdentity](#schemaexternalidentity)]|true|none|none|
+|memberships|[[OrganizationMembershipView](#schemaorganizationmembershipview)]|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|status|created|
+|status|existing|
+|status|updated|
+
+<h2 id="tocS_UserProfile">UserProfile</h2>
+<!-- backwards compatibility -->
+<a id="schemauserprofile"></a>
+<a id="schema_UserProfile"></a>
+<a id="tocSuserprofile"></a>
+<a id="tocsuserprofile"></a>
+
+```json
+{
+  "id": "string",
+  "display_name": "string",
+  "email": "user@example.com",
+  "created_at": "2019-08-24T14:15:22Z",
+  "updated_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|id|string|true|none|Stable sqlrs user id.|
+|display_name|string|true|none|none|
+|email|any|true|none|none|
+
+anyOf
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|string(email)|false|none|none|
+
+or
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|» *anonymous*|null|false|none|none|
+
+continued
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|created_at|string(date-time)|true|none|none|
+|updated_at|string(date-time)|true|none|none|
+
+<h2 id="tocS_ExternalIdentity">ExternalIdentity</h2>
+<!-- backwards compatibility -->
+<a id="schemaexternalidentity"></a>
+<a id="schema_ExternalIdentity"></a>
+<a id="tocSexternalidentity"></a>
+<a id="tocsexternalidentity"></a>
+
+```json
+{
+  "provider": "oidc",
+  "issuer": "string",
+  "subject": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|provider|string|true|none|External identity provider kind.|
+|issuer|string|true|none|OAuth/OIDC issuer identifier.|
+|subject|string|true|none|Provider-local subject identifier.|
+
+<h2 id="tocS_OrganizationCreateRequest">OrganizationCreateRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemaorganizationcreaterequest"></a>
+<a id="schema_OrganizationCreateRequest"></a>
+<a id="tocSorganizationcreaterequest"></a>
+<a id="tocsorganizationcreaterequest"></a>
+
+```json
+{
+  "slug": "string",
+  "display_name": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|slug|string|true|none|Lowercase organization slug, 3 to 63 characters.|
+|display_name|string|false|none|Optional human-readable organization name.|
+
+<h2 id="tocS_OrganizationCreateResponse">OrganizationCreateResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemaorganizationcreateresponse"></a>
+<a id="schema_OrganizationCreateResponse"></a>
+<a id="tocSorganizationcreateresponse"></a>
+<a id="tocsorganizationcreateresponse"></a>
+
+```json
+{
+  "organization": {
+    "id": "string",
+    "slug": "string",
+    "display_name": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "membership": {
+    "user_id": "string",
+    "organization_id": "string",
+    "role": "admin",
+    "created_at": "2019-08-24T14:15:22Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|organization|[Organization](#schemaorganization)|true|none|none|
+|membership|[OrganizationMembership](#schemaorganizationmembership)|true|none|none|
+
+<h2 id="tocS_OrganizationMembershipView">OrganizationMembershipView</h2>
+<!-- backwards compatibility -->
+<a id="schemaorganizationmembershipview"></a>
+<a id="schema_OrganizationMembershipView"></a>
+<a id="tocSorganizationmembershipview"></a>
+<a id="tocsorganizationmembershipview"></a>
+
+```json
+{
+  "organization": {
+    "id": "string",
+    "slug": "string",
+    "display_name": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "updated_at": "2019-08-24T14:15:22Z"
+  },
+  "membership": {
+    "user_id": "string",
+    "organization_id": "string",
+    "role": "admin",
+    "created_at": "2019-08-24T14:15:22Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|organization|[Organization](#schemaorganization)|true|none|none|
+|membership|[OrganizationMembership](#schemaorganizationmembership)|true|none|none|
+
+<h2 id="tocS_Organization">Organization</h2>
+<!-- backwards compatibility -->
+<a id="schemaorganization"></a>
+<a id="schema_Organization"></a>
+<a id="tocSorganization"></a>
+<a id="tocsorganization"></a>
+
+```json
+{
+  "id": "string",
+  "slug": "string",
+  "display_name": "string",
+  "created_at": "2019-08-24T14:15:22Z",
+  "updated_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|id|string|true|none|Stable sqlrs organization id.|
+|slug|string|true|none|Stable human-readable organization reference.|
+|display_name|string|true|none|none|
+|created_at|string(date-time)|true|none|none|
+|updated_at|string(date-time)|true|none|none|
+
+<h2 id="tocS_OrganizationMembership">OrganizationMembership</h2>
+<!-- backwards compatibility -->
+<a id="schemaorganizationmembership"></a>
+<a id="schema_OrganizationMembership"></a>
+<a id="tocSorganizationmembership"></a>
+<a id="tocsorganizationmembership"></a>
+
+```json
+{
+  "user_id": "string",
+  "organization_id": "string",
+  "role": "admin",
+  "created_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|user_id|string|true|none|none|
+|organization_id|string|true|none|none|
+|role|string|true|none|none|
+|created_at|string(date-time)|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|role|admin|
 
 <h2 id="tocS_PreparePlanTask">PreparePlanTask</h2>
 <!-- backwards compatibility -->

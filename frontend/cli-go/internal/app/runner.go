@@ -44,6 +44,8 @@ type runnerDeps struct {
 	runStatus       func(io.Writer, cli.StatusOptions, string, string, []string) error
 	runWatch        func(io.Writer, cli.PrepareOptions, []string) error
 	runConfig       func(io.Writer, cli.ConfigOptions, []string, string) error
+	runUser         func(io.Writer, commandContext, []string, string) error
+	runOrg          func(io.Writer, commandContext, []string, string) error
 
 	cleanupPreparedInstance func(context.Context, io.Writer, cli.RunOptions, string, bool)
 }
@@ -124,6 +126,12 @@ func (deps *runnerDeps) withDefaults() {
 	}
 	if deps.runConfig == nil {
 		deps.runConfig = runConfig
+	}
+	if deps.runUser == nil {
+		deps.runUser = runUser
+	}
+	if deps.runOrg == nil {
+		deps.runOrg = runOrg
 	}
 	if deps.cleanupPreparedInstance == nil {
 		deps.cleanupPreparedInstance = cleanupPreparedInstance
@@ -279,6 +287,16 @@ func (r runner) run(args []string) error {
 				return fmt.Errorf("config cannot be combined with other commands")
 			}
 			return r.deps.runConfig(r.deps.stdout, cmdCtx.configOptions(), cmd.Args, cmdCtx.output)
+		case "user":
+			if len(commands) > 1 {
+				return fmt.Errorf("user cannot be combined with other commands")
+			}
+			return r.deps.runUser(r.deps.stdout, cmdCtx, cmd.Args, cmdCtx.output)
+		case "org":
+			if len(commands) > 1 {
+				return fmt.Errorf("org cannot be combined with other commands")
+			}
+			return r.deps.runOrg(r.deps.stdout, cmdCtx, cmd.Args, cmdCtx.output)
 		case "prepare":
 			invocation, showHelp, err := parsePrepareAliasArgs(cmd.Args)
 			if err != nil {

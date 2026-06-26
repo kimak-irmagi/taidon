@@ -51,6 +51,7 @@ gantt
     Базовый team deployment gateway            :c6, after c1, 30d
     Базовая работа с artefacts и audit         :c2, after c1, 45d
     Шаблоны интеграции CI/CD                  :active, c3, after c1, 30d
+    Client contract slice users/orgs           :done, c4a, after c1, 20d
     Базовый auth + tenant access               :c4, after c1, 45d
     Масштабирование shared capacity            :c5, after c2, 30d
 
@@ -171,6 +172,12 @@ gantt
 - **Сделано (CLI alias coverage hardening)**: регрессионные тесты `internal/alias`
   закрыли оставшиеся ветки create, resolve и scan, доведя coverage CLI alias
   package выше минимального порога в `go test --cover ./...`.
+- **Сделано (remote users/orgs client/API contract slice)**: CLI теперь имеет
+  remote-only flow для `sqlrs user me`, `sqlrs user register`,
+  `sqlrs user create`, `sqlrs org create`, `sqlrs org ls` и `sqlrs org get`,
+  опирающийся на задокументированный OpenAPI contract для users/organizations.
+  Slice сознательно не включает поддержку local engine и server-side
+  persistence/provider implementation.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.
@@ -331,6 +338,9 @@ run-side diagnostics и zero-copy/cache-hit reuse теперь находятс�
 **Deliverables**:
 
 - Shared control-plane baseline для аутентифицированных multi-user deployment
+- Remote users/orgs API contract и CLI client surface — **сделано
+  (client/API contract slice)**; server-side persistence/provider
+  implementation остается частью shared control-plane/auth baseline.
 - Team deployment gateway и service entrypoint baseline
 - Shared state, artifact и audit handling с retention controls
 - Базовый auth, tenant access, quotas и policy enforcement

@@ -225,6 +225,74 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
+// UserProfileWriteRequest carries editable user profile fields for the
+// remote-only user management API described in docs/architecture/user-org-component-structure.md.
+type UserProfileWriteRequest struct {
+	DisplayName string  `json:"display_name,omitempty"`
+	Email       *string `json:"email,omitempty"`
+}
+
+// IdentityKey is the natural idempotency key for externally-authenticated users.
+type IdentityKey struct {
+	Provider string `json:"provider"`
+	Issuer   string `json:"issuer"`
+	Subject  string `json:"subject"`
+}
+
+// UserProfileResult is returned by current-user and identity-keyed user endpoints.
+type UserProfileResult struct {
+	Status      string                       `json:"status,omitempty"`
+	User        UserProfile                  `json:"user"`
+	Identities  []ExternalIdentity           `json:"identities"`
+	Memberships []OrganizationMembershipView `json:"memberships"`
+	ETag        string                       `json:"-"`
+	Location    string                       `json:"-"`
+}
+
+type UserProfile struct {
+	ID          string  `json:"id"`
+	DisplayName string  `json:"display_name,omitempty"`
+	Email       *string `json:"email,omitempty"`
+	CreatedAt   string  `json:"created_at,omitempty"`
+	UpdatedAt   string  `json:"updated_at,omitempty"`
+}
+
+type ExternalIdentity struct {
+	Provider string `json:"provider"`
+	Issuer   string `json:"issuer"`
+	Subject  string `json:"subject"`
+}
+
+type OrganizationCreateRequest struct {
+	Slug        string `json:"slug"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
+type OrganizationCreateResponse struct {
+	Organization Organization           `json:"organization"`
+	Membership   OrganizationMembership `json:"membership"`
+}
+
+type OrganizationMembershipView struct {
+	Organization Organization           `json:"organization"`
+	Membership   OrganizationMembership `json:"membership"`
+}
+
+type Organization struct {
+	ID          string `json:"id"`
+	Slug        string `json:"slug"`
+	DisplayName string `json:"display_name,omitempty"`
+	CreatedAt   string `json:"created_at,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+}
+
+type OrganizationMembership struct {
+	UserID         string `json:"user_id"`
+	OrganizationID string `json:"organization_id"`
+	Role           string `json:"role"`
+	CreatedAt      string `json:"created_at,omitempty"`
+}
+
 type DeleteOptions struct {
 	Recurse bool
 	Force   bool

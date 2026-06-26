@@ -105,6 +105,8 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "  watch    Attach to a running prepare job")
 	fmt.Fprintln(w, "  status   Check service health")
 	fmt.Fprintln(w, "  config   Manage server config")
+	fmt.Fprintln(w, "  user     Manage remote user profiles")
+	fmt.Fprintln(w, "  org      Manage remote organizations")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Global flags:")
 	fmt.Fprintln(w, "  --profile <name>        Config profile")
@@ -289,7 +291,7 @@ func looksLikeRunAliasStage(args []string) bool {
 
 func isCommandToken(value string) bool {
 	switch value {
-	case "alias", "cache", "discover", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config":
+	case "alias", "cache", "discover", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config", "user", "org":
 		return true
 	}
 	if strings.HasPrefix(value, "prepare:") {

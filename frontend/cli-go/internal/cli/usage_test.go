@@ -12,6 +12,9 @@ func TestPrintUsage(t *testing.T) {
 	if !strings.Contains(buf.String(), "Usage:") {
 		t.Fatalf("unexpected output: %q", buf.String())
 	}
+	if !strings.Contains(buf.String(), "user") || !strings.Contains(buf.String(), "org") {
+		t.Fatalf("expected user and org commands in usage, got %q", buf.String())
+	}
 }
 
 func TestPrintCommandUsage(t *testing.T) {
@@ -30,6 +33,8 @@ func TestPrintCommandUsage(t *testing.T) {
 		{name: "config", fn: func(b *bytes.Buffer) { PrintConfigUsage(b) }},
 		{name: "rm", fn: func(b *bytes.Buffer) { PrintRmUsage(b) }},
 		{name: "status", fn: func(b *bytes.Buffer) { PrintStatusUsage(b) }},
+		{name: "user", fn: func(b *bytes.Buffer) { PrintUserUsage(b) }},
+		{name: "org", fn: func(b *bytes.Buffer) { PrintOrgUsage(b) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -8,7 +8,7 @@ Key doc categories and entry points:
 - ADRs: `docs/adr/` (architectural decisions)
 - Design notes: `docs/design-notes/`
 - User guides: `docs/user-guides/`
-  Current next-slice guide: [`docs/user-guides/sqlrs-run-ref.md`](user-guides/sqlrs-run-ref.md)
+  Current next-slice guide: [`docs/user-guides/sqlrs-users-orgs.md`](user-guides/sqlrs-users-orgs.md)
 - API guides: `docs/api-guides/`
 
 - Running experiments: [`docs/experiments.md`](docs/experiments.md)

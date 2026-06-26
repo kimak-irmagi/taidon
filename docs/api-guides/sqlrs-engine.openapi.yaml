@@ -3,8 +3,11 @@ info:
   title: The sqlrs engine API
   version: 0.1.0
   description: |
-    Local sqlrs engine HTTP API (MVP).
-    This file is the design source of truth for the engine API.
+    sqlrs HTTP API (MVP).
+    This file is the design source of truth for the engine API. Local engine
+    deployments implement the local runtime subset. Shared/team/cloud
+    deployments additionally implement remote-only user and organization
+    management endpoints.
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
@@ -528,6 +531,402 @@ paths:
                 $ref: "#/components/schemas/ConfigSchema"
         "401":
           description: Unauthorized
+  /v1/users/me:
+    get:
+      operationId: getCurrentUser
+      summary: Get current user profile
+      description: |
+        Remote/shared deployments only. Returns the current user profile,
+        linked external identities, and organization memberships.
+      tags:
+        - users
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Current entity tag for conditional updates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResult"
+        "401":
+          description: Unauthorized
+        "404":
+          description: User profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: putCurrentUser
+      summary: Create or update current user profile
+      description: |
+        Remote/shared deployments only.
+
+        Conditional PUT for the current authenticated external identity. The
+        server derives `provider + issuer + subject` from validated bearer-token
+        claims.
+
+        Clients must send exactly one HTTP precondition:
+
+        - `If-None-Match: *` for self-registration create-only behavior.
+        - `If-Match: <etag>` for update-only changes to an existing profile.
+
+        Missing preconditions are rejected with `428 Precondition Required`.
+        Sending both preconditions is rejected with `400`. If
+        self-registration is disabled and no current user profile exists yet,
+        create-only requests are rejected with `403`.
+      tags:
+        - users
+      parameters:
+        - in: header
+          name: If-None-Match
+          required: false
+          schema:
+            type: string
+          description: Use `*` for self-registration create-only behavior.
+        - in: header
+          name: If-Match
+          required: false
+          schema:
+            type: string
+          description: Use the current ETag for update-only changes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileWriteRequest"
+      responses:
+        "200":
+          description: Current user profile updated
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: New entity tag for the updated current user profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResult"
+        "201":
+          description: Current user profile created
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for the created current user profile.
+            Location:
+              schema:
+                type: string
+              description: Current user resource URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResult"
+        "400":
+          description: Invalid input or conflicting preconditions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Self-registration disabled or forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "412":
+          description: Precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "428":
+          description: Precondition required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/users/by-identity:
+    get:
+      operationId: getUserByIdentity
+      summary: Get a user by external identity
+      description: |
+        Remote/shared deployments only.
+
+        Administrator operation that resolves a user profile by the natural
+        external identity key `provider + issuer + subject`.
+      tags:
+        - users
+      parameters:
+        - in: query
+          name: provider
+          required: true
+          schema:
+            type: string
+            default: oidc
+          description: External identity provider kind.
+        - in: query
+          name: issuer
+          required: true
+          schema:
+            type: string
+          description: OAuth/OIDC issuer identifier.
+        - in: query
+          name: subject
+          required: true
+          schema:
+            type: string
+          description: Provider-local subject identifier.
+      responses:
+        "200":
+          description: OK
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Current entity tag for conditional updates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Administrator permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: External identity not linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: putUserByIdentity
+      summary: Create or update a user by external identity
+      description: |
+        Remote/shared deployments only.
+
+        Administrator operation keyed by the natural external identity
+        `provider + issuer + subject`.
+
+        Clients must send exactly one HTTP precondition:
+
+        - `If-None-Match: *` for create-only provisioning.
+        - `If-Match: <etag>` for update-only changes to an existing profile.
+
+        Missing preconditions are rejected with `428 Precondition Required`.
+        Sending both preconditions is rejected with `400`. The server enforces
+        external identity uniqueness over `provider + issuer + subject`.
+      tags:
+        - users
+      parameters:
+        - in: query
+          name: provider
+          required: true
+          schema:
+            type: string
+            default: oidc
+          description: External identity provider kind.
+        - in: query
+          name: issuer
+          required: true
+          schema:
+            type: string
+          description: OAuth/OIDC issuer identifier.
+        - in: query
+          name: subject
+          required: true
+          schema:
+            type: string
+          description: Provider-local subject identifier.
+        - in: header
+          name: If-None-Match
+          required: false
+          schema:
+            type: string
+          description: Use `*` for create-only provisioning.
+        - in: header
+          name: If-Match
+          required: false
+          schema:
+            type: string
+          description: Use the current ETag for update-only changes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileWriteRequest"
+      responses:
+        "200":
+          description: User profile updated
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: New entity tag for the updated user profile.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResult"
+        "201":
+          description: User profile created
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Entity tag for the created user profile.
+            Location:
+              schema:
+                type: string
+              description: Identity-keyed user resource URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "403":
+          description: Administrator permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "412":
+          description: Precondition failed (identity already linked or stale ETag)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "428":
+          description: Precondition required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/organizations:
+    get:
+      operationId: listOrganizations
+      summary: List current user's organizations
+      description: |
+        Remote/shared deployments only. Returns organizations visible to the
+        current authenticated user.
+      tags:
+        - organizations
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrganizationMembershipView"
+        "401":
+          description: Unauthorized
+        "404":
+          description: User profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createOrganization
+      summary: Create an organization
+      description: |
+        Remote/shared deployments only. Creates a new organization and makes
+        the current registered user its `admin`. In the first slice, the server
+        rejects organization creation for users that already belong to an
+        organization.
+      tags:
+        - organizations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationCreateRequest"
+      responses:
+        "201":
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationCreateResponse"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "404":
+          description: User profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Slug already taken or user is already attached to an organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/organizations/{orgRef}:
+    get:
+      operationId: getOrganization
+      summary: Get an organization visible to current user
+      description: |
+        Remote/shared deployments only. Returns an organization by id or slug
+        when it is visible to the current authenticated user. Non-members
+        receive `404`.
+      tags:
+        - organizations
+      parameters:
+        - in: path
+          name: orgRef
+          required: true
+          schema:
+            type: string
+          description: Organization id or slug.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationMembershipView"
+        "401":
+          description: Unauthorized
+        "404":
+          description: User profile or visible organization not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /v1/names:
     get:
       operationId: listNames
@@ -1263,6 +1662,161 @@ components:
           additionalProperties: true
         - type: array
           items: {}
+    UserProfileWriteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+          description: Optional profile display name.
+        email:
+          type: string
+          format: email
+          description: Optional profile email.
+    UserProfileResult:
+      type: object
+      additionalProperties: false
+      required:
+        - user
+        - identities
+        - memberships
+      properties:
+        status:
+          type: string
+          enum: [created, existing, updated]
+          description: Present when the response comes from a create or update command.
+        user:
+          $ref: "#/components/schemas/UserProfile"
+        identities:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExternalIdentity"
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrganizationMembershipView"
+    UserProfile:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - display_name
+        - email
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: Stable sqlrs user id.
+        display_name:
+          type: string
+        email:
+          anyOf:
+            - type: string
+              format: email
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ExternalIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        - provider
+        - issuer
+        - subject
+      properties:
+        provider:
+          type: string
+          default: oidc
+          description: External identity provider kind.
+        issuer:
+          type: string
+          description: OAuth/OIDC issuer identifier.
+        subject:
+          type: string
+          description: Provider-local subject identifier.
+    OrganizationCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - slug
+      properties:
+        slug:
+          type: string
+          pattern: "^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){1,61}[a-z0-9]$"
+          description: Lowercase organization slug, 3 to 63 characters.
+        display_name:
+          type: string
+          description: Optional human-readable organization name.
+    OrganizationCreateResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - organization
+        - membership
+      properties:
+        organization:
+          $ref: "#/components/schemas/Organization"
+        membership:
+          $ref: "#/components/schemas/OrganizationMembership"
+    OrganizationMembershipView:
+      type: object
+      additionalProperties: false
+      required:
+        - organization
+        - membership
+      properties:
+        organization:
+          $ref: "#/components/schemas/Organization"
+        membership:
+          $ref: "#/components/schemas/OrganizationMembership"
+    Organization:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - slug
+        - display_name
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          description: Stable sqlrs organization id.
+        slug:
+          type: string
+          description: Stable human-readable organization reference.
+        display_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrganizationMembership:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - organization_id
+        - role
+        - created_at
+      properties:
+        user_id:
+          type: string
+        organization_id:
+          type: string
+        role:
+          type: string
+          enum: [admin]
+        created_at:
+          type: string
+          format: date-time
     PreparePlanTask:
       oneOf:
         - $ref: "#/components/schemas/PreparePlanTaskPlan"
