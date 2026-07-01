@@ -647,7 +647,7 @@ func wrapInputsetError(err error) error {
 	}
 	var userErr *inputset.UserError
 	if errors.As(err, &userErr) {
-		return ExitErrorf(2, userErr.Message)
+		return ExitErrorf(2, "%s", userErr.Message)
 	}
 	return err
 }

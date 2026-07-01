@@ -12,7 +12,7 @@ import (
 func runAliasCreate(stdout io.Writer, cmdCtx commandContext, cmd aliasCommand) error {
 	class, kind, err := parseAliasCreateWrappedCommand(cmd.Wrapped)
 	if err != nil {
-		return ExitErrorf(2, err.Error())
+		return ExitErrorf(2, "%s", err.Error())
 	}
 
 	result, err := alias.Create(alias.CreateOptions{
@@ -24,7 +24,7 @@ func runAliasCreate(stdout io.Writer, cmdCtx commandContext, cmd aliasCommand) e
 		Args:          cmd.Args,
 	})
 	if err != nil {
-		return ExitErrorf(2, err.Error())
+		return ExitErrorf(2, "%s", err.Error())
 	}
 
 	if cmdCtx.output == "json" {

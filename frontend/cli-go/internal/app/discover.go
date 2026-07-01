@@ -45,7 +45,7 @@ func runDiscover(stdout io.Writer, stderr io.Writer, cmdCtx commandContext, args
 	}
 	selected, err = discover.NormalizeSelectedAnalyzers(selected)
 	if err != nil {
-		return ExitErrorf(2, err.Error())
+		return ExitErrorf(2, "%s", err.Error())
 	}
 	if showHelp {
 		cli.PrintDiscoverUsage(stdout)

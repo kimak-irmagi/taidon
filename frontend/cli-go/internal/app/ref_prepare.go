@@ -242,7 +242,7 @@ func joinCleanup(funcs ...func() error) func() error {
 			}
 		}
 		if len(errs) > 0 {
-			return ExitErrorf(1, strings.Join(errs, "; "))
+			return ExitErrorf(1, "%s", strings.Join(errs, "; "))
 		}
 		return nil
 	}
