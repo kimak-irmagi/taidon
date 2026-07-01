@@ -20,7 +20,7 @@ Non-goals (for now):
 
 ## 1. Tech constraints
 
-- Language: Go (latest stable supported by CI; prefer Go 1.22+)
+- Language: Go 1.25+ (latest stable supported by CI)
 - Dependencies: keep minimal; prefer stdlib for HTTP/JSON.
 - Config file format: YAML (requires a YAML lib; choose one and use only it)
 - Cross-platform: Windows, Linux, macOS

@@ -106,15 +106,15 @@ func runRm(w io.Writer, runOpts cli.RmOptions, args []string, output string) err
 	if err != nil {
 		var prefixErr *cli.IDPrefixError
 		if errors.As(err, &prefixErr) {
-			return ExitErrorf(2, prefixErr.Error())
+			return ExitErrorf(2, "%s", prefixErr.Error())
 		}
 		var ambiguousErr *cli.AmbiguousPrefixError
 		if errors.As(err, &ambiguousErr) {
-			return ExitErrorf(2, ambiguousErr.Error())
+			return ExitErrorf(2, "%s", ambiguousErr.Error())
 		}
 		var resourceErr *cli.AmbiguousResourceError
 		if errors.As(err, &resourceErr) {
-			return ExitErrorf(2, resourceErr.Error())
+			return ExitErrorf(2, "%s", resourceErr.Error())
 		}
 		return ExitErrorf(3, "Internal error: %v", err)
 	}

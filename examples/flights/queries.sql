@@ -1,5 +1,8 @@
 \echo 'PostgresPro demo sanity checks'
-select count(*) as airports from airports;
+\connect demo
+SET search_path = bookings, pg_catalog;
+
+select count(*) as airports from bookings.airports;
 select count(*) as flights from flights;
 
 select flight_no, scheduled_departure, scheduled_arrival

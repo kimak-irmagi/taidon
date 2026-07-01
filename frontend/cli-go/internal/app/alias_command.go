@@ -142,7 +142,7 @@ func runAliasCommand(stdout io.Writer, cmdCtx commandContext, args []string) err
 	case "ls":
 		entries, err := alias.Scan(scanOpts)
 		if err != nil {
-			return ExitErrorf(2, err.Error())
+			return ExitErrorf(2, "%s", err.Error())
 		}
 		if cmdCtx.output == "json" {
 			return writeJSON(stdout, entries)
@@ -176,7 +176,7 @@ func runAliasCheck(cmdCtx commandContext, scanOpts alias.ScanOptions, cmd aliasC
 	if cmd.Ref == "" {
 		report, err := alias.CheckScan(scanOpts)
 		if err != nil {
-			return alias.CheckReport{}, ExitErrorf(2, err.Error())
+			return alias.CheckReport{}, ExitErrorf(2, "%s", err.Error())
 		}
 		return report, nil
 	}
@@ -188,7 +188,7 @@ func runAliasCheck(cmdCtx commandContext, scanOpts alias.ScanOptions, cmd aliasC
 		Class:         selectedSingleAliasClass(cmd),
 	})
 	if err != nil {
-		return alias.CheckReport{}, ExitErrorf(2, err.Error())
+		return alias.CheckReport{}, ExitErrorf(2, "%s", err.Error())
 	}
 	result, err := alias.CheckTarget(target, cmdCtx.workspaceRoot)
 	if err != nil {

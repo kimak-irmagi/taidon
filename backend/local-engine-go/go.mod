@@ -1,6 +1,6 @@
 module github.com/sqlrs/engine-local
 
-go 1.22
+go 1.25
 
 require modernc.org/sqlite v1.29.0
 

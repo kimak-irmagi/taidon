@@ -150,11 +150,11 @@ func runLs(w io.Writer, runOpts cli.LsOptions, args []string, output string) err
 	if err != nil {
 		var prefixErr *cli.IDPrefixError
 		if errors.As(err, &prefixErr) {
-			return ExitErrorf(2, prefixErr.Error())
+			return ExitErrorf(2, "%s", prefixErr.Error())
 		}
 		var ambiguousErr *cli.AmbiguousPrefixError
 		if errors.As(err, &ambiguousErr) {
-			return ExitErrorf(2, ambiguousErr.Error())
+			return ExitErrorf(2, "%s", ambiguousErr.Error())
 		}
 		return err
 	}

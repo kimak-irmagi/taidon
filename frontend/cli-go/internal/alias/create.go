@@ -222,12 +222,12 @@ func rewriteCreateArgs(class Class, kind string, args []string, workspaceRoot st
 		switch kind {
 		case "psql":
 			if issues := inputpsql.ValidateArgs(args, inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil), inputset.OSFileSystem{}); len(issues) > 0 {
-				return nil, fmt.Errorf(issues[0].Message)
+				return nil, fmt.Errorf("%s", issues[0].Message)
 			}
 			return relativizePsqlCreateArgs(args, workspaceRoot, cwd, aliasDir)
 		case "lb":
 			if issues := inputliquibase.ValidateArgs(args, inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil), inputset.OSFileSystem{}); len(issues) > 0 {
-				return nil, fmt.Errorf(issues[0].Message)
+				return nil, fmt.Errorf("%s", issues[0].Message)
 			}
 			return relativizeLiquibaseCreateArgs(args, workspaceRoot, cwd, aliasDir)
 		default:
@@ -237,12 +237,12 @@ func rewriteCreateArgs(class Class, kind string, args []string, workspaceRoot st
 		switch kind {
 		case runkind.KindPsql:
 			if issues := inputpsql.ValidateArgs(args, inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil), inputset.OSFileSystem{}); len(issues) > 0 {
-				return nil, fmt.Errorf(issues[0].Message)
+				return nil, fmt.Errorf("%s", issues[0].Message)
 			}
 			return relativizePsqlCreateArgs(args, workspaceRoot, cwd, aliasDir)
 		case runkind.KindPgbench:
 			if issues := inputpgbench.ValidateArgs(args, inputset.NewWorkspaceResolver(workspaceRoot, cwd, nil), inputset.OSFileSystem{}); len(issues) > 0 {
-				return nil, fmt.Errorf(issues[0].Message)
+				return nil, fmt.Errorf("%s", issues[0].Message)
 			}
 			return relativizePgbenchCreateArgs(args, workspaceRoot, cwd, aliasDir)
 		default:
