@@ -5,7 +5,10 @@ package authsession
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -152,21 +155,46 @@ func TestSystemCredentialStoreWindowsErrors(t *testing.T) {
 	})
 }
 
-func TestWindowsCredentialWrappersRejectInvalidOrMissingCredentials(t *testing.T) {
-	target, err := windows.UTF16PtrFromString("sqlrs-cli-auth:unit-test-nonexistent-credential")
+func TestWindowsCredentialWrappersRoundTripOwnedCredential(t *testing.T) {
+	targetName := fmt.Sprintf("sqlrs-cli-auth:unit-test:%d:%d", os.Getpid(), time.Now().UnixNano())
+	target, err := windows.UTF16PtrFromString(targetName)
 	if err != nil {
 		t.Fatalf("UTF16 target: %v", err)
 	}
+	account, err := windows.UTF16PtrFromString("sqlrs-cli-auth-unit-test")
+	if err != nil {
+		t.Fatalf("UTF16 account: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = windowsCredDelete(target, credTypeGeneric, 0)
+	})
 
+	blob := []byte(`{"provider":"google"}`)
+	storedCred := winCredential{
+		Type:               credTypeGeneric,
+		TargetName:         target,
+		CredentialBlobSize: uint32(len(blob)),
+		CredentialBlob:     &blob[0],
+		Persist:            credPersistLocalMachine,
+		UserName:           account,
+	}
+	if err := windowsCredWrite(&storedCred); err != nil {
+		t.Fatalf("write owned credential: %v", err)
+	}
 	var cred *winCredential
+	if err := windowsCredRead(target, credTypeGeneric, 0, &cred); err != nil {
+		t.Fatalf("read owned credential: %v", err)
+	}
+	got := string(unsafe.Slice(cred.CredentialBlob, cred.CredentialBlobSize))
+	windowsCredFree(cred)
+	if got != string(blob) {
+		t.Fatalf("credential blob = %q, want %q", got, string(blob))
+	}
+	if err := windowsCredDelete(target, credTypeGeneric, 0); err != nil {
+		t.Fatalf("delete owned credential: %v", err)
+	}
 	if err := windowsCredRead(target, credTypeGeneric, 0, &cred); !errors.Is(err, windows.ERROR_NOT_FOUND) {
-		t.Fatalf("read nonexistent credential = %v, want ERROR_NOT_FOUND", err)
-	}
-	if err := windowsCredDelete(target, credTypeGeneric, 0); !errors.Is(err, windows.ERROR_NOT_FOUND) {
-		t.Fatalf("delete nonexistent credential = %v, want ERROR_NOT_FOUND", err)
-	}
-	if err := windowsCredWrite(&winCredential{Type: credTypeGeneric, Persist: credPersistLocalMachine}); err == nil {
-		t.Fatalf("expected invalid credential write to fail")
+		t.Fatalf("read deleted credential = %v, want ERROR_NOT_FOUND", err)
 	}
 }
 

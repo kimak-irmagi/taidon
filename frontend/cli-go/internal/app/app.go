@@ -113,5 +113,8 @@ func resolveAuthToken(auth config.AuthConfig) string {
 			return value
 		}
 	}
+	if strings.EqualFold(strings.TrimSpace(auth.Mode), "oidcSession") {
+		return ""
+	}
 	return strings.TrimSpace(auth.Token)
 }
