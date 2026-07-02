@@ -20,8 +20,8 @@
 - `internal/app`
   - Загружает workspace/global config, выбирает профиль и режим.
   - Диспетчеризует граф команд (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
-    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`, `user`,
-    `org`).
+    `status`, `cache`, `config`, `init`, `auth`, `alias`, `discover`, `diff`,
+    `user`, `org`).
   - Собирает command context и выбирает path resolver-ы и runtime projection-ы
     из `internal/inputset`.
   - Отклоняет remote-only команды управления пользователями и организациями в
@@ -69,11 +69,17 @@
   - Парсинг diff scope, resolution корней сторон, сравнение и рендеринг.
   - Делегирует file semantics вложенной команды в `internal/inputset`.
 - `internal/cli`
-  - Исполнители клиентских команд и human/JSON renderers, включая read-only
-    cache-explain rendering и rendering remote-only управления пользователями
-    и организациями.
+  - Исполнители клиентских команд и human/JSON renderers, включая auth command
+    rendering, read-only cache-explain rendering и rendering remote-only
+    управления пользователями и организациями.
 - `internal/cli/runkind`
   - Реестр поддерживаемых run kind.
+- `internal/authsession`
+  - CLI-side OAuth/OIDC session management для `sqlrs auth` и protected remote
+    API token resolution.
+  - Владеет PKCE/state/nonce generation, Google token endpoint calls, loopback
+    callback validation, local credential-store access, cached ID-token refresh
+    и safe auth status metadata.
 - `internal/client`
   - HTTP клиент для `/v1/*` endpoint-ов.
   - Read-only cache explanation requests для bound prepare stages.
@@ -85,6 +91,8 @@
 - `internal/config`
   - Загрузка и merge CLI-конфига, typed lookup (`dbms.image`, настройки
     Liquibase, timeout-ы).
+  - Предоставляет non-secret auth settings remote profile, но не владеет OIDC
+    refresh token-ами или cached ID token-ами.
 - `internal/paths`
   - OS-aware разрешение директорий config/cache/state.
 - `internal/wsl`
@@ -127,6 +135,9 @@
     `log`).
 - `cli.ConfigOptions`, `client.ConfigValue`
   - Опции config-команд и API payload значений.
+- `authsession.Manager`, `authsession.Session`, `authsession.CredentialStore`
+  - CLI auth session manager, stored OIDC session model и OS credential store
+    abstraction.
 - `cli.UserOptions`, `cli.OrganizationOptions`
   - Remote-only опции команд для `sqlrs user` и `sqlrs org`.
 - `client.UserProfile`, `client.ExternalIdentity`, `client.Organization`,
@@ -138,6 +149,8 @@
 
 - CLI-конфиг файловый (workspace + global) и загружается в память на время
   запуска команды.
+- OIDC refresh token-ы не являются данными CLI config. Это локальные
+  credentials auth session layer, которые хранятся в OS credential store.
 - Raw argv принадлежит command orchestrator-у, пока не передан выбранному
   kind-компоненту `internal/inputset`.
 - Parsed specs, bound specs и collected input sets эфемерны и живут только
@@ -158,6 +171,7 @@ flowchart LR
   CMD["cmd/sqlrs"]
   APP["internal/app"]
   CLI["internal/cli"]
+  AUTH["internal/authsession"]
   INPUTSET["internal/inputset"]
   ALIAS["internal/alias"]
   DISCOVER["internal/discover"]
@@ -174,12 +188,15 @@ flowchart LR
 
   CMD --> APP
   APP --> CLI
+  APP --> AUTH
   APP --> INPUTSET
   APP --> REFCTX
   APP --> CONFIG
   APP --> PATHS
   APP --> WSL
   APP --> UTIL
+  AUTH --> CONFIG
+  AUTH --> PATHS
   CLI --> CLIENT
   CLI --> DAEMON
   CLI --> RUNKIND

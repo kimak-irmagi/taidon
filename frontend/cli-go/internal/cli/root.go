@@ -87,6 +87,7 @@ func PrintUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
 	fmt.Fprintln(w, "  alias    Inspect or manage repo-tracked alias files")
+	fmt.Fprintln(w, "  auth     Manage Google OIDC CLI sessions")
 	fmt.Fprintln(w, "  cache    Inspect read-only cache decisions")
 	fmt.Fprintln(w, "  discover  Advisory workspace analysis")
 	fmt.Fprintln(w, "  init     Initialize a workspace")
@@ -291,7 +292,7 @@ func looksLikeRunAliasStage(args []string) bool {
 
 func isCommandToken(value string) bool {
 	switch value {
-	case "alias", "cache", "discover", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config", "user", "org":
+	case "alias", "auth", "cache", "discover", "init", "ls", "diff", "rm", "plan", "prepare", "run", "watch", "status", "config", "user", "org":
 		return true
 	}
 	if strings.HasPrefix(value, "prepare:") {

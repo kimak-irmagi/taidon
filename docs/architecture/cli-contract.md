@@ -88,6 +88,7 @@ supported for jobs.
 ```text
 sqlrs
   init
+  auth
   user
   org
   status
@@ -467,7 +468,30 @@ Current design direction:
 
 ---
 
-### 3.13 `sqlrs user`
+### 3.13 `sqlrs auth`
+
+See the user guide for the authoritative command semantics:
+
+- [`docs/user-guides/sqlrs-auth.md`](../user-guides/sqlrs-auth.md)
+
+Current design direction:
+
+- `auth` manages local CLI authentication sessions for remote/shared
+  deployments.
+- `auth login google` uses Google Authorization Code Flow with PKCE, a
+  loopback redirect listener, and OS credential storage for the refresh token.
+- `auth status` reports safe session metadata and never prints raw tokens.
+- `auth logout` deletes local credentials and attempts refresh-token revocation.
+- Protected remote API commands keep `SQLRS_TOKEN` as the highest-priority
+  override, then use a stored OIDC session when the selected profile has
+  `auth.mode: oidcSession`, then fall back to legacy static bearer profile
+  behavior.
+- The gateway still receives only a short-lived Google ID token as
+  `Authorization: Bearer <id-token>`.
+
+---
+
+### 3.14 `sqlrs user`
 
 See the user guide for the authoritative command semantics:
 
@@ -489,7 +513,7 @@ Current design direction:
 
 ---
 
-### 3.14 `sqlrs org`
+### 3.15 `sqlrs org`
 
 See the user guide for the authoritative command semantics:
 

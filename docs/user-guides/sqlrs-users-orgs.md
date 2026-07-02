@@ -27,9 +27,10 @@ profiles:
       tokenEnv: SQLRS_TOKEN
 ```
 
-The token is issued outside this slice by an OAuth/OIDC provider or by a future
-login helper. The CLI sends it as `Authorization: Bearer <token>` and never
-prints it.
+The token can come from the explicit `SQLRS_TOKEN` override, from a legacy
+static bearer profile, or from the Google OIDC session managed by
+[`sqlrs auth`](sqlrs-auth.md). The CLI sends the effective token as
+`Authorization: Bearer <token>` and never prints it.
 
 ## Command syntax
 
@@ -335,5 +336,6 @@ an administrator can inspect the existing account before taking manual action.
 - Email-only invitations, member invitation, role changes, organization
   deletion, or user deletion.
 - Billing, quotas, or organization-scoped prepare/run authorization changes.
-- A first-class `sqlrs auth login` command. CLI login can be added later without
-  changing the user and organization API commands above.
+- Changes to the CLI login/session-management flow. `sqlrs auth` is a separate
+  CLI slice; the user and organization commands only consume the effective
+  bearer token selected for the remote profile.

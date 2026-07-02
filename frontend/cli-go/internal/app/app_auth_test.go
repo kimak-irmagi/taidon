@@ -25,6 +25,14 @@ func TestResolveAuthTokenFallsBackToToken(t *testing.T) {
 	}
 }
 
+func TestResolveAuthTokenDefaultsOIDCSessionToSQLRSToken(t *testing.T) {
+	t.Setenv("SQLRS_TOKEN", "debug-token")
+	got := resolveAuthToken(config.AuthConfig{Mode: "oidcSession"})
+	if got != "debug-token" {
+		t.Fatalf("expected SQLRS_TOKEN override, got %q", got)
+	}
+}
+
 func TestStartCleanupSpinnerVerboseWritesLabel(t *testing.T) {
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()

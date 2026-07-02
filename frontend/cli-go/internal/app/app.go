@@ -104,7 +104,11 @@ func clearLineOut(out io.Writer, width int) {
 }
 
 func resolveAuthToken(auth config.AuthConfig) string {
-	if env := strings.TrimSpace(auth.TokenEnv); env != "" {
+	env := strings.TrimSpace(auth.TokenEnv)
+	if env == "" && strings.EqualFold(strings.TrimSpace(auth.Mode), "oidcSession") {
+		env = "SQLRS_TOKEN"
+	}
+	if env != "" {
 		if value := strings.TrimSpace(os.Getenv(env)); value != "" {
 			return value
 		}

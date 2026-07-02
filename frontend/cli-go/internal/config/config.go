@@ -59,6 +59,8 @@ type AuthConfig struct {
 	Mode     string `yaml:"mode"`
 	TokenEnv string `yaml:"tokenEnv"`
 	Token    string `yaml:"token"`
+	ClientID string `yaml:"clientID"`
+	Issuer   string `yaml:"issuer"`
 }
 
 type LoadOptions struct {
