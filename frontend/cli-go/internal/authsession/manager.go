@@ -362,21 +362,17 @@ func (m *Manager) ResolveBearerToken(ctx context.Context, opts ResolveOptions) (
 	}
 	resp, err := m.oauth.Refresh(ctx, RefreshRequest{ClientID: clientID, RefreshToken: session.RefreshToken})
 	if err != nil {
-		_ = m.store.Delete(ctx, key)
-		return ResolvedBearerToken{}, fmt.Errorf("%w: %v", ErrLoginRequired, err)
+		return ResolvedBearerToken{}, m.deleteInvalidSession(ctx, key, err)
 	}
 	if strings.TrimSpace(resp.IDToken) == "" {
-		_ = m.store.Delete(ctx, key)
-		return ResolvedBearerToken{}, fmt.Errorf("%w: Google token response missing id_token", ErrLoginRequired)
+		return ResolvedBearerToken{}, m.deleteInvalidSession(ctx, key, errors.New("Google token response missing id_token"))
 	}
 	claims, err := DecodeIDTokenClaims(resp.IDToken)
 	if err != nil {
-		_ = m.store.Delete(ctx, key)
-		return ResolvedBearerToken{}, fmt.Errorf("%w: %v", ErrLoginRequired, err)
+		return ResolvedBearerToken{}, m.deleteInvalidSession(ctx, key, err)
 	}
 	if err := ValidateIDTokenClaims(claims, defaultIssuer(opts.Issuer), clientID, "", now); err != nil {
-		_ = m.store.Delete(ctx, key)
-		return ResolvedBearerToken{}, fmt.Errorf("%w: %v", ErrLoginRequired, err)
+		return ResolvedBearerToken{}, m.deleteInvalidSession(ctx, key, err)
 	}
 	if strings.TrimSpace(resp.RefreshToken) != "" {
 		session.RefreshToken = strings.TrimSpace(resp.RefreshToken)
@@ -396,6 +392,13 @@ func (m *Manager) ResolveBearerToken(ctx context.Context, opts ResolveOptions) (
 		return ResolvedBearerToken{}, err
 	}
 	return ResolvedBearerToken{Token: session.CachedIDToken, Source: "refreshed_session"}, nil
+}
+
+func (m *Manager) deleteInvalidSession(ctx context.Context, key CredentialKey, cause error) error {
+	if err := m.store.Delete(ctx, key); err != nil {
+		return fmt.Errorf("%w: %v; failed to delete local auth session: %v", ErrLoginRequired, cause, err)
+	}
+	return fmt.Errorf("%w: %v", ErrLoginRequired, cause)
 }
 
 func credentialKey(profileName, endpoint, issuer, clientID string) CredentialKey {

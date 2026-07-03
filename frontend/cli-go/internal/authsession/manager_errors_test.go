@@ -355,6 +355,20 @@ func TestResolveBearerTokenStoreErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "put failed") {
 		t.Fatalf("expected put error, got %v", err)
 	}
+
+	manager = NewManager(ManagerOptions{
+		Store: failingCredentialStore{
+			session:   Session{RefreshToken: "refresh", IDTokenExpiry: now.Add(-time.Minute)},
+			found:     true,
+			deleteErr: errors.New("delete failed"),
+		},
+		OAuth: &fakeOAuthClient{refreshErr: errors.New("invalid_grant")},
+		Clock: fixedClock{now: now},
+	})
+	_, err = manager.ResolveBearerToken(context.Background(), testResolveOptions())
+	if !errors.Is(err, ErrLoginRequired) || !strings.Contains(err.Error(), "failed to delete local auth session") {
+		t.Fatalf("expected login required delete error, got %v", err)
+	}
 }
 
 func TestStatusStoreErrorAndLegacyMode(t *testing.T) {

@@ -25,7 +25,13 @@ func (SystemCredentialStore) Get(ctx context.Context, key CredentialKey) (Sessio
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 			return Session{}, false, fmt.Errorf("Linux Secret Service lookup failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
 		}
-		return Session{}, false, nil
+		if errors.As(err, &exitErr) {
+			return Session{}, false, nil
+		}
+		if ctx.Err() != nil {
+			return Session{}, false, ctx.Err()
+		}
+		return Session{}, false, fmt.Errorf("Linux Secret Service lookup failed; install libsecret secret-tool and start a Secret Service provider: %w", err)
 	}
 	session, err := decodeSession(strings.TrimSpace(string(out)))
 	if err != nil {
