@@ -38,6 +38,27 @@ func TestLoopbackServerProviderReceivesOneCallback(t *testing.T) {
 	}
 }
 
+func TestLoopbackCloseSignalsContextWatcher(t *testing.T) {
+	session, err := LoopbackServerProvider{}.Start(context.Background())
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	concrete, ok := session.(*loopbackServerSession)
+	if !ok {
+		t.Fatalf("unexpected session type %T", session)
+	}
+	closed := concrete.closed
+
+	if err := session.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatalf("session close did not signal closed channel")
+	}
+}
+
 func TestLoopbackServerRejectsNonLoopbackHostAndDuplicateCallback(t *testing.T) {
 	session := &loopbackServerSession{
 		server: &http.Server{},

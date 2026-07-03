@@ -124,7 +124,6 @@ func parseAuthLogoutArgs(args []string) (authInvocation, bool, error) {
 }
 
 func runAuth(stdout, stderr io.Writer, cwd string, opts cli.GlobalOptions, args []string) error {
-	_ = stderr
 	invocation, showHelp, err := parseAuthArgs(args)
 	if err != nil {
 		return err
@@ -150,16 +149,31 @@ func runAuth(stdout, stderr io.Writer, cwd string, opts cli.GlobalOptions, args 
 		if !strings.EqualFold(strings.TrimSpace(cmdCtx.profile.Auth.Mode), "oidcSession") {
 			return fmt.Errorf("auth login google requires profile auth.mode: oidcSession")
 		}
+		var authorizationURLReady func(string) error
+		if invocation.noBrowser {
+			urlWriter := stdout
+			if cmdCtx.output == "json" {
+				urlWriter = stderr
+			}
+			authorizationURLReady = func(authURL string) error {
+				_, err := fmt.Fprintf(urlWriter, "authorizationURL: %s\n", authURL)
+				return err
+			}
+		}
 		result, err := manager.LoginGoogle(context.Background(), authLoginOptions{
-			ProfileName: cmdCtx.profileName,
-			Endpoint:    cmdCtx.profile.Endpoint,
-			ClientID:    cmdCtx.profile.Auth.ClientID,
-			Issuer:      cmdCtx.profile.Auth.Issuer,
-			LoginHint:   invocation.loginHint,
-			NoBrowser:   invocation.noBrowser,
+			ProfileName:           cmdCtx.profileName,
+			Endpoint:              cmdCtx.profile.Endpoint,
+			ClientID:              cmdCtx.profile.Auth.ClientID,
+			Issuer:                cmdCtx.profile.Auth.Issuer,
+			LoginHint:             invocation.loginHint,
+			NoBrowser:             invocation.noBrowser,
+			AuthorizationURLReady: authorizationURLReady,
 		})
 		if err != nil {
 			return err
+		}
+		if invocation.noBrowser && cmdCtx.output != "json" {
+			result.AuthorizationURL = ""
 		}
 		return writeAuthLoginResult(stdout, result, cmdCtx.output)
 	case "status":

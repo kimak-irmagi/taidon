@@ -525,7 +525,7 @@ func commandsNeedEffectiveAuthToken(commands []cli.Command) bool {
 	for _, cmd := range commands {
 		name := strings.TrimSpace(cmd.Name)
 		switch name {
-		case "cache", "config", "ls", "rm", "run", "run:psql", "run:pgbench", "status", "user", "org", "watch":
+		case "cache", "ls", "rm", "run", "run:psql", "run:pgbench", "status", "user", "org", "watch":
 			return true
 		case "plan", "plan:psql", "plan:lb", "prepare", "prepare:psql", "prepare:lb":
 			return true

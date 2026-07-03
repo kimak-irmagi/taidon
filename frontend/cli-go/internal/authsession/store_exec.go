@@ -45,6 +45,13 @@ func (SystemCredentialStore) Put(ctx context.Context, key CredentialKey, session
 }
 
 func (SystemCredentialStore) Delete(ctx context.Context, key CredentialKey) error {
-	_ = exec.CommandContext(ctx, "secret-tool", "clear", "application", credentialService, "key", key.displayAccount()).Run()
+	cmd := exec.CommandContext(ctx, "secret-tool", "clear", "application", credentialService, "key", key.displayAccount())
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			return fmt.Errorf("Linux Secret Service clear failed: %s", strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return fmt.Errorf("Linux Secret Service clear failed: %w", err)
+	}
 	return nil
 }

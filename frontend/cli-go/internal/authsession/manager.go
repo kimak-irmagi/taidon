@@ -92,12 +92,13 @@ func NewManager(opts ManagerOptions) *Manager {
 }
 
 type LoginOptions struct {
-	ProfileName string
-	Endpoint    string
-	ClientID    string
-	Issuer      string
-	LoginHint   string
-	NoBrowser   bool
+	ProfileName           string
+	Endpoint              string
+	ClientID              string
+	Issuer                string
+	LoginHint             string
+	NoBrowser             bool
+	AuthorizationURLReady func(string) error
 }
 
 type LoginResult struct {
@@ -148,7 +149,13 @@ func (m *Manager) LoginGoogle(ctx context.Context, opts LoginOptions) (LoginResu
 	if err != nil {
 		return LoginResult{}, err
 	}
-	if !opts.NoBrowser {
+	if opts.NoBrowser {
+		if opts.AuthorizationURLReady != nil {
+			if err := opts.AuthorizationURLReady(authURL); err != nil {
+				return LoginResult{}, err
+			}
+		}
+	} else {
 		if err := m.openBrowser(ctx, authURL); err != nil {
 			return LoginResult{}, err
 		}
@@ -286,7 +293,11 @@ func (m *Manager) Logout(ctx context.Context, opts LogoutOptions) (LogoutResult,
 		Profile:  strings.TrimSpace(opts.ProfileName),
 		Endpoint: strings.TrimSpace(opts.Endpoint),
 	}
-	if ok && !opts.NoRevoke && strings.TrimSpace(session.RefreshToken) != "" {
+	if !ok {
+		result.Deleted = true
+		return result, nil
+	}
+	if !opts.NoRevoke && strings.TrimSpace(session.RefreshToken) != "" {
 		if err := m.oauth.Revoke(ctx, session.RefreshToken); err != nil {
 			result.RevocationFailed = err.Error()
 		} else {

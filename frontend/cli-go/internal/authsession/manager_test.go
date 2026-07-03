@@ -160,6 +160,12 @@ func TestLoginGoogleStoresRefreshTokenAndSafeMetadata(t *testing.T) {
 		redirectURI: "http://127.0.0.1:49152",
 		callback:    url.Values{"state": {state}, "code": {"code-1"}},
 	}}
+	var readyURL string
+	loopback.session.onWait = func() {
+		if readyURL == "" {
+			t.Fatalf("authorization URL was not reported before waiting for callback")
+		}
+	}
 	manager := NewManager(ManagerOptions{
 		Store:    store,
 		OAuth:    oauth,
@@ -174,6 +180,10 @@ func TestLoginGoogleStoresRefreshTokenAndSafeMetadata(t *testing.T) {
 		ClientID:    key.ClientID,
 		Issuer:      key.Issuer,
 		NoBrowser:   true,
+		AuthorizationURLReady: func(authURL string) error {
+			readyURL = authURL
+			return nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("LoginGoogle: %v", err)
@@ -183,6 +193,9 @@ func TestLoginGoogleStoresRefreshTokenAndSafeMetadata(t *testing.T) {
 	}
 	if result.AuthorizationURL == "" {
 		t.Fatalf("no-browser login should return authorization URL")
+	}
+	if readyURL != result.AuthorizationURL {
+		t.Fatalf("reported URL = %q, result URL = %q", readyURL, result.AuthorizationURL)
 	}
 	if oauth.exchangeCode != "code-1" {
 		t.Fatalf("exchange code = %q, want code-1", oauth.exchangeCode)
@@ -391,6 +404,7 @@ type fakeLoopbackSession struct {
 	redirectURI string
 	callback    url.Values
 	closed      bool
+	onWait      func()
 }
 
 func (s *fakeLoopbackSession) RedirectURI() string {
@@ -398,6 +412,9 @@ func (s *fakeLoopbackSession) RedirectURI() string {
 }
 
 func (s *fakeLoopbackSession) Wait(context.Context) (url.Values, error) {
+	if s.onWait != nil {
+		s.onWait()
+	}
 	return s.callback, nil
 }
 

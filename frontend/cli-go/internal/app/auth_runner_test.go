@@ -137,6 +137,88 @@ func TestRunnerDoesNotResolveEffectiveTokenForLocalOnlyCommands(t *testing.T) {
 	}
 }
 
+func TestRunnerDoesNotResolveEffectiveTokenForConfigCommand(t *testing.T) {
+	cwd := t.TempDir()
+	resolveTokenCalls := 0
+	runConfigCalls := 0
+
+	err := runWithParsedCommands(t, cli.GlobalOptions{}, []cli.Command{{Name: "config", Args: []string{"get", "features.flag"}}}, func(deps *runnerDeps) {
+		deps.getwd = func() (string, error) {
+			return cwd, nil
+		}
+		deps.resolveCommandContext = func(string, cli.GlobalOptions) (commandContext, error) {
+			ctx := testCommandContext(cwd, "human", false)
+			ctx.mode = "remote"
+			ctx.profile = config.ProfileConfig{
+				Mode:     "remote",
+				Endpoint: "https://sqlrs.example.org",
+				Auth:     config.AuthConfig{Mode: "oidcSession", ClientID: "client-id"},
+			}
+			return ctx, nil
+		}
+		deps.resolveEffectiveAuthToken = func(context.Context, commandContext) (commandContext, error) {
+			resolveTokenCalls++
+			return commandContext{}, nil
+		}
+		deps.runConfig = func(io.Writer, cli.ConfigOptions, []string, string) error {
+			runConfigCalls++
+			return nil
+		}
+	})
+	if err != nil {
+		t.Fatalf("runner.run: %v", err)
+	}
+	if resolveTokenCalls != 0 {
+		t.Fatalf("resolveEffectiveAuthToken calls = %d, want 0", resolveTokenCalls)
+	}
+	if runConfigCalls != 1 {
+		t.Fatalf("runConfig calls = %d, want 1", runConfigCalls)
+	}
+}
+
+func TestRunAuthLoginNoBrowserPrintsAuthorizationURLBeforeFinalOutput(t *testing.T) {
+	cwd := t.TempDir()
+	setTestDirs(t, cwd)
+	writeProjectConfig(t, cwd,
+		"defaultProfile: remote\n"+
+			"profiles:\n"+
+			"  remote:\n"+
+			"    mode: remote\n"+
+			"    endpoint: https://sqlrs.example.org\n"+
+			"    auth:\n"+
+			"      mode: oidcSession\n"+
+			"      clientID: client-id\n")
+
+	var stdout bytes.Buffer
+	oldFactory := authManagerFactory
+	authManagerFactory = func() authManager {
+		return fakeAuthManager{login: authLoginResult{
+			LoggedIn:    true,
+			Provider:    "google",
+			Email:       "alice@example.com",
+			Issuer:      "https://accounts.google.com",
+			Audience:    "client-id",
+			Profile:     "remote",
+			Endpoint:    "https://sqlrs.example.org",
+			TokenExpiry: time.Date(2026, 7, 2, 12, 30, 0, 0, time.UTC),
+		}}
+	}
+	t.Cleanup(func() { authManagerFactory = oldFactory })
+
+	if err := runAuth(&stdout, io.Discard, cwd, cli.GlobalOptions{Workspace: cwd}, []string{"login", "google", "--no-browser"}); err != nil {
+		t.Fatalf("runAuth: %v", err)
+	}
+	out := stdout.String()
+	urlIndex := strings.Index(out, "authorizationURL: https://accounts.google.com/o/oauth2/v2/auth")
+	loggedInIndex := strings.Index(out, "logged in")
+	if urlIndex < 0 || loggedInIndex < 0 || urlIndex > loggedInIndex {
+		t.Fatalf("stdout should print URL before final login output, got %q", out)
+	}
+	if strings.Count(out, "authorizationURL:") != 1 {
+		t.Fatalf("stdout should print authorization URL once, got %q", out)
+	}
+}
+
 func TestRunAuthStatusRendersNoRawTokens(t *testing.T) {
 	cwd := t.TempDir()
 	setTestDirs(t, cwd)
@@ -195,7 +277,17 @@ type fakeAuthManager struct {
 	logout authLogoutResult
 }
 
-func (m fakeAuthManager) LoginGoogle(context.Context, authLoginOptions) (authLoginResult, error) {
+func (m fakeAuthManager) LoginGoogle(_ context.Context, opts authLoginOptions) (authLoginResult, error) {
+	authURL := m.login.AuthorizationURL
+	if authURL == "" {
+		authURL = "https://accounts.google.com/o/oauth2/v2/auth"
+	}
+	if opts.AuthorizationURLReady != nil {
+		if err := opts.AuthorizationURLReady(authURL); err != nil {
+			return authLoginResult{}, err
+		}
+	}
+	m.login.AuthorizationURL = authURL
 	return m.login, nil
 }
 

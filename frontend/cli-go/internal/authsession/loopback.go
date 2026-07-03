@@ -23,6 +23,7 @@ func (LoopbackServerProvider) Start(ctx context.Context) (LoopbackSession, error
 		listener: listener,
 		values:   make(chan url.Values, 1),
 		errs:     make(chan error, 1),
+		closed:   make(chan struct{}),
 	}
 	server := &http.Server{Handler: session}
 	session.server = server
@@ -34,10 +35,15 @@ func (LoopbackServerProvider) Start(ctx context.Context) (LoopbackSession, error
 			}
 		}
 	}()
-	go func() {
-		<-ctx.Done()
-		_ = session.Close()
-	}()
+	if done := ctx.Done(); done != nil {
+		go func() {
+			select {
+			case <-done:
+				_ = session.Close()
+			case <-session.closed:
+			}
+		}()
+	}
 	return session, nil
 }
 
@@ -46,6 +52,7 @@ type loopbackServerSession struct {
 	server   *http.Server
 	values   chan url.Values
 	errs     chan error
+	closed   chan struct{}
 	once     sync.Once
 }
 
@@ -67,9 +74,14 @@ func (s *loopbackServerSession) Wait(ctx context.Context) (url.Values, error) {
 func (s *loopbackServerSession) Close() error {
 	var err error
 	s.once.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		err = s.server.Shutdown(ctx)
+		if s.closed != nil {
+			close(s.closed)
+		}
+		if s.server != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			err = s.server.Shutdown(ctx)
+		}
 	})
 	return err
 }
