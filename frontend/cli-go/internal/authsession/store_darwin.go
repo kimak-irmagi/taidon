@@ -54,7 +54,7 @@ func findDarwinGenericPassword(service, account string) ([]byte, bool, error) {
 	var passwordData unsafe.Pointer
 	var item C.SecKeychainItemRef
 	status := C.SecKeychainFindGenericPassword(
-		nil,
+		darwinDefaultKeychainOrArray(),
 		C.UInt32(len(service)),
 		cService,
 		C.UInt32(len(account)),
@@ -70,7 +70,7 @@ func findDarwinGenericPassword(service, account string) ([]byte, bool, error) {
 		return nil, false, darwinKeychainError("find generic password", status)
 	}
 	defer C.SecKeychainItemFreeContent(nil, passwordData)
-	if item != nil {
+	if item != darwinZeroKeychainItem() {
 		defer C.CFRelease(C.CFTypeRef(item))
 	}
 	return append([]byte(nil), unsafe.Slice((*byte)(passwordData), int(passwordLength))...), true, nil
@@ -92,7 +92,7 @@ func putDarwinGenericPassword(service, account string, password []byte) error {
 	defer C.free(passwordData)
 
 	status := C.SecKeychainAddGenericPassword(
-		nil,
+		darwinDefaultKeychain(),
 		C.UInt32(len(service)),
 		cService,
 		C.UInt32(len(account)),
@@ -125,7 +125,7 @@ func findDarwinGenericPasswordItem(service, account string) (C.SecKeychainItemRe
 
 	var item C.SecKeychainItemRef
 	status := C.SecKeychainFindGenericPassword(
-		nil,
+		darwinDefaultKeychainOrArray(),
 		C.UInt32(len(service)),
 		cService,
 		C.UInt32(len(account)),
@@ -135,10 +135,10 @@ func findDarwinGenericPasswordItem(service, account string) (C.SecKeychainItemRe
 		&item,
 	)
 	if status == C.errSecItemNotFound {
-		return nil, false, nil
+		return darwinZeroKeychainItem(), false, nil
 	}
 	if status != C.errSecSuccess {
-		return nil, false, darwinKeychainError("find generic password item", status)
+		return darwinZeroKeychainItem(), false, darwinKeychainError("find generic password item", status)
 	}
 	return item, true, nil
 }
@@ -158,4 +158,19 @@ func deleteDarwinGenericPassword(service, account string) error {
 
 func darwinKeychainError(operation string, status C.OSStatus) error {
 	return fmt.Errorf("macOS Keychain %s failed with status %d", operation, int32(status))
+}
+
+func darwinDefaultKeychain() C.SecKeychainRef {
+	var keychain C.SecKeychainRef
+	return keychain
+}
+
+func darwinDefaultKeychainOrArray() C.CFTypeRef {
+	var keychainOrArray C.CFTypeRef
+	return keychainOrArray
+}
+
+func darwinZeroKeychainItem() C.SecKeychainItemRef {
+	var item C.SecKeychainItemRef
+	return item
 }
