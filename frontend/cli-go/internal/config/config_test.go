@@ -42,6 +42,7 @@ func TestAuthConfigLoadsOIDCSessionFields(t *testing.T) {
 			"    auth:\n" +
 			"      mode: oidcSession\n" +
 			"      clientID: client-id\n" +
+			"      clientSecret: client-secret\n" +
 			"      issuer: https://accounts.google.com\n" +
 			"      tokenEnv: SQLRS_TOKEN\n")
 	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), raw, 0o600); err != nil {
@@ -53,7 +54,7 @@ func TestAuthConfigLoadsOIDCSessionFields(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	auth := loaded.Config.Profiles["remote"].Auth
-	if auth.Mode != "oidcSession" || auth.ClientID != "client-id" || auth.Issuer != "https://accounts.google.com" || auth.TokenEnv != "SQLRS_TOKEN" {
+	if auth.Mode != "oidcSession" || auth.ClientID != "client-id" || auth.ClientSecret != "client-secret" || auth.Issuer != "https://accounts.google.com" || auth.TokenEnv != "SQLRS_TOKEN" {
 		t.Fatalf("auth config = %+v, want oidc session fields", auth)
 	}
 }

@@ -73,7 +73,7 @@ gantt
 
 ---
 
-## Status (as of 2026-07-02)
+## Status (as of 2026-07-03)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -181,9 +181,11 @@ gantt
   `sqlrs auth login google`, `sqlrs auth status`, and `sqlrs auth logout`
   backed by Google Authorization Code Flow with PKCE, loopback redirect
   handling, OS credential-store refresh-token storage, cached ID-token refresh,
-  and `SQLRS_TOKEN` debug override precedence. The gateway still receives only
-  short-lived Google ID tokens; accepting the CLI OAuth client audience remains
-  a gateway configuration/follow-up concern where needed.
+  `SQLRS_TOKEN` debug override precedence, and temporary Google Desktop
+  `client_secret` forwarding to the Google token endpoint when configured. The
+  gateway still receives only short-lived Google ID tokens; accepting the CLI
+  OAuth client audience remains a gateway configuration/follow-up concern where
+  needed.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.

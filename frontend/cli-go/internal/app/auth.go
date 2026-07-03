@@ -164,6 +164,7 @@ func runAuth(stdout, stderr io.Writer, cwd string, opts cli.GlobalOptions, args 
 			ProfileName:           cmdCtx.profileName,
 			Endpoint:              cmdCtx.profile.Endpoint,
 			ClientID:              cmdCtx.profile.Auth.ClientID,
+			ClientSecret:          cmdCtx.profile.Auth.ClientSecret,
 			Issuer:                cmdCtx.profile.Auth.Issuer,
 			LoginHint:             invocation.loginHint,
 			NoBrowser:             invocation.noBrowser,
@@ -218,13 +219,14 @@ func resolveEffectiveAuthToken(ctx context.Context, cmdCtx commandContext) (comm
 		return cmdCtx, nil
 	}
 	resolved, err := authManagerFactory().ResolveBearerToken(ctx, authResolveOptions{
-		ProfileName: cmdCtx.profileName,
-		Endpoint:    cmdCtx.profile.Endpoint,
-		AuthMode:    cmdCtx.profile.Auth.Mode,
-		ClientID:    cmdCtx.profile.Auth.ClientID,
-		Issuer:      cmdCtx.profile.Auth.Issuer,
-		TokenEnv:    cmdCtx.profile.Auth.TokenEnv,
-		StaticToken: cmdCtx.profile.Auth.Token,
+		ProfileName:  cmdCtx.profileName,
+		Endpoint:     cmdCtx.profile.Endpoint,
+		AuthMode:     cmdCtx.profile.Auth.Mode,
+		ClientID:     cmdCtx.profile.Auth.ClientID,
+		ClientSecret: cmdCtx.profile.Auth.ClientSecret,
+		Issuer:       cmdCtx.profile.Auth.Issuer,
+		TokenEnv:     cmdCtx.profile.Auth.TokenEnv,
+		StaticToken:  cmdCtx.profile.Auth.Token,
 	})
 	if err != nil {
 		return cmdCtx, err

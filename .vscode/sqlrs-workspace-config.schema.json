@@ -136,6 +136,16 @@
               },
               "token": {
                 "type": "string"
+              },
+              "clientID": {
+                "type": "string"
+              },
+              "clientSecret": {
+                "type": "string",
+                "description": "Temporary Google Desktop OAuth client secret used only for Google token endpoint exchanges."
+              },
+              "issuer": {
+                "type": "string"
               }
             },
             "additionalProperties": false

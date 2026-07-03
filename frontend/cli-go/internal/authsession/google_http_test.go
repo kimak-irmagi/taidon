@@ -52,6 +52,7 @@ func TestGoogleOAuthClientExchangeRefreshAndRevoke(t *testing.T) {
 	}
 	exchanged, err := client.ExchangeCode(context.Background(), CodeExchangeRequest{
 		ClientID:     "client-id",
+		ClientSecret: "client-secret",
 		Code:         "code-1",
 		CodeVerifier: "verifier-1",
 		RedirectURI:  "http://127.0.0.1:12345",
@@ -62,7 +63,7 @@ func TestGoogleOAuthClientExchangeRefreshAndRevoke(t *testing.T) {
 	if exchanged.IDToken != "id-token" || exchanged.RefreshToken != "refresh-token" || exchanged.ExpiresIn != 3600 {
 		t.Fatalf("exchange response = %+v", exchanged)
 	}
-	refreshed, err := client.Refresh(context.Background(), RefreshRequest{ClientID: "client-id", RefreshToken: "refresh-old"})
+	refreshed, err := client.Refresh(context.Background(), RefreshRequest{ClientID: "client-id", ClientSecret: "client-secret", RefreshToken: "refresh-old"})
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -75,10 +76,10 @@ func TestGoogleOAuthClientExchangeRefreshAndRevoke(t *testing.T) {
 	if len(tokenForms) != 2 {
 		t.Fatalf("token requests = %d, want 2", len(tokenForms))
 	}
-	if !strings.Contains(tokenForms[0], "grant_type=authorization_code") || !strings.Contains(tokenForms[0], "code=code-1") {
+	if !strings.Contains(tokenForms[0], "grant_type=authorization_code") || !strings.Contains(tokenForms[0], "code=code-1") || !strings.Contains(tokenForms[0], "client_secret=client-secret") {
 		t.Fatalf("exchange form = %q", tokenForms[0])
 	}
-	if !strings.Contains(tokenForms[1], "grant_type=refresh_token") || !strings.Contains(tokenForms[1], "refresh_token=refresh-old") {
+	if !strings.Contains(tokenForms[1], "grant_type=refresh_token") || !strings.Contains(tokenForms[1], "refresh_token=refresh-old") || !strings.Contains(tokenForms[1], "client_secret=client-secret") {
 		t.Fatalf("refresh form = %q", tokenForms[1])
 	}
 	if revokedToken != "refresh-old" {

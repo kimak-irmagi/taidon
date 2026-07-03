@@ -99,6 +99,9 @@ func TestResolveBearerTokenRefreshesExpiringSessionAndStoresIDToken(t *testing.T
 	if oauth.refreshToken != "refresh-old" {
 		t.Fatalf("refresh token = %q, want refresh-old", oauth.refreshToken)
 	}
+	if oauth.refreshClientSecret != "client-secret" {
+		t.Fatalf("refresh client secret = %q, want client-secret", oauth.refreshClientSecret)
+	}
 	stored, ok, err := store.Get(context.Background(), key)
 	if err != nil || !ok {
 		t.Fatalf("get stored session: ok=%v err=%v", ok, err)
@@ -175,11 +178,12 @@ func TestLoginGoogleStoresRefreshTokenAndSafeMetadata(t *testing.T) {
 	})
 
 	result, err := manager.LoginGoogle(context.Background(), LoginOptions{
-		ProfileName: key.ProfileName,
-		Endpoint:    key.Endpoint,
-		ClientID:    key.ClientID,
-		Issuer:      key.Issuer,
-		NoBrowser:   true,
+		ProfileName:  key.ProfileName,
+		Endpoint:     key.Endpoint,
+		ClientID:     key.ClientID,
+		ClientSecret: "client-secret",
+		Issuer:       key.Issuer,
+		NoBrowser:    true,
 		AuthorizationURLReady: func(authURL string) error {
 			readyURL = authURL
 			return nil
@@ -199,6 +203,9 @@ func TestLoginGoogleStoresRefreshTokenAndSafeMetadata(t *testing.T) {
 	}
 	if oauth.exchangeCode != "code-1" {
 		t.Fatalf("exchange code = %q, want code-1", oauth.exchangeCode)
+	}
+	if oauth.exchangeClientSecret != "client-secret" {
+		t.Fatalf("exchange client secret = %q, want client-secret", oauth.exchangeClientSecret)
 	}
 	stored, ok, err := store.Get(context.Background(), key)
 	if err != nil || !ok {
@@ -327,12 +334,13 @@ func TestLogoutRevokesThenDeletesStoredSession(t *testing.T) {
 func testResolveOptions() ResolveOptions {
 	key := testCredentialKey()
 	return ResolveOptions{
-		ProfileName: key.ProfileName,
-		Endpoint:    key.Endpoint,
-		AuthMode:    "oidcSession",
-		ClientID:    key.ClientID,
-		Issuer:      key.Issuer,
-		TokenEnv:    "SQLRS_TOKEN",
+		ProfileName:  key.ProfileName,
+		Endpoint:     key.Endpoint,
+		AuthMode:     "oidcSession",
+		ClientID:     key.ClientID,
+		ClientSecret: "client-secret",
+		Issuer:       key.Issuer,
+		TokenEnv:     "SQLRS_TOKEN",
 	}
 }
 
@@ -347,13 +355,15 @@ func testCredentialKey() CredentialKey {
 }
 
 type fakeOAuthClient struct {
-	exchangeResponse TokenResponse
-	exchangeErr      error
-	exchangeCode     string
+	exchangeResponse     TokenResponse
+	exchangeErr          error
+	exchangeCode         string
+	exchangeClientSecret string
 
-	refreshResponse TokenResponse
-	refreshErr      error
-	refreshToken    string
+	refreshResponse     TokenResponse
+	refreshErr          error
+	refreshToken        string
+	refreshClientSecret string
 
 	revokeErr    error
 	revokedToken string
@@ -361,6 +371,7 @@ type fakeOAuthClient struct {
 
 func (f *fakeOAuthClient) ExchangeCode(_ context.Context, req CodeExchangeRequest) (TokenResponse, error) {
 	f.exchangeCode = req.Code
+	f.exchangeClientSecret = req.ClientSecret
 	if f.exchangeErr != nil {
 		return TokenResponse{}, f.exchangeErr
 	}
@@ -369,6 +380,7 @@ func (f *fakeOAuthClient) ExchangeCode(_ context.Context, req CodeExchangeReques
 
 func (f *fakeOAuthClient) Refresh(_ context.Context, req RefreshRequest) (TokenResponse, error) {
 	f.refreshToken = req.RefreshToken
+	f.refreshClientSecret = req.ClientSecret
 	if f.refreshErr != nil {
 		return TokenResponse{}, f.refreshErr
 	}

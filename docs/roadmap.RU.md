@@ -74,7 +74,7 @@ gantt
 
 ---
 
-## Статус (на 2026-07-02)
+## Статус (на 2026-07-03)
 
 - **Сделано**: локальная поверхность API (health, config, names, instances, runs,
   states, prepare jobs, tasks), локальный runtime и lifecycle, end-to-end pipeline
@@ -183,9 +183,11 @@ gantt
   `sqlrs auth login google`, `sqlrs auth status` и `sqlrs auth logout` на базе
   Google Authorization Code Flow with PKCE, loopback redirect handling,
   хранения refresh token в OS credential store, refresh cached ID token и
-  приоритета debug override через `SQLRS_TOKEN`. Gateway по-прежнему получает
-  только короткоживущие Google ID token; принятие CLI OAuth client audience
-  остается gateway config/follow-up задачей там, где это нужно.
+  приоритета debug override через `SQLRS_TOKEN`, а также временную отправку
+  Google Desktop `client_secret` в Google token endpoint, если он задан в
+  профиле. Gateway по-прежнему получает только короткоживущие Google ID token;
+  принятие CLI OAuth client audience остается gateway config/follow-up задачей
+  там, где это нужно.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.

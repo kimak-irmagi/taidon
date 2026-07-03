@@ -56,11 +56,12 @@ type ProfileConfig struct {
 }
 
 type AuthConfig struct {
-	Mode     string `yaml:"mode"`
-	TokenEnv string `yaml:"tokenEnv"`
-	Token    string `yaml:"token"`
-	ClientID string `yaml:"clientID"`
-	Issuer   string `yaml:"issuer"`
+	Mode         string `yaml:"mode"`
+	TokenEnv     string `yaml:"tokenEnv"`
+	Token        string `yaml:"token"`
+	ClientID     string `yaml:"clientID"`
+	ClientSecret string `yaml:"clientSecret"`
+	Issuer       string `yaml:"issuer"`
 }
 
 type LoadOptions struct {

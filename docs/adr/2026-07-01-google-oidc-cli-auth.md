@@ -96,6 +96,53 @@ uses platform-native protection and keeps the workspace config safe to inspect
 or commit accidentally. Keeping refresh tokens out of the gateway preserves the
 server boundary: server-side auth accepts only short-lived ID tokens.
 
+## Decision Record 3: temporarily read Google Desktop client secret from config
+
+- Conversation timestamp: 2026-07-03T15:48:32.9180928+07:00
+- GitHub user id: @evilguest
+- Agent name/version: Codex / GPT-5
+- Status: Accepted
+
+### Question discussed
+
+How should the CLI handle Google Desktop OAuth clients whose token endpoint
+requests fail with `client_secret is missing`, while keeping refresh tokens on
+the client and keeping the gateway limited to short-lived Google ID tokens?
+
+### Alternatives considered
+
+1. Keep the pure public PKCE request and require a Google OAuth client that does
+   not require `client_secret`.
+2. Add a server-side wrapper around Google's token endpoint that injects the
+   client secret.
+3. Temporarily store the downloaded Google Desktop `installed.client_secret` in
+   sqlrs auth profile config and send it only to Google token endpoint calls.
+4. Design a dedicated secure client-secret source before fixing the login
+   failure.
+
+### Chosen solution
+
+Adopt option 3 as a temporary compatibility path.
+
+`profiles.<name>.auth.clientSecret` may contain the Google Desktop OAuth
+`installed.client_secret`. The CLI includes it in Google
+`authorization_code` and `refresh_token` grant requests when configured. It is
+not sent to the sqlrs gateway, not printed by auth status/login output, and not
+stored in the OS credential-store session record.
+
+Refresh tokens remain only in the OS credential store. The gateway continues to
+validate only Google ID token claims such as issuer, audience, and expiry.
+
+### Brief rationale
+
+Adding a gateway token wrapper would either make the server see refresh tokens
+or turn the server into an OAuth session broker, which conflicts with the
+current slice. Passing the Desktop client secret directly to Google unblocks
+Google clients that require the parameter without changing the server boundary.
+
+This is intentionally temporary: a later design should replace config storage
+with a better local secret source or a documented installation-time setup flow.
+
 ## Related documents
 
 - `docs/user-guides/sqlrs-auth.md`

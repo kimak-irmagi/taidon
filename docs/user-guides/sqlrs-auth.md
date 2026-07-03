@@ -37,7 +37,8 @@ login because local engine requests use the local daemon token from
 
 ## Remote profile configuration
 
-A Google-backed remote profile stores only non-secret configuration:
+A Google-backed remote profile stores the OAuth client metadata needed to start
+and refresh the Google session:
 
 ```yaml
 profiles:
@@ -47,6 +48,7 @@ profiles:
     auth:
       mode: oidcSession
       clientID: "1234567890-abcdef.apps.googleusercontent.com"
+      clientSecret: "google-desktop-client-secret"
       issuer: "https://accounts.google.com"
       tokenEnv: SQLRS_TOKEN
 ```
@@ -60,14 +62,20 @@ Rules:
   metadata.
 - `auth.clientID` is the Google OAuth client ID and is also the `aud` value the
   gateway must accept.
+- `auth.clientSecret` is a temporary compatibility field for Google Desktop
+  OAuth clients that require `client_secret` at the token endpoint. The CLI sends
+  it only to Google during authorization-code and refresh-token exchanges. It is
+  not sent to the sqlrs gateway and must not be treated as a gateway trust
+  boundary.
 - `auth.issuer` defaults to `https://accounts.google.com` when omitted.
 - `auth.tokenEnv` defaults to `SQLRS_TOKEN`; when that environment variable is
   set, it overrides the stored Google session.
 - Existing `auth.mode: bearer` profiles keep their current behavior and read a
   caller-supplied bearer token from `tokenEnv` or `token`.
 
-Do not store refresh tokens, raw ID tokens, or Google client secrets in
-`.sqlrs/config.yaml`.
+Do not store refresh tokens or raw ID tokens in `.sqlrs/config.yaml`. The
+temporary `auth.clientSecret` value should live in user-local config rather than
+in a committed workspace config until a better secret source is designed.
 
 ## Google OAuth client
 
@@ -76,7 +84,9 @@ Create a Google OAuth client for the CLI:
 1. In Google Cloud Console, create an OAuth client with application type
    `Desktop app`.
 2. Put the resulting client ID into `profiles.<name>.auth.clientID`.
-3. Configure the sqlrs gateway to accept Google ID tokens with:
+3. If the downloaded Desktop client JSON contains `installed.client_secret`, put
+   it into `profiles.<name>.auth.clientSecret` for now.
+4. Configure the sqlrs gateway to accept Google ID tokens with:
    - issuer: `https://accounts.google.com`;
    - audience: the same Google client ID.
 
@@ -92,7 +102,9 @@ audience and this CLI client ID differs from the existing frontend or service
 client ID, create a separate gateway task to support multiple accepted
 audiences.
 
-The CLI does not use a Google client secret.
+When `auth.clientSecret` is configured, the CLI sends it only to the Google
+token endpoint. The gateway still validates only Google ID token claims and must
+not rely on the Desktop client secret.
 
 ## `sqlrs auth login google`
 
@@ -132,7 +144,7 @@ Flow:
    - Google returns `error`;
    - `code` is missing.
 8. Exchange the authorization code at the Google token endpoint using the PKCE
-   verifier.
+   verifier and `auth.clientSecret` when configured.
 9. Require an ID token and refresh token in the token response.
 10. Decode the ID token claims for local validation and metadata:
     - `iss` must match the configured issuer;
@@ -173,7 +185,8 @@ Protected remote API commands resolve a bearer token in this order:
 For Google sessions, the CLI decodes the cached ID token locally and checks
 `exp` before each protected API request. If the token is missing, expired, or
 will expire within five minutes, the CLI refreshes it through the Google token
-endpoint and then sends only the fresh ID token as:
+endpoint, including `auth.clientSecret` when configured, and then sends only the
+fresh ID token as:
 
 ```text
 Authorization: Bearer <id-token>
@@ -318,6 +331,15 @@ return a refresh token. If the token response still lacks `refresh_token`, check
 that the OAuth client is a Desktop app client, the scopes are exactly
 `openid email profile`, and the user completed consent for the selected Google
 account.
+
+### Google reports `client_secret is missing`
+
+Some Google Desktop OAuth clients still require the downloaded
+`installed.client_secret` during token endpoint calls even though Desktop
+clients cannot keep that value confidential. Put it into
+`profiles.<name>.auth.clientSecret` as a temporary compatibility setting and
+retry login. The CLI sends this value only to Google `/token`; it is not sent to
+the sqlrs gateway.
 
 ### Invalid audience
 

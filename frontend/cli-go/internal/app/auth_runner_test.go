@@ -187,10 +187,12 @@ func TestRunAuthLoginNoBrowserPrintsAuthorizationURLBeforeFinalOutput(t *testing
 			"    endpoint: https://sqlrs.example.org\n"+
 			"    auth:\n"+
 			"      mode: oidcSession\n"+
-			"      clientID: client-id\n")
+			"      clientID: client-id\n"+
+			"      clientSecret: client-secret\n")
 
 	var stdout bytes.Buffer
 	oldFactory := authManagerFactory
+	var gotOptions authLoginOptions
 	authManagerFactory = func() authManager {
 		return fakeAuthManager{login: authLoginResult{
 			LoggedIn:    true,
@@ -201,6 +203,8 @@ func TestRunAuthLoginNoBrowserPrintsAuthorizationURLBeforeFinalOutput(t *testing
 			Profile:     "remote",
 			Endpoint:    "https://sqlrs.example.org",
 			TokenExpiry: time.Date(2026, 7, 2, 12, 30, 0, 0, time.UTC),
+		}, onLogin: func(opts authLoginOptions) {
+			gotOptions = opts
 		}}
 	}
 	t.Cleanup(func() { authManagerFactory = oldFactory })
@@ -216,6 +220,9 @@ func TestRunAuthLoginNoBrowserPrintsAuthorizationURLBeforeFinalOutput(t *testing
 	}
 	if strings.Count(out, "authorizationURL:") != 1 {
 		t.Fatalf("stdout should print authorization URL once, got %q", out)
+	}
+	if gotOptions.ClientSecret != "client-secret" {
+		t.Fatalf("client secret = %q, want client-secret", gotOptions.ClientSecret)
 	}
 }
 
@@ -272,12 +279,17 @@ func writeProjectConfig(t *testing.T, workspace string, content string) {
 }
 
 type fakeAuthManager struct {
-	login  authLoginResult
-	status authStatusResult
-	logout authLogoutResult
+	login     authLoginResult
+	status    authStatusResult
+	logout    authLogoutResult
+	onLogin   func(authLoginOptions)
+	onResolve func(authResolveOptions)
 }
 
 func (m fakeAuthManager) LoginGoogle(_ context.Context, opts authLoginOptions) (authLoginResult, error) {
+	if m.onLogin != nil {
+		m.onLogin(opts)
+	}
 	authURL := m.login.AuthorizationURL
 	if authURL == "" {
 		authURL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -299,6 +311,9 @@ func (m fakeAuthManager) Logout(context.Context, authLogoutOptions) (authLogoutR
 	return m.logout, nil
 }
 
-func (m fakeAuthManager) ResolveBearerToken(context.Context, authResolveOptions) (authResolvedBearerToken, error) {
+func (m fakeAuthManager) ResolveBearerToken(_ context.Context, opts authResolveOptions) (authResolvedBearerToken, error) {
+	if m.onResolve != nil {
+		m.onResolve(opts)
+	}
 	return authResolvedBearerToken{Token: "fresh-id-token"}, nil
 }

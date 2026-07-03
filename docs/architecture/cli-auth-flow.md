@@ -34,7 +34,8 @@ Out of scope:
 - **CLI parser** - parses global flags, profile, output mode, and auth
   subcommand arguments.
 - **Profile resolver** - loads selected profile, endpoint, `auth.mode`, client
-  ID, issuer, and debug override environment variable name.
+  ID, optional temporary client secret, issuer, and debug override environment
+  variable name.
 - **Auth resolver** - owns auth-session decisions for one CLI invocation:
   `SQLRS_TOKEN` priority, cached ID-token expiry checks, refresh, and
   login-required errors.
@@ -70,7 +71,7 @@ sequenceDiagram
 
   USER->>CLI: sqlrs auth login google
   CLI->>PROFILE: resolve selected profile
-  PROFILE-->>CLI: remote endpoint + auth.mode=oidcSession + clientID + issuer
+  PROFILE-->>CLI: remote endpoint + auth.mode=oidcSession + clientID + optional clientSecret + issuer
   CLI->>CLI: generate PKCE verifier/challenge, state, nonce
   CLI->>LPB: listen on loopback random port
   CLI->>BROWSER: open Google authorization URL
@@ -78,7 +79,7 @@ sequenceDiagram
   GOOGLE_AUTH-->>LPB: redirect with code + state
   LPB-->>CLI: callback query
   CLI->>CLI: validate state and callback parameters
-  CLI->>GOOGLE_TOKEN: exchange code + PKCE verifier
+  CLI->>GOOGLE_TOKEN: exchange code + PKCE verifier + optional client_secret
   GOOGLE_TOKEN-->>CLI: id_token + refresh_token + expiry
   CLI->>CLI: validate id_token iss, aud, exp, nonce
   CLI->>STORE: save refresh token and session metadata
@@ -93,6 +94,8 @@ Rules:
   exchange.
 - Missing `refresh_token` fails login with a troubleshooting hint. The CLI asks
   Google for offline access with `access_type=offline` and `prompt=consent`.
+- If the profile has `auth.clientSecret`, the CLI sends it only to the Google
+  token endpoint. The sqlrs gateway never receives it.
 - The refresh token is stored only in the OS credential store.
 - Raw refresh tokens and raw ID tokens are never printed.
 
@@ -122,7 +125,7 @@ sequenceDiagram
     alt cached ID token is fresh
       AUTH-->>CLI: cached ID token
     else cached ID token missing or expiring soon
-      AUTH->>GOOGLE_TOKEN: refresh_token grant
+      AUTH->>GOOGLE_TOKEN: refresh_token grant + optional client_secret
       GOOGLE_TOKEN-->>AUTH: new ID token + expiry
       AUTH->>STORE: update cached ID token metadata
       AUTH-->>CLI: new ID token

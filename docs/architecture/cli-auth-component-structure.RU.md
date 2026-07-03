@@ -37,7 +37,7 @@ rendering и protected-command bearer-token resolution.
 | `internal/app` | Dispatch `auth` commands; парсить auth subcommands; резолвить profile/mode/output; отклонять local profiles; вызывать auth session manager; разрешать effective bearer token до protected remote API commands. |
 | `internal/cli` | Определять auth command option/result types и human/JSON renderers. Не допускать token-bearing values в rendered output. |
 | `internal/authsession` | Владеть PKCE, генерацией state/nonce, сборкой Google auth URL, validation loopback callback, token exchange/refresh/revoke, decoding ID-token claims, refresh decision, credential-store access и effective bearer-token selection. |
-| `internal/config` | Загружать non-secret auth profile settings: `auth.mode`, `auth.tokenEnv`, legacy `auth.token`, `auth.clientID` и `auth.issuer`. Никогда не хранит refresh token-ы. |
+| `internal/config` | Загружать auth profile settings: `auth.mode`, `auth.tokenEnv`, legacy `auth.token`, `auth.clientID`, временный `auth.clientSecret` и `auth.issuer`. Никогда не хранит refresh token-ы или raw ID token-ы. |
 | `internal/client` | Продолжает владеть sqlrs `/v1/*` API calls. Получает уже resolved bearer token и не знает, пришел ли он из `SQLRS_TOKEN`, refreshed OIDC session или legacy static token. |
 | `internal/paths` | Предоставляет OS-specific config/state paths, когда auth session manager нужны stable application names или diagnostic context. |
 
@@ -58,7 +58,7 @@ frontend/cli-go/internal/authsession/
 
 Auth session code остается вне `internal/client`, чтобы sqlrs API client не
 становился одновременно Google OAuth client. Он остается вне `internal/config`,
-чтобы config loading оставался non-secret.
+чтобы config loading не становился session storage.
 
 ### Local engine (`backend/local-engine-go`)
 
@@ -82,15 +82,16 @@ Gateway не должен принимать, хранить или refresh-ит
 
 ## 3. Auth profile configuration
 
-`internal/config.AuthConfig` расширяется non-secret OIDC fields:
+`internal/config.AuthConfig` расширяется Google OIDC profile fields:
 
 ```go
 type AuthConfig struct {
-    Mode     string `yaml:"mode"`
-    TokenEnv string `yaml:"tokenEnv"`
-    Token    string `yaml:"token"`
-    ClientID string `yaml:"clientID"`
-    Issuer   string `yaml:"issuer"`
+    Mode         string `yaml:"mode"`
+    TokenEnv     string `yaml:"tokenEnv"`
+    Token        string `yaml:"token"`
+    ClientID     string `yaml:"clientID"`
+    ClientSecret string `yaml:"clientSecret"`
+    Issuer       string `yaml:"issuer"`
 }
 ```
 
@@ -104,6 +105,9 @@ Rules:
 - `issuer` defaults to `https://accounts.google.com` для Google login, когда
   omitted.
 - `clientID` required для `auth login google` и OIDC session refresh.
+- `clientSecret` - временная compatibility-настройка для Google Desktop OAuth.
+  CLI отправляет ее только в Google token endpoint для authorization-code и
+  refresh-token grants, и не отправляет ее в sqlrs gateway.
 
 ## 4. Ключевые типы и interfaces
 
@@ -237,6 +241,7 @@ Inputs:
 - profile name;
 - endpoint;
 - `auth.clientID`;
+- временный `auth.clientSecret`;
 - `auth.issuer`;
 - optional `--login-hint`;
 - `--no-browser`;
@@ -284,7 +289,8 @@ behavior.
 
 ## 6. Владение данными
 
-- **Workspace/global config** владеет только non-secret auth settings.
+- **Workspace/global config** владеет auth profile settings, включая временный
+  `auth.clientSecret`, но никогда не хранит refresh token-ы или raw ID token-ы.
 - **OS credential store** владеет refresh token-ами и optional cached ID
   token-ами.
 - **Auth session metadata**, например provider, issuer, audience, email,

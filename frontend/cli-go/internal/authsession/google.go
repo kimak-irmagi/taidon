@@ -85,6 +85,7 @@ func BuildGoogleAuthURL(opts AuthURLOptions) (string, error) {
 // authorization code and PKCE verifier.
 type CodeExchangeRequest struct {
 	ClientID     string
+	ClientSecret string
 	Code         string
 	CodeVerifier string
 	RedirectURI  string
@@ -94,6 +95,7 @@ type CodeExchangeRequest struct {
 // sent only to Google, never to the sqlrs gateway.
 type RefreshRequest struct {
 	ClientID     string
+	ClientSecret string
 	RefreshToken string
 }
 
@@ -128,6 +130,9 @@ type GoogleOAuthClient struct {
 func (c GoogleOAuthClient) ExchangeCode(ctx context.Context, req CodeExchangeRequest) (TokenResponse, error) {
 	form := url.Values{}
 	form.Set("client_id", strings.TrimSpace(req.ClientID))
+	if strings.TrimSpace(req.ClientSecret) != "" {
+		form.Set("client_secret", strings.TrimSpace(req.ClientSecret))
+	}
 	form.Set("code", strings.TrimSpace(req.Code))
 	form.Set("code_verifier", strings.TrimSpace(req.CodeVerifier))
 	form.Set("redirect_uri", strings.TrimSpace(req.RedirectURI))
@@ -138,6 +143,9 @@ func (c GoogleOAuthClient) ExchangeCode(ctx context.Context, req CodeExchangeReq
 func (c GoogleOAuthClient) Refresh(ctx context.Context, req RefreshRequest) (TokenResponse, error) {
 	form := url.Values{}
 	form.Set("client_id", strings.TrimSpace(req.ClientID))
+	if strings.TrimSpace(req.ClientSecret) != "" {
+		form.Set("client_secret", strings.TrimSpace(req.ClientSecret))
+	}
 	form.Set("refresh_token", strings.TrimSpace(req.RefreshToken))
 	form.Set("grant_type", "refresh_token")
 	return c.postToken(ctx, form)

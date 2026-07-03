@@ -95,6 +95,7 @@ type LoginOptions struct {
 	ProfileName           string
 	Endpoint              string
 	ClientID              string
+	ClientSecret          string
 	Issuer                string
 	LoginHint             string
 	NoBrowser             bool
@@ -170,6 +171,7 @@ func (m *Manager) LoginGoogle(ctx context.Context, opts LoginOptions) (LoginResu
 	}
 	resp, err := m.oauth.ExchangeCode(ctx, CodeExchangeRequest{
 		ClientID:     clientID,
+		ClientSecret: opts.ClientSecret,
 		Code:         callback.Code,
 		CodeVerifier: pair.Verifier,
 		RedirectURI:  listener.RedirectURI(),
@@ -316,6 +318,7 @@ type ResolveOptions struct {
 	Endpoint      string
 	AuthMode      string
 	ClientID      string
+	ClientSecret  string
 	Issuer        string
 	TokenEnv      string
 	StaticToken   string
@@ -360,7 +363,7 @@ func (m *Manager) ResolveBearerToken(ctx context.Context, opts ResolveOptions) (
 	if strings.TrimSpace(session.CachedIDToken) != "" && !ShouldRefresh(session.IDTokenExpiry, now, window) {
 		return ResolvedBearerToken{Token: session.CachedIDToken, Source: "stored_session"}, nil
 	}
-	resp, err := m.oauth.Refresh(ctx, RefreshRequest{ClientID: clientID, RefreshToken: session.RefreshToken})
+	resp, err := m.oauth.Refresh(ctx, RefreshRequest{ClientID: clientID, ClientSecret: opts.ClientSecret, RefreshToken: session.RefreshToken})
 	if err != nil {
 		return ResolvedBearerToken{}, m.deleteInvalidSession(ctx, key, err)
 	}
