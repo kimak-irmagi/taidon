@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"io"
 	"os"
 	"strings"
@@ -19,9 +20,63 @@ func TestResolveAuthTokenUsesEnv(t *testing.T) {
 
 func TestResolveAuthTokenFallsBackToToken(t *testing.T) {
 	t.Setenv("SQLRS_TOKEN", "")
-	got := resolveAuthToken(config.AuthConfig{TokenEnv: "SQLRS_TOKEN", Token: " token "})
+	got := resolveAuthToken(config.AuthConfig{Mode: "bearer", TokenEnv: "SQLRS_TOKEN", Token: " token "})
 	if got != "token" {
 		t.Fatalf("expected fallback token, got %q", got)
+	}
+}
+
+func TestResolveAuthTokenDefaultsOIDCSessionToSQLRSToken(t *testing.T) {
+	t.Setenv("SQLRS_TOKEN", "debug-token")
+	got := resolveAuthToken(config.AuthConfig{Mode: "oidcSession"})
+	if got != "debug-token" {
+		t.Fatalf("expected SQLRS_TOKEN override, got %q", got)
+	}
+}
+
+func TestResolveAuthTokenIgnoresStaticTokenForOIDCSession(t *testing.T) {
+	t.Setenv("SQLRS_TOKEN", "")
+	got := resolveAuthToken(config.AuthConfig{Mode: "oidcSession", Token: " stale-static-token "})
+	if got != "" {
+		t.Fatalf("expected oidcSession to ignore static token, got %q", got)
+	}
+}
+
+func TestResolveEffectiveAuthTokenUsesStoredSessionBeforeOIDCStaticToken(t *testing.T) {
+	t.Setenv("SQLRS_TOKEN", "")
+	oldFactory := authManagerFactory
+	var gotOptions authResolveOptions
+	authManagerFactory = func() authManager {
+		return fakeAuthManager{onResolve: func(opts authResolveOptions) {
+			gotOptions = opts
+		}}
+	}
+	t.Cleanup(func() { authManagerFactory = oldFactory })
+
+	ctx := commandContext{
+		mode:        "remote",
+		profileName: "remote",
+		profile: config.ProfileConfig{
+			Mode:     "remote",
+			Endpoint: "https://sqlrs.example.org",
+			Auth: config.AuthConfig{
+				Mode:         "oidcSession",
+				Token:        "stale-static-token",
+				ClientID:     "client-id",
+				ClientSecret: "client-secret",
+			},
+		},
+	}
+
+	resolved, err := resolveEffectiveAuthToken(context.Background(), ctx)
+	if err != nil {
+		t.Fatalf("resolveEffectiveAuthToken: %v", err)
+	}
+	if resolved.authToken != "fresh-id-token" {
+		t.Fatalf("auth token = %q, want refreshed session token", resolved.authToken)
+	}
+	if gotOptions.ClientSecret != "client-secret" {
+		t.Fatalf("client secret = %q, want client-secret", gotOptions.ClientSecret)
 	}
 }
 

@@ -24,11 +24,13 @@ type runnerDeps struct {
 	stdout io.Writer
 	stderr io.Writer
 
-	parseArgs             func([]string) (cli.GlobalOptions, []cli.Command, error)
-	getwd                 func() (string, error)
-	resolveCommandContext func(string, cli.GlobalOptions) (commandContext, error)
+	parseArgs                 func([]string) (cli.GlobalOptions, []cli.Command, error)
+	getwd                     func() (string, error)
+	resolveCommandContext     func(string, cli.GlobalOptions) (commandContext, error)
+	resolveEffectiveAuthToken func(context.Context, commandContext) (commandContext, error)
 
 	runInit         func(io.Writer, string, string, []string, bool) error
+	runAuth         func(io.Writer, io.Writer, string, cli.GlobalOptions, []string) error
 	runDiff         func(io.Writer, io.Writer, string, []string, string, bool) error
 	runAlias        func(io.Writer, commandContext, []string) error
 	runDiscover     func(io.Writer, io.Writer, commandContext, []string, string) error
@@ -79,8 +81,14 @@ func (deps *runnerDeps) withDefaults() {
 	if deps.resolveCommandContext == nil {
 		deps.resolveCommandContext = resolveCommandContext
 	}
+	if deps.resolveEffectiveAuthToken == nil {
+		deps.resolveEffectiveAuthToken = resolveEffectiveAuthToken
+	}
 	if deps.runInit == nil {
 		deps.runInit = runInit
+	}
+	if deps.runAuth == nil {
+		deps.runAuth = runAuth
 	}
 	if deps.runDiff == nil {
 		deps.runDiff = runDiff
@@ -178,6 +186,13 @@ func (r runner) run(args []string) error {
 		return r.deps.runInit(r.deps.stdout, cwd, opts.Workspace, commands[0].Args, opts.Verbose)
 	}
 
+	if commands[0].Name == "auth" {
+		if len(commands) > 1 {
+			return fmt.Errorf("auth cannot be combined with other commands")
+		}
+		return r.deps.runAuth(r.deps.stdout, r.deps.stderr, cwd, opts, commands[0].Args)
+	}
+
 	if commands[0].Name == "diff" {
 		if len(commands) > 1 {
 			return fmt.Errorf("diff cannot be combined with other commands")
@@ -188,6 +203,12 @@ func (r runner) run(args []string) error {
 	cmdCtx, err := r.deps.resolveCommandContext(cwd, opts)
 	if err != nil {
 		return err
+	}
+	if commandsNeedEffectiveAuthToken(commands) {
+		cmdCtx, err = r.deps.resolveEffectiveAuthToken(context.Background(), cmdCtx)
+		if err != nil {
+			return err
+		}
 	}
 
 	var prepared *client.PrepareJobResult
@@ -498,6 +519,19 @@ func (r runner) run(args []string) error {
 		}
 	}
 	return nil
+}
+
+func commandsNeedEffectiveAuthToken(commands []cli.Command) bool {
+	for _, cmd := range commands {
+		name := strings.TrimSpace(cmd.Name)
+		switch name {
+		case "cache", "ls", "rm", "run", "run:psql", "run:pgbench", "status", "user", "org", "watch":
+			return true
+		case "plan", "plan:psql", "plan:lb", "prepare", "prepare:psql", "prepare:lb":
+			return true
+		}
+	}
+	return false
 }
 
 func prepareStageUsesRef(cmd cli.Command) bool {

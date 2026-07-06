@@ -111,6 +111,19 @@ func TestParseArgsPrepareAliasMode(t *testing.T) {
 	}
 }
 
+func TestParseArgsAuthCommand(t *testing.T) {
+	_, cmds, err := ParseArgs([]string{"auth", "login", "google", "--login-hint", "alice@example.com"})
+	if err != nil {
+		t.Fatalf("parse args: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Name != "auth" {
+		t.Fatalf("unexpected commands: %+v", cmds)
+	}
+	if got := strings.Join(cmds[0].Args, "|"); got != "login|google|--login-hint|alice@example.com" {
+		t.Fatalf("auth args = %q", got)
+	}
+}
+
 func TestParseArgsPlanAliasMode(t *testing.T) {
 	_, cmds, err := ParseArgs([]string{"plan", "path/chinook"})
 	if err != nil {

@@ -51,6 +51,7 @@ gantt
     Artifact handling + audit baseline         :c2, after c1, 45d
     CI/CD integration templates                :active, c3, after c1, 30d
     Users/orgs client contract slice           :done, c4a, after c1, 20d
+    Google OIDC CLI auth session slice         :done, c4b, after c4a, 20d
     Auth + tenant access baseline              :c4, after c1, 45d
     Shared capacity scaling                    :c5, after c2, 30d
 
@@ -72,7 +73,7 @@ gantt
 
 ---
 
-## Status (as of 2026-05-02)
+## Status (as of 2026-07-03)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -176,6 +177,15 @@ gantt
   documented users/organizations OpenAPI contract. The slice deliberately
   excludes local-engine support and server-side persistence/provider
   implementation.
+- **Done (Google OIDC CLI auth session slice)**: the CLI now has
+  `sqlrs auth login google`, `sqlrs auth status`, and `sqlrs auth logout`
+  backed by Google Authorization Code Flow with PKCE, loopback redirect
+  handling, OS credential-store refresh-token storage, cached ID-token refresh,
+  `SQLRS_TOKEN` debug override precedence, and temporary Google Desktop
+  `client_secret` forwarding to the Google token endpoint when configured. The
+  gateway still receives only short-lived Google ID tokens; accepting the CLI
+  OAuth client audience remains a gateway configuration/follow-up concern where
+  needed.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
@@ -335,6 +345,9 @@ zero-copy/cache-hit reuse now sit beyond the accepted M2 baseline.
 - Remote users/orgs API contract and CLI client surface — **Done (client/API
   contract slice)**; server-side persistence/provider implementation remains in
   the shared control-plane/auth baseline.
+- Google OIDC CLI auth sessions — **Done (CLI slice)**; gateway accepted
+  audiences and server-side auth/tenant policy remain in the shared
+  control-plane/auth baseline.
 - Team deployment gateway and service entrypoint baseline
 - Shared state, artifact, and audit handling with retention controls
 - Basic auth, tenant access, quotas, and policy enforcement

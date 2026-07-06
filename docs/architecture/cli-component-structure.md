@@ -20,8 +20,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `internal/app`
   - Loads workspace/global config and resolves profile/mode.
   - Dispatches the command graph (`prepare:*`, `plan:*`, `run:*`, `ls`, `rm`,
-    `status`, `cache`, `config`, `init`, `alias`, `discover`, `diff`, `user`,
-    `org`).
+    `status`, `cache`, `config`, `init`, `auth`, `alias`, `discover`, `diff`,
+    `user`, `org`).
   - Builds command context and chooses path resolvers and runtime projections
     from `internal/inputset`.
   - Rejects remote-only user and organization commands in local mode before
@@ -69,10 +69,16 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - Delegates wrapped-command file semantics to `internal/inputset`.
 - `internal/cli`
   - Client-side command executors and human/JSON renderers, including
-    read-only cache-explain rendering and remote-only user/organization
-    management rendering.
+    auth command rendering, read-only cache-explain rendering, and remote-only
+    user/organization management rendering.
 - `internal/cli/runkind`
   - Registry of supported run kinds.
+- `internal/authsession`
+  - CLI-side OAuth/OIDC session management for `sqlrs auth` and protected
+    remote API token resolution.
+  - Owns PKCE/state/nonce generation, Google token endpoint calls, loopback
+    callback validation, local credential-store access, cached ID-token refresh,
+    and safe auth status metadata.
 - `internal/client`
   - HTTP API client for `/v1/*` endpoints.
   - Read-only cache explanation requests for bound prepare stages.
@@ -83,6 +89,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `internal/config`
   - CLI config loading, merge, and typed lookups (`dbms.image`, Liquibase
     settings, timeouts).
+  - Provides non-secret remote profile auth settings, but does not own OIDC
+    refresh tokens or cached ID tokens.
 - `internal/paths`
   - OS-aware config/cache/state directory resolution.
 - `internal/wsl`
@@ -125,6 +133,9 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     `log`).
 - `cli.ConfigOptions`, `client.ConfigValue`
   - Config command options and API value payloads.
+- `authsession.Manager`, `authsession.Session`, `authsession.CredentialStore`
+  - CLI auth session manager, stored OIDC session model, and OS credential
+    store abstraction.
 - `cli.UserOptions`, `cli.OrganizationOptions`
   - Remote-only command options for `sqlrs user` and `sqlrs org`.
 - `client.UserProfile`, `client.ExternalIdentity`, `client.Organization`,
@@ -136,6 +147,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 
 - CLI config is file-based (workspace + global); loaded into memory per
   invocation.
+- OIDC refresh tokens are not CLI config data. They are local credentials owned
+  by the auth session layer and stored in the OS credential store.
 - Raw argv belongs to the command orchestrator until it is handed to the chosen
   `internal/inputset` kind component.
 - Parsed specs, bound specs, and collected input sets are ephemeral and live
@@ -156,6 +169,7 @@ flowchart LR
   CMD["cmd/sqlrs"]
   APP["internal/app"]
   CLI["internal/cli"]
+  AUTH["internal/authsession"]
   INPUTSET["internal/inputset"]
   ALIAS["internal/alias"]
   DISCOVER["internal/discover"]
@@ -172,12 +186,15 @@ flowchart LR
 
   CMD --> APP
   APP --> CLI
+  APP --> AUTH
   APP --> INPUTSET
   APP --> REFCTX
   APP --> CONFIG
   APP --> PATHS
   APP --> WSL
   APP --> UTIL
+  AUTH --> CONFIG
+  AUTH --> PATHS
   CLI --> CLIENT
   CLI --> DAEMON
   CLI --> RUNKIND

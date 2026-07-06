@@ -23,6 +23,42 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
+func TestAuthConfigLoadsOIDCSessionFields(t *testing.T) {
+	dir := t.TempDir()
+	dirs := paths.Dirs{
+		ConfigDir: filepath.Join(dir, "config"),
+		StateDir:  filepath.Join(dir, "state"),
+		CacheDir:  filepath.Join(dir, "cache"),
+	}
+	if err := os.MkdirAll(dirs.ConfigDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	raw := []byte(
+		"defaultProfile: remote\n" +
+			"profiles:\n" +
+			"  remote:\n" +
+			"    mode: remote\n" +
+			"    endpoint: https://sqlrs.example.org\n" +
+			"    auth:\n" +
+			"      mode: oidcSession\n" +
+			"      clientID: client-id\n" +
+			"      clientSecret: client-secret\n" +
+			"      issuer: https://accounts.google.com\n" +
+			"      tokenEnv: SQLRS_TOKEN\n")
+	if err := os.WriteFile(filepath.Join(dirs.ConfigDir, "config.yaml"), raw, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	loaded, err := Load(LoadOptions{WorkingDir: dir, Dirs: &dirs})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	auth := loaded.Config.Profiles["remote"].Auth
+	if auth.Mode != "oidcSession" || auth.ClientID != "client-id" || auth.ClientSecret != "client-secret" || auth.Issuer != "https://accounts.google.com" || auth.TokenEnv != "SQLRS_TOKEN" {
+		t.Fatalf("auth config = %+v, want oidc session fields", auth)
+	}
+}
+
 func TestLookupDBMSImage(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

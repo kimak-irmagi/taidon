@@ -44,7 +44,7 @@ error mapping, and rendering.
 | `internal/app` | Dispatch `user` and `org` command groups; parse command arguments; resolve the selected profile; reject local mode before daemon discovery/autostart; map usage and transport failures to exit codes. |
 | `internal/cli` | Orchestrate user/org command execution and render human/JSON output. Implement command-level behavior such as `user register` following `412` with `GET /v1/users/me`. |
 | `internal/client` | Own typed HTTP methods, request/response structs, ETag/Location handling, conditional headers, and remote error decoding for user/org endpoints. |
-| `internal/config` | Provide selected remote profile data: base URL, bearer token, and profile mode. It does not own user/org records. |
+| `internal/config` | Provide selected remote profile data: base URL, non-secret auth settings, and profile mode. It does not own user/org records or OIDC credentials. |
 | `internal/daemon` | Not used by these commands; local-mode rejection must happen before this package is called. |
 
 ### Local engine (`backend/local-engine-go`)
@@ -201,9 +201,10 @@ mutate user/org records directly.
 - **CLI command options, HTTP requests, and ETags** are in-memory data for one
   invocation. The CLI does not cache user profiles, organizations, memberships,
   or ETags persistently.
-- **Bearer tokens** are selected from the remote profile and sent to the shared
-  API. User/org commands do not introduce a login or token-refresh component in
-  this slice.
+- **Bearer tokens** are resolved by the auth session layer before protected
+  remote API calls and sent to the shared API. User/org commands do not own
+  login, refresh-token storage, or token refresh; they consume the effective
+  bearer token selected for the remote profile.
 - **Gateway actor claims** are transient request context.
 - **User profiles, external identity links, organizations, memberships, ETags,
   and uniqueness guarantees** are owned by the remote API provider. The client
@@ -262,6 +263,7 @@ flowchart TB
   [`../api-guides/sqlrs-engine.openapi.yaml`](../api-guides/sqlrs-engine.openapi.yaml)
 - Interaction flow: [`user-org-flow.md`](user-org-flow.md)
 - CLI contract: [`cli-contract.md`](cli-contract.md)
+- CLI auth flow: [`cli-auth-flow.md`](cli-auth-flow.md)
 - CLI component structure: [`cli-component-structure.md`](cli-component-structure.md)
 - Local deployment architecture:
   [`local-deployment-architecture.md`](local-deployment-architecture.md)

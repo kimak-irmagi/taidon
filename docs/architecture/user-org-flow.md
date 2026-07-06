@@ -18,6 +18,9 @@ autostart.
 - **CLI parser** - parses command arguments and output mode.
 - **Profile resolver** - loads the selected profile and determines whether it
   is local or remote/shared.
+- **Auth resolver** - resolves the effective bearer token for the selected
+  remote profile, including `SQLRS_TOKEN` override and stored OIDC session
+  refresh.
 - **HTTP client** - sends authenticated `/v1/*` requests and maps HTTP errors
   into command errors.
 - **Gateway** - validates bearer tokens, derives actor claims, applies coarse
@@ -65,12 +68,15 @@ engine autostart. Local deployments do not expose `/v1/users*` or
 sequenceDiagram
   autonumber
   participant CLIENT as HTTP client
+  participant AUTH as Auth resolver
   participant GW as Gateway
   participant UPS as User Profile Service
   participant STATE as Remote user/org state
   User->>CLI: sqlrs user register [--display-name ...] [--email ...]
   CLI->>PROFILE: resolve selected profile
-  PROFILE-->>CLI: remote base URL + bearer token
+  PROFILE-->>CLI: remote base URL + auth settings
+  CLI->>AUTH: resolve effective bearer token
+  AUTH-->>CLI: bearer token
   CLI->>CLIENT: PUT /v1/users/me, If-None-Match: *
   CLIENT->>GW: authenticated request
   GW->>UPS: actor claims + write request
@@ -111,12 +117,15 @@ bearer-token claims. The CLI must not accept explicit identity flags on
 sequenceDiagram
   autonumber
   participant CLIENT as HTTP client
+  participant AUTH as Auth resolver
   participant GW as Gateway
   participant UPS as User Profile Service
   participant STATE as Remote user/org state
   User->>CLI: sqlrs user create --identity-issuer ... --identity-subject ...
   CLI->>PROFILE: resolve selected profile
-  PROFILE-->>CLI: remote base URL + bearer token
+  PROFILE-->>CLI: remote base URL + auth settings
+  CLI->>AUTH: resolve effective bearer token
+  AUTH-->>CLI: bearer token
   CLI->>CLIENT: PUT /v1/users/by-identity?... If-None-Match: *
   CLIENT->>GW: authenticated request
   GW->>UPS: administrator actor claims + target identity
@@ -152,12 +161,15 @@ network ambiguity because the identity tuple is the natural resource key.
 sequenceDiagram
   autonumber
   participant CLIENT as HTTP client
+  participant AUTH as Auth resolver
   participant GW as Gateway
   participant UPS as User Profile Service
   participant STATE as Remote user/org state
   User->>CLI: sqlrs org create <slug> [--name ...]
   CLI->>PROFILE: resolve selected profile
-  PROFILE-->>CLI: remote base URL + bearer token
+  PROFILE-->>CLI: remote base URL + auth settings
+  CLI->>AUTH: resolve effective bearer token
+  AUTH-->>CLI: bearer token
   CLI->>CLIENT: POST /v1/organizations
   CLIENT->>GW: authenticated request
   GW->>UPS: actor claims + requested slug/name
@@ -192,12 +204,15 @@ without changing the command shape.
 sequenceDiagram
   autonumber
   participant CLIENT as HTTP client
+  participant AUTH as Auth resolver
   participant GW as Gateway
   participant UPS as User Profile Service
   participant STATE as Remote user/org state
   User->>CLI: sqlrs user me | org ls | org get <orgRef>
   CLI->>PROFILE: resolve selected profile
-  PROFILE-->>CLI: remote base URL + bearer token
+  PROFILE-->>CLI: remote base URL + auth settings
+  CLI->>AUTH: resolve effective bearer token
+  AUTH-->>CLI: bearer token
   CLI->>CLIENT: GET selected users/orgs endpoint
   CLIENT->>GW: authenticated request
   GW->>UPS: actor claims + read parameters
@@ -221,8 +236,10 @@ instead of a visibility leak.
 
 ## 8. Failure Handling
 
-- `401` means the selected remote profile has no valid bearer token or the
-  server rejected it.
+- `401` means the server rejected the effective bearer token.
+- A missing, expired, revoked, or unavailable local OIDC session is handled by
+  the auth resolver before the user/org API request and should tell the user to
+  run `sqlrs auth login google`.
 - `403` on `user register` means self-registration is disabled for an unlinked
   current identity.
 - `403` on `user create` means administrator permission is required.
@@ -240,5 +257,6 @@ instead of a visibility leak.
 - Local engine support for user or organization endpoints.
 - Email invitations, membership changes, roles beyond `admin`, organization
   deletion, or user deletion.
-- First-class CLI login.
+- Changes to CLI login/session management; user/org commands consume the
+  effective bearer token selected by the auth slice.
 - Organization-scoped authorization changes for prepare/run workflows.

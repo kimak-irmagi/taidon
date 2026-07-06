@@ -19,6 +19,9 @@ used in shared deployments (future design target). The current local engine uses
 - **Source**: project content (scripts, changelogs, configs).
 - **Source ref**: either a local path, a public URL, or a server-side `source_id`.
 - **Source storage**: service-side content store keyed by hashes and `source_id`.
+- **Effective bearer token**: the token the CLI sends to protected remote API
+  endpoints after applying `SQLRS_TOKEN`, stored OIDC session refresh, or legacy
+  static bearer profile rules.
 
 ## 3. Resolution Rules
 
@@ -124,7 +127,10 @@ sequenceDiagram
 
 Notes:
 
-- Remote targets use the same list endpoints; the CLI supplies credentials from profile configuration.
+- Remote targets use the same list endpoints. Before a protected remote
+  request, the CLI resolves the effective bearer token: `SQLRS_TOKEN` override
+  first, then a refreshed stored OIDC session for `auth.mode: oidcSession`, then
+  legacy static bearer profile configuration.
 - The CLI defaults to listing names and instances; states, jobs, and tasks are requested explicitly.
 - Task listing can be filtered by job id (`--job`).
 
