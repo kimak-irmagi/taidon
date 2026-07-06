@@ -16,6 +16,7 @@ import (
 	inputliquibase "github.com/sqlrs/cli/internal/inputset/liquibase"
 	inputpsql "github.com/sqlrs/cli/internal/inputset/psql"
 	"github.com/sqlrs/cli/internal/refctx"
+	"github.com/sqlrs/cli/internal/remotesource"
 )
 
 type provenanceCommand struct {
@@ -73,7 +74,7 @@ func explainPrepareCache(ctx context.Context, opts cli.PrepareOptions) (client.C
 	if err != nil {
 		return client.CacheExplainPrepareResponse{}, err
 	}
-	return cliClient.ExplainPrepareCache(ctx, client.PrepareJobRequest{
+	request := client.PrepareJobRequest{
 		PrepareKind:       opts.PrepareKind,
 		ImageID:           opts.ImageID,
 		PsqlArgs:          opts.PsqlArgs,
@@ -84,6 +85,14 @@ func explainPrepareCache(ctx context.Context, opts cli.PrepareOptions) (client.C
 		WorkDir:           opts.WorkDir,
 		Stdin:             opts.Stdin,
 		PlanOnly:          opts.PlanOnly,
+	}
+	if opts.SourceSync == nil || !opts.SourceSync.Enabled {
+		return cliClient.ExplainPrepareCache(ctx, request)
+	}
+	syncOpts := *opts.SourceSync
+	syncOpts.Uploader = cliClient
+	return remotesource.Execute(ctx, syncOpts, request, func(ctx context.Context, req client.PrepareJobRequest) (client.CacheExplainPrepareResponse, error) {
+		return cliClient.ExplainPrepareCache(ctx, req)
 	})
 }
 

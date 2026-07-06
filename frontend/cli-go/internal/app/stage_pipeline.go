@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/client"
 	"github.com/sqlrs/cli/internal/config"
+	"github.com/sqlrs/cli/internal/inputset"
 	"github.com/sqlrs/cli/internal/refctx"
+	"github.com/sqlrs/cli/internal/remotesource"
 )
 
 type stageMode string
@@ -126,7 +129,53 @@ func buildStageRuntime(stderr io.Writer, runOpts cli.PrepareOptions, cfg config.
 	if req.mode == stageModePlan {
 		runtime.opts.PlanOnly = true
 	}
+	sourceSync, err := buildRemoteSourceSyncOptions(stderr, runtime.opts, req, actualRef)
+	if err != nil {
+		return stageRuntime{}, combineBindingCleanupError(err, runStageCleanup(runtime.cleanup))
+	}
+	runtime.opts.SourceSync = sourceSync
 	return runtime, nil
+}
+
+func buildRemoteSourceSyncOptions(stderr io.Writer, opts cli.PrepareOptions, req stageRunRequest, actualRef *refctx.Context) (*remotesource.Options, error) {
+	if strings.ToLower(strings.TrimSpace(opts.Mode)) != "remote" {
+		return nil, nil
+	}
+	mode := strings.ToLower(strings.TrimSpace(opts.SourceSyncMode))
+	if mode == "" {
+		mode = "auto"
+	}
+	switch mode {
+	case "off":
+		return nil, nil
+	case "auto":
+	default:
+		return nil, ExitErrorf(2, "unsupported sourceSync.mode: %s", opts.SourceSyncMode)
+	}
+
+	root := strings.TrimSpace(req.workspaceRoot)
+	var sourceFS inputset.FileSystem
+	if actualRef != nil {
+		root = strings.TrimSpace(actualRef.WorkspaceRoot)
+		if root == "" {
+			root = strings.TrimSpace(actualRef.RepoRoot)
+		}
+		sourceFS = actualRef.FileSystem
+	}
+	if root == "" {
+		root = strings.TrimSpace(req.cwd)
+	}
+	if root == "" {
+		root = strings.TrimSpace(req.invocationCwd)
+	}
+	return &remotesource.Options{
+		Enabled:       true,
+		MaxRounds:     opts.SourceSyncMaxRounds,
+		WorkspaceRoot: root,
+		WorkspaceID:   opts.ProfileName,
+		FileSystem:    sourceFS,
+		Progress:      stderr,
+	}, nil
 }
 
 func runStageCleanup(cleanup func() error) error {

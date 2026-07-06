@@ -98,7 +98,48 @@ type PrepareJobRequest struct {
 	LiquibaseEnv      map[string]string `json:"liquibase_env,omitempty"`
 	WorkDir           string            `json:"work_dir,omitempty"`
 	Stdin             *string           `json:"stdin,omitempty"`
+	SourceManifest    *SourceManifest   `json:"source_manifest,omitempty"`
 	PlanOnly          bool              `json:"plan_only,omitempty"`
+}
+
+// SourceManifest is the CLI-side representation of the remote source-sync
+// contract in docs/architecture/remote-source-input-sync-flow.md.
+type SourceManifest struct {
+	WorkspaceRef *SourceWorkspaceRef               `json:"workspace_ref,omitempty"`
+	Files        map[string]string                 `json:"files,omitempty"`
+	Directories  map[string]SourceDirectoryListing `json:"directories,omitempty"`
+}
+
+type SourceWorkspaceRef struct {
+	RootID string `json:"root_id,omitempty"`
+}
+
+type SourceDirectoryListing struct {
+	Entries  []SourceDirectoryEntry `json:"entries"`
+	Complete bool                   `json:"complete"`
+}
+
+type SourceDirectoryEntry struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
+type SourceMissingManifestEntry struct {
+	Path   string `json:"path"`
+	Kind   string `json:"kind"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type SourceMissingBlob struct {
+	Path string `json:"path"`
+	Hash string `json:"hash"`
+}
+
+type SourceInputsMissingErrorResponse struct {
+	Code                   string                       `json:"code"`
+	Message                string                       `json:"message"`
+	MissingManifestEntries []SourceMissingManifestEntry `json:"missing_manifest_entries,omitempty"`
+	MissingBlobs           []SourceMissingBlob          `json:"missing_blobs,omitempty"`
 }
 
 type ConfigValue struct {

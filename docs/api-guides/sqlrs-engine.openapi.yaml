@@ -92,6 +92,68 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized
+        "409":
+          description: Source inputs missing; client may upload missing blobs or expand the source manifest and retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceInputsMissingErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/source-blobs/sha256/{digest}:
+    put:
+      operationId: putSourceBlobSha256
+      summary: Upload one remote source content blob
+      description: |
+        Remote/shared deployments only. Stores one source-input content blob in
+        the authenticated actor's scoped content cache. The server verifies the
+        uploaded bytes by recomputing `sha256` and comparing it to `{digest}`.
+        The operation is idempotent: uploading content that is already present
+        succeeds without changing the source cache.
+      tags:
+        - source
+      parameters:
+        - in: path
+          name: digest
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{64}$"
+          description: Lowercase hex SHA-256 digest without the `sha256:` prefix.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: Blob stored or already present.
+        "400":
+          description: Invalid digest or upload request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+        "409":
+          description: Uploaded content does not match the requested digest.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: Source blob exceeds the configured upload limit.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal error
           content:
@@ -169,6 +231,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized
+        "409":
+          description: Source inputs missing; client may upload missing blobs or expand the source manifest and retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceInputsMissingErrorResponse"
         "500":
           description: Internal error
           content:
@@ -1439,6 +1507,131 @@ components:
           anyOf:
             - $ref: "#/components/schemas/CacheEvictionSummary"
             - type: "null"
+    SourceContentHash:
+      type: string
+      pattern: "^sha256:[0-9a-f]{64}$"
+      description: SHA-256 content hash with the `sha256:` prefix.
+    SourceManifestPath:
+      type: string
+      minLength: 1
+      description: |
+        Workspace-relative slash-separated path. Remote requests must not send
+        absolute host paths, drive-qualified paths, or paths that escape the
+        workspace root.
+    SourceWorkspaceRef:
+      type: object
+      additionalProperties: false
+      properties:
+        root_id:
+          type: string
+          description: Client-local workspace root identifier for diagnostics and retries.
+      description: Optional client-local workspace identity. It is not a server filesystem path.
+    SourceDirectoryEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - kind
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Directory-entry basename.
+        kind:
+          type: string
+          enum: [file, directory]
+      description: One entry in a complete workspace-relative directory listing.
+    SourceDirectoryListing:
+      type: object
+      additionalProperties: false
+      required:
+        - entries
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceDirectoryEntry"
+        complete:
+          type: boolean
+          default: true
+          description: False values are ignored by the server and may cause another missing-input response.
+      description: Complete listing for the directory at the map key.
+    SourceManifest:
+      type: object
+      additionalProperties: false
+      properties:
+        workspace_ref:
+          $ref: "#/components/schemas/SourceWorkspaceRef"
+        files:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SourceContentHash"
+          description: Map from workspace-relative source file path to verified client-side content hash.
+        directories:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SourceDirectoryListing"
+          description: Map from workspace-relative directory path to complete directory listing.
+      description: |
+        Optional remote-source manifest attached to file-bearing prepare and
+        cache-explain requests. The server uses this manifest with its scoped
+        content cache to build a virtual workspace for authoritative
+        format-specific input resolution.
+    SourceMissingManifestEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - kind
+      properties:
+        path:
+          $ref: "#/components/schemas/SourceManifestPath"
+        kind:
+          type: string
+          enum: [file_hash, directory_listing]
+          description: Type of manifest data the server needs to continue source resolution.
+        reason:
+          type: string
+          description: Optional diagnostic reason such as `referenced_file` or `directory_traversal`.
+      description: Manifest information the client should add before retrying the request.
+    SourceMissingBlob:
+      type: object
+      additionalProperties: false
+      required:
+        - path
+        - hash
+      properties:
+        path:
+          $ref: "#/components/schemas/SourceManifestPath"
+        hash:
+          $ref: "#/components/schemas/SourceContentHash"
+      description: Source content blob absent from the server's scoped content cache.
+    SourceInputsMissingErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum: [source_inputs_missing]
+        message:
+          type: string
+        missing_manifest_entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceMissingManifestEntry"
+          default: []
+        missing_blobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceMissingBlob"
+          default: []
+      description: |
+        Recoverable response used by remote clients. The client may upload the
+        missing blobs, expand the source manifest with requested hashes or
+        directory listings, and retry the original request.
     CacheExplainPrepareRequest:
       oneOf:
         - $ref: "#/components/schemas/CacheExplainPrepareRequestPsql"
@@ -1474,6 +1667,8 @@ components:
         stdin:
           type: string
           description: SQL content to use for stdin when `psql_args` includes `-f -`.
+        source_manifest:
+          $ref: "#/components/schemas/SourceManifest"
     CacheExplainPrepareRequestLiquibase:
       type: object
       additionalProperties: false
@@ -1511,6 +1706,8 @@ components:
         work_dir:
           type: string
           description: Working directory for the Liquibase invocation.
+        source_manifest:
+          $ref: "#/components/schemas/SourceManifest"
     CacheExplainPrepareResponse:
       type: object
       additionalProperties: false
@@ -1577,6 +1774,8 @@ components:
         stdin:
           type: string
           description: SQL content to use for stdin when `psql_args` includes `-f -`.
+        source_manifest:
+          $ref: "#/components/schemas/SourceManifest"
         plan_only:
           type: boolean
           description: When true, only the plan is computed and no instance is created.
@@ -1617,6 +1816,8 @@ components:
         work_dir:
           type: string
           description: Working directory for the Liquibase invocation.
+        source_manifest:
+          $ref: "#/components/schemas/SourceManifest"
         plan_only:
           type: boolean
           description: When true, only the plan is computed and no instance is created.

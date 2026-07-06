@@ -52,6 +52,7 @@ gantt
     CI/CD integration templates                :active, c3, after c1, 30d
     Users/orgs client contract slice           :done, c4a, after c1, 20d
     Google OIDC CLI auth session slice         :done, c4b, after c4a, 20d
+    Remote source input sync client/API slice  :done, c4c, after c4b, 15d
     Auth + tenant access baseline              :c4, after c1, 45d
     Shared capacity scaling                    :c5, after c2, 30d
 
@@ -73,7 +74,7 @@ gantt
 
 ---
 
-## Status (as of 2026-07-03)
+## Status (as of 2026-07-06)
 
 - **Done**: local engine API surface (health, config, names, instances, runs,
   states, prepare jobs, tasks), local runtime and lifecycle, end-to-end
@@ -186,6 +187,14 @@ gantt
   gateway still receives only short-lived Google ID tokens; accepting the CLI
   OAuth client audience remains a gateway configuration/follow-up concern where
   needed.
+- **Done (remote source input sync client/API slice)**: the OpenAPI contract and
+  CLI now support remote source-input synchronization for remote `prepare`,
+  `plan`, and `cache explain prepare` flows. The client attaches a bounded
+  `source_manifest`, handles recoverable `source_inputs_missing` responses,
+  uploads requested blobs through `/v1/source-blobs/sha256/{digest}`, reports
+  sync progress to stderr, honors per-profile `sourceSync` policy, and uses the
+  selected ref filesystem for ref-backed prepare stages. Local profile behavior
+  is unchanged.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
@@ -348,6 +357,10 @@ zero-copy/cache-hit reuse now sit beyond the accepted M2 baseline.
 - Google OIDC CLI auth sessions — **Done (CLI slice)**; gateway accepted
   audiences and server-side auth/tenant policy remain in the shared
   control-plane/auth baseline.
+- Remote source input sync — **Done (client/API contract slice)** for remote
+  prepare/plan/cache-explain retries and source blob uploads; server-side source
+  resolution and storage implementation remain part of the shared control-plane
+  baseline.
 - Team deployment gateway and service entrypoint baseline
 - Shared state, artifact, and audit handling with retention controls
 - Basic auth, tenant access, quotas, and policy enforcement

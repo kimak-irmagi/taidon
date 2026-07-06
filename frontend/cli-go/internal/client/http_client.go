@@ -180,6 +180,19 @@ func (c *Client) CreatePrepareJob(ctx context.Context, req PrepareJobRequest) (P
 	return out, nil
 }
 
+func (c *Client) PutSourceBlob(ctx context.Context, digest string, body io.Reader) error {
+	path := "/v1/source-blobs/sha256/" + url.PathEscape(strings.TrimSpace(digest))
+	resp, err := c.doRequestWithBody(ctx, http.MethodPut, path, true, body, "application/octet-stream")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return parseErrorResponse(resp)
+	}
+	return nil
+}
+
 func (c *Client) StreamPrepareEvents(ctx context.Context, eventsURL string, rangeHeader string) (*http.Response, error) {
 	url := c.resolveURL(eventsURL)
 	if url == "" {
@@ -512,6 +525,22 @@ func (e *ErrorResponseError) Error() string {
 	return e.Message
 }
 
+// SourceInputsMissingError preserves the recoverable remote source-sync payload
+// described in docs/architecture/remote-source-input-sync-flow.md.
+type SourceInputsMissingError struct {
+	StatusCode int
+	Status     string
+	Response   SourceInputsMissingErrorResponse
+}
+
+func (e *SourceInputsMissingError) Error() string {
+	message := strings.TrimSpace(e.Response.Message)
+	if message == "" {
+		return fmt.Sprintf("unexpected status: %s", e.Status)
+	}
+	return message
+}
+
 func addFilter(values url.Values, key, value string) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -534,6 +563,14 @@ func parseErrorResponse(resp *http.Response) error {
 	var errResp ErrorResponse
 	data, _ := io.ReadAll(resp.Body)
 	if len(data) > 0 {
+		var missing SourceInputsMissingErrorResponse
+		if resp.StatusCode == http.StatusConflict && json.Unmarshal(data, &missing) == nil && missing.Code == "source_inputs_missing" {
+			return &SourceInputsMissingError{
+				StatusCode: resp.StatusCode,
+				Status:     resp.Status,
+				Response:   missing,
+			}
+		}
 		if json.Unmarshal(data, &errResp) == nil && errResp.Message != "" {
 			return &ErrorResponseError{
 				StatusCode: resp.StatusCode,

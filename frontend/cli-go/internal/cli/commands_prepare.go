@@ -18,6 +18,7 @@ import (
 
 	"github.com/sqlrs/cli/internal/client"
 	"github.com/sqlrs/cli/internal/daemon"
+	"github.com/sqlrs/cli/internal/remotesource"
 	"github.com/sqlrs/cli/internal/util"
 
 	"golang.org/x/term"
@@ -90,6 +91,9 @@ type PrepareOptions struct {
 	// DisableControlPrompt prevents interactive detach/stop controls when the
 	// caller cannot safely release temporary prepare inputs before job completion.
 	DisableControlPrompt bool
+	SourceSyncMode       string
+	SourceSyncMaxRounds  int
+	SourceSync           *remotesource.Options
 }
 
 func RunPrepare(ctx context.Context, opts PrepareOptions) (client.PrepareJobResult, error) {
@@ -325,7 +329,7 @@ func createPrepareJob(ctx context.Context, opts PrepareOptions, planOnly bool) (
 			fmt.Fprintln(os.Stderr, "submitting prepare job")
 		}
 	}
-	accepted, err := cliClient.CreatePrepareJob(ctx, client.PrepareJobRequest{
+	request := client.PrepareJobRequest{
 		PrepareKind:       prepareKind,
 		ImageID:           opts.ImageID,
 		PsqlArgs:          opts.PsqlArgs,
@@ -336,11 +340,23 @@ func createPrepareJob(ctx context.Context, opts PrepareOptions, planOnly bool) (
 		WorkDir:           opts.WorkDir,
 		Stdin:             opts.Stdin,
 		PlanOnly:          planOnly,
-	})
+	}
+	accepted, err := createPrepareJobWithSourceSync(ctx, cliClient, opts, request)
 	if err != nil {
 		return nil, client.PrepareJobAccepted{}, err
 	}
 	return cliClient, accepted, nil
+}
+
+func createPrepareJobWithSourceSync(ctx context.Context, cliClient *client.Client, opts PrepareOptions, request client.PrepareJobRequest) (client.PrepareJobAccepted, error) {
+	if opts.SourceSync == nil || !opts.SourceSync.Enabled {
+		return cliClient.CreatePrepareJob(ctx, request)
+	}
+	syncOpts := *opts.SourceSync
+	syncOpts.Uploader = cliClient
+	return remotesource.Execute(ctx, syncOpts, request, func(ctx context.Context, req client.PrepareJobRequest) (client.PrepareJobAccepted, error) {
+		return cliClient.CreatePrepareJob(ctx, req)
+	})
 }
 
 func waitForPrepareWithOptions(ctx context.Context, cliClient *client.Client, jobID string, eventsURL string, progress io.Writer, verbose bool, options waitPrepareOptions) (client.PrepareJobStatus, error) {

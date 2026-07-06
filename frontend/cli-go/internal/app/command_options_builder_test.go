@@ -14,7 +14,7 @@ func TestCommandContextBuilders(t *testing.T) {
 			Paths: paths.Dirs{StateDir: "/state"},
 		},
 		profileName:          "remote",
-		profile:              config.ProfileConfig{Endpoint: "http://engine.example", Autostart: true},
+		profile:              config.ProfileConfig{Endpoint: "http://engine.example", Autostart: true, SourceSync: config.SourceSyncConfig{Mode: "off", MaxRounds: 5}},
 		mode:                 "remote",
 		authToken:            "secret",
 		daemonPath:           "/bin/sqlrs-engine",
@@ -41,6 +41,9 @@ func TestCommandContextBuilders(t *testing.T) {
 	}
 	if prepareOpts.WSLVHDXPath != "/host/store" || prepareOpts.WSLMountUnit != "sqlrs.mount" {
 		t.Fatalf("unexpected prepare WSL options: %+v", prepareOpts)
+	}
+	if prepareOpts.SourceSyncMode != "off" || prepareOpts.SourceSyncMaxRounds != 5 {
+		t.Fatalf("unexpected prepare source sync options: %+v", prepareOpts)
 	}
 
 	runOpts := ctx.runOptions()

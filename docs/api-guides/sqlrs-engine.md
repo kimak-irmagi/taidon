@@ -449,7 +449,36 @@ const inputBody = '{
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  }
 }';
 const headers = {
   'Content-Type':'application/json',
@@ -597,7 +626,36 @@ a job, instance, or mutate cache state.
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  }
 }
 ```
 
@@ -628,6 +686,215 @@ a job, instance, or mutate cache state.
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[CacheExplainPrepareResponse](#schemacacheexplainprepareresponse)|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Source inputs missing; client may upload missing blobs or expand the source manifest and retry.|[SourceInputsMissingErrorResponse](#schemasourceinputsmissingerrorresponse)|
+|500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+bearerAuth
+</aside>
+
+<h1 id="the-sqlrs-engine-api-source">source</h1>
+
+## putSourceBlobSha256
+
+<a id="opIdputSourceBlobSha256"></a>
+
+> Code samples
+
+```shell
+# You can also use wget
+curl -X PUT http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest} \
+  -H 'Content-Type: application/octet-stream' \
+  -H 'Accept: application/json' \
+  -H 'Authorization: Bearer {access-token}'
+
+```
+
+```http
+PUT http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest} HTTP/1.1
+Host: 127.0.0.1
+Content-Type: application/octet-stream
+Accept: application/json
+
+```
+
+```javascript
+const inputBody = 'string';
+const headers = {
+  'Content-Type':'application/octet-stream',
+  'Accept':'application/json',
+  'Authorization':'Bearer {access-token}'
+};
+
+fetch('http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest}',
+{
+  method: 'PUT',
+  body: inputBody,
+  headers: headers
+})
+.then(function(res) {
+    return res.json();
+}).then(function(body) {
+    console.log(body);
+});
+
+```
+
+```ruby
+require 'rest-client'
+require 'json'
+
+headers = {
+  'Content-Type' => 'application/octet-stream',
+  'Accept' => 'application/json',
+  'Authorization' => 'Bearer {access-token}'
+}
+
+result = RestClient.put 'http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest}',
+  params: {
+  }, headers: headers
+
+p JSON.parse(result)
+
+```
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/octet-stream',
+  'Accept': 'application/json',
+  'Authorization': 'Bearer {access-token}'
+}
+
+r = requests.put('http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest}', headers = headers)
+
+print(r.json())
+
+```
+
+```php
+<?php
+
+require 'vendor/autoload.php';
+
+$headers = array(
+    'Content-Type' => 'application/octet-stream',
+    'Accept' => 'application/json',
+    'Authorization' => 'Bearer {access-token}',
+);
+
+$client = new \GuzzleHttp\Client();
+
+// Define array of request body.
+$request_body = array();
+
+try {
+    $response = $client->request('PUT','http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest}', array(
+        'headers' => $headers,
+        'json' => $request_body,
+       )
+    );
+    print_r($response->getBody()->getContents());
+ }
+ catch (\GuzzleHttp\Exception\BadResponseException $e) {
+    // handle exception or api errors.
+    print_r($e->getMessage());
+ }
+
+ // ...
+
+```
+
+```java
+URL obj = new URL("http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest}");
+HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+con.setRequestMethod("PUT");
+int responseCode = con.getResponseCode();
+BufferedReader in = new BufferedReader(
+    new InputStreamReader(con.getInputStream()));
+String inputLine;
+StringBuffer response = new StringBuffer();
+while ((inputLine = in.readLine()) != null) {
+    response.append(inputLine);
+}
+in.close();
+System.out.println(response.toString());
+
+```
+
+```go
+package main
+
+import (
+       "bytes"
+       "net/http"
+)
+
+func main() {
+
+    headers := map[string][]string{
+        "Content-Type": []string{"application/octet-stream"},
+        "Accept": []string{"application/json"},
+        "Authorization": []string{"Bearer {access-token}"},
+    }
+
+    data := bytes.NewBuffer([]byte{jsonReq})
+    req, err := http.NewRequest("PUT", "http://127.0.0.1:{port}/v1/source-blobs/sha256/{digest}", data)
+    req.Header = headers
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    // ...
+}
+
+```
+
+`PUT /v1/source-blobs/sha256/{digest}`
+
+*Upload one remote source content blob*
+
+Remote/shared deployments only. Stores one source-input content blob in
+the authenticated actor's scoped content cache. The server verifies the
+uploaded bytes by recomputing `sha256` and comparing it to `{digest}`.
+The operation is idempotent: uploading content that is already present
+succeeds without changing the source cache.
+
+> Body parameter
+
+```yaml
+string
+
+```
+
+<h3 id="putsourceblobsha256-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|digest|path|string|true|Lowercase hex SHA-256 digest without the `sha256:` prefix.|
+|body|body|string(binary)|true|none|
+
+> Example responses
+
+> 400 Response
+
+```json
+{
+  "code": "string",
+  "message": "string",
+  "details": "string"
+}
+```
+
+<h3 id="putsourceblobsha256-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|204|[No Content](https://tools.ietf.org/html/rfc7231#section-6.3.5)|Blob stored or already present.|None|
+|400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid digest or upload request.|[ErrorResponse](#schemaerrorresponse)|
+|401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Uploaded content does not match the requested digest.|[ErrorResponse](#schemaerrorresponse)|
+|413|[Payload Too Large](https://tools.ietf.org/html/rfc7231#section-6.5.11)|Source blob exceeds the configured upload limit.|[ErrorResponse](#schemaerrorresponse)|
 |500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -862,6 +1129,35 @@ const inputBody = '{
     "string"
   ],
   "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  },
   "plan_only": true
 }';
 const headers = {
@@ -1013,6 +1309,35 @@ an instance; the plan tasks are returned in the job status.
     "string"
   ],
   "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  },
   "plan_only": true
 }
 ```
@@ -1043,6 +1368,7 @@ an instance; the plan tasks are returned in the job status.
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[PrepareJobAccepted](#schemapreparejobaccepted)|
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid input|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
+|409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Source inputs missing; client may upload missing blobs or expand the source manifest and retry.|[SourceInputsMissingErrorResponse](#schemasourceinputsmissingerrorresponse)|
 |500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
 
 ### Response Headers
@@ -6459,6 +6785,278 @@ or
 |---|---|---|---|---|
 |» *anonymous*|null|false|none|none|
 
+<h2 id="tocS_SourceContentHash">SourceContentHash</h2>
+<!-- backwards compatibility -->
+<a id="schemasourcecontenthash"></a>
+<a id="schema_SourceContentHash"></a>
+<a id="tocSsourcecontenthash"></a>
+<a id="tocssourcecontenthash"></a>
+
+```json
+"string"
+
+```
+
+SHA-256 content hash with the `sha256:` prefix.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|string|false|none|SHA-256 content hash with the `sha256:` prefix.|
+
+<h2 id="tocS_SourceManifestPath">SourceManifestPath</h2>
+<!-- backwards compatibility -->
+<a id="schemasourcemanifestpath"></a>
+<a id="schema_SourceManifestPath"></a>
+<a id="tocSsourcemanifestpath"></a>
+<a id="tocssourcemanifestpath"></a>
+
+```json
+"string"
+
+```
+
+Workspace-relative slash-separated path. Remote requests must not send
+absolute host paths, drive-qualified paths, or paths that escape the
+workspace root.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|string|false|none|Workspace-relative slash-separated path. Remote requests must not send<br>absolute host paths, drive-qualified paths, or paths that escape the<br>workspace root.|
+
+<h2 id="tocS_SourceWorkspaceRef">SourceWorkspaceRef</h2>
+<!-- backwards compatibility -->
+<a id="schemasourceworkspaceref"></a>
+<a id="schema_SourceWorkspaceRef"></a>
+<a id="tocSsourceworkspaceref"></a>
+<a id="tocssourceworkspaceref"></a>
+
+```json
+{
+  "root_id": "string"
+}
+
+```
+
+Optional client-local workspace identity. It is not a server filesystem path.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|root_id|string|false|none|Client-local workspace root identifier for diagnostics and retries.|
+
+<h2 id="tocS_SourceDirectoryEntry">SourceDirectoryEntry</h2>
+<!-- backwards compatibility -->
+<a id="schemasourcedirectoryentry"></a>
+<a id="schema_SourceDirectoryEntry"></a>
+<a id="tocSsourcedirectoryentry"></a>
+<a id="tocssourcedirectoryentry"></a>
+
+```json
+{
+  "name": "string",
+  "kind": "file"
+}
+
+```
+
+One entry in a complete workspace-relative directory listing.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|name|string|true|none|Directory-entry basename.|
+|kind|string|true|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|kind|file|
+|kind|directory|
+
+<h2 id="tocS_SourceDirectoryListing">SourceDirectoryListing</h2>
+<!-- backwards compatibility -->
+<a id="schemasourcedirectorylisting"></a>
+<a id="schema_SourceDirectoryListing"></a>
+<a id="tocSsourcedirectorylisting"></a>
+<a id="tocssourcedirectorylisting"></a>
+
+```json
+{
+  "entries": [
+    {
+      "name": "string",
+      "kind": "file"
+    }
+  ],
+  "complete": true
+}
+
+```
+
+Complete listing for the directory at the map key.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|entries|[[SourceDirectoryEntry](#schemasourcedirectoryentry)]|true|none|[One entry in a complete workspace-relative directory listing.]|
+|complete|boolean|false|none|False values are ignored by the server and may cause another missing-input response.|
+
+<h2 id="tocS_SourceManifest">SourceManifest</h2>
+<!-- backwards compatibility -->
+<a id="schemasourcemanifest"></a>
+<a id="schema_SourceManifest"></a>
+<a id="tocSsourcemanifest"></a>
+<a id="tocssourcemanifest"></a>
+
+```json
+{
+  "workspace_ref": {
+    "root_id": "string"
+  },
+  "files": {
+    "property1": "string",
+    "property2": "string"
+  },
+  "directories": {
+    "property1": {
+      "entries": [
+        {
+          "name": "string",
+          "kind": "file"
+        }
+      ],
+      "complete": true
+    },
+    "property2": {
+      "entries": [
+        {
+          "name": "string",
+          "kind": "file"
+        }
+      ],
+      "complete": true
+    }
+  }
+}
+
+```
+
+Optional remote-source manifest attached to file-bearing prepare and
+cache-explain requests. The server uses this manifest with its scoped
+content cache to build a virtual workspace for authoritative
+format-specific input resolution.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|workspace_ref|[SourceWorkspaceRef](#schemasourceworkspaceref)|false|none|Optional client-local workspace identity. It is not a server filesystem path.|
+|files|object|false|none|Map from workspace-relative source file path to verified client-side content hash.|
+|» **additionalProperties**|[SourceContentHash](#schemasourcecontenthash)|false|none|SHA-256 content hash with the `sha256:` prefix.|
+|directories|object|false|none|Map from workspace-relative directory path to complete directory listing.|
+|» **additionalProperties**|[SourceDirectoryListing](#schemasourcedirectorylisting)|false|none|Complete listing for the directory at the map key.|
+
+<h2 id="tocS_SourceMissingManifestEntry">SourceMissingManifestEntry</h2>
+<!-- backwards compatibility -->
+<a id="schemasourcemissingmanifestentry"></a>
+<a id="schema_SourceMissingManifestEntry"></a>
+<a id="tocSsourcemissingmanifestentry"></a>
+<a id="tocssourcemissingmanifestentry"></a>
+
+```json
+{
+  "path": "string",
+  "kind": "file_hash",
+  "reason": "string"
+}
+
+```
+
+Manifest information the client should add before retrying the request.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|path|[SourceManifestPath](#schemasourcemanifestpath)|true|none|Workspace-relative slash-separated path. Remote requests must not send<br>absolute host paths, drive-qualified paths, or paths that escape the<br>workspace root.|
+|kind|string|true|none|Type of manifest data the server needs to continue source resolution.|
+|reason|string|false|none|Optional diagnostic reason such as `referenced_file` or `directory_traversal`.|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|kind|file_hash|
+|kind|directory_listing|
+
+<h2 id="tocS_SourceMissingBlob">SourceMissingBlob</h2>
+<!-- backwards compatibility -->
+<a id="schemasourcemissingblob"></a>
+<a id="schema_SourceMissingBlob"></a>
+<a id="tocSsourcemissingblob"></a>
+<a id="tocssourcemissingblob"></a>
+
+```json
+{
+  "path": "string",
+  "hash": "string"
+}
+
+```
+
+Source content blob absent from the server's scoped content cache.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|path|[SourceManifestPath](#schemasourcemanifestpath)|true|none|Workspace-relative slash-separated path. Remote requests must not send<br>absolute host paths, drive-qualified paths, or paths that escape the<br>workspace root.|
+|hash|[SourceContentHash](#schemasourcecontenthash)|true|none|SHA-256 content hash with the `sha256:` prefix.|
+
+<h2 id="tocS_SourceInputsMissingErrorResponse">SourceInputsMissingErrorResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemasourceinputsmissingerrorresponse"></a>
+<a id="schema_SourceInputsMissingErrorResponse"></a>
+<a id="tocSsourceinputsmissingerrorresponse"></a>
+<a id="tocssourceinputsmissingerrorresponse"></a>
+
+```json
+{
+  "code": "source_inputs_missing",
+  "message": "string",
+  "missing_manifest_entries": [],
+  "missing_blobs": []
+}
+
+```
+
+Recoverable response used by remote clients. The client may upload the
+missing blobs, expand the source manifest with requested hashes or
+directory listings, and retry the original request.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|code|string|true|none|none|
+|message|string|true|none|none|
+|missing_manifest_entries|[[SourceMissingManifestEntry](#schemasourcemissingmanifestentry)]|false|none|[Manifest information the client should add before retrying the request.]|
+|missing_blobs|[[SourceMissingBlob](#schemasourcemissingblob)]|false|none|[Source content blob absent from the server's scoped content cache.]|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|code|source_inputs_missing|
+
 <h2 id="tocS_CacheExplainPrepareRequest">CacheExplainPrepareRequest</h2>
 <!-- backwards compatibility -->
 <a id="schemacacheexplainpreparerequest"></a>
@@ -6473,7 +7071,36 @@ or
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  }
 }
 
 ```
@@ -6506,7 +7133,36 @@ xor
   "psql_args": [
     "string"
   ],
-  "stdin": "string"
+  "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  }
 }
 
 ```
@@ -6519,6 +7175,7 @@ xor
 |image_id|string|true|none|Base Docker image id to use.|
 |psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must already be normalized for<br>the bound local execution context.|
 |stdin|string|false|none|SQL content to use for stdin when `psql_args` includes `-f -`.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
 
 #### Enumerated Values
 
@@ -6546,7 +7203,36 @@ xor
     "property1": "string",
     "property2": "string"
   },
-  "work_dir": "string"
+  "work_dir": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  }
 }
 
 ```
@@ -6563,6 +7249,7 @@ xor
 |liquibase_env|object|false|none|Optional environment variables passed through to Liquibase.|
 |» **additionalProperties**|string|false|none|none|
 |work_dir|string|false|none|Working directory for the Liquibase invocation.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
 
 #### Enumerated Values
 
@@ -6649,6 +7336,35 @@ or
     "string"
   ],
   "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  },
   "plan_only": true
 }
 
@@ -6683,6 +7399,35 @@ xor
     "string"
   ],
   "stdin": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  },
   "plan_only": true
 }
 
@@ -6696,6 +7441,7 @@ xor
 |image_id|string|true|none|Base Docker image id to use.|
 |psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must be absolute.|
 |stdin|string|false|none|SQL content to use for stdin when `psql_args` includes `-f -`.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
 |plan_only|boolean|false|none|When true, only the plan is computed and no instance is created.|
 
 #### Enumerated Values
@@ -6725,6 +7471,35 @@ xor
     "property2": "string"
   },
   "work_dir": "string",
+  "source_manifest": {
+    "workspace_ref": {
+      "root_id": "string"
+    },
+    "files": {
+      "property1": "string",
+      "property2": "string"
+    },
+    "directories": {
+      "property1": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      },
+      "property2": {
+        "entries": [
+          {
+            "name": "string",
+            "kind": "file"
+          }
+        ],
+        "complete": true
+      }
+    }
+  },
   "plan_only": true
 }
 
@@ -6742,6 +7517,7 @@ xor
 |liquibase_env|object|false|none|Optional environment variables passed through to Liquibase.|
 |» **additionalProperties**|string|false|none|none|
 |work_dir|string|false|none|Working directory for the Liquibase invocation.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
 |plan_only|boolean|false|none|When true, only the plan is computed and no instance is created.|
 
 #### Enumerated Values
