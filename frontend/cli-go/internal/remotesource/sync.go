@@ -279,9 +279,6 @@ func (s *roundState) uploadBlob(ctx context.Context, blob client.SourceMissingBl
 	if !ok || !isLowerHexDigest(digest) {
 		return false, fmt.Errorf("invalid source blob hash for %s: %s", blob.Path, blob.Hash)
 	}
-	if _, ok := s.uploaded[digest]; ok {
-		return false, nil
-	}
 	cleaned, absPath, err := s.resolveManifestPath(blob.Path)
 	if err != nil {
 		return false, err
@@ -296,7 +293,14 @@ func (s *roundState) uploadBlob(ctx context.Context, blob client.SourceMissingBl
 	if previous, ok := s.files[cleaned]; ok && previous != actual {
 		return false, fmt.Errorf("source file changed during sync: %s", cleaned)
 	}
-	s.files[cleaned] = actual
+	changed := false
+	if _, ok := s.files[cleaned]; !ok {
+		s.files[cleaned] = actual
+		changed = true
+	}
+	if _, ok := s.uploaded[digest]; ok {
+		return changed, nil
+	}
 	if err := s.uploader.PutSourceBlob(ctx, digest, bytes.NewReader(content)); err != nil {
 		return false, err
 	}

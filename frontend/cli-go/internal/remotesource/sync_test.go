@@ -305,12 +305,13 @@ func TestExecuteUploadsMultipleSortedBlobs(t *testing.T) {
 	hashB := "sha256:" + inputset.HashContent([]byte("select 2;\n"))
 	uploader := &recordingUploader{}
 	calls := 0
+	var retryManifest *client.SourceManifest
 
 	got, err := Execute[string](context.Background(), Options{
 		Enabled:       true,
 		WorkspaceRoot: root,
 		Uploader:      uploader,
-	}, client.PrepareJobRequest{}, func(context.Context, client.PrepareJobRequest) (string, error) {
+	}, client.PrepareJobRequest{}, func(_ context.Context, req client.PrepareJobRequest) (string, error) {
 		calls++
 		if calls == 1 {
 			return "", &client.SourceInputsMissingError{Response: client.SourceInputsMissingErrorResponse{
@@ -323,6 +324,7 @@ func TestExecuteUploadsMultipleSortedBlobs(t *testing.T) {
 				},
 			}}
 		}
+		retryManifest = req.SourceManifest
 		return "ok", nil
 	})
 	if err != nil || got != "ok" || calls != 2 {
@@ -330,6 +332,9 @@ func TestExecuteUploadsMultipleSortedBlobs(t *testing.T) {
 	}
 	if len(uploader.digests) != 2 {
 		t.Fatalf("uploads = %+v, want two unique digests", uploader.digests)
+	}
+	if retryManifest == nil || retryManifest.Files["a.sql"] != hashA || retryManifest.Files["c.sql"] != hashA {
+		t.Fatalf("retry manifest files = %+v, want both duplicate-content paths", retryManifest)
 	}
 }
 
