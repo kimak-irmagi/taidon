@@ -24,6 +24,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     `user`, `org`).
   - Builds command context and chooses path resolvers and runtime projections
     from `internal/inputset`.
+  - Builds remote source-sync options for remote `plan`, `prepare`, and
+    `cache explain` stages, including ref-backed filesystem selection.
   - Rejects remote-only user and organization commands in local mode before
     local engine discovery or autostart.
   - Owns package-local ref-aware run-binding helpers for standalone
@@ -46,6 +48,12 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     standalone `run --ref`, and `diff` ref-mode.
   - Owns repo-root discovery, local ref resolution, projected-cwd mapping,
     detached-worktree lifecycle, and blob-backed filesystem setup.
+- `internal/remotesource`
+  - CLI-side remote source-input synchronization loop documented in
+    `remote-source-input-sync-flow.md`.
+  - Owns `source_manifest` expansion, bounded `source_inputs_missing` retry,
+    safe workspace-relative path resolution, requested source blob hashing and
+    upload, and progress reporting to the stage stderr writer.
 - `internal/inputset`
   - Shared CLI-side source of truth for file-bearing command semantics.
   - Owns staged parse/bind/collect/project abstractions and common helper types.
@@ -82,13 +90,15 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `internal/client`
   - HTTP API client for `/v1/*` endpoints.
   - Read-only cache explanation requests for bound prepare stages.
+  - Source blob upload requests and structured `source_inputs_missing` error
+    parsing for remote source-input synchronization.
   - User and organization management requests for remote/shared deployments.
   - NDJSON streaming for prepare events and run output.
 - `internal/daemon`
   - Local engine autostart/discovery (`engine.json`, lock/state orchestration).
 - `internal/config`
   - CLI config loading, merge, and typed lookups (`dbms.image`, Liquibase
-    settings, timeouts).
+    settings, timeouts, and per-profile `sourceSync` policy).
   - Provides non-secret remote profile auth settings, but does not own OIDC
     refresh tokens or cached ID tokens.
 - `internal/paths`
@@ -128,6 +138,11 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - `client.CacheExplainPrepareRequest`, `client.CacheExplainPrepareResponse`
   - Read-only cache-explain API payloads for one bound single-stage prepare
     decision.
+- `client.SourceManifest`, `client.SourceInputsMissingErrorResponse`,
+  `client.SourceInputsMissingError`
+  - Remote source-sync manifest payload and recoverable missing-input response.
+- `remotesource.Options`, `remotesource.Uploader`
+  - Remote source-sync execution options and source blob upload boundary.
 - `client.RunRequest`, `client.RunEvent`
   - Run API payload and streamed events (`stdout`, `stderr`, `exit`, `error`,
     `log`).
@@ -153,6 +168,9 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   `internal/inputset` kind component.
 - Parsed specs, bound specs, and collected input sets are ephemeral and live
   only for one CLI invocation.
+- Remote source manifests, missing-input retry state, and uploaded source blob
+  bodies are ephemeral per invocation. The CLI may send source blobs only to the
+  authenticated remote API; it does not persist them in CLI config.
 - Engine discovery state (`engine.json`, daemon lock/process metadata) is
   managed via `internal/daemon`.
 - Rendered alias-create commands are ephemeral and exist only in CLI output.
@@ -170,6 +188,7 @@ flowchart LR
   APP["internal/app"]
   CLI["internal/cli"]
   AUTH["internal/authsession"]
+  REMOTESOURCE["internal/remotesource"]
   INPUTSET["internal/inputset"]
   ALIAS["internal/alias"]
   DISCOVER["internal/discover"]
@@ -187,6 +206,7 @@ flowchart LR
   CMD --> APP
   APP --> CLI
   APP --> AUTH
+  APP --> REMOTESOURCE
   APP --> INPUTSET
   APP --> REFCTX
   APP --> CONFIG
@@ -196,11 +216,15 @@ flowchart LR
   AUTH --> CONFIG
   AUTH --> PATHS
   CLI --> CLIENT
+  CLI --> REMOTESOURCE
   CLI --> DAEMON
   CLI --> RUNKIND
   CLI --> ALIAS
   CLI --> DISCOVER
   CLI --> DIFF
+  REMOTESOURCE --> CLIENT
+  REMOTESOURCE --> INPUTSET
+  REMOTESOURCE --> FS
   DIFF --> REFCTX
   ALIAS --> INPUTSET
   DISCOVER --> ALIAS

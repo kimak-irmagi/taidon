@@ -24,6 +24,8 @@
     `user`, `org`).
   - Собирает command context и выбирает path resolver-ы и runtime projection-ы
     из `internal/inputset`.
+  - Собирает remote source-sync options для remote `plan`, `prepare` и
+    `cache explain` stages, включая выбор ref-backed filesystem.
   - Отклоняет remote-only команды управления пользователями и организациями в
     local mode до discovery или autostart локального engine.
   - Владеет package-local helper-ами ref-aware run binding для standalone
@@ -47,6 +49,13 @@
     standalone `run --ref` и ref-mode у `diff`.
   - Владеет поиском repo root, локальным разрешением ref, mapping projected
     cwd, lifecycle detached worktree и setup blob-backed filesystem.
+- `internal/remotesource`
+  - CLI-side цикл синхронизации remote source-input, описанный в
+    `remote-source-input-sync-flow.RU.md`.
+  - Владеет расширением `source_manifest`, bounded retry для
+    `source_inputs_missing`, безопасным workspace-relative path resolution,
+    хэшированием и upload-ом запрошенных source blob-ов, а также progress
+    reporting в stderr текущей stage.
 - `internal/inputset`
   - Общий CLI-side источник истины для file-bearing семантики команд.
   - Владеет staged абстракциями parse/bind/collect/project и общими типами.
@@ -83,6 +92,8 @@
 - `internal/client`
   - HTTP клиент для `/v1/*` endpoint-ов.
   - Read-only cache explanation requests для bound prepare stages.
+  - Upload source blob-ов и parsing структурированной ошибки
+    `source_inputs_missing` для remote source-input synchronization.
   - Запросы управления пользователями и организациями для remote/shared
     деплойментов.
   - NDJSON-стриминг событий prepare и вывода run.
@@ -90,7 +101,7 @@
   - Autostart/discovery локального engine (`engine.json`, lock/state orchestration).
 - `internal/config`
   - Загрузка и merge CLI-конфига, typed lookup (`dbms.image`, настройки
-    Liquibase, timeout-ы).
+    Liquibase, timeout-ы и per-profile `sourceSync` policy).
   - Предоставляет non-secret auth settings remote profile, но не владеет OIDC
     refresh token-ами или cached ID token-ами.
 - `internal/paths`
@@ -130,6 +141,11 @@
 - `client.CacheExplainPrepareRequest`, `client.CacheExplainPrepareResponse`
   - read-only cache-explain API payload-ы для одного bound single-stage prepare
     decision.
+- `client.SourceManifest`, `client.SourceInputsMissingErrorResponse`,
+  `client.SourceInputsMissingError`
+  - Payload remote source-sync manifest и recoverable missing-input response.
+- `remotesource.Options`, `remotesource.Uploader`
+  - Опции выполнения remote source-sync и boundary для upload source blob-ов.
 - `client.RunRequest`, `client.RunEvent`
   - Payload run API и стрим событий (`stdout`, `stderr`, `exit`, `error`,
     `log`).
@@ -155,6 +171,9 @@
   kind-компоненту `internal/inputset`.
 - Parsed specs, bound specs и collected input sets эфемерны и живут только
   в рамках одного CLI invocation.
+- Remote source manifests, retry state для missing-input и тела uploaded source
+  blob-ов эфемерны в рамках одного invocation. CLI может отправлять source
+  blob-ы только в аутентифицированный remote API и не сохраняет их в CLI config.
 - Состояние discovery локального engine (`engine.json`, daemon lock/process
   metadata) ведется через `internal/daemon`.
 - Rendered alias-create commands эфемерны и существуют только в CLI output.
@@ -172,6 +191,7 @@ flowchart LR
   APP["internal/app"]
   CLI["internal/cli"]
   AUTH["internal/authsession"]
+  REMOTESOURCE["internal/remotesource"]
   INPUTSET["internal/inputset"]
   ALIAS["internal/alias"]
   DISCOVER["internal/discover"]
@@ -189,6 +209,7 @@ flowchart LR
   CMD --> APP
   APP --> CLI
   APP --> AUTH
+  APP --> REMOTESOURCE
   APP --> INPUTSET
   APP --> REFCTX
   APP --> CONFIG
@@ -198,11 +219,15 @@ flowchart LR
   AUTH --> CONFIG
   AUTH --> PATHS
   CLI --> CLIENT
+  CLI --> REMOTESOURCE
   CLI --> DAEMON
   CLI --> RUNKIND
   CLI --> ALIAS
   CLI --> DISCOVER
   CLI --> DIFF
+  REMOTESOURCE --> CLIENT
+  REMOTESOURCE --> INPUTSET
+  REMOTESOURCE --> FS
   DIFF --> REFCTX
   ALIAS --> INPUTSET
   DISCOVER --> ALIAS

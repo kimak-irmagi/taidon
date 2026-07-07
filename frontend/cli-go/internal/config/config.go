@@ -49,10 +49,11 @@ type EngineWSLMountConfig struct {
 }
 
 type ProfileConfig struct {
-	Mode      string     `yaml:"mode"`
-	Endpoint  string     `yaml:"endpoint"`
-	Autostart bool       `yaml:"autostart"`
-	Auth      AuthConfig `yaml:"auth"`
+	Mode       string           `yaml:"mode"`
+	Endpoint   string           `yaml:"endpoint"`
+	Autostart  bool             `yaml:"autostart"`
+	Auth       AuthConfig       `yaml:"auth"`
+	SourceSync SourceSyncConfig `yaml:"sourceSync"`
 }
 
 type AuthConfig struct {
@@ -62,6 +63,11 @@ type AuthConfig struct {
 	ClientID     string `yaml:"clientID"`
 	ClientSecret string `yaml:"clientSecret"`
 	Issuer       string `yaml:"issuer"`
+}
+
+type SourceSyncConfig struct {
+	Mode      string `yaml:"mode"`
+	MaxRounds int    `yaml:"maxRounds"`
 }
 
 type LoadOptions struct {

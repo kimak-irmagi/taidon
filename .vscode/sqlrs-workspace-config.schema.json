@@ -149,6 +149,25 @@
               }
             },
             "additionalProperties": false
+          },
+          "sourceSync": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "off"
+                ],
+                "description": "Remote source synchronization mode for file-bearing prepare and cache-explain requests."
+              },
+              "maxRounds": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Maximum number of source_inputs_missing retry rounds before the CLI fails the command."
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
