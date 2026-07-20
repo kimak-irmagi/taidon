@@ -28,6 +28,13 @@ input responses, uploads only server-requested content blobs, and retries the
 original request. Successful command stdout stays unchanged; source-sync
 progress is written to stderr.
 
+The CLI binds path-bearing arguments to absolute native paths before sending a
+request. Remote source sync preserves those paths as logical client coordinates;
+the server does not try to open them on its own filesystem. The attached
+workspace context identifies the absolute client workspace root and effective
+working directory so admission can map arguments and imports into the
+workspace-relative manifest namespace.
+
 ## Profile Configuration
 
 Remote source sync is enabled by default for remote profiles.
@@ -64,6 +71,8 @@ Conceptual shape:
 source_manifest:
   workspace_ref:
     root_id: default
+    root_path: 'C:\work\project'
+    work_dir: 'C:\work\project\db'
   files:
     db/changelog/master.xml: sha256:...
     db/changelog/001.sql: sha256:...
@@ -76,9 +85,17 @@ source_manifest:
           kind: directory
 ```
 
-The server remains authoritative for format-specific dependency traversal. The
-client can send a narrow seed manifest, then expand it only when the server asks
-for file hashes, directory listings, or content blobs.
+`root_path` and `work_dir` use the client's native absolute path syntax. They
+bind absolute request arguments to manifest keys and are not server filesystem
+paths. The server remains authoritative for format-specific dependency
+traversal. The client can send a narrow seed manifest, then expand it only when
+the server asks for file hashes, directory listings, or content blobs.
+
+The first request may contain an empty manifest. The server rebases absolute
+path-bearing arguments against the logical client workspace context, derives
+the initial required entries, and returns workspace-relative
+`source_inputs_missing` paths. It must not create a prepare job until source
+admission has succeeded.
 
 ## Missing Input Loop
 
@@ -119,6 +136,16 @@ The command fails when a requested local path is unavailable, a local hash does
 not match the server-requested hash, a blob upload is rejected, the retry limit
 is reached, or the server returns a non-recoverable error.
 
+With verbose output enabled, each recoverable round reports the number of
+requested manifest entries and blobs, followed by the number uploaded. No
+source-sync progress lines means that the server did not return a
+`source_inputs_missing` response.
+
+Each deployment defines a maximum size for one source blob. A file within that
+published limit is uploaded as one content-addressed blob; a larger file fails
+with `413 source_blob_too_large`. Supported deployments must configure the limit
+high enough for the maintained file-backed examples.
+
 ## Ref Mode
 
 For `--ref-mode worktree`, source sync reads from the projected detached
@@ -126,4 +153,3 @@ worktree.
 
 For `--ref-mode blob`, source sync reads from the Git object-backed filesystem.
 It must not fall back to the caller's current worktree for source bytes.
-

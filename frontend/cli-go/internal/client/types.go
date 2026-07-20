@@ -111,7 +111,9 @@ type SourceManifest struct {
 }
 
 type SourceWorkspaceRef struct {
-	RootID string `json:"root_id,omitempty"`
+	RootID   string `json:"root_id,omitempty"`
+	RootPath string `json:"root_path"`
+	WorkDir  string `json:"work_dir"`
 }
 
 type SourceDirectoryListing struct {

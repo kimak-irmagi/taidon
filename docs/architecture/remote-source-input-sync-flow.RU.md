@@ -24,6 +24,12 @@ remote backend.
   `PUT /v1/source-blobs/sha256/{digest}`.
 - Recoverable missing-input negotiation использует
   `409 source_inputs_missing`.
+- CLI сохраняет absolute native path bindings в аргументах remote request и
+  прикладывает logical client workspace root и effective working directory.
+  Admission отображает эти координаты в workspace-relative manifest paths;
+  remote runner никогда не открывает client paths напрямую.
+- Source blob uploads используют отдельный 15-minute transfer timeout; prepare
+  control requests сохраняют configured control timeout.
 
 ## 2. Remote Prepare
 
@@ -33,6 +39,7 @@ sequenceDiagram
     participant Client as "internal/client"
     participant Gateway as "remote gateway"
 
+    CLI->>CLI: "attach logical workspace root and working directory"
     CLI->>Client: "POST /v1/prepare-jobs + source_manifest"
     Client->>Gateway: "prepare request"
     alt "source inputs missing"
@@ -94,3 +101,6 @@ terminal client errors:
 - blob upload отклонен;
 - retry loop исчерпал лимит.
 
+Upload timeout возвращается как source-transfer failure и не создаёт prepare
+job. Absolute client paths являются logical resolution coordinates, а не
+fallback server filesystem location.

@@ -149,7 +149,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "413":
-          description: Source blob exceeds the configured upload limit.
+          description: Source blob exceeds the configured upload limit (`source_blob_too_large`).
           content:
             application/json:
               schema:
@@ -1521,11 +1521,28 @@ components:
     SourceWorkspaceRef:
       type: object
       additionalProperties: false
+      required:
+        - root_path
+        - work_dir
       properties:
         root_id:
           type: string
           description: Client-local workspace root identifier for diagnostics and retries.
-      description: Optional client-local workspace identity. It is not a server filesystem path.
+        root_path:
+          type: string
+          minLength: 1
+          description: |
+            Absolute logical path of the client workspace root, in the same OS
+            path flavor as file-bearing request arguments. It is a resolution
+            coordinate and is never opened as a server filesystem path.
+        work_dir:
+          type: string
+          minLength: 1
+          description: |
+            Absolute logical effective command working directory within
+            `root_path`, in the same OS path flavor. Plain `psql` includes are
+            resolved from this directory.
+      description: Client path context used to bind absolute arguments to the virtual workspace.
     SourceDirectoryEntry:
       type: object
       additionalProperties: false
@@ -1559,6 +1576,8 @@ components:
     SourceManifest:
       type: object
       additionalProperties: false
+      required:
+        - workspace_ref
       properties:
         workspace_ref:
           $ref: "#/components/schemas/SourceWorkspaceRef"
@@ -1576,7 +1595,10 @@ components:
         Optional remote-source manifest attached to file-bearing prepare and
         cache-explain requests. The server uses this manifest with its scoped
         content cache to build a virtual workspace for authoritative
-        format-specific input resolution.
+        format-specific input resolution. File-bearing request arguments retain
+        absolute client paths; `workspace_ref` binds those logical coordinates
+        to workspace-relative manifest keys. An empty manifest is a valid
+        first-round handshake and may produce `source_inputs_missing`.
     SourceMissingManifestEntry:
       type: object
       additionalProperties: false
@@ -1660,8 +1682,10 @@ components:
           type: array
           description: |
             Arguments passed to `psql` (excluding connection flags). Argument
-            ordering is preserved. File paths must already be normalized for
-            the bound local execution context.
+            ordering is preserved. File paths must already be absolute and
+            normalized for the bound client execution context. With
+            `source_manifest`, they are logical client coordinates and are not
+            opened on the server filesystem.
           items:
             type: string
         stdin:
@@ -1688,8 +1712,9 @@ components:
           type: array
           description: |
             Arguments passed to Liquibase. Argument ordering is preserved and
-            path-bearing arguments must already reflect the bound local
-            execution context.
+            path-bearing arguments must already reflect the absolute bound
+            client execution context. With `source_manifest`, they are logical
+            client coordinates and are not opened on the server filesystem.
           items:
             type: string
         liquibase_exec:
@@ -1705,7 +1730,7 @@ components:
           description: Optional environment variables passed through to Liquibase.
         work_dir:
           type: string
-          description: Working directory for the Liquibase invocation.
+          description: Absolute bound client working directory for the Liquibase invocation.
         source_manifest:
           $ref: "#/components/schemas/SourceManifest"
     CacheExplainPrepareResponse:
@@ -1768,7 +1793,9 @@ components:
           type: array
           description: |
             Arguments passed to `psql` (excluding connection flags). Argument
-            ordering is preserved. File paths must be absolute.
+            ordering is preserved. File paths must be absolute. With
+            `source_manifest`, they are logical client coordinates and are not
+            opened on the server filesystem.
           items:
             type: string
         stdin:
@@ -1798,8 +1825,10 @@ components:
           type: array
           description: |
             Arguments passed to Liquibase. Argument ordering is preserved and
-            path-bearing arguments must already be normalized for the bound
-            local execution context.
+            path-bearing arguments must already be normalized for the absolute
+            bound client execution context. With `source_manifest`, they are
+            logical client coordinates and are not opened on the server
+            filesystem.
           items:
             type: string
         liquibase_exec:
@@ -1815,7 +1844,7 @@ components:
           description: Optional environment variables passed through to Liquibase.
         work_dir:
           type: string
-          description: Working directory for the Liquibase invocation.
+          description: Absolute bound client working directory for the Liquibase invocation.
         source_manifest:
           $ref: "#/components/schemas/SourceManifest"
         plan_only:

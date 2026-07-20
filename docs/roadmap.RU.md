@@ -196,7 +196,11 @@ gantt
   загружает запрошенные blob-ы через `/v1/source-blobs/sha256/{digest}`,
   пишет progress синхронизации в stderr, учитывает per-profile `sourceSync`
   policy и использует выбранный ref filesystem для ref-backed prepare stages.
-  Поведение local profile не меняется.
+  Поведение local profile не меняется. Production handshake теперь также
+  передает абсолютные client coordinates `root_path`/`work_dir`, сохраняет
+  абсолютные public prepare arguments, использует отдельный 15-минутный
+  source-transfer timeout и работает с gateway-owned admission projection без
+  изменения CLI syntax.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.

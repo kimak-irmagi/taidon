@@ -95,6 +95,7 @@ func TestExplainPrepareCacheWithSourceSyncRetriesAndUploads(t *testing.T) {
 func TestBuildRemoteSourceSyncOptionsModesAndRefContext(t *testing.T) {
 	root := t.TempDir()
 	refRoot := t.TempDir()
+	refBase := filepath.Join(refRoot, "nested")
 	refFS := sentinelSourceFS{}
 
 	got, err := buildRemoteSourceSyncOptions(io.Discard, cli.PrepareOptions{
@@ -107,6 +108,7 @@ func TestBuildRemoteSourceSyncOptionsModesAndRefContext(t *testing.T) {
 		invocationCwd: t.TempDir(),
 	}, &refctx.Context{
 		WorkspaceRoot: refRoot,
+		BaseDir:       refBase,
 		FileSystem:    refFS,
 	})
 	if err != nil {
@@ -114,6 +116,9 @@ func TestBuildRemoteSourceSyncOptionsModesAndRefContext(t *testing.T) {
 	}
 	if got == nil || !got.Enabled || got.WorkspaceRoot != refRoot || got.WorkspaceID != "remote" || got.MaxRounds != 3 {
 		t.Fatalf("unexpected source sync options: %+v", got)
+	}
+	if got.WorkDir != refBase {
+		t.Fatalf("source sync work dir = %q, want %q", got.WorkDir, refBase)
 	}
 	if got.FileSystem != refFS {
 		t.Fatalf("source sync should use ref filesystem, got %#v", got.FileSystem)
@@ -138,6 +143,28 @@ func TestBuildRemoteSourceSyncOptionsModesAndRefContext(t *testing.T) {
 	_, err = buildRemoteSourceSyncOptions(io.Discard, cli.PrepareOptions{Mode: "remote", SourceSyncMode: "manual"}, stageRunRequest{workspaceRoot: root}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unsupported sourceSync.mode") {
 		t.Fatalf("expected unsupported sourceSync.mode error, got %v", err)
+	}
+}
+
+func TestBuildRemoteSourceSyncOptionsWorkspaceFallbacks(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	fromRef, err := buildRemoteSourceSyncOptions(io.Discard, cli.PrepareOptions{Mode: "remote"}, stageRunRequest{}, &refctx.Context{RepoRoot: repoRoot})
+	if err != nil || fromRef.WorkspaceRoot != repoRoot || fromRef.WorkDir != repoRoot {
+		t.Fatalf("repo-root fallback = %+v,%v", fromRef, err)
+	}
+
+	cwd := t.TempDir()
+	fromCWD, err := buildRemoteSourceSyncOptions(io.Discard, cli.PrepareOptions{Mode: "remote"}, stageRunRequest{cwd: cwd}, nil)
+	if err != nil || fromCWD.WorkspaceRoot != cwd || fromCWD.WorkDir != cwd {
+		t.Fatalf("cwd fallback = %+v,%v", fromCWD, err)
+	}
+
+	invocation := t.TempDir()
+	fromInvocation, err := buildRemoteSourceSyncOptions(io.Discard, cli.PrepareOptions{Mode: "remote"}, stageRunRequest{invocationCwd: invocation}, nil)
+	if err != nil || fromInvocation.WorkspaceRoot != invocation || fromInvocation.WorkDir != invocation {
+		t.Fatalf("invocation fallback = %+v,%v", fromInvocation, err)
 	}
 }
 

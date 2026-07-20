@@ -22,6 +22,12 @@ Related documents:
 - Source blob uploads are content-addressed by SHA-256 and sent to
   `PUT /v1/source-blobs/sha256/{digest}`.
 - Recoverable missing-input negotiation uses `409 source_inputs_missing`.
+- The CLI preserves absolute native path bindings in remote request arguments
+  and attaches the logical client workspace root and effective working
+  directory. Admission maps those coordinates to workspace-relative manifest
+  paths; a remote runner never opens the client paths directly.
+- Source blob uploads use a dedicated 15-minute transfer timeout; prepare
+  control requests retain the configured control timeout.
 
 ## 2. Remote Prepare
 
@@ -31,6 +37,7 @@ sequenceDiagram
     participant Client as "internal/client"
     participant Gateway as "remote gateway"
 
+    CLI->>CLI: "attach logical workspace root and working directory"
     CLI->>Client: "POST /v1/prepare-jobs + source_manifest"
     Client->>Gateway: "prepare request"
     alt "source inputs missing"
@@ -93,3 +100,6 @@ terminal client errors:
 - rejected blob uploads;
 - retry loop exhaustion.
 
+An upload timeout is reported as a source-transfer failure and does not create
+a prepare job. Absolute client paths are logical resolution coordinates, never
+a fallback server filesystem location.
