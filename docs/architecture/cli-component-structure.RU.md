@@ -54,8 +54,8 @@
     `remote-source-input-sync-flow.RU.md`.
   - Владеет расширением `source_manifest`, bounded retry для
     `source_inputs_missing`, безопасным workspace-relative path resolution,
-    хэшированием и upload-ом запрошенных source blob-ов, а также progress
-    reporting в stderr текущей stage.
+    хэшированием и upload-ом запрошенных source blob-ов, logical context
+    workspace root/work dir и progress reporting в stderr текущей stage.
 - `internal/inputset`
   - Общий CLI-side источник истины для file-bearing семантики команд.
   - Владеет staged абстракциями parse/bind/collect/project и общими типами.
@@ -146,6 +146,10 @@
   - Payload remote source-sync manifest и recoverable missing-input response.
 - `remotesource.Options`, `remotesource.Uploader`
   - Опции выполнения remote source-sync и boundary для upload source blob-ов.
+- `remotesource.ClientWorkspaceContext`
+  - Передаёт absolute logical client workspace root и effective working
+    directory, используемые для отображения bound paths `psql` и Liquibase в
+    manifest keys.
 - `client.RunRequest`, `client.RunEvent`
   - Payload run API и стрим событий (`stdout`, `stderr`, `exit`, `error`,
     `log`).
@@ -174,6 +178,8 @@
 - Remote source manifests, retry state для missing-input и тела uploaded source
   blob-ов эфемерны в рамках одного invocation. CLI может отправлять source
   blob-ы только в аутентифицированный remote API и не сохраняет их в CLI config.
+- HTTP client разделяет deadlines control requests и source transfer; default
+  source-transfer deadline равен 15 минутам.
 - Состояние discovery локального engine (`engine.json`, daemon lock/process
   metadata) ведется через `internal/daemon`.
 - Rendered alias-create commands эфемерны и существуют только в CLI output.

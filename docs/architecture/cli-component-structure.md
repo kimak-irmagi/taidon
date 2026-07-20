@@ -53,7 +53,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
     `remote-source-input-sync-flow.md`.
   - Owns `source_manifest` expansion, bounded `source_inputs_missing` retry,
     safe workspace-relative path resolution, requested source blob hashing and
-    upload, and progress reporting to the stage stderr writer.
+    upload, logical workspace-root/work-dir context, and progress reporting to
+    the stage stderr writer.
 - `internal/inputset`
   - Shared CLI-side source of truth for file-bearing command semantics.
   - Owns staged parse/bind/collect/project abstractions and common helper types.
@@ -143,6 +144,9 @@ addition of a shared `inputset` layer for file-bearing command semantics.
   - Remote source-sync manifest payload and recoverable missing-input response.
 - `remotesource.Options`, `remotesource.Uploader`
   - Remote source-sync execution options and source blob upload boundary.
+- `remotesource.ClientWorkspaceContext`
+  - Carries the absolute logical client workspace root and effective working
+    directory used to map bound `psql` and Liquibase paths into manifest keys.
 - `client.RunRequest`, `client.RunEvent`
   - Run API payload and streamed events (`stdout`, `stderr`, `exit`, `error`,
     `log`).
@@ -171,6 +175,8 @@ addition of a shared `inputset` layer for file-bearing command semantics.
 - Remote source manifests, missing-input retry state, and uploaded source blob
   bodies are ephemeral per invocation. The CLI may send source blobs only to the
   authenticated remote API; it does not persist them in CLI config.
+- The HTTP client keeps control-request and source-transfer deadlines separate;
+  the default source-transfer deadline is 15 minutes.
 - Engine discovery state (`engine.json`, daemon lock/process metadata) is
   managed via `internal/daemon`.
 - Rendered alias-create commands are ephemeral and exist only in CLI output.

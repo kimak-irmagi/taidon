@@ -194,7 +194,10 @@ gantt
   uploads requested blobs through `/v1/source-blobs/sha256/{digest}`, reports
   sync progress to stderr, honors per-profile `sourceSync` policy, and uses the
   selected ref filesystem for ref-backed prepare stages. Local profile behavior
-  is unchanged.
+  is unchanged. The production handshake now also sends absolute client
+  `root_path`/`work_dir` coordinates, retains absolute public prepare arguments,
+  uses a dedicated 15-minute source-transfer timeout, and interoperates with
+  the gateway-owned admission projection without changing the CLI syntax.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.

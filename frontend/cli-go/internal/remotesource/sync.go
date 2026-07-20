@@ -28,6 +28,7 @@ type Options struct {
 	Enabled       bool
 	MaxRounds     int
 	WorkspaceRoot string
+	WorkDir       string
 	WorkspaceID   string
 	FileSystem    inputset.FileSystem
 	Uploader      Uploader
@@ -86,6 +87,7 @@ func Execute[T any](ctx context.Context, opts Options, req client.PrepareJobRequ
 
 type roundState struct {
 	root        string
+	workDir     string
 	rootID      string
 	fs          inputset.FileSystem
 	uploader    Uploader
@@ -111,6 +113,14 @@ func newRoundState(opts Options) *roundState {
 		root = absRoot
 	}
 	root = filepath.Clean(root)
+	workDir := strings.TrimSpace(opts.WorkDir)
+	if workDir == "" {
+		workDir = root
+	}
+	if absWorkDir, err := filepath.Abs(workDir); err == nil {
+		workDir = absWorkDir
+	}
+	workDir = filepath.Clean(workDir)
 	rootID := strings.TrimSpace(opts.WorkspaceID)
 	if rootID == "" {
 		rootID = filepath.Base(root)
@@ -128,6 +138,7 @@ func newRoundState(opts Options) *roundState {
 	}
 	return &roundState{
 		root:        root,
+		workDir:     workDir,
 		rootID:      rootID,
 		fs:          sourceFS,
 		uploader:    opts.Uploader,
@@ -140,7 +151,11 @@ func newRoundState(opts Options) *roundState {
 
 func (s *roundState) manifest() *client.SourceManifest {
 	manifest := &client.SourceManifest{
-		WorkspaceRef: &client.SourceWorkspaceRef{RootID: s.rootID},
+		WorkspaceRef: &client.SourceWorkspaceRef{
+			RootID:   s.rootID,
+			RootPath: s.root,
+			WorkDir:  s.workDir,
+		},
 	}
 	if len(s.files) > 0 {
 		manifest.Files = make(map[string]string, len(s.files))

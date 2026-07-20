@@ -154,6 +154,7 @@ func buildRemoteSourceSyncOptions(stderr io.Writer, opts cli.PrepareOptions, req
 	}
 
 	root := strings.TrimSpace(req.workspaceRoot)
+	workDir := strings.TrimSpace(req.cwd)
 	var sourceFS inputset.FileSystem
 	if actualRef != nil {
 		root = strings.TrimSpace(actualRef.WorkspaceRoot)
@@ -161,6 +162,7 @@ func buildRemoteSourceSyncOptions(stderr io.Writer, opts cli.PrepareOptions, req
 			root = strings.TrimSpace(actualRef.RepoRoot)
 		}
 		sourceFS = actualRef.FileSystem
+		workDir = strings.TrimSpace(actualRef.BaseDir)
 	}
 	if root == "" {
 		root = strings.TrimSpace(req.cwd)
@@ -168,10 +170,14 @@ func buildRemoteSourceSyncOptions(stderr io.Writer, opts cli.PrepareOptions, req
 	if root == "" {
 		root = strings.TrimSpace(req.invocationCwd)
 	}
+	if workDir == "" {
+		workDir = root
+	}
 	return &remotesource.Options{
 		Enabled:       true,
 		MaxRounds:     opts.SourceSyncMaxRounds,
 		WorkspaceRoot: root,
+		WorkDir:       workDir,
 		WorkspaceID:   opts.ProfileName,
 		FileSystem:    sourceFS,
 		Progress:      stderr,

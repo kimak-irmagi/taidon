@@ -452,7 +452,9 @@ const inputBody = '{
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -629,7 +631,9 @@ a job, instance, or mutate cache state.
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -894,7 +898,7 @@ string
 |400|[Bad Request](https://tools.ietf.org/html/rfc7231#section-6.5.1)|Invalid digest or upload request.|[ErrorResponse](#schemaerrorresponse)|
 |401|[Unauthorized](https://tools.ietf.org/html/rfc7235#section-3.1)|Unauthorized|None|
 |409|[Conflict](https://tools.ietf.org/html/rfc7231#section-6.5.8)|Uploaded content does not match the requested digest.|[ErrorResponse](#schemaerrorresponse)|
-|413|[Payload Too Large](https://tools.ietf.org/html/rfc7231#section-6.5.11)|Source blob exceeds the configured upload limit.|[ErrorResponse](#schemaerrorresponse)|
+|413|[Payload Too Large](https://tools.ietf.org/html/rfc7231#section-6.5.11)|Source blob exceeds the configured upload limit (`source_blob_too_large`).|[ErrorResponse](#schemaerrorresponse)|
 |500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal error|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -1131,7 +1135,9 @@ const inputBody = '{
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -1311,7 +1317,9 @@ an instance; the plan tasks are returned in the job status.
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -6836,18 +6844,22 @@ workspace root.
 
 ```json
 {
-  "root_id": "string"
+  "root_id": "string",
+  "root_path": "string",
+  "work_dir": "string"
 }
 
 ```
 
-Optional client-local workspace identity. It is not a server filesystem path.
+Client path context used to bind absolute arguments to the virtual workspace.
 
 ### Properties
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |root_id|string|false|none|Client-local workspace root identifier for diagnostics and retries.|
+|root_path|string|true|none|Absolute logical path of the client workspace root, in the same OS<br>path flavor as file-bearing request arguments. It is a resolution<br>coordinate and is never opened as a server filesystem path.|
+|work_dir|string|true|none|Absolute logical effective command working directory within<br>`root_path`, in the same OS path flavor. Plain `psql` includes are<br>resolved from this directory.|
 
 <h2 id="tocS_SourceDirectoryEntry">SourceDirectoryEntry</h2>
 <!-- backwards compatibility -->
@@ -6919,7 +6931,9 @@ Complete listing for the directory at the map key.
 ```json
 {
   "workspace_ref": {
-    "root_id": "string"
+    "root_id": "string",
+    "root_path": "string",
+    "work_dir": "string"
   },
   "files": {
     "property1": "string",
@@ -6952,13 +6966,16 @@ Complete listing for the directory at the map key.
 Optional remote-source manifest attached to file-bearing prepare and
 cache-explain requests. The server uses this manifest with its scoped
 content cache to build a virtual workspace for authoritative
-format-specific input resolution.
+format-specific input resolution. File-bearing request arguments retain
+absolute client paths; `workspace_ref` binds those logical coordinates
+to workspace-relative manifest keys. An empty manifest is a valid
+first-round handshake and may produce `source_inputs_missing`.
 
 ### Properties
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|workspace_ref|[SourceWorkspaceRef](#schemasourceworkspaceref)|false|none|Optional client-local workspace identity. It is not a server filesystem path.|
+|workspace_ref|[SourceWorkspaceRef](#schemasourceworkspaceref)|true|none|Client path context used to bind absolute arguments to the virtual workspace.|
 |files|object|false|none|Map from workspace-relative source file path to verified client-side content hash.|
 |» **additionalProperties**|[SourceContentHash](#schemasourcecontenthash)|false|none|SHA-256 content hash with the `sha256:` prefix.|
 |directories|object|false|none|Map from workspace-relative directory path to complete directory listing.|
@@ -7074,7 +7091,9 @@ directory listings, and retry the original request.
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -7136,7 +7155,9 @@ xor
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -7173,9 +7194,9 @@ xor
 |---|---|---|---|---|
 |prepare_kind|string|true|none|Prepare adapter kind.|
 |image_id|string|true|none|Base Docker image id to use.|
-|psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must already be normalized for<br>the bound local execution context.|
+|psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must already be absolute and<br>normalized for the bound client execution context. With<br>`source_manifest`, they are logical client coordinates and are not<br>opened on the server filesystem.|
 |stdin|string|false|none|SQL content to use for stdin when `psql_args` includes `-f -`.|
-|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution. File-bearing request arguments retain<br>absolute client paths; `workspace_ref` binds those logical coordinates<br>to workspace-relative manifest keys. An empty manifest is a valid<br>first-round handshake and may produce `source_inputs_missing`.|
 
 #### Enumerated Values
 
@@ -7206,7 +7227,9 @@ xor
   "work_dir": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -7243,13 +7266,13 @@ xor
 |---|---|---|---|---|
 |prepare_kind|string|true|none|Prepare adapter kind.|
 |image_id|string|true|none|Base Docker image id to use.|
-|liquibase_args|[string]|true|none|Arguments passed to Liquibase. Argument ordering is preserved and<br>path-bearing arguments must already reflect the bound local<br>execution context.|
+|liquibase_args|[string]|true|none|Arguments passed to Liquibase. Argument ordering is preserved and<br>path-bearing arguments must already reflect the absolute bound<br>client execution context. With `source_manifest`, they are logical<br>client coordinates and are not opened on the server filesystem.|
 |liquibase_exec|string|false|none|Optional Liquibase executable override selected by the CLI.|
 |liquibase_exec_mode|string|false|none|Optional Liquibase executable mode selected by the CLI.|
 |liquibase_env|object|false|none|Optional environment variables passed through to Liquibase.|
 |» **additionalProperties**|string|false|none|none|
-|work_dir|string|false|none|Working directory for the Liquibase invocation.|
-|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
+|work_dir|string|false|none|Absolute bound client working directory for the Liquibase invocation.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution. File-bearing request arguments retain<br>absolute client paths; `workspace_ref` binds those logical coordinates<br>to workspace-relative manifest keys. An empty manifest is a valid<br>first-round handshake and may produce `source_inputs_missing`.|
 
 #### Enumerated Values
 
@@ -7338,7 +7361,9 @@ or
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -7401,7 +7426,9 @@ xor
   "stdin": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -7439,9 +7466,9 @@ xor
 |---|---|---|---|---|
 |prepare_kind|string|true|none|Prepare adapter kind.|
 |image_id|string|true|none|Base Docker image id to use.|
-|psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must be absolute.|
+|psql_args|[string]|true|none|Arguments passed to `psql` (excluding connection flags). Argument<br>ordering is preserved. File paths must be absolute. With<br>`source_manifest`, they are logical client coordinates and are not<br>opened on the server filesystem.|
 |stdin|string|false|none|SQL content to use for stdin when `psql_args` includes `-f -`.|
-|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution. File-bearing request arguments retain<br>absolute client paths; `workspace_ref` binds those logical coordinates<br>to workspace-relative manifest keys. An empty manifest is a valid<br>first-round handshake and may produce `source_inputs_missing`.|
 |plan_only|boolean|false|none|When true, only the plan is computed and no instance is created.|
 
 #### Enumerated Values
@@ -7473,7 +7500,9 @@ xor
   "work_dir": "string",
   "source_manifest": {
     "workspace_ref": {
-      "root_id": "string"
+      "root_id": "string",
+      "root_path": "string",
+      "work_dir": "string"
     },
     "files": {
       "property1": "string",
@@ -7511,13 +7540,13 @@ xor
 |---|---|---|---|---|
 |prepare_kind|string|true|none|Prepare adapter kind.|
 |image_id|string|true|none|Base Docker image id to use.|
-|liquibase_args|[string]|true|none|Arguments passed to Liquibase. Argument ordering is preserved and<br>path-bearing arguments must already be normalized for the bound<br>local execution context.|
+|liquibase_args|[string]|true|none|Arguments passed to Liquibase. Argument ordering is preserved and<br>path-bearing arguments must already be normalized for the absolute<br>bound client execution context. With `source_manifest`, they are<br>logical client coordinates and are not opened on the server<br>filesystem.|
 |liquibase_exec|string|false|none|Optional Liquibase executable override selected by the CLI.|
 |liquibase_exec_mode|string|false|none|Optional Liquibase executable mode selected by the CLI.|
 |liquibase_env|object|false|none|Optional environment variables passed through to Liquibase.|
 |» **additionalProperties**|string|false|none|none|
-|work_dir|string|false|none|Working directory for the Liquibase invocation.|
-|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution.|
+|work_dir|string|false|none|Absolute bound client working directory for the Liquibase invocation.|
+|source_manifest|[SourceManifest](#schemasourcemanifest)|false|none|Optional remote-source manifest attached to file-bearing prepare and<br>cache-explain requests. The server uses this manifest with its scoped<br>content cache to build a virtual workspace for authoritative<br>format-specific input resolution. File-bearing request arguments retain<br>absolute client paths; `workspace_ref` binds those logical coordinates<br>to workspace-relative manifest keys. An empty manifest is a valid<br>first-round handshake and may produce `source_inputs_missing`.|
 |plan_only|boolean|false|none|When true, only the plan is computed and no instance is created.|
 
 #### Enumerated Values

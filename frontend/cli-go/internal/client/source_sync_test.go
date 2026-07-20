@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCreatePrepareJobParsesSourceInputsMissing(t *testing.T) {
@@ -27,6 +28,28 @@ func TestCreatePrepareJobParsesSourceInputsMissing(t *testing.T) {
 	}
 	if missing.StatusCode != http.StatusConflict || len(missing.Response.MissingManifestEntries) != 1 || len(missing.Response.MissingBlobs) != 1 {
 		t.Fatalf("unexpected missing response: %+v", missing)
+	}
+}
+
+func TestNewUsesDedicatedSourceTransferTimeout(t *testing.T) {
+	cli := New("http://example.com", Options{
+		Timeout:               2 * time.Second,
+		SourceTransferTimeout: 15 * time.Minute,
+	})
+	if cli.http.Timeout != 2*time.Second {
+		t.Fatalf("control timeout = %s, want 2s", cli.http.Timeout)
+	}
+	if cli.sourceHTTP.Timeout != 15*time.Minute {
+		t.Fatalf("source timeout = %s, want 15m", cli.sourceHTTP.Timeout)
+	}
+}
+
+func TestNewUsesDefaultControlAndSourceTransferTimeouts(t *testing.T) {
+	t.Parallel()
+
+	cli := New("http://example.com", Options{})
+	if cli.http.Timeout != 30*time.Second || cli.sourceHTTP.Timeout != 15*time.Minute {
+		t.Fatalf("default timeouts control=%s source=%s", cli.http.Timeout, cli.sourceHTTP.Timeout)
 	}
 }
 
@@ -80,5 +103,32 @@ func TestPutSourceBlobParsesErrorResponse(t *testing.T) {
 	var responseErr *ErrorResponseError
 	if !errors.As(err, &responseErr) || responseErr.Code != "source_blob_too_large" {
 		t.Fatalf("expected source_blob_too_large ErrorResponseError, got %T %v", err, err)
+	}
+}
+
+func TestSourceRequestFallsBackToControlClient(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+	cli := New(server.URL, Options{})
+	cli.sourceHTTP = nil
+	if err := cli.PutSourceBlob(context.Background(), strings.Repeat("a", 64), strings.NewReader("source")); err != nil {
+		t.Fatalf("fallback source request: %v", err)
+	}
+}
+
+func TestPutSourceBlobReturnsRequestConstructionError(t *testing.T) {
+	t.Parallel()
+
+	err := New("://invalid", Options{}).PutSourceBlob(
+		context.Background(),
+		strings.Repeat("a", 64),
+		strings.NewReader("source"),
+	)
+	if err == nil {
+		t.Fatal("expected invalid request URL error")
 	}
 }

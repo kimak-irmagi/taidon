@@ -50,6 +50,7 @@ func TestExecuteExpandsManifestUploadsBlobAndRetries(t *testing.T) {
 	got, err := Execute[string](context.Background(), Options{
 		Enabled:       true,
 		WorkspaceRoot: root,
+		WorkDir:       filepath.Join(root, "db"),
 		WorkspaceID:   "remote",
 		FileSystem:    inputset.OSFileSystem{},
 		Uploader:      uploader,
@@ -80,6 +81,9 @@ func TestExecuteExpandsManifestUploadsBlobAndRetries(t *testing.T) {
 	}
 	if len(manifests) != 2 || manifests[0] == nil || manifests[1] == nil {
 		t.Fatalf("expected source manifests on both calls: %+v", manifests)
+	}
+	if got := manifests[0].WorkspaceRef; got == nil || got.RootPath != root || got.WorkDir != filepath.Join(root, "db") {
+		t.Fatalf("workspace_ref = %+v, want root=%q work_dir=%q", got, root, filepath.Join(root, "db"))
 	}
 	if manifests[1].Files["db/changelog/master.sql"] != hash {
 		t.Fatalf("manifest file hash = %q, want %q", manifests[1].Files["db/changelog/master.sql"], hash)

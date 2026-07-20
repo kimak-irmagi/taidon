@@ -14,16 +14,18 @@ import (
 )
 
 type Options struct {
-	Timeout   time.Duration
-	AuthToken string
-	UserAgent string
+	Timeout               time.Duration
+	SourceTransferTimeout time.Duration
+	AuthToken             string
+	UserAgent             string
 }
 
 type Client struct {
-	baseURL   string
-	http      *http.Client
-	authToken string
-	userAgent string
+	baseURL    string
+	http       *http.Client
+	sourceHTTP *http.Client
+	authToken  string
+	userAgent  string
 }
 
 func New(baseURL string, opts Options) *Client {
@@ -31,28 +33,36 @@ func New(baseURL string, opts Options) *Client {
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
-	client := &http.Client{Timeout: timeout}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) == 0 {
+	sourceTimeout := opts.SourceTransferTimeout
+	if sourceTimeout == 0 {
+		sourceTimeout = 15 * time.Minute
+	}
+	newHTTPClient := func(clientTimeout time.Duration) *http.Client {
+		client := &http.Client{Timeout: clientTimeout}
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if len(via) == 0 {
+				return nil
+			}
+			prev := via[len(via)-1]
+			if auth := prev.Header.Get("Authorization"); auth != "" {
+				req.Header.Set("Authorization", auth)
+			}
+			if ua := prev.Header.Get("User-Agent"); ua != "" {
+				req.Header.Set("User-Agent", ua)
+			}
+			if len(via) >= 10 {
+				return errors.New("stopped after 10 redirects")
+			}
 			return nil
 		}
-		prev := via[len(via)-1]
-		if auth := prev.Header.Get("Authorization"); auth != "" {
-			req.Header.Set("Authorization", auth)
-		}
-		if ua := prev.Header.Get("User-Agent"); ua != "" {
-			req.Header.Set("User-Agent", ua)
-		}
-		if len(via) >= 10 {
-			return errors.New("stopped after 10 redirects")
-		}
-		return nil
+		return client
 	}
 	return &Client{
-		baseURL:   normalizeBaseURL(baseURL),
-		http:      client,
-		authToken: opts.AuthToken,
-		userAgent: opts.UserAgent,
+		baseURL:    normalizeBaseURL(baseURL),
+		http:       newHTTPClient(timeout),
+		sourceHTTP: newHTTPClient(sourceTimeout),
+		authToken:  opts.AuthToken,
+		userAgent:  opts.UserAgent,
 	}
 }
 
@@ -182,7 +192,7 @@ func (c *Client) CreatePrepareJob(ctx context.Context, req PrepareJobRequest) (P
 
 func (c *Client) PutSourceBlob(ctx context.Context, digest string, body io.Reader) error {
 	path := "/v1/source-blobs/sha256/" + url.PathEscape(strings.TrimSpace(digest))
-	resp, err := c.doRequestWithBody(ctx, http.MethodPut, path, true, body, "application/octet-stream")
+	resp, err := c.doSourceRequestWithBody(ctx, http.MethodPut, path, true, body, "application/octet-stream")
 	if err != nil {
 		return err
 	}
@@ -448,6 +458,18 @@ func (c *Client) doRequestWithBody(ctx context.Context, method, path string, use
 }
 
 func (c *Client) doRequestWithBodyHeaders(ctx context.Context, method, path string, useAuth bool, body io.Reader, contentType string, headers map[string]string) (*http.Response, error) {
+	return c.doRequestWithBodyHeadersUsing(c.http, ctx, method, path, useAuth, body, contentType, headers)
+}
+
+func (c *Client) doSourceRequestWithBody(ctx context.Context, method, path string, useAuth bool, body io.Reader, contentType string) (*http.Response, error) {
+	httpClient := c.sourceHTTP
+	if httpClient == nil {
+		httpClient = c.http
+	}
+	return c.doRequestWithBodyHeadersUsing(httpClient, ctx, method, path, useAuth, body, contentType, nil)
+}
+
+func (c *Client) doRequestWithBodyHeadersUsing(httpClient *http.Client, ctx context.Context, method, path string, useAuth bool, body io.Reader, contentType string, headers map[string]string) (*http.Response, error) {
 	url := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
@@ -468,7 +490,7 @@ func (c *Client) doRequestWithBodyHeaders(ctx context.Context, method, path stri
 		}
 		req.Header.Set(key, value)
 	}
-	return c.http.Do(req)
+	return httpClient.Do(req)
 }
 
 func normalizeBaseURL(raw string) string {
