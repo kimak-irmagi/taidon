@@ -90,9 +90,24 @@ source-content cache.
 
 ## 4. Progress
 
-Retry loop пишет progress source sync в stderr. Эти сообщения диагностические и
-не меняют stdout успешной команды. В них есть round counts, counts расширения
-manifest и upload counts, но никогда нет raw source content.
+Retry loop испускает typed in-memory progress events и сам не рендерит output.
+Events покрывают sync start, каждый request round, requested manifest/blob sets,
+завершение каждого hash или directory listing, upload start/byte
+checkpoints/completion, retry и final summary. Идентичность file задаётся safe
+workspace-relative path и shortened digest. Byte events отражают bytes,
+фактически прочитанные upload stream, и создаются на bounded checkpoints, а не
+на каждом вызове `Read`. Duplicate digests не порождают duplicate upload events.
+
+`internal/app` владеет presentation и пишет только в stderr:
+
+- verbose mode рендерит каждый event отдельной stable diagnostic line;
+- normal interactive mode использует delayed spinner с текущей operation и
+  очищает его при completion или error;
+- normal non-interactive mode не пишет spinner control sequences и routine
+  progress.
+
+Stdout успешной команды не меняется. Progress state execution-local и не
+persisted; raw source content и absolute host paths не попадают в events.
 
 ## 5. Границы ошибок
 
