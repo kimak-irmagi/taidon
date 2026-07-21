@@ -1,7 +1,6 @@
 package remotesource
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -19,6 +18,10 @@ type recordingUploader struct {
 	bodies  []string
 	err     error
 }
+
+type recordingProgress struct{ events []ProgressEvent }
+
+func (p *recordingProgress) Update(event ProgressEvent) { p.events = append(p.events, event) }
 
 func (u *recordingUploader) PutSourceBlob(_ context.Context, digest string, body io.Reader) error {
 	if u.err != nil {
@@ -43,7 +46,7 @@ func TestExecuteExpandsManifestUploadsBlobAndRetries(t *testing.T) {
 	}
 	hash := "sha256:" + inputset.HashContent([]byte("select 1;\n"))
 	uploader := &recordingUploader{}
-	var progress bytes.Buffer
+	progress := &recordingProgress{}
 	var manifests []*client.SourceManifest
 	calls := 0
 
@@ -54,7 +57,7 @@ func TestExecuteExpandsManifestUploadsBlobAndRetries(t *testing.T) {
 		WorkspaceID:   "remote",
 		FileSystem:    inputset.OSFileSystem{},
 		Uploader:      uploader,
-		Progress:      &progress,
+		Progress:      progress,
 	}, client.PrepareJobRequest{PrepareKind: "psql"}, func(_ context.Context, req client.PrepareJobRequest) (string, error) {
 		calls++
 		manifests = append(manifests, req.SourceManifest)
@@ -94,8 +97,54 @@ func TestExecuteExpandsManifestUploadsBlobAndRetries(t *testing.T) {
 	if len(uploader.digests) != 1 || uploader.digests[0] != strings.TrimPrefix(hash, "sha256:") || uploader.bodies[0] != "select 1;\n" {
 		t.Fatalf("uploads = %+v bodies=%+v", uploader.digests, uploader.bodies)
 	}
-	if !strings.Contains(progress.String(), "source sync: round 1") || !strings.Contains(progress.String(), "uploaded 1 blobs") {
-		t.Fatalf("progress = %q", progress.String())
+	if len(progress.events) == 0 || progress.events[0].Stage != ProgressStageStart || progress.events[len(progress.events)-1].Stage != ProgressStageComplete {
+		t.Fatalf("progress events = %+v", progress.events)
+	}
+	var uploadComplete *ProgressEvent
+	for i := range progress.events {
+		if progress.events[i].Stage == ProgressStageUploadComplete {
+			uploadComplete = &progress.events[i]
+		}
+	}
+	if uploadComplete == nil || uploadComplete.Path != "db/changelog/master.sql" || uploadComplete.Bytes != int64(len("select 1;\n")) || strings.Contains(uploadComplete.Path, root) {
+		t.Fatalf("upload completion = %+v", uploadComplete)
+	}
+}
+
+func TestExecuteReportsActualUploadByteCheckpoint(t *testing.T) {
+	root := t.TempDir()
+	content := strings.Repeat("x", int(uploadProgressCheckpoint)+17)
+	if err := writeSourceFile(root, "large.sql", content); err != nil {
+		t.Fatal(err)
+	}
+	hash := "sha256:" + inputset.HashContent([]byte(content))
+	progress := &recordingProgress{}
+	calls := 0
+	_, err := Execute[string](context.Background(), Options{Enabled: true, WorkspaceRoot: root, Uploader: &recordingUploader{}, Progress: progress}, client.PrepareJobRequest{}, func(context.Context, client.PrepareJobRequest) (string, error) {
+		calls++
+		if calls == 1 {
+			return "", &client.SourceInputsMissingError{Response: client.SourceInputsMissingErrorResponse{MissingBlobs: []client.SourceMissingBlob{{Path: "large.sql", Hash: hash}}}}
+		}
+		return "ok", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkpoint, complete *ProgressEvent
+	for i := range progress.events {
+		event := &progress.events[i]
+		if event.Stage == ProgressStageUploadBytes {
+			checkpoint = event
+		}
+		if event.Stage == ProgressStageUploadComplete {
+			complete = event
+		}
+	}
+	if checkpoint == nil || checkpoint.Bytes < uploadProgressCheckpoint || checkpoint.Bytes >= int64(len(content)) {
+		t.Fatalf("checkpoint = %+v", checkpoint)
+	}
+	if complete == nil || complete.Bytes != int64(len(content)) || complete.TotalBytes != int64(len(content)) {
+		t.Fatalf("completion = %+v", complete)
 	}
 }
 
