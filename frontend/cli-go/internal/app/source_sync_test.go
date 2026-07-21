@@ -17,6 +17,7 @@ import (
 	"github.com/sqlrs/cli/internal/cli"
 	"github.com/sqlrs/cli/internal/client"
 	"github.com/sqlrs/cli/internal/inputset"
+	"github.com/sqlrs/cli/internal/pathutil"
 	"github.com/sqlrs/cli/internal/refctx"
 	"github.com/sqlrs/cli/internal/remotesource"
 )
@@ -165,6 +166,52 @@ func TestBuildRemoteSourceSyncOptionsWorkspaceFallbacks(t *testing.T) {
 	fromInvocation, err := buildRemoteSourceSyncOptions(io.Discard, cli.PrepareOptions{Mode: "remote"}, stageRunRequest{invocationCwd: invocation}, nil)
 	if err != nil || fromInvocation.WorkspaceRoot != invocation || fromInvocation.WorkDir != invocation {
 		t.Fatalf("invocation fallback = %+v,%v", fromInvocation, err)
+	}
+}
+
+func TestRemotePreparePreservesHostPathWhenLocalWSLIsConfigured(t *testing.T) {
+	root := t.TempDir()
+	queryPath := filepath.Join(root, "query.sql")
+	if err := os.WriteFile(queryPath, []byte("select 1;\n"), 0o600); err != nil {
+		t.Fatalf("write query.sql: %v", err)
+	}
+
+	binding, err := bindPreparePsqlInputs(
+		cli.PrepareOptions{Mode: "remote", WSLDistro: "Ubuntu"},
+		root,
+		root,
+		prepareArgs{PsqlArgs: []string{"-f", "query.sql"}},
+		nil,
+		strings.NewReader(""),
+	)
+	if err != nil {
+		t.Fatalf("bindPreparePsqlInputs: %v", err)
+	}
+	if binding.cleanup != nil {
+		t.Cleanup(func() { _ = binding.cleanup() })
+	}
+	if len(binding.PsqlArgs) != 2 || !pathutil.SameLocalPath(binding.PsqlArgs[1], queryPath) {
+		t.Fatalf("remote psql args = %q, want host-native path %q", binding.PsqlArgs, queryPath)
+	}
+
+	syncOptions, err := buildRemoteSourceSyncOptions(
+		io.Discard,
+		cli.PrepareOptions{Mode: "remote", WSLDistro: "Ubuntu"},
+		stageRunRequest{workspaceRoot: root, cwd: root},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("buildRemoteSourceSyncOptions: %v", err)
+	}
+	if !pathutil.SameLocalPath(syncOptions.WorkspaceRoot, root) ||
+		!pathutil.SameLocalPath(syncOptions.WorkDir, root) {
+		t.Fatalf("source workspace = root %q, work dir %q; want %q", syncOptions.WorkspaceRoot, syncOptions.WorkDir, root)
+	}
+}
+
+func TestBuildPathConverterRemoteIgnoresLocalWSLConfiguration(t *testing.T) {
+	if converter := buildPathConverter(cli.PrepareOptions{Mode: "remote", WSLDistro: "Ubuntu"}); converter != nil {
+		t.Fatal("remote prepare must not use the local-engine WSL path converter")
 	}
 }
 

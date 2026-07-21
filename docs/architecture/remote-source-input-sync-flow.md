@@ -26,6 +26,10 @@ Related documents:
   and attaches the logical client workspace root and effective working
   directory. Admission maps those coordinates to workspace-relative manifest
   paths; a remote runner never opens the client paths directly.
+- Local-engine WSL configuration must not affect remote path binding. WSL path
+  conversion is applied only when the selected profile executes against the
+  local engine, so remote arguments and workspace context remain in the same
+  host-native coordinate system.
 - Source blob uploads use a dedicated 15-minute transfer timeout; prepare
   control requests retain the configured control timeout.
 

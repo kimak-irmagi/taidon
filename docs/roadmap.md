@@ -198,6 +198,8 @@ gantt
   `root_path`/`work_dir` coordinates, retains absolute public prepare arguments,
   uses a dedicated 15-minute source-transfer timeout, and interoperates with
   the gateway-owned admission projection without changing the CLI syntax.
+  Remote path binding is isolated from local WSL configuration, preventing
+  Windows host paths from being rewritten into `/mnt/...` coordinates.
 - **In progress (CI templates baseline)**: GitHub Actions-based release/e2e flows
   are active; broader team templates (e.g., GitLab and on-prem deployment variants)
   are still pending.
