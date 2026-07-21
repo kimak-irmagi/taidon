@@ -35,6 +35,11 @@ workspace context identifies the absolute client workspace root and effective
 working directory so admission can map arguments and imports into the
 workspace-relative manifest namespace.
 
+Remote requests always use the invoking host's native path syntax. In
+particular, configuring a Windows profile to run its local engine in WSL does
+not rewrite remote request paths from `C:\...` to `/mnt/c/...`; WSL path
+conversion is scoped to local-engine execution only.
+
 ## Profile Configuration
 
 Remote source sync is enabled by default for remote profiles.

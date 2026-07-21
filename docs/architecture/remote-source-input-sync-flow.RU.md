@@ -28,6 +28,10 @@ remote backend.
   прикладывает logical client workspace root и effective working directory.
   Admission отображает эти координаты в workspace-relative manifest paths;
   remote runner никогда не открывает client paths напрямую.
+- Настройка WSL для local engine не должна влиять на remote path binding.
+  Преобразование путей в WSL применяется только когда выбранный профиль
+  выполняет запрос через local engine, поэтому remote arguments и workspace
+  context остаются в единой host-native системе координат.
 - Source blob uploads используют отдельный 15-minute transfer timeout; prepare
   control requests сохраняют configured control timeout.
 

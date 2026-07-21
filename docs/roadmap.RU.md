@@ -200,7 +200,8 @@ gantt
   передает абсолютные client coordinates `root_path`/`work_dir`, сохраняет
   абсолютные public prepare arguments, использует отдельный 15-минутный
   source-transfer timeout и работает с gateway-owned admission projection без
-  изменения CLI syntax.
+  изменения CLI syntax. Remote path binding изолирован от local WSL config,
+  поэтому Windows host paths не преобразуются ошибочно в `/mnt/...`.
 - **В работе (базовый CI-template слой)**: GitHub Actions release/e2e пайплайны
   уже активны; более широкие team-шаблоны (например, GitLab и on-prem варианты)
   ещё впереди.

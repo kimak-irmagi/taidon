@@ -478,7 +478,14 @@ func canonicalizeBoundaryPath(path string) string {
 	return pathutil.CanonicalizeBoundaryPath(trimmed)
 }
 
+// buildPathConverter scopes Windows-to-WSL path translation to local-engine
+// execution. Remote requests retain host-native absolute paths so their
+// arguments and source workspace context share the coordinate system required
+// by docs/architecture/remote-source-input-sync-flow.md.
 func buildPathConverter(opts cli.PrepareOptions) func(string) (string, error) {
+	if strings.EqualFold(strings.TrimSpace(opts.Mode), "remote") {
+		return nil
+	}
 	if opts.WSLDistro == "" {
 		return nil
 	}
